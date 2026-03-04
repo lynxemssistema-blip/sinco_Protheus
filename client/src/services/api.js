@@ -184,6 +184,9 @@ export const updateUser = (id, data) => api.put(`/users/${id}`, data);
 export const deleteUser = (id) => api.delete(`/users/${id}`).then(res => res.data);
 export const getUserPreference = (key) => api.get(`/users/preferences/${encodeURIComponent(key)}`).then(res => res.data?.value);
 export const saveUserPreference = (key, value) => api.put(`/users/preferences/${encodeURIComponent(key)}`, { value }).then(res => res.data);
+export const getMyPermissions = () => api.get('/users/my-permissions').then(res => res.data);
+export const getUserPermissions = (userId) => api.get(`/users/permissions/${userId}`).then(res => res.data);
+export const saveUserPermissions = (userId, permissions) => api.put(`/users/permissions/${userId}`, { permissions }).then(res => res.data);
 
 // PRODUCT EXTRAS
 // PRODUCT EXTRAS

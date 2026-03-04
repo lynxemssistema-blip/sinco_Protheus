@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
@@ -6,24 +6,46 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [permissions, setPermissions] = useState({}); // { page_id: { can_view, can_create, can_edit, can_delete } }
+
+    const loadPermissions = useCallback(async () => {
+        try {
+            const data = await api.get('/users/my-permissions').then(r => r.data);
+            const map = {};
+            (data || []).forEach(p => {
+                map[p.page_id] = {
+                    can_view: !!p.can_view,
+                    can_create: !!p.can_create,
+                    can_edit: !!p.can_edit,
+                    can_delete: !!p.can_delete
+                };
+            });
+            setPermissions(map);
+        } catch (err) {
+            console.error('Erro ao carregar permissões:', err);
+        }
+    }, []);
 
     useEffect(() => {
-        // Check for saved token on startup
         const storedToken = localStorage.getItem('@MetalFisa:token');
         const storedUser = localStorage.getItem('@MetalFisa:user');
 
         if (storedToken && storedUser) {
             api.defaults.headers.Authorization = `Bearer ${storedToken}`;
-            setUser(JSON.parse(storedUser));
+            const parsed = JSON.parse(storedUser);
+            setUser(parsed);
+            // Load permissions for non-admin users
+            if (parsed.tipo !== 'A') {
+                loadPermissions();
+            }
         }
 
         setLoading(false);
-    }, []);
+    }, [loadPermissions]);
 
     const login = async (login, senha) => {
         try {
             const response = await api.post('/auth/login', { login, senha });
-
             const { token, user } = response.data;
 
             localStorage.setItem('@MetalFisa:token', token);
@@ -31,6 +53,11 @@ export const AuthProvider = ({ children }) => {
 
             api.defaults.headers.Authorization = `Bearer ${token}`;
             setUser(user);
+
+            // Load permissions for non-admin users
+            if (user.tipo !== 'A') {
+                loadPermissions();
+            }
 
             return { success: true };
         } catch (error) {
@@ -47,10 +74,24 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('@MetalFisa:user');
         delete api.defaults.headers.Authorization;
         setUser(null);
+        setPermissions({});
     };
 
+    // hasPermission(pageId, action) — action: 'view' | 'create' | 'edit' | 'delete'
+    // Admin users ALWAYS return true
+    const hasPermission = useCallback((pageId, action = 'view') => {
+        if (!user) return false;
+        if (user.tipo === 'A') return true; // Admin bypass
+
+        const perm = permissions[pageId];
+        if (!perm) return false; // No entry = no access
+
+        const key = `can_${action}`;
+        return !!perm[key];
+    }, [user, permissions]);
+
     return (
-        <AuthContext.Provider value={{ signed: !!user, user, login, logout, loading }}>
+        <AuthContext.Provider value={{ signed: !!user, user, login, logout, loading, permissions, hasPermission, reloadPermissions: loadPermissions }}>
             {children}
         </AuthContext.Provider>
     );
@@ -65,3 +106,4 @@ export const useAuth = () => {
 };
 
 export default AuthContext;
+

@@ -8,7 +8,7 @@ import './Sidebar.css';
 
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const location = useLocation();
-    const { user, logout } = useAuth();
+    const { user, logout, hasPermission } = useAuth();
     const [visibleItems, setVisibleItems] = useState({});
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
@@ -116,12 +116,14 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
         // Always show System/Config
         if (itemId === 'config') return true;
 
-        // If config loaded and has keys, check specific key
+        // Company-level menu config: if explicitly hidden, hide it
         if (isConfigLoaded && Object.keys(visibleItems).length > 0) {
-            return visibleItems[itemId] !== false; // Show unless explicitly false
+            if (visibleItems[itemId] === false) return false;
         }
 
-        return true; // Default show all
+        // User-level permissions: Admin sees all, others need can_view
+        if (user?.tipo === 'A') return true;
+        return hasPermission(itemId, 'view');
     };
 
     return (

@@ -152,5 +152,82 @@ router.put('/preferences/:key', async (req, res) => {
         res.status(500).json({ error: 'Erro ao salvar preferência' });
     }
 });
+// ──── User Permissions (RBAC) ──────────────────────────────────────────────────
+
+// GET /my-permissions — load permissions for the currently authenticated user
+router.get('/my-permissions', async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+
+        const [rows] = await mysqlPool.query(
+            'SELECT page_id, can_view, can_create, can_edit, can_delete FROM app_user_permissions WHERE user_id = ?',
+            [userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao carregar permissões:', error);
+        res.status(500).json({ error: 'Erro ao carregar permissões' });
+    }
+});
+
+// GET /permissions/:userId — admin loads permissions for a specific user
+router.get('/permissions/:userId', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(
+            'SELECT page_id, can_view, can_create, can_edit, can_delete FROM app_user_permissions WHERE user_id = ?',
+            [req.params.userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao carregar permissões do usuário:', error);
+        res.status(500).json({ error: 'Erro ao carregar permissões' });
+    }
+});
+
+// PUT /permissions/:userId — admin bulk-saves permissions for a user
+router.put('/permissions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { permissions } = req.body; // array of { page_id, can_view, can_create, can_edit, can_delete }
+
+        if (!Array.isArray(permissions)) {
+            return res.status(400).json({ error: 'permissions deve ser um array' });
+        }
+
+        // Atomic: delete all existing then insert new
+        const conn = await mysqlPool.getConnection();
+        try {
+            await conn.beginTransaction();
+            await conn.query('DELETE FROM app_user_permissions WHERE user_id = ?', [userId]);
+
+            if (permissions.length > 0) {
+                const values = permissions.map(p => [
+                    parseInt(userId),
+                    p.page_id,
+                    p.can_view ? 1 : 0,
+                    p.can_create ? 1 : 0,
+                    p.can_edit ? 1 : 0,
+                    p.can_delete ? 1 : 0
+                ]);
+                await conn.query(
+                    'INSERT INTO app_user_permissions (user_id, page_id, can_view, can_create, can_edit, can_delete) VALUES ?',
+                    [values]
+                );
+            }
+
+            await conn.commit();
+            res.json({ success: true });
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+    } catch (error) {
+        console.error('Erro ao salvar permissões:', error);
+        res.status(500).json({ error: 'Erro ao salvar permissões' });
+    }
+});
 
 module.exports = router;

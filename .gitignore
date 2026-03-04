@@ -35,6 +35,39 @@ desktop.ini
 FerramentapgAdmin4/
 *.bat
 
+# Debug & Test scripts (not production code)
+server/debug_*.js
+server/test_*.js
+server/test-*.js
+server/inspect_*.js
+server/verify_*.js
+server/hunt_*.js
+server/find_*.js
+server/fix_*.js
+server/update_*.js
+server/run_*.js
+server/patch_*.py
+server/refactor_*.js
+server/setup_*.js
+server/list_*.js
+server/force_*.js
+server/evolution_*.js
+server/detailed_*.js
+server/migrate_*.js
+server/investigate-*.js
+server/research_*.js
+server/design_commitment.md
+server/test_weights_ops.xlsx
+server/routes/production_insert.txt
+solidedge-agent/__pycache__/
+solidedge-agent/*.json
+setup_romaneio_db.js
+test-db-connection.js
+test_*.js
+server_pid.txt
+strip_bom.ps1
+truncate_page.ps1
+
 # Uploads & Temp
 server/uploads/
 tmp/

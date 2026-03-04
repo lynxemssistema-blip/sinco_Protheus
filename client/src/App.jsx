@@ -48,16 +48,48 @@ const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/Si
 const ApontamentoPorUsuarioOpPage = React.lazy(() => import('./pages/pcp/ApontamentoPorUsuarioOpPage'));
 const AvisosHistorico = React.lazy(() => import('./pages/AvisosHistorico'));
 const SINCOProductStructure = React.lazy(() => import('./pages/sinco/SINCOProductStructure'));
+import { MENU_GROUPS } from './config/menuItems';
 
-// Private Route Component
+// Build path → pageId mapping from MENU_GROUPS
+const PATH_TO_PAGE_ID = {};
+MENU_GROUPS.forEach(group => {
+    group.items.forEach(item => {
+        PATH_TO_PAGE_ID[item.path] = item.id;
+    });
+});
+
+// Private Route Component with permission guard
 const PrivateRoute = () => {
-    const { signed, loading } = useAuth();
+    const { signed, loading, user, hasPermission } = useAuth();
+    const location = useLocation();
 
     if (loading) {
         return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
     }
 
-    return signed ? <Outlet /> : <Navigate to="/login" />;
+    if (!signed) return <Navigate to="/login" />;
+
+    // Find pageId for current path
+    const pageId = PATH_TO_PAGE_ID[location.pathname];
+
+    // If there's a mapped page and user is NOT admin, check permission
+    if (pageId && user?.tipo !== 'A' && !hasPermission(pageId, 'view')) {
+        return (
+            <Layout>
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                        <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v.01M12 9v2m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-800">Acesso Negado</h2>
+                    <p className="text-slate-500 mt-2 max-w-md">Você não tem permissão para acessar esta página. Solicite ao administrador que libere o acesso.</p>
+                </div>
+            </Layout>
+        );
+    }
+
+    return <Outlet />;
 };
 
 // Layout Component
