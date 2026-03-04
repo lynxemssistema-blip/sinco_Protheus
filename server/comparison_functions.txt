@@ -1,0 +1,98 @@
+// Comparison Tab Functions - Add to TrackingEvolution.jsx
+
+// Add after fetchHistory function:
+const fetchComparisonData = async () => {
+    setLoading(true);
+    try {
+        const params = {
+            ...filters
+        };
+
+        const response = await axios.get('/api/production/tracking-comparison', { params });
+        setComparisonSummary(response.data.resumo);
+        setComparisonData(response.data.operacoes);
+    } catch (error) {
+        console.error('Error fetching comparison data:', error);
+        alert('Erro ao carregar dados de comparação');
+    } finally {
+        setLoading(false);
+    }
+};
+
+// Add useEffect for comparison tab:
+useEffect(() => {
+    if (activeTab === 'comparison') {
+        fetchComparisonData();
+    }
+}, [activeTab]);
+
+// Chart configuration:
+const comparisonChartData = {
+    labels: comparisonData.map(op => op.codigo),
+    datasets: [
+        {
+            label: 'Planejado',
+            data: comparisonData.map(op => op.planejado),
+            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+            borderColor: 'rgb(59, 130, 246)',
+            borderWidth: 1
+        },
+        {
+            label: 'Apontado',
+            data: comparisonData.map(op => op.apontado),
+            backgroundColor: 'rgba(34, 197, 94, 0.7)',
+            borderColor: 'rgb(34, 197, 94)',
+            borderWidth: 1
+        }
+    ]
+};
+
+const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: {
+            position: 'top',
+        },
+        title: {
+            display: true,
+            text: 'Planejado vs Apontado por Operação'
+        },
+        tooltip: {
+            callbacks: {
+                label: function(context) {
+                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' pcs';
+                }
+            }
+        }
+    },
+    scales: {
+        y: {
+            beginAtZero: true,
+            ticks: {
+                callback: function(value) {
+                    return value.toLocaleString();
+                }
+            }
+        }
+    }
+};
+
+// Status badge component:
+const StatusBadge = ({ status }) => {
+    const statusConfig = {
+        complete: { color: 'bg-green-100 text-green-800', icon: '✓', text: 'Completo' },
+        partial: { color: 'bg-yellow-100 text-yellow-800', icon: '⚠️', text: 'Parcial' },
+        low: { color: 'bg-orange-100 text-orange-800', icon: '⚠️', text: 'Baixo' },
+        pending: { color: 'bg-gray-100 text-gray-800', icon: '⏳', text: 'Pendente' },
+        extra: { color: 'bg-blue-100 text-blue-800', icon: '➕', text: 'Extra' }
+    };
+    
+    const config = statusConfig[status] || statusConfig.pending;
+    
+    return (
+        <span className={`px-2 py-1 rounded-full text-xs font-semib old ${config.color}`}>
+            {config.icon} {config.text}
+        </span>
+    );
+};

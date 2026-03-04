@@ -1,0 +1,83 @@
+De: TI MetalFisa
+Para: Usuários de Engenharia/Projetos (SolidEdge)
+Assunto: 🔧 INSTALAÇÃO OBRIGATÓRIA - SolidEdge Agent
+
+Prezados colegas da Engenharia,
+
+Para integrar o SolidEdge ao novo Sistema PCP MetalFisa, é necessário instalar o **SolidEdge Agent** no seu computador.
+
+═══════════════════════════════════════════════════════════
+
+📋 O QUE É O SOLIDEDGE AGENT?
+
+É um programa pequeno que conecta o SolidEdge ao sistema web, permitindo:
+✅ Importar dados do desenho ativo automaticamente
+✅ Exportar DXF/PDF direto do sistema
+✅ Sincronizar informações entre SolidEdge e banco de dados
+
+═══════════════════════════════════════════════════════════
+
+🚀 INSTALAÇÃO (PASSO A PASSO):
+
+1️⃣ Acesse a pasta compartilhada:
+   \\192.168.1.253\Engenharia\MetalFisa\solidedge-agent
+
+2️⃣ Copie toda a pasta para:
+   C:\MetalFisa\solidedge-agent
+
+3️⃣ Execute (duplo clique):
+   - INSTALAR_AGENT.bat
+   - CONFIGURAR_FIREWALL_AGENT.bat (como Admin)
+
+4️⃣ Crie um atalho do INICIAR_AGENT.bat na área de trabalho
+
+═══════════════════════════════════════════════════════════
+
+▶️ COMO USAR DIARIAMENTE:
+
+1. Abra o SolidEdge
+2. Execute: INICIAR_AGENT.bat (atalho criado)
+3. Mantenha a janela aberta
+4. Acesse o sistema: http://192.168.1.184:3001
+
+═══════════════════════════════════════════════════════════
+
+📖 GUIA COMPLETO:
+
+Um guia detalhado com imagens está disponível em:
+\\192.168.1.253\Engenharia\MetalFisa\GUIA_INSTALACAO_AGENT.md
+
+Ou abra no navegador após copiar os arquivos:
+C:\MetalFisa\solidedge-agent\GUIA_INSTALACAO_AGENT.md
+
+═══════════════════════════════════════════════════════════
+
+⚠️ PRÉ-REQUISITOS:
+
+Antes de instalar, certifique-se de ter:
+- SolidEdge instalado e funcionando ✅
+- Python 3.8+ instalado (https://www.python.org/downloads/)
+  → IMPORTANTE: Marcar "Add Python to PATH" durante instalação
+
+═══════════════════════════════════════════════════════════
+
+🐛 PROBLEMAS?
+
+Soluções rápidas:
+- "Python não encontrado" → Instale Python e reinicie o PC
+- "SolidEdge not running" → Abra o SolidEdge antes do Agent
+- "Porta 8080 em uso" → Reinicie o computador
+- Firewall bloqueando → Execute CONFIGURAR_FIREWALL_AGENT.bat como Admin
+
+Se persistir, contate TI com print do erro.
+
+═══════════════════════════════════════════════════════════
+
+📞 SUPORTE:
+
+Qualquer dúvida, entre em contato com o setor de TI.
+
+Atenciosamente,
+Equipe TI - MetalFisa
+
+═══════════════════════════════════════════════════════════

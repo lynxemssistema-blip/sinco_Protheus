@@ -1,0 +1,75 @@
+const express = require('express');
+const router = express.Router();
+const pool = require('../services/mysqlService');
+
+// Get Company Settings
+router.get('/', async (req, res) => {
+    try {
+        console.log('📊 [COMPANY] GET request received');
+        const [rows] = await pool.query('SELECT * FROM app_company_settings WHERE id = 1');
+        console.log('✅ [COMPANY] Query successful, rows:', rows.length);
+        res.json(rows[0] || {});
+    } catch (err) {
+        console.error('❌ [COMPANY ERROR]', err.message);
+        console.error('[COMPANY ERROR STACK]', err.stack);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Company Info ONLY
+router.put('/', async (req, res) => {
+    try {
+        const { cnpj, razao_social, endereco, bairro, cidade, uf, cep, telefone } = req.body;
+
+        // We only update the info fields here, NOT menu_config
+        await pool.execute(`
+            UPDATE app_company_settings 
+            SET cnpj=?, razao_social=?, endereco=?, bairro=?, cidade=?, uf=?, cep=?, telefone=?
+            WHERE id = 1
+        `, [cnpj, razao_social, endereco, bairro, cidade, uf, cep, telefone]);
+
+        res.json({ message: 'Dados da empresa atualizados com sucesso!' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Menu Config ONLY
+router.put('/menu', async (req, res) => {
+    try {
+        const { menu_config } = req.body;
+        const menuConfigStr = menu_config ? JSON.stringify(menu_config) : null;
+
+        await pool.execute(`
+            UPDATE app_company_settings 
+            SET menu_config=?
+            WHERE id = 1
+        `, [menuConfigStr]);
+
+        res.json({ message: 'Configuração do menu atualizada com sucesso!' });
+    } catch (err) {
+        console.error("Error updating menu settings:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update General Config ONLY
+router.put('/general', async (req, res) => {
+    try {
+        const { general_config } = req.body;
+        const configStr = general_config ? JSON.stringify(general_config) : null;
+
+        await pool.execute(`
+            UPDATE app_company_settings 
+            SET general_config=?
+            WHERE id = 1
+        `, [configStr]);
+
+        res.json({ message: 'Configurações gerais atualizadas com sucesso!' });
+    } catch (err) {
+        console.error("Error updating general settings:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+module.exports = router;

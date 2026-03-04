@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Prevent font scaling in landscape while allowing user zoom */
+  text-size-adjust: 100%;
+}
+
+body {
+@apply bg-gray-50 text-gray-900;
+}
+
+@media print {
+  @page {
+    margin: 1cm;
+    size: auto;
+  }
+  
+  html, body, #root {
+    height: auto !important;
+    overflow: visible !important;
+    min-height: auto !important;
+  }
+
+  /* Reset layout constraints */
+  .overflow-hidden, 
+  .overflow-y-auto, 
+  .overflow-x-auto,
+  [class*="min-h-"],
+  [class*="max-h-"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+  }
+
+  /* Ensure table rows don't break awkwardly (optional) */
+  tr {
+    page-break-inside: avoid;
+  }
+}
