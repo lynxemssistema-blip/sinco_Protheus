@@ -410,6 +410,30 @@ const OrdersTable = () => {
         }
     };
 
+    const handleExportOPByOperationExcel = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-excel-${pedido}-${itemId}` : `op-excel-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const { opByOperationExcelGenerator } = await import('../services/opByOperationExcelGenerator');
+            opByOperationExcelGenerator(mirrorData);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Operation Excel:', error);
+            alert(`Erro ao exportar Espelho para Excel: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handleDownloadExcel = () => {
         const reportFilters = {
             client: filters.cliente,
@@ -925,6 +949,18 @@ const OrdersTable = () => {
                                                                         <Layers className="w-5 h-5" />
                                                                     )}
                                                                 </button>
+                                                                <button
+                                                                    title="Exportar por Operações (Excel)"
+                                                                    onClick={(e) => handleExportOPByOperationExcel(order.pedido, e)}
+                                                                    disabled={printingOrderId === `op-excel-${order.pedido}`}
+                                                                    className="text-gray-500 hover:text-emerald-600 transition-colors p-1 rounded hover:bg-emerald-50 disabled:opacity-50"
+                                                                >
+                                                                    {printingOrderId === `op-excel-${order.pedido}` ? (
+                                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    ) : (
+                                                                        <FileSpreadsheet className="w-5 h-5" />
+                                                                    )}
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -1064,6 +1100,14 @@ const OrdersTable = () => {
                                                                                                                 className="p-1.5 text-gray-400 hover:text-blue-600 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center disabled:opacity-30"
                                                                                                             >
                                                                                                                 {printingOrderId === `op-oper-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+                                                                                                            </button>
+                                                                                                            <button
+                                                                                                                title="Exportar por Operações (Excel)"
+                                                                                                                onClick={(e) => handleExportOPByOperationExcel(order.pedido, e, item.item)}
+                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${order.pedido}-${item.item}`}
+                                                                                                                className="p-1.5 text-gray-400 hover:text-emerald-600 transition-all bg-gray-50/50 hover:bg-emerald-50 rounded flex items-center justify-center disabled:opacity-30"
+                                                                                                            >
+                                                                                                                {printingOrderId === `op-excel-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                                                                                                             </button>
                                                                                                         </div>
                                                                                                     </td>

@@ -66,10 +66,26 @@ router.post('/login', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
+    // Bypass auth for document visualization (files opened directly in new browser tabs)
+    if (req.originalUrl.startsWith('/api/docs/view') || req.path === '/docs/view') {
+        return next();
+    }
+
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-    if (!token) return res.sendStatus(401);
+    if (!token) {
+        // Fallback: check query parameter for cases where header cannot be sent
+        if (req.query && req.query.token) {
+            jwt.verify(req.query.token, SECRET_KEY, (err, user) => {
+                if (err) return res.sendStatus(403);
+                req.user = user;
+                return next();
+            });
+            return;
+        }
+        return res.sendStatus(401);
+    }
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
         if (err) return res.sendStatus(403);

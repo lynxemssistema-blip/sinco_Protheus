@@ -1,5 +1,5 @@
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const fmtQtd = (v) => parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 
@@ -72,7 +72,7 @@ const generateSincoStructurePdf = (structure, user) => {
         }
     });
 
-    doc.autoTable({
+    autoTable(doc, {
         startY: currentY,
         head: [['Nível', 'Código', 'Descrição', 'Info / Família', 'Qtde', 'UN']],
         body: tableData,

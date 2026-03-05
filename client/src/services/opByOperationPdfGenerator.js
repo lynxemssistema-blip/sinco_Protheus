@@ -54,7 +54,7 @@ export const generateOPByOperationPdf = (mirrorData) => {
                             descricao: component.descricao,
                             qtdTotal: rawQtd,
                             um: component.unidade || component.um || 'UN',
-                            nivel: isLevel0 ? 'PRINCIPAL' : component.nivel,
+                            nivel: isLevel0 ? 'PAI' : component.nivel,
                             op_num: component.op_num || itemGroup.produto_principal?.op_num || '-'
                         });
                     });
@@ -232,6 +232,108 @@ export const generateOPByOperationPdf = (mirrorData) => {
 
             const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             doc.text(`MetalFisa - Rastreabilidade de Operações - Gerado em: ${dataGeracao}`, 10, pageHeight - 10);
+        }
+
+        // --- NOVO RECURSO: RESUMO GERAL DE PEÇAS AGLUTINADAS ---
+
+        // 1. Coletar todas as peças exclusivas e somar quantidades
+        const partsSummaryMap = new Map();
+
+        mirrorData.itens.forEach(itemGroup => {
+            const processPart = (component) => {
+                const code = component.codigo || 'S/COD';
+
+                // Pega a quantidade bruta/total do componente
+                const isLevel0 = component.nivel === 0 || component.nivel === undefined;
+                const rawQtd = isLevel0
+                    ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
+                    : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
+
+                if (partsSummaryMap.has(code)) {
+                    partsSummaryMap.get(code).qtdTotal += rawQtd;
+                } else {
+                    partsSummaryMap.set(code, {
+                        codigo: code,
+                        descricao: component.descricao || '',
+                        um: component.unidade || component.um || 'UN',
+                        qtdTotal: rawQtd
+                    });
+                }
+            };
+
+            // Main product
+            if (itemGroup.produto_principal) {
+                processPart(itemGroup.produto_principal);
+            }
+
+            // Children flat structure
+            if (itemGroup.estrutura_linear && Array.isArray(itemGroup.estrutura_linear)) {
+                itemGroup.estrutura_linear.forEach(child => {
+                    processPart(child);
+                });
+            }
+        });
+
+        // 2. Extrair mapa para array, remover 0s e ordenar por descrição
+        const partsSummaryArray = Array.from(partsSummaryMap.values())
+            .filter(part => part.qtdTotal > 0)
+            .sort((a, b) => a.descricao.localeCompare(b.descricao));
+
+        if (partsSummaryArray.length > 0) {
+            // Nova Página para o Resumo
+            doc.addPage();
+            let sumPageCount = doc.internal.getNumberOfPages();
+
+            // Header do Resumo
+            doc.setFillColor(40, 167, 69); // Verde para diferenciar
+            doc.rect(10, 5, pageWidth - 20, 15, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text("RESUMO GERAL DE PEÇAS E MATERIAIS (AGLUTINADO)", pageWidth / 2, 12, { align: 'center' });
+
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`PEDIDO PV: ${mirrorData.pedido?.pedido || ''}`, 15, 12);
+            doc.text(`ITENS EXCLUSIVOS: ${partsSummaryArray.length}`, pageWidth - 45, 12);
+            doc.setTextColor(0, 0, 0);
+
+            const summaryColumns = ["Código", "Descrição do Material / Peça", "UM", "Qtde Total Necessária"];
+            const summaryRows = partsSummaryArray.map(p => [
+                p.codigo,
+                p.descricao,
+                p.um,
+                Number(p.qtdTotal).toFixed(4).replace(/\.?0+$/, '') // Formatação enxuta
+            ]);
+
+            autoTable(doc, {
+                startY: 25,
+                head: [summaryColumns],
+                body: summaryRows,
+                theme: 'grid',
+                headStyles: {
+                    fillColor: [240, 240, 240],
+                    textColor: [50, 50, 50],
+                    fontStyle: 'bold',
+                    fontSize: 9,
+                    halign: 'left'
+                },
+                bodyStyles: {
+                    fontSize: 8,
+                    cellPadding: 3
+                },
+                columnStyles: {
+                    0: { cellWidth: 40, fontStyle: 'bold' }, // Código
+                    1: { cellWidth: 'auto' }, // Descricao
+                    2: { halign: 'center', cellWidth: 20 }, // UM
+                    3: { halign: 'right', cellWidth: 40, fontStyle: 'bold', textColor: [0, 100, 0] } // Qtde
+                },
+                didDrawPage: (data) => {
+                    doc.setFontSize(8);
+                    const curr = doc.internal.getNumberOfPages();
+                    doc.text(`Página Anexo: ${curr} de ${sumPageCount}`, pageWidth - 40, pageHeight - 10);
+                }
+            });
         }
 
         const safePedido = mirrorData.pedido.pedido ? String(mirrorData.pedido.pedido).replace(/[^a-zA-Z0-9]/g, '') : 'Desconhecido';
