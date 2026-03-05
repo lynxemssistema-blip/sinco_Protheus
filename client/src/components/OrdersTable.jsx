@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
@@ -79,6 +79,15 @@ const OrdersTable = () => {
     // Invoice Modal State
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
+
+    // Action dropdown menu state
+    const [openActionMenu, setOpenActionMenu] = useState(null);
+    useEffect(() => {
+        if (!openActionMenu) return;
+        const close = () => setOpenActionMenu(null);
+        document.addEventListener('click', close);
+        return () => document.removeEventListener('click', close);
+    }, [openActionMenu]);
 
     const filters = {
         cliente: orderFilters.cliente,
@@ -873,94 +882,82 @@ const OrdersTable = () => {
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
                                                             <div className="flex items-center justify-center gap-1">
-
                                                                 <button
+                                                                    title="Anotações / Ata Viva"
                                                                     onClick={(e) => { e.stopPropagation(); setNotesTarget({ order: order.pedido }); }}
                                                                     className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
                                                                 >
-                                                                    <StickyNote className="w-5 h-5" />
+                                                                    <StickyNote className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     title="Consultar PCPMetal AI"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setPcpmetalContext(getAIContext(order));
-                                                                        setPcpmetalOpen(true);
-                                                                    }}
+                                                                    onClick={(e) => { e.stopPropagation(); setPcpmetalContext(getAIContext(order)); setPcpmetalOpen(true); }}
                                                                     className="text-blue-400 hover:text-blue-700 transition-colors p-1 rounded hover:bg-blue-50"
                                                                 >
-                                                                    <Bot className="w-5 h-5" />
+                                                                    <Bot className="w-4 h-4" />
                                                                 </button>
-                                                                <button
-                                                                    title="Exportar Materiais (PCP)"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        updateOrderFilters({ pedido: order.pedido, activeTab: 'pcp-export' });
-                                                                    }}
-                                                                    className="text-green-500 hover:text-green-700 transition-colors p-1 rounded hover:bg-green-50"
-                                                                >
-                                                                    <FileSpreadsheet className="w-5 h-5" />
-                                                                </button>
-                                                                <button
-                                                                    title="Imprimir Pedido de Venda"
-                                                                    onClick={(e) => handlePrintOrder(e, order.pedido)}
-                                                                    disabled={printingOrderId === order.pedido}
-                                                                    className="text-gray-500 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-50"
-                                                                >
-                                                                    {printingOrderId === order.pedido ? (
-                                                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                                                    ) : (
-                                                                        <Printer className="w-5 h-5" />
+                                                                {/* Dropdown de impressão/exportação */}
+                                                                <div className="relative" onClick={e => e.stopPropagation()}>
+                                                                    <button
+                                                                        title="Imprimir / Exportar"
+                                                                        onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === `order-${order.pedido}` ? null : `order-${order.pedido}`); }}
+                                                                        className="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded hover:bg-gray-100"
+                                                                    >
+                                                                        <MoreVertical className="w-4 h-4" />
+                                                                    </button>
+                                                                    {openActionMenu === `order-${order.pedido}` && (
+                                                                        <div className="absolute right-0 top-full mt-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[210px]">
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); updateOrderFilters({ pedido: order.pedido, activeTab: 'pcp-export' }); setOpenActionMenu(null); }}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-green-50 hover:text-green-700 transition-colors"
+                                                                            >
+                                                                                <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-green-600" />
+                                                                                <span>Exportar Materiais (PCP)</span>
+                                                                            </button>
+                                                                            <div className="border-t border-gray-100 my-1" />
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOrder(e, order.pedido); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === order.pedido}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === order.pedido ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Printer className="h-4 w-4 flex-shrink-0 text-red-500" />}
+                                                                                <span>Imprimir Pedido de Venda</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPMirror(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                <span>Espelho OP (BOM + Roteiro)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintFichas(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `ficha-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `ficha-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ClipboardList className="h-4 w-4 flex-shrink-0 text-amber-500" />}
+                                                                                <span>Fichas de Operação</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPByOperation(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-oper-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-oper-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-500" />}
+                                                                                <span>Por Operações (PDF)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-excel-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-excel-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
+                                                                                <span>Por Operações (Excel)</span>
+                                                                            </button>
+                                                                        </div>
                                                                     )}
-                                                                </button>
-                                                                <button
-                                                                    title="Imprimir Espelho da OP (BOM + Roteiro)"
-                                                                    onClick={(e) => handlePrintOPMirror(order.pedido, e)}
-                                                                    disabled={printingOrderId === `op-${order.pedido}`}
-                                                                    className="text-gray-500 hover:text-purple-600 transition-colors p-1 rounded hover:bg-purple-50 disabled:opacity-50"
-                                                                >
-                                                                    {printingOrderId === `op-${order.pedido}` ? (
-                                                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                                                    ) : (
-                                                                        <Factory className="w-5 h-5" />
-                                                                    )}
-                                                                </button>
-                                                                <button
-                                                                    title="Imprimir Fichas de Operação (OP)"
-                                                                    onClick={(e) => handlePrintFichas(order.pedido, e)}
-                                                                    disabled={printingOrderId === `ficha-${order.pedido}`}
-                                                                    className="text-gray-500 hover:text-amber-600 transition-colors p-1 rounded hover:bg-amber-50 disabled:opacity-50"
-                                                                >
-                                                                    {printingOrderId === `ficha-${order.pedido}` ? (
-                                                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                                                    ) : (
-                                                                        <ClipboardList className="w-5 h-5" />
-                                                                    )}
-                                                                </button>
-                                                                <button
-                                                                    title="Imprimir por Operações (OP)"
-                                                                    onClick={(e) => handlePrintOPByOperation(order.pedido, e)}
-                                                                    disabled={printingOrderId === `op-oper-${order.pedido}`}
-                                                                    className="text-gray-500 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 disabled:opacity-50"
-                                                                >
-                                                                    {printingOrderId === `op-oper-${order.pedido}` ? (
-                                                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                                                    ) : (
-                                                                        <Layers className="w-5 h-5" />
-                                                                    )}
-                                                                </button>
-                                                                <button
-                                                                    title="Exportar por Operações (Excel)"
-                                                                    onClick={(e) => handleExportOPByOperationExcel(order.pedido, e)}
-                                                                    disabled={printingOrderId === `op-excel-${order.pedido}`}
-                                                                    className="text-gray-500 hover:text-emerald-600 transition-colors p-1 rounded hover:bg-emerald-50 disabled:opacity-50"
-                                                                >
-                                                                    {printingOrderId === `op-excel-${order.pedido}` ? (
-                                                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                                                    ) : (
-                                                                        <FileSpreadsheet className="w-5 h-5" />
-                                                                    )}
-                                                                </button>
+                                                                </div>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -1025,8 +1022,9 @@ const OrdersTable = () => {
                                                                                                     <td className="px-4 py-2 text-center text-xs text-gray-500">{item.rev_codigo || '-'}</td>
                                                                                                     <td className="px-4 py-2 font-mono text-xs text-gray-500">{item.ref_cliente || '-'}</td>
                                                                                                     <td className="px-4 py-2 text-center text-xs text-gray-500">{item.c6_rev_cliente || '-'}</td>
-                                                                                                    <td className="px-4 py-2">
-                                                                                                        <div className="flex items-center justify-center gap-1">
+                                                                                                    <td className="px-2 py-2">
+                                                                                                        <div className="flex items-center justify-center gap-0.5">
+                                                                                                            {/* PDF/Docs - sempre visível */}
                                                                                                             <button
                                                                                                                 onClick={() => {
                                                                                                                     if (item.has_drawing && item.drawing_url) {
@@ -1037,78 +1035,79 @@ const OrdersTable = () => {
                                                                                                                         handleOpenDocs(item.codigo, item.descricao);
                                                                                                                     }
                                                                                                                 }}
-                                                                                                                className={`p-1.5 rounded transition-all flex items-center justify-center relative ${item.has_docs
-                                                                                                                    ? 'text-red-500 bg-red-50 hover:bg-red-100 ring-1 ring-red-200/50'
-                                                                                                                    : 'text-gray-300 hover:text-red-500 hover:bg-red-50'
-                                                                                                                    }`}
-                                                                                                                title={item.has_docs
-                                                                                                                    ? `${item.docs_count} Documento(s) - Clique para abrir`
-                                                                                                                    : "Documentos"}
+                                                                                                                className={`p-1.5 rounded transition-all flex items-center justify-center relative ${item.has_docs ? 'text-red-500 bg-red-50 hover:bg-red-100 ring-1 ring-red-200/50' : 'text-gray-300 hover:text-red-500 hover:bg-red-50'}`}
+                                                                                                                title={item.has_docs ? `${item.docs_count} Documento(s)` : "Documentos"}
                                                                                                             >
-                                                                                                                <FileText className="h-4 w-4" />
+                                                                                                                <FileText className="h-3.5 w-3.5" />
                                                                                                                 {item.has_docs && (
-                                                                                                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                                                                                                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
                                                                                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                                                                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                                                                                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
                                                                                                                     </span>
                                                                                                                 )}
                                                                                                             </button>
+                                                                                                            {/* Obs - visível com destaque quando preenchido */}
                                                                                                             <button
-                                                                                                                onClick={(e) => {
-                                                                                                                    e.stopPropagation(); setNotesTarget({
-                                                                                                                        order: order.pedido,
-                                                                                                                        item: item.item,
-                                                                                                                        product: item.codigo,
-                                                                                                                        currentNote: item.observacao || ''
-                                                                                                                    })
-                                                                                                                }}
-                                                                                                                className={`p-1.5 rounded transition-all flex items-center justify-center ${item.observacao
-                                                                                                                    ? 'text-yellow-600 bg-yellow-50 hover:bg-yellow-100 ring-1 ring-yellow-200/50'
-                                                                                                                    : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50'
-                                                                                                                    }`}
-                                                                                                                title={item.observacao ? "Ver/Editar Observação" : "Adicionar Observação"}
+                                                                                                                onClick={(e) => { e.stopPropagation(); setNotesTarget({ order: order.pedido, item: item.item, product: item.codigo, currentNote: item.observacao || '' }); }}
+                                                                                                                className={`p-1.5 rounded transition-all flex items-center justify-center ${item.observacao ? 'text-yellow-600 bg-yellow-50 hover:bg-yellow-100 ring-1 ring-yellow-200/50' : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50'}`}
+                                                                                                                title={item.observacao ? "Ver/Editar Observação" : "Observação"}
                                                                                                             >
-                                                                                                                <StickyNote className="h-4 w-4" />
+                                                                                                                <StickyNote className="h-3.5 w-3.5" />
                                                                                                             </button>
-                                                                                                            <button
-                                                                                                                onClick={() => setEngineeringTarget({ orderId: order.pedido, item })}
-                                                                                                                className="p-1.5 text-gray-400 hover:text-blue-500 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center"
-                                                                                                                title="Controle Engenharia / BOM"
-                                                                                                            >
-                                                                                                                <Settings className="h-4 w-4" />
-                                                                                                            </button>
-                                                                                                            <button
-                                                                                                                title="Imprimir Espelho OP (Item)"
-                                                                                                                onClick={(e) => handlePrintOPMirror(order.pedido, e, item.item)}
-                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${order.pedido}-${item.item}`}
-                                                                                                                className="p-1.5 text-gray-400 hover:text-purple-600 transition-all bg-gray-50/50 hover:bg-purple-50 rounded flex items-center justify-center disabled:opacity-30"
-                                                                                                            >
-                                                                                                                {printingOrderId === `op-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Factory className="h-4 w-4" />}
-                                                                                                            </button>
-                                                                                                            <button
-                                                                                                                title="Imprimir Fichas (Item)"
-                                                                                                                onClick={(e) => handlePrintFichas(order.pedido, e, item.item)}
-                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${order.pedido}-${item.item}`}
-                                                                                                                className="p-1.5 text-gray-400 hover:text-amber-600 transition-all bg-gray-50/50 hover:bg-amber-50 rounded flex items-center justify-center disabled:opacity-30"
-                                                                                                            >
-                                                                                                                {printingOrderId === `ficha-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
-                                                                                                            </button>
-                                                                                                            <button
-                                                                                                                title="Imprimir por Operações (Item)"
-                                                                                                                onClick={(e) => handlePrintOPByOperation(order.pedido, e, item.item)}
-                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${order.pedido}-${item.item}`}
-                                                                                                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center disabled:opacity-30"
-                                                                                                            >
-                                                                                                                {printingOrderId === `op-oper-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
-                                                                                                            </button>
-                                                                                                            <button
-                                                                                                                title="Exportar por Operações (Excel)"
-                                                                                                                onClick={(e) => handleExportOPByOperationExcel(order.pedido, e, item.item)}
-                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${order.pedido}-${item.item}`}
-                                                                                                                className="p-1.5 text-gray-400 hover:text-emerald-600 transition-all bg-gray-50/50 hover:bg-emerald-50 rounded flex items-center justify-center disabled:opacity-30"
-                                                                                                            >
-                                                                                                                {printingOrderId === `op-excel-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                                                                                                            </button>
+                                                                                                            {/* Dropdown: Eng. + Impressão/Exportação */}
+                                                                                                            <div className="relative" onClick={e => e.stopPropagation()}>
+                                                                                                                <button
+                                                                                                                    title="Mais ações"
+                                                                                                                    onClick={(e) => { e.stopPropagation(); const key = `item-${order.pedido}-${item.item}`; setOpenActionMenu(openActionMenu === key ? null : key); }}
+                                                                                                                    className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center"
+                                                                                                                >
+                                                                                                                    <MoreVertical className="h-3.5 w-3.5" />
+                                                                                                                </button>
+                                                                                                                {openActionMenu === `item-${order.pedido}-${item.item}` && (
+                                                                                                                    <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[200px]">
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { e.stopPropagation(); setEngineeringTarget({ orderId: order.pedido, item }); setOpenActionMenu(null); }}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                                                                                                        >
+                                                                                                                            <Settings className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                                                                                                                            <span>Controle Engenharia</span>
+                                                                                                                        </button>
+                                                                                                                        <div className="border-t border-gray-100 my-1" />
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPMirror(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            <span>Espelho OP</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintFichas(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `ficha-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ClipboardList className="h-4 w-4 flex-shrink-0 text-amber-500" />}
+                                                                                                                            <span>Fichas de Operação</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPByOperation(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-oper-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-500" />}
+                                                                                                                            <span>Por Operações (PDF)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-excel-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
+                                                                                                                            <span>Por Operações (Excel)</span>
+                                                                                                                        </button>
+                                                                                                                    </div>
+                                                                                                                )}
+                                                                                                            </div>
                                                                                                         </div>
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-center">

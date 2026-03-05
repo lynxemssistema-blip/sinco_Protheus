@@ -186,6 +186,7 @@ const AvisosHistorico = () => {
     // Media State
     const [uploading, setUploading] = useState(false);
     const [mediaPreview, setMediaPreview] = useState(null); // { file, type, preview }
+    const [isDragOver, setIsDragOver] = useState(false);
 
     // Hidden file inputs
     const cameraInputRef = useRef(null);
@@ -352,6 +353,44 @@ const AvisosHistorico = () => {
 
         // Clear the input so same file can be re-selected
         e.target.value = '';
+    };
+
+    // ---- Paste image from clipboard ----
+    const handlePaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (!file) continue;
+                const preview = URL.createObjectURL(file);
+                setMediaPreview({ file, type: 'image', preview, name: `imagem_${Date.now()}.png` });
+                break;
+            }
+        }
+    };
+
+    // ---- Drag-and-drop file into chat ----
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setIsDragOver(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        const isImage = file.type.startsWith('image/');
+        const preview = isImage ? URL.createObjectURL(file) : null;
+        setMediaPreview({ file, type: isImage ? 'image' : 'file', preview, name: file.name });
     };
 
     // ---- Audio Recording ----
@@ -623,7 +662,20 @@ const AvisosHistorico = () => {
                 </div>
 
                 {/* ===== CHAT AREA ===== */}
-                <div className={`flex-1 flex flex-col bg-[#efeae2] relative ${!activeUserId && !activeGroupId ? 'hidden md:flex' : 'flex'}`}>
+                <div
+                    className={`flex-1 flex flex-col bg-[#efeae2] relative ${!activeUserId && !activeGroupId ? 'hidden md:flex' : 'flex'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
+                    {/* Drag-and-drop overlay */}
+                    {isDragOver && (activeUserId || activeGroupId) && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-blue-500/20 border-4 border-dashed border-blue-400 rounded-none pointer-events-none">
+                            <Paperclip className="w-12 h-12 text-blue-500 mb-3" />
+                            <p className="text-lg font-bold text-blue-600">Solte o arquivo aqui</p>
+                            <p className="text-sm text-blue-500 mt-1">Imagem, PDF, documento...</p>
+                        </div>
+                    )}
                     {(activeUserId || activeGroupId) ? (
                         <>
                             {/* HEADER */}
@@ -744,11 +796,12 @@ const AvisosHistorico = () => {
                                         <div className="flex-1 bg-slate-100 rounded-2xl px-4 py-2 flex items-center">
                                             <textarea
                                                 className="w-full bg-transparent border-0 ring-0 focus:ring-0 text-sm py-2 resize-none min-h-[40px] max-h-32 outline-none"
-                                                placeholder="Mensagem..."
+                                                placeholder="Mensagem... (Ctrl+V para colar imagem)"
                                                 rows={1}
                                                 value={mensagem}
                                                 onChange={(e) => setMensagem(e.target.value)}
                                                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEnviar(e); } }}
+                                                onPaste={handlePaste}
                                             />
                                         </div>
 

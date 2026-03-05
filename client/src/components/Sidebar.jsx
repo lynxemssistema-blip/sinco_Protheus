@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useHelp } from '../contexts/HelpContext';
 import { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import './Sidebar.css';
@@ -9,6 +10,7 @@ import './Sidebar.css';
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const location = useLocation();
     const { user, logout, hasPermission } = useAuth();
+    const { toggleHelp } = useHelp();
     const [visibleItems, setVisibleItems] = useState({});
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
@@ -216,6 +218,18 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
                 {/* Footer User Profile */}
                 <div className="tech-footer">
+                    {/* Help Button */}
+                    <button
+                        onClick={toggleHelp}
+                        title="Abrir Ajuda (Ctrl+?)"
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 mb-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all group ${isCollapsed ? 'justify-center px-2' : ''
+                            }`}
+                    >
+                        <HelpCircle className="h-4 w-4 flex-shrink-0 group-hover:text-blue-400 transition-colors" />
+                        {!isCollapsed && (
+                            <span className="text-xs font-bold">Central de Ajuda</span>
+                        )}
+                    </button>
                     <div className={`tech-user-card group ${isCollapsed ? 'justify-center p-0 bg-transparent border-0' : ''}`}>
                         <div className="tech-avatar h-9 w-9 flex items-center justify-center font-bold text-sm bg-slate-800 text-blue-400 ring-1 ring-white/10 overflow-hidden">
                             {user?.fotoUsuario ? (

@@ -1,336 +1,429 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
-    Search, Book, Package, ShoppingCart, Truck, Factory, FileText,
-    Settings, Info, ChevronRight, HelpCircle, ArrowRight, Bot,
-    Zap, Database, ShieldCheck, History, Share2, Printer, Layers
+    Search, HelpCircle, ChevronRight, BookOpen, ShoppingCart, Factory,
+    Package, Settings, Truck, FileText, BarChart, Calendar, Database,
+    ShieldCheck, Lightbulb, Zap, ArrowRight, Home, List, Grid,
+    CheckSquare, TrendingUp, Bell, User, Layers
 } from 'lucide-react';
+import { getAllHelpModules } from '../config/helpContent';
 
-const HelpCenter = () => {
+// ─── Icon Map ────────────────────────────────────────────────────────────────
+const ICON_MAP = {
+    ShoppingCart, Factory, Package, Settings, Truck, FileText, BarChart,
+    Calendar, Database, ShieldCheck, BookOpen, Grid, CheckSquare,
+    TrendingUp, Bell, User, Layers, Search, Home, List, HelpCircle,
+};
+
+function ModuleIcon({ name, className = 'h-5 w-5' }) {
+    const Icon = ICON_MAP[name] || HelpCircle;
+    return <Icon className={className} />;
+}
+
+// ─── Category Styles ──────────────────────────────────────────────────────────
+const CATEGORY_STYLES = {
+    'Comercial': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+    'PCP': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+    'Engenharia': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+    'SINCO / Engenharia': { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-700', dot: 'bg-cyan-500' },
+    'Materiais': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+    'Compras': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
+    'Produtos': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
+    'Logística': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
+    'SGQ': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
+    'Relatórios': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
+    'Administração': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500' },
+    'Comunicação': { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
+    'Analytics': { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
+};
+
+function getStyle(category) {
+    return CATEGORY_STYLES[category] || CATEGORY_STYLES['Administração'];
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function HelpCenter() {
+    const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
-    const [activeTab, setActiveTab] = useState('overview');
+    const [selectedId, setSelectedId] = useState(null);
 
-    const modules = [
-        {
-            id: 'sinco',
-            category: 'Engenharia',
-            title: 'SINCO: Estrutura & Engenharia',
-            icon: <Package className="h-6 w-6 text-indigo-600" />,
-            description: 'Lógica da árvore de produtos, roteiros e materiais.',
-            content: (
-                <div className="space-y-4">
-                    <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-                        <h4 className="font-bold text-indigo-900 flex items-center gap-2 mb-2">
-                            <Zap className="h-4 w-4 text-amber-500" />
-                            Árvore Hierárquica Inteligente
-                        </h4>
-                        <p className="text-sm text-indigo-800 leading-relaxed">
-                            O sistema reconstrói a estrutura do produto em tempo real. Itens com fundo azul são <strong>Conjuntos/Pai</strong> (possuem sub-níveis), enquanto fundos brancos são <strong>Componentes</strong> simples.
-                        </p>
-                    </div>
+    const allModules = useMemo(() => getAllHelpModules(), []);
 
-                    <div className="grid grid-cols-1 gap-4">
-                        <div className="p-3 border rounded-lg bg-white shadow-sm">
-                            <h5 className="font-bold text-gray-800 text-sm mb-1 uppercase tracking-tight">Vínculo de Materiais</h5>
-                            <p className="text-xs text-gray-600">
-                                Materiais de consumo (tinta, eletrodos, chapas) são puxados da <code className="bg-gray-100 px-1 rounded text-red-600 font-bold">viewmontapeca</code>. O sistema realiza um vínculo <em>case-insensitive</em> via nome de arquivo, garantindo que o desenho .asm encontre seus consumíveis mesmo com variações de nomenclatura.
-                            </p>
-                        </div>
-                        <div className="p-3 border rounded-lg bg-white shadow-sm">
-                            <h5 className="font-bold text-gray-800 text-sm mb-1 uppercase tracking-tight">Controle de Revisão (Social)</h5>
-                            <p className="text-xs text-gray-600">
-                                O ícone de balão <code className="bg-amber-100 px-1 rounded text-amber-600"><Bot size={12} className="inline" /></code> indica revisões pendentes. Você pode "Resolver" discussões de engenharia diretamente pelo painel, mantendo um histórico auditável de por que uma peça foi alterada.
-                            </p>
-                        </div>
-                    </div>
+    // Build categories list
+    const categories = useMemo(() => {
+        const cats = {};
+        allModules.forEach(mod => {
+            if (!cats[mod.category]) cats[mod.category] = [];
+            cats[mod.category].push(mod);
+        });
+        return cats;
+    }, [allModules]);
 
-                    <div className="bg-slate-800 text-slate-200 p-4 rounded-xl text-xs font-mono">
-                        <p className="text-blue-400 font-bold mb-1">// Dica de Engenharia</p>
-                        <p>O ícone de PDF fica vermelho se o desenho existir no servidor (/mnt/engenharia). Se ficar cinza, o arquivo físico não foi encontrado no caminho mapeado.</p>
-                    </div>
-                </div>
-            )
-        },
-        {
-            id: 'sales',
-            category: 'Comercial',
-            title: 'Pedidos de Venda & Comercial',
-            icon: <ShoppingCart className="h-6 w-6 text-blue-600" />,
-            description: 'Monitor de pedidos, agrupamento de códigos e Ata Viva.',
-            content: (
-                <div className="space-y-4">
-                    <h3 className="text-lg font-bold text-gray-800 border-b pb-2">Gestão de Pedidos Protheus</h3>
+    // Filter modules by search
+    const filteredModules = useMemo(() => {
+        if (!searchTerm.trim()) return allModules;
+        const q = searchTerm.toLowerCase();
+        return allModules.filter(mod =>
+            mod.title.toLowerCase().includes(q) ||
+            mod.description.toLowerCase().includes(q) ||
+            mod.category.toLowerCase().includes(q) ||
+            mod.steps?.some(s => s.toLowerCase().includes(q)) ||
+            mod.tips?.some(t => t.toLowerCase().includes(q))
+        );
+    }, [allModules, searchTerm]);
 
-                    <div className="space-y-3">
-                        <div className="flex gap-3">
-                            <div className="bg-blue-100 p-2 rounded h-fit"><ShieldCheck className="h-4 w-4 text-blue-600" /></div>
-                            <div>
-                                <h4 className="font-bold text-sm">Status Evolução (Real-time)</h4>
-                                <p className="text-xs text-gray-500">Integração nativa via query SQL. O sistema identifica se um item está em aberto, produção ou faturado analisando as flags do ERP.</p>
-                            </div>
-                        </div>
-
-                        <div className="flex gap-3">
-                            <div className="bg-green-100 p-2 rounded h-fit"><Share2 className="h-4 w-4 text-green-600" /></div>
-                            <div>
-                                <h4 className="font-bold text-sm">Agrupamento de Códigos (Novidade)</h4>
-                                <p className="text-xs text-gray-500">Múltiplos "Códigos do Cliente" para o mesmo produto são consolidados em uma única linha usando <code className="bg-gray-100 px-1 rounded">STRING_AGG</code>, eliminando duplicidade visual no grid.</p>
-                            </div>
-                        </div>
-
-                        <div className="flex gap-3">
-                            <div className="bg-amber-100 p-2 rounded h-fit"><History className="h-4 w-4 text-amber-600" /></div>
-                            <div>
-                                <h4 className="font-bold text-sm">Ata Viva (Notes System)</h4>
-                                <p className="text-xs text-gray-500">Use o ícone de post-it para registrar comunicações críticas. Diferente do Protheus, o PCP Metalfisa foca na velocidade da informação.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex items-start gap-3">
-                        <Printer className="h-8 w-8 text-blue-400 flex-shrink-0" />
-                        <p className="text-xs text-blue-800">
-                            <strong>Dica Pro:</strong> Ao imprimir o relatório de Vendas (Ctrl+P), o sistema oculta automaticamente menus e barras laterais para gerar um PDF limpo e formatado.
-                        </p>
-                    </div>
-                </div>
-            )
-        },
-        {
-            id: 'pcpmetal',
-            category: 'Inteligência Artificial',
-            title: 'PCPMetal: O Cérebro AI',
-            icon: <Bot className="h-6 w-6 text-teal-600" />,
-            description: 'Análise de dados, previsões de carga e suporte contextuall.',
-            content: (
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-600 italic">O PCPMetal não é apenas um chat, é uma integração profunda com seus dados produtivos.</p>
-
-                    <ul className="space-y-2">
-                        <li className="flex items-center gap-2 text-sm text-gray-700">
-                            <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-                            <strong>Contexto Inteligente:</strong> A IA "lê" a tela onde você está. Se você abrir a IA no SINCO, ela já sabe qual produto você está analisando.
-                        </li>
-                        <li className="flex items-center gap-2 text-sm text-gray-700">
-                            <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-                            <strong>Previsão de Carga:</strong> Capaz de analisar prazos vs. roteiros de produção para alertar gargalos.
-                        </li>
-                        <li className="flex items-center gap-2 text-sm text-gray-700">
-                            <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-                            <strong>Chat com Documentos:</strong> Ajuda a traduzir erros técnicos ou explicar campos complexos do sistema.
-                        </li>
-                    </ul>
-
-                    <div className="bg-teal-950 text-teal-200 p-4 rounded-xl shadow-inner">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-teal-400">Security Note</span>
-                            <ShieldCheck className="h-3 w-3 text-teal-400" />
-                        </div>
-                        <p className="text-xs leading-relaxed">
-                            A IA processa apenas metadados necessários para a resposta. Dados sensíveis de custo ou segredos industriais são higienizados antes do processamento externo.
-                        </p>
-                    </div>
-                </div>
-            )
-        },
-        {
-            id: 'logistics',
-            category: 'Expedição',
-            title: 'Logística & Romaneio',
-            icon: <Truck className="h-6 w-6 text-red-600" />,
-            description: 'Finalização de processos e despacho de carga.',
-            content: (
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-600">O módulo Logística fecha o ciclo de vida do pedido dentro da fábrica.</p>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-                            <h5 className="font-bold text-xs text-red-700">Romaneio</h5>
-                            <p className="text-[10px] text-red-600/70">Criação de listas de carga por veículo.</p>
-                        </div>
-                        <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-                            <h5 className="font-bold text-xs text-red-700">Etiquetagem</h5>
-                            <p className="text-[10px] text-red-600/70">Geração de etiquetas de volume para volumes rastreáveis.</p>
-                        </div>
-                    </div>
-                </div>
-            )
-        }
-    ];
-
-    const filteredModules = modules.filter(m =>
-        m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const selectedModule = useMemo(
+        () => allModules.find(m => m.id === selectedId) || null,
+        [allModules, selectedId]
     );
 
+    const handleSelectModule = (id) => {
+        setSelectedId(id);
+        setSearchTerm('');
+    };
+
+    const handleNavigate = (path) => {
+        navigate(path);
+    };
+
+    // ── Highlight search term ──
+    function highlight(text) {
+        if (!searchTerm.trim()) return text;
+        const parts = text.split(new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+        return parts.map((p, i) =>
+            p.toLowerCase() === searchTerm.toLowerCase()
+                ? <mark key={i} className="bg-amber-200 text-amber-900 rounded px-0.5 not-italic font-bold">{p}</mark>
+                : p
+        );
+    }
+
     return (
-        <div className="p-6 bg-[#f8fafc] min-h-screen font-sans selection:bg-blue-100">
-            <div className="max-w-7xl mx-auto space-y-8">
+        <div className="min-h-screen bg-[#f1f5f9] font-sans">
 
-                {/* Header (Premium Redesign) */}
-                <div className="relative py-12 px-8 overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 text-white shadow-2xl">
-                    <div className="absolute top-0 right-0 p-12 opacity-10">
-                        <Book className="h-64 w-64 -rotate-12" />
-                    </div>
-
-                    <div className="relative z-10 max-w-2xl">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-widest mb-6 backdrop-blur-md">
-                            <HelpCircle className="h-3 w-3" />
-                            <span>Centro de Suporte MetalFisa</span>
+            {/* ── TOP HEADER ── */}
+            <div className="bg-slate-900 text-white">
+                <div className="max-w-7xl mx-auto px-6 py-10">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                        {/* Title block */}
+                        <div>
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                                    <BookOpen className="h-4 w-4 text-blue-400" />
+                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                                    MetalFisa PCP · Central de Ajuda
+                                </span>
+                            </div>
+                            <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-none mb-2">
+                                Documentação
+                                <span className="text-blue-400"> Completa</span>
+                            </h1>
+                            <p className="text-slate-400 text-base max-w-lg">
+                                {allModules.length} módulos documentados. Clique em qualquer módulo para ver o guia detalhado de uso.
+                            </p>
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 tracking-tight leading-tight">
-                            Documentação <span className="text-blue-400">Completa</span> do Ecossistema.
-                        </h1>
-                        <p className="text-slate-300 text-lg leading-relaxed mb-8">
-                            Entenda a lógica de funcionamento, os fluxos de dados e as novas ferramentas de IA integradas ao seu PCP.
-                        </p>
 
-                        <div className="relative group max-w-lg">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-blue-400 transition-colors" />
+                        {/* Search */}
+                        <div className="relative w-full md:w-96">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                             <input
+                                autoFocus
                                 type="text"
-                                placeholder="O que você deseja saber hoje?"
-                                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white/10 border border-white/10 text-white placeholder:text-slate-500 backdrop-blur-xl focus:bg-white focus:text-slate-900 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
+                                placeholder="Buscar por módulo, função ou dica..."
+                                className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/10 border border-white/10 text-white placeholder:text-slate-500 focus:bg-white focus:text-slate-900 focus:placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 transition-all outline-none text-sm"
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={e => setSearchTerm(e.target.value)}
                             />
+                            {searchTerm && (
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] bg-white/10 text-slate-300 font-bold px-2 py-0.5 rounded-full">
+                                    {filteredModules.length} resultado{filteredModules.length !== 1 && 's'}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Tabs / Navigation */}
-                <div className="bg-white rounded-[1.5rem] shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="flex border-b border-slate-100 p-2 gap-2 bg-slate-50/50">
-                        <button
-                            onClick={() => setActiveTab('overview')}
-                            className={`px-8 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'overview' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'}`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <Layers className="h-4 w-4" />
-                                Visão Geral do Fluxo
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('modules')}
-                            className={`px-8 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'modules' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'}`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <Database className="h-4 w-4" />
-                                Documentação de Módulos
-                            </div>
-                        </button>
-                    </div>
+            {/* ── BODY ── */}
+            <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6">
 
-                    <div className="p-8 md:p-12">
-                        {activeTab === 'overview' && (
-                            <div className="space-y-12">
-                                <div className="text-center max-w-xl mx-auto space-y-2">
-                                    <h2 className="text-3xl font-black text-slate-900">Workflow MetalFisa</h2>
-                                    <p className="text-slate-500">O caminho do dado: da intenção de compra à entrega final no cliente.</p>
+                {/* ── LEFT SIDEBAR (Category Nav) ── */}
+                {!searchTerm && (
+                    <aside className="w-64 flex-shrink-0 hidden md:block">
+                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden sticky top-6">
+                            <div className="px-4 py-3 border-b border-slate-100">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categorias</p>
+                            </div>
+                            <nav className="py-2">
+                                {/* All modules */}
+                                <button
+                                    onClick={() => setSelectedId(null)}
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition-colors ${!selectedId ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                        }`}
+                                >
+                                    <Home className="h-3.5 w-3.5 flex-shrink-0" />
+                                    Visão Geral
+                                    <span className="ml-auto text-[10px] font-black opacity-60">{allModules.length}</span>
+                                </button>
+
+                                <div className="my-2 mx-4 h-px bg-slate-100" />
+
+                                {Object.entries(categories).map(([cat, mods]) => {
+                                    const style = getStyle(cat);
+                                    const isActiveCat = selectedModule?.category === cat;
+                                    return (
+                                        <div key={cat}>
+                                            <p className="px-4 pt-2 pb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                                {cat}
+                                            </p>
+                                            {mods.map(mod => (
+                                                <button
+                                                    key={mod.id}
+                                                    onClick={() => handleSelectModule(mod.id)}
+                                                    className={`w-full flex items-center gap-2.5 px-4 py-2 text-left text-xs font-semibold transition-all group ${selectedId === mod.id
+                                                            ? `${style.bg} ${style.text} font-bold`
+                                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                        }`}
+                                                >
+                                                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedId === mod.id ? style.dot : 'bg-slate-300 group-hover:bg-slate-400'}`} />
+                                                    <span className="truncate">{mod.title}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                            </nav>
+                        </div>
+                    </aside>
+                )}
+
+                {/* ── MAIN CONTENT ── */}
+                <div className="flex-1 min-w-0">
+
+                    {/* ── SEARCH RESULTS ── */}
+                    {searchTerm && (
+                        <div className="space-y-3">
+                            {filteredModules.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center">
+                                    <Search className="h-10 w-10 text-slate-200 mx-auto mb-3" />
+                                    <p className="font-bold text-slate-500">Nenhum resultado para "{searchTerm}"</p>
+                                    <p className="text-sm text-slate-400 mt-1">Tente palavras como "pedido", "OP", "SINCO" ou "compras".</p>
                                 </div>
-
-                                {/* Flowchart (Refined) */}
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 relative">
-                                    <div className="hidden md:block absolute top-[60px] left-0 right-0 h-0.5 bg-gradient-to-r from-blue-100 via-indigo-100 to-red-100 -z-10"></div>
-
-                                    {[
-                                        { label: 'Vendas', desc: 'Pedido Protheus', icon: <ShoppingCart />, color: 'blue' },
-                                        { label: 'SINCO', desc: 'Engenharia/BOM', icon: <Package />, color: 'indigo' },
-                                        { label: 'PCP', desc: 'Geração de OPs', icon: <Factory />, color: 'orange' },
-                                        { label: 'Produção', desc: 'Apontamento', icon: <Settings />, color: 'green' },
-                                        { label: 'Logística', desc: 'Romaneio/Entrega', icon: <Truck />, color: 'red' },
-                                    ].map((step, i) => (
-                                        <div key={i} className="flex flex-col items-center group">
-                                            <div className={`w-28 h-28 bg-white border-2 border-slate-100 rounded-3xl flex items-center justify-center shadow-sm group-hover:border-${step.color}-500 group-hover:shadow-lg group-hover:-translate-y-2 transition-all duration-300`}>
-                                                <div className={`p-4 rounded-2xl bg-${step.color === 'blue' ? 'blue-50' : step.color === 'indigo' ? 'indigo-50' : step.color === 'orange' ? 'orange-50' : step.color === 'green' ? 'green-50' : 'red-50'} text-${step.color === 'blue' ? 'blue-600' : step.color === 'indigo' ? 'indigo-600' : step.color === 'orange' ? 'orange-600' : step.color === 'green' ? 'green-600' : 'red-600'}`}>
-                                                    {React.cloneElement(step.icon, { className: "h-8 w-8" })}
+                            ) : (
+                                filteredModules.map(mod => {
+                                    const style = getStyle(mod.category);
+                                    return (
+                                        <div
+                                            key={mod.id}
+                                            onClick={() => { setSearchTerm(''); handleSelectModule(mod.id); }}
+                                            className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-400 hover:shadow-md cursor-pointer transition-all group"
+                                        >
+                                            <div className="flex items-start gap-4">
+                                                <div className={`w-10 h-10 rounded-xl ${style.bg} ${style.text} flex items-center justify-center flex-shrink-0`}>
+                                                    <ModuleIcon name={mod.icon} className="h-5 w-5" />
                                                 </div>
-                                            </div>
-                                            <div className="mt-4 text-center">
-                                                <h4 className="font-black text-slate-800 tracking-tight">{step.label}</h4>
-                                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{step.desc}</p>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${style.badge}`}>
+                                                            {mod.category}
+                                                        </span>
+                                                    </div>
+                                                    <h3 className="font-black text-slate-900 text-base">{highlight(mod.title)}</h3>
+                                                    <p className="text-sm text-slate-500 mt-0.5 line-clamp-2">{highlight(mod.description)}</p>
+                                                    {mod.steps?.filter(s => s.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 1).map((s, i) => (
+                                                        <p key={i} className="text-xs text-slate-400 mt-1 line-clamp-1">
+                                                            <span className="font-bold text-slate-500">Passo: </span>{highlight(s)}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-600 flex-shrink-0 mt-1 group-hover:translate-x-0.5 transition-transform" />
                                             </div>
                                         </div>
-                                    ))}
+                                    );
+                                })
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── MODULE DETAIL VIEW ── */}
+                    {!searchTerm && selectedModule && (() => {
+                        const style = getStyle(selectedModule.category);
+                        return (
+                            <div className="space-y-5">
+                                {/* Breadcrumb */}
+                                <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                                    <button onClick={() => setSelectedId(null)} className="hover:text-slate-700 transition-colors">Todos os módulos</button>
+                                    <ChevronRight className="h-3 w-3" />
+                                    <span className={selectedModule.text}>{selectedModule.category}</span>
+                                    <ChevronRight className="h-3 w-3" />
+                                    <span className="text-slate-700 font-bold">{selectedModule.title}</span>
                                 </div>
 
-                                <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="space-y-4">
-                                        <h3 className="font-black text-xl text-slate-900 flex items-center gap-3">
-                                            <div className="p-2 bg-blue-600 rounded-lg text-white shadow-lg shadow-blue-200">
-                                                <Info className="h-5 w-5" />
-                                            </div>
-                                            Dicas Rápidas de Navegação
-                                        </h3>
+                                {/* Module Header */}
+                                <div className={`rounded-2xl border p-6 ${style.bg} ${style.border}`}>
+                                    <div className="flex items-start gap-4">
+                                        <div className={`w-14 h-14 rounded-2xl bg-white/60 backdrop-blur flex items-center justify-center flex-shrink-0 shadow-sm ${style.text}`}>
+                                            <ModuleIcon name={selectedModule.icon} className="h-7 w-7" />
+                                        </div>
+                                        <div>
+                                            <span className={`text-[10px] font-black uppercase tracking-widest ${style.text}`}>{selectedModule.category}</span>
+                                            <h2 className="text-2xl font-black text-slate-900 mt-0.5">{selectedModule.title}</h2>
+                                            <p className="text-slate-600 mt-1 leading-relaxed">{selectedModule.description}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Navigate to page button */}
+                                    <button
+                                        onClick={() => handleNavigate(selectedModule.path)}
+                                        className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-700 transition-colors"
+                                    >
+                                        <ArrowRight className="h-4 w-4" />
+                                        Ir para o módulo
+                                    </button>
+                                </div>
+
+                                {/* Steps */}
+                                {selectedModule.steps && selectedModule.steps.length > 0 && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                                        <div className="flex items-center gap-2 mb-5">
+                                            <List className="h-4 w-4 text-slate-500" />
+                                            <h3 className="font-black text-slate-800 uppercase tracking-wide text-xs">Como usar este módulo</h3>
+                                        </div>
+                                        <ol className="space-y-4">
+                                            {selectedModule.steps.map((step, i) => (
+                                                <li key={i} className="flex gap-4 items-start">
+                                                    <span className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center mt-0.5">
+                                                        {i + 1}
+                                                    </span>
+                                                    <p className="text-sm text-slate-600 leading-relaxed pt-1">{step}</p>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </div>
+                                )}
+
+                                {/* Tips */}
+                                {selectedModule.tips && selectedModule.tips.length > 0 && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <Lightbulb className="h-4 w-4 text-amber-600" />
+                                            <h3 className="font-black text-amber-800 uppercase tracking-wide text-xs">Dicas Pro</h3>
+                                        </div>
                                         <ul className="space-y-3">
-                                            <li className="flex gap-2 text-sm text-slate-600">
-                                                <ChevronRight className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                                <span><strong>Barra de Busca:</strong> Utilize códigos do Protheus (ex: PV) ou nomes de clientes. O sistema sincroniza de 1 em 1 minuto.</span>
-                                            </li>
-                                            <li className="flex gap-2 text-sm text-slate-600">
-                                                <ChevronRight className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                                <span><strong>Atalhos:</strong> Em telas de grid, <code className="bg-white border rounded px-1">Esc</code> geralmente limpa filtros e <code className="bg-white border rounded px-1">F5</code> força a atualização com o banco Protheus.</span>
-                                            </li>
+                                            {selectedModule.tips.map((tip, i) => (
+                                                <li key={i} className="flex gap-3 items-start">
+                                                    <Zap className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                                    <p className="text-sm text-amber-800 leading-relaxed">{tip}</p>
+                                                </li>
+                                            ))}
                                         </ul>
                                     </div>
-                                    <div className="space-y-4">
-                                        <h3 className="font-black text-xl text-slate-900 flex items-center gap-3">
-                                            <div className="p-2 bg-teal-600 rounded-lg text-white shadow-lg shadow-teal-200">
-                                                <Bot className="h-5 w-5" />
-                                            </div>
-                                            Interação com a IA
-                                        </h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">
-                                            Sempre que vir o ícone da <strong>IA Flutuante</strong>, você pode pedir análises como <em>"Qual a previsão de término desse pedido?"</em> ou <em>"Explique o roteiro de produção deste item"</em>. A IA possui acesso ao histórico de revisões e aos roteiros de processo definidos na Engenharia.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                                )}
 
-                        {activeTab === 'modules' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                {filteredModules.map((module) => (
-                                    <div key={module.id} className="group relative bg-white border border-slate-200 rounded-[2rem] p-8 hover:shadow-2xl hover:shadow-blue-900/5 transition-all hover:border-blue-400">
-                                        <div className="flex items-start justify-between mb-6">
-                                            <div className="space-y-1">
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-50 px-2 py-1 rounded-md">{module.category}</span>
-                                                <h3 className="text-2xl font-black text-slate-900 tracking-tight">{module.title}</h3>
-                                            </div>
-                                            <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                                                {module.icon}
-                                            </div>
+                                {/* Related modules */}
+                                {selectedModule.links && selectedModule.links.length > 0 && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <ArrowRight className="h-4 w-4 text-slate-500" />
+                                            <h3 className="font-black text-slate-700 uppercase tracking-wide text-xs">Módulos Relacionados</h3>
                                         </div>
-
-                                        <p className="text-slate-500 text-sm mb-8 font-medium">{module.description}</p>
-
-                                        <div className="relative">
-                                            <div className="content-rendered">
-                                                {module.content}
-                                            </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {selectedModule.links.map(link => {
+                                                const relMod = allModules.find(m => m.path === link.path);
+                                                const relStyle = relMod ? getStyle(relMod.category) : getStyle('Administração');
+                                                return (
+                                                    <button
+                                                        key={link.path}
+                                                        onClick={() => relMod ? handleSelectModule(relMod.id) : handleNavigate(link.path)}
+                                                        className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-900 hover:border-slate-900 hover:text-white group transition-all text-left"
+                                                    >
+                                                        {relMod && (
+                                                            <div className={`w-8 h-8 rounded-lg ${relStyle.bg} ${relStyle.text} group-hover:bg-white/10 group-hover:text-white flex items-center justify-center flex-shrink-0 transition-colors`}>
+                                                                <ModuleIcon name={relMod.icon} className="h-4 w-4" />
+                                                            </div>
+                                                        )}
+                                                        <span className="text-sm font-bold truncate">{link.label}</span>
+                                                        <ChevronRight className="h-4 w-4 ml-auto opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
-                                    </div>
-                                ))}
-                                {filteredModules.length === 0 && (
-                                    <div className="col-span-2 text-center py-20 bg-slate-50 rounded-[2rem] border border-dashed border-slate-300">
-                                        <Search className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                                        <p className="text-slate-500 font-bold">Infelizmente não encontramos documentação para o termo "{searchTerm}".</p>
-                                        <p className="text-slate-400 text-sm">Tente palavras-chave como SINCO, Vendas ou IA.</p>
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
-                </div>
+                        );
+                    })()}
 
-                {/* Footer Info */}
-                <div className="text-center pb-12">
-                    <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">
-                        PCP MetalFisa &copy; 2025 - Documentação Interna v3.2
-                    </p>
+                    {/* ── OVERVIEW: All modules grid ── */}
+                    {!searchTerm && !selectedModule && (
+                        <div className="space-y-8">
+                            {/* Workflow Fluxo */}
+                            <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                                <h2 className="font-black text-slate-900 text-lg mb-1">Fluxo MetalFisa PCP</h2>
+                                <p className="text-sm text-slate-500 mb-6">O caminho do pedido: da venda à entrega.</p>
+                                <div className="flex flex-wrap gap-3 items-center">
+                                    {[
+                                        { label: 'Vendas', desc: 'Pedido ERP', style: getStyle('Comercial') },
+                                        { label: 'Engenharia', desc: 'Liberar BOM', style: getStyle('Engenharia') },
+                                        { label: 'PCP', desc: 'Planejar OPs', style: getStyle('PCP') },
+                                        { label: 'Produção', desc: 'Apontar Horas', style: getStyle('PCP') },
+                                        { label: 'Logística', desc: 'Romaneio', style: getStyle('Logística') },
+                                    ].map((step, i, arr) => (
+                                        <React.Fragment key={step.label}>
+                                            <div className={`flex flex-col items-center justify-center w-28 h-20 rounded-2xl border-2 ${step.style.bg} ${step.style.border}`}>
+                                                <span className={`text-sm font-black ${step.style.text}`}>{step.label}</span>
+                                                <span className="text-[10px] text-slate-500 mt-0.5">{step.desc}</span>
+                                            </div>
+                                            {i < arr.length - 1 && (
+                                                <ChevronRight className="h-5 w-5 text-slate-300 flex-shrink-0" />
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Category groups */}
+                            {Object.entries(categories).map(([cat, mods]) => {
+                                const style = getStyle(cat);
+                                return (
+                                    <div key={cat}>
+                                        <div className="flex items-center gap-2.5 mb-3">
+                                            <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                                            <h3 className="font-black text-slate-700 uppercase tracking-widest text-xs">{cat}</h3>
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${style.badge}`}>{mods.length}</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {mods.map(mod => (
+                                                <button
+                                                    key={mod.id}
+                                                    onClick={() => handleSelectModule(mod.id)}
+                                                    className="flex items-start gap-4 p-4 bg-white rounded-2xl border border-slate-200 hover:border-slate-400 hover:shadow-md transition-all text-left group"
+                                                >
+                                                    <div className={`w-10 h-10 rounded-xl ${style.bg} ${style.text} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                                                        <ModuleIcon name={mod.icon} className="h-5 w-5" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="font-bold text-slate-900 text-sm leading-tight">{mod.title}</h4>
+                                                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">{mod.description}</p>
+                                                    </div>
+                                                    <ChevronRight className="h-4 w-4 text-slate-200 group-hover:text-slate-500 flex-shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
+            </div>
+
+            {/* Footer */}
+            <div className="max-w-7xl mx-auto px-6 pb-12 text-center">
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
+                    MetalFisa PCP · Central de Ajuda · {allModules.length} módulos documentados
+                </p>
             </div>
         </div>
     );
-};
-
-export default HelpCenter;
+}
