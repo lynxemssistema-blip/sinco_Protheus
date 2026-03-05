@@ -77,6 +77,7 @@ router.get('/', async (req, res) => {
       SELECT
         c5.c5_num AS pedido,
         sa1.a1_nome AS nome_cliente,
+        NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
         TO_CHAR(TO_DATE(NULLIF(TRIM(c5.c5_emissao), ''), 'YYYYMMDD'), 'DD/MM/YY') AS emissao,
         (
             SELECT COUNT(*) 
@@ -326,6 +327,7 @@ router.get('/flat', async (req, res) => {
             SELECT
                 TRIM(c5.c5_num) as pedido,
                 TRIM(c5.c5_cliente) as cod_cliente,
+                NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
                 (SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') FROM public.sz1010 z1 WHERE z1.z1_cliente = c5.c5_cliente AND z1.z1_loja = c5.c5_lojacli AND TRIM(z1.z1_produto) = TRIM(c6.c6_produto) AND COALESCE(z1.d_e_l_e_t_, '') = '') as ref_cliente,
                 (SELECT STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') FROM public.sz1010 z1 WHERE z1.z1_cliente = c5.c5_cliente AND z1.z1_loja = c5.c5_lojacli AND TRIM(z1.z1_produto) = TRIM(c6.c6_produto) AND COALESCE(z1.d_e_l_e_t_, '') = '') as rev_cliente,
                 sa1.a1_nome as nome_cliente,
@@ -1279,6 +1281,210 @@ router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
     } catch (err) {
         console.error('Error fetching PCP history:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pedidos/op-mirror/:id
+// Gera os dados para o Espelho da Ordem de Produção (OP Mirror)
+// O sistema explode toda a estrutura (SG1) e puxa o roteiro (SG2), mapeando 
+// as quantidades com base na quantidade vendida do pedido de venda (SC6).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/op-mirror/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { item: queryItem } = req.query; // Optional single-item filter
+
+        // Step 1: Fetch Capa do Pedido e Cliente
+        const orderQuery = `
+            SELECT 
+                TRIM(c5.c5_num) AS pedido,
+                TO_CHAR(TO_DATE(NULLIF(TRIM(c5.c5_emissao), ''), 'YYYYMMDD'), 'DD/MM/YY') AS emissao,
+                TRIM(sa1.a1_nome) AS nome_cliente,
+                TRIM(sa1.a1_cgc) AS cgc_cliente,
+                TRIM(sa1.a1_mun) AS municipio,
+                TRIM(sa1.a1_est) AS estado
+            FROM sc5010 c5
+            LEFT JOIN sa1010 sa1 
+                ON sa1.a1_cod = c5.c5_cliente 
+                AND sa1.a1_loja = c5.c5_lojacli 
+                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+            WHERE TRIM(c5.c5_num) = $1
+              AND COALESCE(c5.d_e_l_e_t_, '') = ''
+        `;
+
+        const orderResult = await db.query(orderQuery, [id]);
+
+        if (orderResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Pedido não encontrado no Protheus.' });
+        }
+
+        const orderData = orderResult.rows[0];
+
+        // Se passarmos um item específico, adiciona condição na query
+        const itemCondition = queryItem ? `AND TRIM(c6.c6_item) = '${queryItem}'` : '';
+
+        // Step 2: Query the Items (SC6) and explode the BOM (SG1) down to the leaves
+        // AND aggregate the Operations (SG2) per component.
+        const explosionQuery = `
+            WITH RECURSIVE
+            -- 1. Capa de Itens do PV (Ignora itens sem OP)
+            pv_itens AS (
+                SELECT 
+                    TRIM(c6.c6_item) AS item_pedido,
+                    TRIM(c6.c6_produto) AS produto_venda,
+                    TRIM(sb1.b1_desc) AS desc_venda,
+                    COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0) AS qtd_venda,
+                    TRIM(c6.c6_um) as unid_venda,
+                    TRIM(c6.c6_xrevm) as rev_metalfisa,
+                    TRIM(c6.c6_numop) as op_num
+                FROM sc6010 c6
+                LEFT JOIN sc2010 c2 ON c2.c2_filial = c6.c6_filial AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num) AND c2.c2_itempv = c6.c6_item AND c2.c2_sequen = '001' AND COALESCE(c2.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                WHERE TRIM(c6.c6_num) = $1
+                  AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                  AND COALESCE(TRIM(c6.c6_numop), '') != ''
+                  ${itemCondition}
+            ),
+            -- 2. Explosão de Estrutura Recursiva (BOM) começando pelos itens da PV
+            estrutura AS (
+                -- Level 0: The finished products sold
+                SELECT 
+                    pv.item_pedido,
+                    0 AS nivel,
+                    pv.produto_venda AS produto_pai,
+                    pv.produto_venda AS componente,
+                    pv.desc_venda AS descricao,
+                    pv.unid_venda AS unidade,
+                    pv.rev_metalfisa AS revisao,
+                    1::numeric AS qtd_base,
+                    pv.qtd_venda AS qtd_necessaria,
+                    pv.op_num AS op_relacionada
+                FROM pv_itens pv
+
+                UNION ALL
+
+                -- Recursive Levels: Children of the components
+                SELECT
+                    e.item_pedido,
+                    e.nivel + 1,
+                    CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp) AS VARCHAR(30)) AS componente,
+                    CAST(TRIM(sb1.b1_desc) AS VARCHAR(100)) AS descricao,
+                    CAST(TRIM(sb1.b1_um) AS VARCHAR(10)) AS unidade,
+                    CAST(TRIM(sb1.b1_urev) AS VARCHAR(10)) AS revisao,
+                    g1.g1_quant::numeric AS qtd_base,
+                    (e.qtd_necessaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria,
+                    COALESCE(
+                        (SELECT TRIM(c2_sub.c2_num) || c2_sub.c2_item || c2_sub.c2_sequen
+                         FROM sc2010 c2_sub 
+                         WHERE TRIM(c2_sub.c2_pedido) = $1 
+                           AND c2_sub.c2_itempv = e.item_pedido 
+                           AND TRIM(c2_sub.c2_produto) = TRIM(g1.g1_comp) 
+                           AND COALESCE(c2_sub.d_e_l_e_t_, '') = '' 
+                         LIMIT 1),
+                        e.op_relacionada
+                    ) AS op_relacionada
+                FROM estrutura e
+                JOIN sg1010 g1 ON TRIM(g1.g1_cod) = TRIM(e.componente) AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 15 -- Prevents infinite loops if circular references exist
+            )
+            -- RESULTADO DE EXPLOSÃO + ROTEIRO (SG2)
+            SELECT
+                e.item_pedido,
+                e.nivel,
+                e.produto_pai,
+                e.componente,
+                e.descricao,
+                e.unidade,
+                e.revisao,
+                e.qtd_necessaria,
+                e.op_relacionada,
+                
+                -- Aggregating operations for the specific component using JSON
+                -- COALESCE returns an empty JSON array '[]' if no operations found
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'seq', TRIM(g2.g2_operac),
+                                'recurso', TRIM(g2.g2_recurso),
+                                'desc_operacao', CASE 
+                                    WHEN TRIM(g2.g2_recurso) = 'MO0013' THEN 'LASE'
+                                    ELSE COALESCE(TRIM(h1.h1_descri), TRIM(g2.g2_descri)) 
+                                END,
+                                'setup', g2.g2_setup,
+                                'tempo_padrao', g2.g2_tempad,
+                                'ferramenta', TRIM(g2.g2_ferram)
+                            ) ORDER BY TRIM(g2.g2_operac)
+                        )
+                        FROM sg2010 g2
+                        LEFT JOIN sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') = ''
+                        WHERE TRIM(g2.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
+                          AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                    ), '[]'::json
+                ) AS operacoes
+            FROM estrutura e
+            ORDER BY e.item_pedido ASC, e.nivel ASC, e.produto_pai ASC, e.componente ASC;
+        `;
+
+        const explosionResult = await db.query(explosionQuery, [id]);
+
+        // Step 3: Parse and Structure the flat SQL results into a Nested Hierarchy 
+        // PV Item -> Final Product -> Tree of Components
+
+        // This is a helper Map to build trees per item_pedido
+        const itemsMap = new Map();
+
+        explosionResult.rows.forEach(row => {
+            if (!itemsMap.has(row.item_pedido)) {
+                itemsMap.set(row.item_pedido, {
+                    item_pedido: row.item_pedido,
+                    produto_principal: null,
+                    // Flat list of the BOM elements, will be rendered iteratively in PDF like Protheus
+                    estrutura_linear: [],
+                });
+            }
+
+            const itemGroup = itemsMap.get(row.item_pedido);
+
+            // Se for nível 0, marcamos os dados de capa do item:
+            if (row.nivel === 0) {
+                itemGroup.produto_principal = {
+                    codigo: row.componente,
+                    descricao: row.descricao,
+                    revisao: row.revisao,
+                    unidade: row.unidade,
+                    quantidade_venda: parseFloat(row.qtd_necessaria),
+                    op_num: row.op_relacionada,
+                    operacoes: row.operacoes
+                };
+            } else {
+                // If it's a child element (Nivel > 0), store it in order
+                itemGroup.estrutura_linear.push({
+                    nivel: parseInt(row.nivel),
+                    pai: row.produto_pai,
+                    codigo: row.componente,
+                    descricao: row.descricao,
+                    unidade: row.unidade,
+                    quantidade_calculada: parseFloat(row.qtd_necessaria),
+                    op_num: row.op_relacionada,
+                    operacoes: row.operacoes
+                });
+            }
+        });
+
+        const returnedItems = Array.from(itemsMap.values());
+
+        res.json({
+            pedido: orderData,
+            itens: returnedItems
+        });
+
+    } catch (err) {
+        console.error('[OP Mirror Error]', err);
+        res.status(500).json({ error: 'Erro interno ao gerar espelho de OP', details: err.message });
     }
 });
 

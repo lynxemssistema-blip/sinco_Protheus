@@ -1,8 +1,9 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Layers, Box, FileText, Database, ChevronDown, ChevronRight, Printer } from 'lucide-react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import jsPDFLib from 'jspdf';
+const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
+import autoTable from 'jspdf-autotable';
 import { getEstruturaProduto, getStockBalance, getProductRoute } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
@@ -140,7 +141,7 @@ const ProductStructure = () => {
             tableRows.push(rowData);
         });
 
-        doc.autoTable({
+        autoTable(doc, {
             head: [tableColumn],
             body: tableRows,
             startY: 20,

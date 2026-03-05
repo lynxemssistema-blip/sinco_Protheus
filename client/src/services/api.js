@@ -250,6 +250,7 @@ export const resolveSalesNote = (id, user) => api.put(`/sales/notes/${id}/resolv
 export const getSincoStatus = () => api.get('/sinco/status').then(res => res.data);
 export const getSincoActiveDocument = () => api.get('/sinco/active-document').then(res => res.data);
 export const getSincoProductStructure = (codigo) => api.get(`/sinco/estrutura/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getSincoProdutosRaizes = () => api.get('/sinco/produtos-raizes').then(res => res.data);
 export const sincoExportDxf = (outputPath) => api.post('/sinco/export-dxf', { outputPath }).then(res => res.data);
 export const sincoExportPdf = (outputPath) => api.post('/sinco/export-pdf', { outputPath }).then(res => res.data);
 export const getSincoComentariosEngenharia = (codigo) => api.get(`/sinco/comentarios/${encodeURIComponent(codigo)}`).then(res => res.data);
@@ -285,5 +286,6 @@ export const getReportDownloadUrl = (type, params, category = 'production') => {
     return `${cleanBaseURL}/reports/${category}/${type}?${query}`;
 };
 
+export { api };
 export default api;
 

@@ -148,6 +148,46 @@ router.get('/os/:id/items', async (req, res) => {
     }
 });
 
+// GET /api/sinco/produtos-raizes
+// List all root products that have a structure loaded
+router.get('/produtos-raizes', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT 
+                p.CodProdutoPai as value, 
+                p.CodProdutoPai as label,
+                m.DescDetal as description
+            FROM produto_estrutura_item p
+            LEFT JOIN viewmontapeca m 
+                ON p.CodProdutoPai = m.NomeArquivoSemExtensao 
+                OR p.CodProdutoPai = CONCAT(m.NomeArquivoSemExtensao, '.asm')
+                OR p.CodProdutoPai = CONCAT(m.NomeArquivoSemExtensao, '.ASM')
+            ORDER BY p.CodProdutoPai ASC
+        `;
+        const [rows] = await pool.query(query);
+
+        // Deduplicate in JS just in case of multiple matches in viewmontapeca
+        const unique = [];
+        const seen = new Set();
+
+        for (const r of rows) {
+            if (!seen.has(r.value)) {
+                seen.add(r.value);
+                const desc = r.description ? ` - ${r.description}` : '';
+                unique.push({
+                    value: r.value,
+                    label: `${r.label}${desc}`
+                });
+            }
+        }
+
+        res.json(unique);
+    } catch (error) {
+        console.error('❌ Erro ao buscar produtos raízes:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar produtos raízes' });
+    }
+});
+
 // GET /api/sinco/estrutura/:codProdutoPai
 // Retorna a árvore completa da Estrutura do Produto, incluindo Módulos, Materiais Consumidos e Processos
 router.get('/estrutura/:codProdutoPai', async (req, res) => {

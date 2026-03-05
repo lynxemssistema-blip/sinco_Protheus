@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings } from 'lucide-react';
-import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData } from '../services/api';
-import { jsPDF } from 'jspdf';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList } from 'lucide-react';
+import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api } from '../services/api';
+import jsPDFLib from 'jspdf';
+const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 
 import PCPExportTab from './orders/PCPExportTab';
@@ -17,6 +18,7 @@ import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
+import { generateOrderPDF } from '../services/orderPdfGenerator'; // Import new PDF service
 
 const OrdersTable = () => {
 
@@ -68,6 +70,7 @@ const OrdersTable = () => {
     const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
+    const [printingOrderId, setPrintingOrderId] = useState(null); // Local loading state for print button
 
     // PCPMetal AI Drawer State
     const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
@@ -298,6 +301,112 @@ const OrdersTable = () => {
             alert('Erro ao gerar PDF: ' + err.message);
         } finally {
             setDownloadingPDF(false);
+        }
+    };
+
+    const handlePrintOrder = async (e, orderId) => {
+        e.stopPropagation(); // Prevenir expansão da linha
+        if (printingOrderId === orderId) return;
+
+        setPrintingOrderId(orderId);
+        try {
+            // Fetch complete order details (capa + itens) and Notes (Ata)
+            const [capaResult, itensResult, notesResult] = await Promise.all([
+                getPedidos({ pedido: orderId, limit: 1 }), // Pega a capa
+                getItensPedido(orderId), // Pega os itens
+                getSalesNotes([orderId]) // Pega Ata
+            ]);
+
+            const capa = capaResult.data && capaResult.data.length > 0 ? capaResult.data[0] : null;
+            if (!capa) {
+                alert('Número do pedido não encontrado ou sem permissão.');
+                return;
+            }
+
+            const orderData = {
+                capa,
+                itens: itensResult || [],
+                notes: Array.isArray(notesResult) ? notesResult : []
+            };
+
+            await generateOrderPDF(orderData);
+        } catch (err) {
+            console.error('Erro ao imprimir pedido:', err);
+            alert('Falha ao gerar o PDF do pedido: ' + err.message);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPMirror = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-${pedido}-${itemId}` : `op-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const { generateOPMirrorPdf } = await import('../services/opMirrorPdfGenerator');
+            generateOPMirrorPdf(mirrorData);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP Mirror PDF:', error);
+            alert(`Erro ao gerar Espelho da OP: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintFichas = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `ficha-${pedido}-${itemId}` : `ficha-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const { generateOPFichaPdf } = await import('../services/opFichaPdfGenerator');
+            generateOPFichaPdf(mirrorData);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP Fichas PDF:', error);
+            alert(`Erro ao gerar Fichas de Operação: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPByOperation = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const { generateOPByOperationPdf } = await import('../services/opByOperationPdfGenerator');
+            generateOPByOperationPdf(mirrorData);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Operation PDF:', error);
+            alert(`Erro ao gerar Espelho por Operação: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
         }
     };
 
@@ -740,6 +849,7 @@ const OrdersTable = () => {
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
                                                             <div className="flex items-center justify-center gap-1">
+
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); setNotesTarget({ order: order.pedido }); }}
                                                                     className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
@@ -766,6 +876,54 @@ const OrdersTable = () => {
                                                                     className="text-green-500 hover:text-green-700 transition-colors p-1 rounded hover:bg-green-50"
                                                                 >
                                                                     <FileSpreadsheet className="w-5 h-5" />
+                                                                </button>
+                                                                <button
+                                                                    title="Imprimir Pedido de Venda"
+                                                                    onClick={(e) => handlePrintOrder(e, order.pedido)}
+                                                                    disabled={printingOrderId === order.pedido}
+                                                                    className="text-gray-500 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-50"
+                                                                >
+                                                                    {printingOrderId === order.pedido ? (
+                                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    ) : (
+                                                                        <Printer className="w-5 h-5" />
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    title="Imprimir Espelho da OP (BOM + Roteiro)"
+                                                                    onClick={(e) => handlePrintOPMirror(order.pedido, e)}
+                                                                    disabled={printingOrderId === `op-${order.pedido}`}
+                                                                    className="text-gray-500 hover:text-purple-600 transition-colors p-1 rounded hover:bg-purple-50 disabled:opacity-50"
+                                                                >
+                                                                    {printingOrderId === `op-${order.pedido}` ? (
+                                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    ) : (
+                                                                        <Factory className="w-5 h-5" />
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    title="Imprimir Fichas de Operação (OP)"
+                                                                    onClick={(e) => handlePrintFichas(order.pedido, e)}
+                                                                    disabled={printingOrderId === `ficha-${order.pedido}`}
+                                                                    className="text-gray-500 hover:text-amber-600 transition-colors p-1 rounded hover:bg-amber-50 disabled:opacity-50"
+                                                                >
+                                                                    {printingOrderId === `ficha-${order.pedido}` ? (
+                                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    ) : (
+                                                                        <ClipboardList className="w-5 h-5" />
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    title="Imprimir por Operações (OP)"
+                                                                    onClick={(e) => handlePrintOPByOperation(order.pedido, e)}
+                                                                    disabled={printingOrderId === `op-oper-${order.pedido}`}
+                                                                    className="text-gray-500 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                                                                >
+                                                                    {printingOrderId === `op-oper-${order.pedido}` ? (
+                                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    ) : (
+                                                                        <Layers className="w-5 h-5" />
+                                                                    )}
                                                                 </button>
                                                             </div>
                                                         </td>
@@ -861,11 +1019,10 @@ const OrdersTable = () => {
                                                                                                             </button>
                                                                                                             <button
                                                                                                                 onClick={(e) => {
-                                                                                                                    e.stopPropagation(); setNotesModal({
-                                                                                                                        isOpen: true,
-                                                                                                                        orderId: order.pedido,
-                                                                                                                        itemId: item.item,
-                                                                                                                        productCode: item.codigo,
+                                                                                                                    e.stopPropagation(); setNotesTarget({
+                                                                                                                        order: order.pedido,
+                                                                                                                        item: item.item,
+                                                                                                                        product: item.codigo,
                                                                                                                         currentNote: item.observacao || ''
                                                                                                                     })
                                                                                                                 }}
@@ -883,6 +1040,30 @@ const OrdersTable = () => {
                                                                                                                 title="Controle Engenharia / BOM"
                                                                                                             >
                                                                                                                 <Settings className="h-4 w-4" />
+                                                                                                            </button>
+                                                                                                            <button
+                                                                                                                title="Imprimir Espelho OP (Item)"
+                                                                                                                onClick={(e) => handlePrintOPMirror(order.pedido, e, item.item)}
+                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${order.pedido}-${item.item}`}
+                                                                                                                className="p-1.5 text-gray-400 hover:text-purple-600 transition-all bg-gray-50/50 hover:bg-purple-50 rounded flex items-center justify-center disabled:opacity-30"
+                                                                                                            >
+                                                                                                                {printingOrderId === `op-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Factory className="h-4 w-4" />}
+                                                                                                            </button>
+                                                                                                            <button
+                                                                                                                title="Imprimir Fichas (Item)"
+                                                                                                                onClick={(e) => handlePrintFichas(order.pedido, e, item.item)}
+                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${order.pedido}-${item.item}`}
+                                                                                                                className="p-1.5 text-gray-400 hover:text-amber-600 transition-all bg-gray-50/50 hover:bg-amber-50 rounded flex items-center justify-center disabled:opacity-30"
+                                                                                                            >
+                                                                                                                {printingOrderId === `ficha-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+                                                                                                            </button>
+                                                                                                            <button
+                                                                                                                title="Imprimir por Operações (Item)"
+                                                                                                                onClick={(e) => handlePrintOPByOperation(order.pedido, e, item.item)}
+                                                                                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${order.pedido}-${item.item}`}
+                                                                                                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center disabled:opacity-30"
+                                                                                                            >
+                                                                                                                {printingOrderId === `op-oper-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
                                                                                                             </button>
                                                                                                         </div>
                                                                                                     </td>
@@ -1295,11 +1476,13 @@ const OrdersTable = () => {
             }
 
             {/* Exportação Materiais PCP */}
-            {activeTab === 'pcp-export' && (
-                <div className="p-4">
-                    <PCPExportTab />
-                </div>
-            )}
+            {
+                activeTab === 'pcp-export' && (
+                    <div className="p-4">
+                        <PCPExportTab />
+                    </div>
+                )
+            }
 
             {/* Modal de Documentos */}
             <DocsModal

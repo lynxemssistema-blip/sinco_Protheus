@@ -26,7 +26,8 @@ export default function ProductionMatrixPage() {
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
 
     useEffect(() => {
-        loadData();
+        // loadData(); // Removido: o usuário pediu para buscar apenas ao aplicar o filtro
+        setLoading(false); // apenas desativar o skeleton inicial
     }, []);
 
     const loadData = async () => {

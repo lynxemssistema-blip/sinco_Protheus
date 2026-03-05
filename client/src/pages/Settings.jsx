@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot } from 'lucide-react';
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings } from '../services/api';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 
@@ -14,6 +14,7 @@ export default function Settings() {
         { id: 'general', label: 'Geral', icon: Building2 },
         { id: 'menu', label: 'Menu & Navegação', icon: Menu },
         { id: 'users', label: 'Usuários', icon: UserPlus },
+        { id: 'permissions', label: 'Permissões', icon: Shield },
         { id: 'reports', label: 'Relatórios', icon: FileText },
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
     ];
@@ -58,10 +59,109 @@ export default function Settings() {
     };
 
     useEffect(() => {
-        if (activeTab === 'users') {
+        if (activeTab === 'users' || activeTab === 'permissions') {
             loadUsers();
         }
     }, [activeTab]);
+
+    // ──── Permissions state ──────────────────────────────────────────────────────
+    const [permSelectedUser, setPermSelectedUser] = useState(null);
+    const [permMatrix, setPermMatrix] = useState({}); // { page_id: { can_view, can_create, can_edit, can_delete } }
+    const [permLoading, setPermLoading] = useState(false);
+    const [permSaving, setPermSaving] = useState(false);
+    const [permExpandedGroups, setPermExpandedGroups] = useState({});
+
+    const loadUserPermissions = async (userId) => {
+        setPermLoading(true);
+        try {
+            const data = await getUserPermissions(userId);
+            const map = {};
+            (data || []).forEach(p => {
+                map[p.page_id] = {
+                    can_view: !!p.can_view,
+                    can_create: !!p.can_create,
+                    can_edit: !!p.can_edit,
+                    can_delete: !!p.can_delete
+                };
+            });
+            setPermMatrix(map);
+        } catch (err) {
+            console.error('Erro ao carregar permissões:', err);
+        } finally {
+            setPermLoading(false);
+        }
+    };
+
+    const handlePermUserChange = (userId) => {
+        const uid = parseInt(userId);
+        setPermSelectedUser(uid || null);
+        if (uid) loadUserPermissions(uid);
+        else setPermMatrix({});
+    };
+
+    const togglePerm = (pageId, action) => {
+        setPermMatrix(prev => {
+            const curr = prev[pageId] || { can_view: false, can_create: false, can_edit: false, can_delete: false };
+            const updated = { ...curr, [`can_${action}`]: !curr[`can_${action}`] };
+            // If toggling view OFF, also turn off all others
+            if (action === 'view' && !updated.can_view) {
+                updated.can_create = false;
+                updated.can_edit = false;
+                updated.can_delete = false;
+            }
+            // If toggling other ON, ensure view is also ON
+            if (action !== 'view' && updated[`can_${action}`]) {
+                updated.can_view = true;
+            }
+            return { ...prev, [pageId]: updated };
+        });
+    };
+
+    const toggleGroupAll = (groupItems, enable) => {
+        setPermMatrix(prev => {
+            const next = { ...prev };
+            groupItems.forEach(item => {
+                next[item.id] = {
+                    can_view: enable,
+                    can_create: enable,
+                    can_edit: enable,
+                    can_delete: enable
+                };
+            });
+            return next;
+        });
+    };
+
+    const setAllPermissions = (enable) => {
+        const next = {};
+        MENU_GROUPS.forEach(g => {
+            g.items.forEach(item => {
+                next[item.id] = {
+                    can_view: enable,
+                    can_create: enable,
+                    can_edit: enable,
+                    can_delete: enable
+                };
+            });
+        });
+        setPermMatrix(next);
+    };
+
+    const handleSavePermissions = async () => {
+        if (!permSelectedUser) return;
+        setPermSaving(true);
+        try {
+            const permsArray = Object.entries(permMatrix)
+                .filter(([_, p]) => p.can_view || p.can_create || p.can_edit || p.can_delete)
+                .map(([page_id, p]) => ({ page_id, ...p }));
+            await saveUserPermissions(permSelectedUser, permsArray);
+            alert('Permissões salvas com sucesso!');
+        } catch (err) {
+            alert('Erro ao salvar permissões: ' + err.message);
+        } finally {
+            setPermSaving(false);
+        }
+    };
 
     // Company Form State
     const [companyForm, setCompanyForm] = useState({
@@ -880,6 +980,156 @@ export default function Settings() {
                 {activeTab === 'ai' && (
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                         <PCPMetalConfig />
+                    </div>
+                )}
+
+                {/* PERMISSIONS TAB */}
+                {activeTab === 'permissions' && (
+                    <div className="space-y-6 max-w-6xl animate-fadeIn">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
+                                <div className="flex items-center gap-3">
+                                    <Shield className="w-6 h-6 text-indigo-600" />
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-800">Permissões por Usuário</h2>
+                                        <p className="text-sm text-slate-500">Defina o que cada usuário pode acessar e fazer em cada tela.</p>
+                                    </div>
+                                </div>
+                                {permSelectedUser && (
+                                    <button
+                                        onClick={handleSavePermissions}
+                                        disabled={permSaving}
+                                        className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 font-medium transition-colors text-sm shadow-sm"
+                                    >
+                                        <Save className="w-4 h-4" />
+                                        {permSaving ? 'Salvando...' : 'Salvar Permissões'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* User selector */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Selecione o Usuário:</label>
+                                <select
+                                    className="w-full md:w-96 p-3 border border-slate-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    value={permSelectedUser || ''}
+                                    onChange={(e) => handlePermUserChange(e.target.value)}
+                                >
+                                    <option value="">-- Selecione um usuário --</option>
+                                    {usersList.filter(u => u.TipoUsuario !== 'A').map(u => (
+                                        <option key={u.idUsuario} value={u.idUsuario}>{u.NomeCompleto} ({u.Login})</option>
+                                    ))}
+                                    <optgroup label="Administradores (acesso total)">
+                                        {usersList.filter(u => u.TipoUsuario === 'A').map(u => (
+                                            <option key={u.idUsuario} value={u.idUsuario} disabled>{u.NomeCompleto} ({u.Login}) — Admin</option>
+                                        ))}
+                                    </optgroup>
+                                </select>
+                            </div>
+
+                            {/* Quick actions */}
+                            {permSelectedUser && !permLoading && (
+                                <div className="flex gap-3 mb-6">
+                                    <button
+                                        onClick={() => setAllPermissions(true)}
+                                        className="px-4 py-2 text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                                    >
+                                        ✅ Dar Acesso Total
+                                    </button>
+                                    <button
+                                        onClick={() => setAllPermissions(false)}
+                                        className="px-4 py-2 text-sm font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                                    >
+                                        🚫 Remover Tudo
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Permission Matrix */}
+                            {permLoading ? (
+                                <div className="flex items-center justify-center py-16">
+                                    <div className="h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                                </div>
+                            ) : permSelectedUser ? (
+                                <div className="space-y-4">
+                                    {MENU_GROUPS.map(group => {
+                                        const isExpanded = permExpandedGroups[group.id] !== false;
+                                        const allItems = group.items.filter(i => i.id !== 'config');
+                                        if (allItems.length === 0) return null;
+                                        const allChecked = allItems.every(i => permMatrix[i.id]?.can_view);
+
+                                        return (
+                                            <div key={group.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                                                {/* Group Header */}
+                                                <div
+                                                    className="flex items-center justify-between px-5 py-3 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                                                    onClick={() => setPermExpandedGroups(prev => ({ ...prev, [group.id]: !isExpanded }))}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                                                        <span className="text-sm font-bold text-slate-700 uppercase tracking-wider">{group.label}</span>
+                                                        <span className="text-[10px] text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">
+                                                            {allItems.filter(i => permMatrix[i.id]?.can_view).length}/{allItems.length}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); toggleGroupAll(allItems, !allChecked); }}
+                                                        className={`text-xs font-medium px-3 py-1 rounded-lg transition-colors ${allChecked ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                                            }`}
+                                                    >
+                                                        {allChecked ? 'Desmarcar Todos' : 'Marcar Todos'}
+                                                    </button>
+                                                </div>
+
+                                                {/* Items */}
+                                                {isExpanded && (
+                                                    <div className="divide-y divide-slate-100">
+                                                        {/* Header row */}
+                                                        <div className="grid grid-cols-[1fr_80px_80px_80px_80px] px-5 py-2 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                            <span>Página</span>
+                                                            <span className="text-center">Ver</span>
+                                                            <span className="text-center">Criar</span>
+                                                            <span className="text-center">Editar</span>
+                                                            <span className="text-center">Excluir</span>
+                                                        </div>
+                                                        {allItems.map(item => {
+                                                            const p = permMatrix[item.id] || { can_view: false, can_create: false, can_edit: false, can_delete: false };
+                                                            return (
+                                                                <div key={item.id} className="grid grid-cols-[1fr_80px_80px_80px_80px] px-5 py-3 items-center hover:bg-slate-50 transition-colors">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <item.icon className="w-4 h-4 text-slate-400" />
+                                                                        <span className="text-sm text-slate-700 font-medium">{item.label}</span>
+                                                                    </div>
+                                                                    {['view', 'create', 'edit', 'delete'].map(action => (
+                                                                        <div key={action} className="flex justify-center">
+                                                                            <button
+                                                                                onClick={() => togglePerm(item.id, action)}
+                                                                                className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all ${p[`can_${action}`]
+                                                                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                                                        : 'bg-white border-slate-300 text-transparent hover:border-indigo-300'
+                                                                                    }`}
+                                                                            >
+                                                                                <Check className="w-4 h-4" />
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <Shield className="w-12 h-12 text-slate-300 mb-3" />
+                                    <p className="text-slate-400 font-medium">Selecione um usuário acima para gerenciar suas permissões.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Administradores (Admin) possuem acesso total automaticamente.</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 

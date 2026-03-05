@@ -1240,6 +1240,7 @@ router.get('/matrix', async (req, res) => {
                 LEFT JOIN public.sc5010 c5 ON c5.c5_num = TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
                 LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
                 WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                AND TRIM(c2.c2_num) != ''
         `;
 
         const params = [];
@@ -1305,6 +1306,7 @@ router.get('/matrix', async (req, res) => {
             LEFT JOIN public.sc5010 c5 ON c5.c5_num = TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+            AND TRIM(c2.c2_num) != ''
             GROUP BY c2.c2_num, c2.c2_item, c2.c2_sequen, c2.c2_produto
             ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
         `;
@@ -1771,6 +1773,8 @@ router.post('/plan-batch', async (req, res) => {
 // POST /api/production/appoint - Save Appointment
 router.post('/appoint', async (req, res) => {
     try {
+        const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados } = req.body;
+
         const qtyNum = Number(quantidade) || 0;
         if (qtyNum <= 0) {
             return res.status(400).json({ error: 'Quantidade deve ser maior que zero.' });

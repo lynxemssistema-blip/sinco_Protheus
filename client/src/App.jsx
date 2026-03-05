@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { LayoutDashboard, ShoppingCart, Settings as SettingsIcon, Menu, Package, Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2 } from 'lucide-react';
 import { FilterProvider } from './contexts/FilterContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -117,7 +117,6 @@ const Layout = ({ children, fullWidth = true }) => {
             {/* Main Content */}
             <main className="flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative">
                 <FloatingAvisos />
-                <GlobalTimerWidget />
 
                 {/* Topbar Mobile */}
                 <header className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">

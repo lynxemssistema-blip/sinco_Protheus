@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Printer, Users, Calendar, CheckCircle, MessageSquare, Plus, Send, Pencil, Trash2, Image as ImageIcon, Save, XCircle, Filter, ChevronDown } from 'lucide-react';
+import { X, Printer, Users, Calendar, CheckCircle, MessageSquare, Plus, Send, Pencil, Trash2, Image as ImageIcon, Save, XCircle, Filter, ChevronDown, Bell } from 'lucide-react';
 import { getSalesNotes, resolveSalesNote, createSalesNote, updateSalesNote, deleteSalesNote, getProdutos } from '../services/api';
+import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import ProductImageModal from './ProductImageModal';
 
 export default function MeetingReportModal({ isOpen, onClose, orders, filteredData, globalMode = false }) {
@@ -22,6 +24,15 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
 
     const [currentUser, setCurrentUser] = useState('Usuário');
     const [sortOption, setSortOption] = useState('created_desc');
+    const [showResolved, setShowResolved] = useState(true);
+    const [sendAviso, setSendAviso] = useState(true);
+    const { user } = useAuth();
+
+    useEffect(() => {
+        if (user && user.NomeCompleto) {
+            setCurrentUser(user.NomeCompleto);
+        }
+    }, [user]);
 
     const sortedReportData = React.useMemo(() => {
         let sorted = [...reportData];
@@ -113,12 +124,12 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                 orders.forEach(orderNum => {
                     const orderInfo = filteredData?.find(d => d.pedido === orderNum);
                     if (orderInfo) {
-                        grouped[orderNum] = {
-                            info: orderInfo,
-                            items: {}
-                        };
                         const orderNotes = notes.filter(n => n.order_number === orderNum);
                         if (orderNotes.length > 0) {
+                            grouped[orderNum] = {
+                                info: orderInfo,
+                                items: {}
+                            };
                             orderNotes.forEach(note => {
                                 const key = note.item_number || 'GERAL';
                                 if (!grouped[orderNum].items[key]) grouped[orderNum].items[key] = [];
@@ -155,6 +166,28 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                 category: 'Reunião',
                 created_by: currentUser
             });
+
+            if (sendAviso && user?.id) {
+                try {
+                    const token = localStorage.getItem('@metalfisa:token');
+                    // Find the order info to enrich the aviso message
+                    const orderData = Object.values(reportData).find(g => g.info.pedido === order);
+                    const clientName = orderData?.info?.cliente || '';
+
+                    const itemMsg = item === 'GERAL' ? 'Geral' : `Item ${item}`;
+                    const customMsg = `🚨 *Nova Pendência na Ata*\nPedido: ${order} ${clientName ? `(${clientName})` : ''}\nRef: ${itemMsg} ${product ? `[${product}]` : ''}\n\nMensagem: ${replyText}`;
+
+                    // We send to ID 1 (Admin/PCP) as default fallback, but real systems would select dest
+                    await api.post('/avisos', {
+                        idRemetente: user.id,
+                        idDestinatario: 1, // Change if needed to specific group
+                        mensagem: customMsg
+                    }, { headers: { Authorization: `Bearer ${token}` } });
+                } catch (avisoErr) {
+                    console.error('Erro ao enviar aviso automático', avisoErr);
+                }
+            }
+
             setReplyingTo(null);
             setReplyText('');
             fetchReportData();
@@ -297,6 +330,19 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                         </div>
 
                         <div className="flex items-end mb-0.5">
+                            <label className="flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 text-sm text-slate-700 px-4 py-2 rounded-lg h-[38px] transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={showResolved}
+                                    onChange={(e) => setShowResolved(e.target.checked)}
+                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                                Mostrar Notas Resolvidas
+                            </label>
+                        </div>
+
+                        <div className="flex items-end mb-0.5">
                             <div className="flex items-center text-sm text-slate-400 bg-slate-50 px-3 py-2 rounded-lg border h-[38px]">
                                 <Calendar className="w-4 h-4 mr-2" />
                                 {new Date().toLocaleDateString()}
@@ -391,133 +437,162 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                     <div className="text-sm text-slate-400 italic">Sem anotações registradas.</div>
                                                 )}
 
-                                                {Object.entries(group.items).sort().map(([itemKey, notes]) => (
-                                                    <div key={itemKey} className="note-group mb-4 last:mb-0">
-                                                        <div className="flex items-center gap-2 mb-2 border-b border-slate-50 pb-1">
-                                                            <span className={`item-badge text-xs font-bold px-2 py-0.5 rounded ${itemKey === 'GERAL' ? 'bg-slate-200 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>
-                                                                {itemKey === 'GERAL' ? 'GERAL' : `ITEM ${itemKey}`}
-                                                            </span>
-                                                            <button
-                                                                onClick={() => setReplyingTo({ order: group.info.pedido, item: itemKey, product: notes[0]?.product_code })}
-                                                                className="text-slate-400 hover:text-blue-600 print:hidden no-print"
-                                                                title="Adicionar nota"
-                                                            >
-                                                                <Plus className="w-3 h-3" />
-                                                            </button>
-                                                        </div>
+                                                {Object.entries(group.items).sort().map(([itemKey, notes]) => {
+                                                    const visibleNotes = showResolved ? notes : notes.filter(n => !n.is_resolved);
+                                                    if (visibleNotes.length === 0) return null;
 
-                                                        <div className="space-y-2 pl-2">
-                                                            {notes.map(note => (
-                                                                <div key={note.id} className={`note-item relative pl-3 border-l-2 ${note.is_resolved ? 'border-green-200 note-resolved' : 'border-red-400 note-pending'}`}>
-                                                                    {editingNoteId === note.id ? (
-                                                                        /* Editing Mode */
-                                                                        <div className="flex flex-col gap-2 p-2 bg-yellow-50 rounded border border-yellow-200 print:hidden no-print">
-                                                                            <textarea
-                                                                                className="w-full text-sm p-2 border rounded"
-                                                                                rows={2}
-                                                                                value={editText}
-                                                                                onChange={e => setEditText(e.target.value)}
-                                                                            />
-                                                                            <div className="flex justify-end gap-2">
-                                                                                <button onClick={() => setEditingNoteId(null)} className="flex items-center gap-1 px-3 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">
-                                                                                    <XCircle className="w-3 h-3" /> Cancelar
-                                                                                </button>
-                                                                                <button onClick={() => handleSaveEdit(note.id)} className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white hover:bg-blue-700 rounded">
-                                                                                    <Save className="w-3 h-3" /> Salvar
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-                                                                    ) : (
-                                                                        /* View Mode */
-                                                                        <div className="flex justify-between items-start group">
-                                                                            <div className="text-sm text-slate-800 pr-4 flex-1">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <span className={`whitespace-pre-wrap font-medium ${note.is_resolved ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                                                                                        {note.note_text}
-                                                                                    </span>
-                                                                                    {/* Product Image Icon */}
-                                                                                    {note.product_code && (
-                                                                                        <button
-                                                                                            onClick={() => handleViewImage(note.product_code)}
-                                                                                            className="text-slate-400 hover:text-blue-600 print:hidden no-print transition-colors"
-                                                                                            title="Ver Imagem do Produto"
-                                                                                        >
-                                                                                            <ImageIcon className="w-4 h-4" />
-                                                                                        </button>
-                                                                                    )}
-                                                                                </div>
-                                                                                <div className="note-meta text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                                                                                    {note.is_resolved ? (
-                                                                                        <span className="flex items-center text-green-600 font-bold bg-green-50 px-1 rounded">
-                                                                                            <CheckCircle className="w-3 h-3 mr-1" /> Resolvido
-                                                                                        </span>
-                                                                                    ) : (
-                                                                                        <span className="text-red-500 font-bold">• Pendente</span>
-                                                                                    )}
-                                                                                    <span className="mx-1">|</span>
-                                                                                    {note.created_by} em {new Date(note.created_at).toLocaleString()}
-                                                                                </div>
-                                                                            </div>
+                                                    const productCode = notes[0]?.product_code;
 
-                                                                            {/* Actions */}
-                                                                            <div className="flex items-center gap-1 opacity-10 group-hover:opacity-100 transition-opacity print:hidden no-print">
-                                                                                {!note.is_resolved && (
-                                                                                    <button
-                                                                                        onClick={() => handleResolve(note.id)}
-                                                                                        className="text-xs text-green-600 hover:bg-green-50 p-1.5 rounded"
-                                                                                        title="Marcar como Resolvido"
-                                                                                    >
-                                                                                        <CheckCircle className="w-4 h-4" />
-                                                                                    </button>
-                                                                                )}
-                                                                                <button
-                                                                                    onClick={() => startEditing(note)}
-                                                                                    className="text-xs text-amber-500 hover:bg-amber-50 p-1.5 rounded"
-                                                                                    title="Editar"
-                                                                                >
-                                                                                    <Pencil className="w-4 h-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleDelete(note.id)}
-                                                                                    className="text-xs text-red-500 hover:bg-red-50 p-1.5 rounded"
-                                                                                    title="Excluir"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
+                                                    return (
+                                                        <div key={itemKey} className="note-group mb-4 last:mb-0">
+                                                            <div className="flex items-center gap-2 mb-2 border-b border-slate-50 pb-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`item-badge text-xs font-bold px-2 py-0.5 rounded ${itemKey === 'GERAL' ? 'bg-slate-200 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>
+                                                                        {itemKey === 'GERAL' ? 'GERAL' : `ITEM ${itemKey}`}
+                                                                    </span>
+                                                                    {productCode && (
+                                                                        <span className="font-mono text-sm font-bold text-slate-800">
+                                                                            {productCode}
+                                                                        </span>
                                                                     )}
                                                                 </div>
-                                                            ))}
+                                                                <button
+                                                                    onClick={() => setReplyingTo({ order: group.info.pedido, item: itemKey, product: productCode })}
+                                                                    className="text-slate-400 hover:text-blue-600 print:hidden no-print ml-1"
+                                                                    title="Adicionar nota"
+                                                                >
+                                                                    <Plus className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="space-y-2 pl-2">
+                                                                {visibleNotes.map(note => (
+                                                                    <div key={note.id} className={`note-item relative pl-3 border-l-2 ${note.is_resolved ? 'border-green-200 note-resolved' : 'border-red-400 note-pending'}`}>
+                                                                        {editingNoteId === note.id ? (
+                                                                            /* Editing Mode */
+                                                                            <div className="flex flex-col gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200 print:hidden no-print mt-1 mb-2">
+                                                                                <textarea
+                                                                                    className="w-full text-sm p-3 border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                                                                                    rows={3}
+                                                                                    value={editText}
+                                                                                    onChange={e => setEditText(e.target.value)}
+                                                                                />
+                                                                                <div className="flex justify-end gap-2">
+                                                                                    <button onClick={() => setEditingNoteId(null)} className="flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                                                                                        <XCircle className="w-4 h-4" /> Cancelar
+                                                                                    </button>
+                                                                                    <button onClick={() => handleSaveEdit(note.id)} className="flex items-center gap-1 px-4 py-1.5 text-sm font-bold bg-amber-500 text-white hover:bg-amber-600 rounded-lg shadow-sm transition-colors">
+                                                                                        <Save className="w-4 h-4" /> Salvar Edição
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            /* View Mode */
+                                                                            <div className="flex justify-between items-start group">
+                                                                                <div className="text-sm text-slate-800 pr-4 flex-1">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className={`whitespace-pre-wrap font-medium ${note.is_resolved ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                                                                            {note.note_text}
+                                                                                        </span>
+                                                                                        {/* Product Image Icon */}
+                                                                                        {note.product_code && (
+                                                                                            <button
+                                                                                                onClick={() => handleViewImage(note.product_code)}
+                                                                                                className="text-slate-400 hover:text-blue-600 print:hidden no-print transition-colors"
+                                                                                                title="Ver Imagem do Produto"
+                                                                                            >
+                                                                                                <ImageIcon className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="note-meta text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                                                                                        {note.is_resolved ? (
+                                                                                            <span className="flex items-center text-green-600 font-bold bg-green-50 px-1 rounded">
+                                                                                                <CheckCircle className="w-3 h-3 mr-1" /> Resolvido
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="text-red-500 font-bold">• Pendente</span>
+                                                                                        )}
+                                                                                        <span className="mx-1">|</span>
+                                                                                        {note.created_by} em {new Date(note.created_at).toLocaleString()}
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Actions */}
+                                                                                <div className="flex items-center gap-1 opacity-10 group-hover:opacity-100 transition-opacity print:hidden no-print">
+                                                                                    {!note.is_resolved && (
+                                                                                        <button
+                                                                                            onClick={() => handleResolve(note.id)}
+                                                                                            className="text-xs text-green-600 hover:bg-green-50 p-1.5 rounded"
+                                                                                            title="Marcar como Resolvido"
+                                                                                        >
+                                                                                            <CheckCircle className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    )}
+                                                                                    <button
+                                                                                        onClick={() => startEditing(note)}
+                                                                                        className="text-xs text-amber-500 hover:bg-amber-50 p-1.5 rounded"
+                                                                                        title="Editar"
+                                                                                    >
+                                                                                        <Pencil className="w-4 h-4" />
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleDelete(note.id)}
+                                                                                        className="text-xs text-red-500 hover:bg-red-50 p-1.5 rounded"
+                                                                                        title="Excluir"
+                                                                                    >
+                                                                                        <Trash2 className="w-4 h-4" />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
 
                                                 {/* Reply Input Area */}
                                                 {replyingTo && replyingTo.order === group.info.pedido && (
-                                                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100 animate-fadeIn print:hidden no-print">
-                                                        <div className="text-xs font-bold text-blue-800 mb-1">
-                                                            Nova nota para: {replyingTo.item === 'GERAL' ? 'Pedido Geral' : `Item ${replyingTo.item}`}
+                                                    <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 shadow-sm animate-fadeIn print:hidden no-print">
+                                                        <div className="flex justify-between items-center mb-2">
+                                                            <div className="text-sm font-bold text-blue-800">
+                                                                Nova nota para: {replyingTo.item === 'GERAL' ? 'Pedido Geral' : `Item ${replyingTo.item} ${replyingTo.product ? `[${replyingTo.product}]` : ''}`}
+                                                            </div>
+                                                            <label className="flex items-center gap-1.5 text-xs text-slate-600 font-medium cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={sendAviso}
+                                                                    onChange={e => setSendAviso(e.target.checked)}
+                                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                                />
+                                                                <Bell className="w-3 h-3" /> Gerar Aviso Notificação
+                                                            </label>
                                                         </div>
                                                         <div className="flex gap-2">
-                                                            <input
+                                                            <textarea
                                                                 autoFocus
-                                                                className="flex-1 text-sm border rounded p-1 outline-none focus:ring-1 focus:ring-blue-500"
-                                                                placeholder="Digite..."
+                                                                className="flex-1 text-sm border border-blue-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                                                placeholder="Digite os detalhes da pendência/nota..."
+                                                                rows={2}
                                                                 value={replyText}
                                                                 onChange={e => setReplyText(e.target.value)}
-                                                                onKeyDown={e => e.key === 'Enter' && handleSendReply(replyingTo.order, replyingTo.item, replyingTo.product)}
+                                                                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendReply(replyingTo.order, replyingTo.item, replyingTo.product))}
                                                                 disabled={loading}
                                                             />
-                                                            <button
-                                                                onClick={() => handleSendReply(replyingTo.order, replyingTo.item, replyingTo.product)}
-                                                                className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                                            >
-                                                                <Send className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => { setReplyingTo(null); setReplyText(''); }} className="p-1 text-slate-500 hover:bg-slate-200 rounded">
-                                                                <X className="w-4 h-4" />
-                                                            </button>
+                                                            <div className="flex flex-col justify-end gap-1">
+                                                                <button
+                                                                    onClick={() => handleSendReply(replyingTo.order, replyingTo.item, replyingTo.product)}
+                                                                    className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center h-[52px]"
+                                                                    title="Salvar e Enviar"
+                                                                >
+                                                                    <Send className="w-5 h-5" />
+                                                                </button>
+                                                                <button onClick={() => { setReplyingTo(null); setReplyText(''); }} className="py-1 text-xs font-medium text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg">
+                                                                    Cancelar
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}

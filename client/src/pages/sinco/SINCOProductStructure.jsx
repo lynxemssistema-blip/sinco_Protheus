@@ -1,22 +1,35 @@
 import React, { useState } from 'react';
-import { FileText, MessageSquare, XCircle, Search, Package, Network, Layers, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, MessageSquare, XCircle, Search, Package, Network, Layers, ChevronDown, ChevronRight, Filter } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
-import { getSincoProductStructure, getSincoComentariosEngenharia, createSincoComentarioEngenharia, updateSincoComentarioEngenhariaStatus } from '../../services/api';
+import { getSincoProductStructure, getSincoComentariosEngenharia, createSincoComentarioEngenharia, updateSincoComentarioEngenhariaStatus, getSincoProdutosRaizes } from '../../services/api';
 
 const openDoc = (filePath) => {
     if (!filePath) return;
-    window.open(`/api/docs/view?path=${encodeURIComponent(filePath)}`, '_blank', 'noopener,noreferrer');
+    // Força a troca da extensão do arquivo para .pdf
+    const lastDotIndex = filePath.lastIndexOf('.');
+    const lastSlashIndex = Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/'));
+
+    let pdfPath = filePath;
+    // Se encontrou um ponto e ele está depois da última barra (é uma extensão e não parte de um diretório)
+    if (lastDotIndex !== -1 && lastDotIndex > lastSlashIndex) {
+        pdfPath = filePath.substring(0, lastDotIndex) + '.pdf';
+    } else {
+        pdfPath = filePath + '.pdf';
+    }
+
+    window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
 };
 
 // Badge colorido baseado no txtTipoDesenho
 const TIPO_BADGE = {
     'CONJUNTO DE MONTAGEM': 'bg-blue-100 text-blue-700',
-    'CONJUNTO DE SOLDA':    'bg-indigo-100 text-indigo-700',
-    'CHAPARIA':             'bg-amber-100 text-amber-700',
-    'MATERIAL':             'bg-slate-100 text-slate-600',
-    'PINTADO':              'bg-green-100 text-green-700',
-    'NA':                   'bg-gray-100 text-gray-500',
-    'NO CONJUNTO':          'bg-gray-100 text-gray-500',
+    'CONJUNTO DE SOLDA': 'bg-indigo-100 text-indigo-700',
+    'CHAPARIA': 'bg-amber-100 text-amber-700',
+    'MATERIAL': 'bg-slate-100 text-slate-600',
+    'PINTADO': 'bg-green-100 text-green-700',
+    'NA': 'bg-gray-100 text-gray-500',
+    'NO CONJUNTO': 'bg-gray-100 text-gray-500',
 };
 
 function TipoBadge({ tipo }) {
@@ -36,35 +49,69 @@ const fmtQtd = (v) =>
 const SINCOProductStructure = () => {
     const { user } = useAuth();
 
-    const [searchTerm, setSearchTerm]   = useState('');
-    const [isLoading, setIsLoading]     = useState(false);
-    const [structure, setStructure]     = useState(null);
-    const [error, setError]             = useState('');
+    // Produtos Raízes state
+    const [rootProducts, setRootProducts] = useState([]);
+    const [isRootsLoading, setIsRootsLoading] = useState(true);
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+    const [isLoading, setIsLoading] = useState(false);
+    const [structure, setStructure] = useState(null);
+    const [error, setError] = useState('');
     const [expandedRows, setExpandedRows] = useState({});
 
+    // Filters state
+    const [filters, setFilters] = useState({
+        texto: '',
+        tipo: '',
+        comPdf: false,
+        comPendencia: false
+    });
+
     // Comments panel
-    const [isCommentsOpen, setIsCommentsOpen]     = useState(false);
-    const [commentsItem, setCommentsItem]         = useState(null);
-    const [comments, setComments]                 = useState([]);
+    const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+    const [commentsItem, setCommentsItem] = useState(null);
+    const [comments, setComments] = useState([]);
     const [isFetchingComments, setIsFetchingComments] = useState(false);
-    const [newComment, setNewComment]             = useState('');
-    const [resolvingId, setResolvingId]           = useState(null);
-    const [resolveStatus, setResolveStatus]       = useState('FEITO');
+    const [newComment, setNewComment] = useState('');
+    const [resolvingId, setResolvingId] = useState(null);
+    const [resolveStatus, setResolveStatus] = useState('FEITO');
     const [resolveObservation, setResolveObservation] = useState('');
 
-    const handleSearch = async (e) => {
-        e.preventDefault();
+    React.useEffect(() => {
+        loadRootProducts();
+    }, []);
+
+    const loadRootProducts = async () => {
+        setIsRootsLoading(true);
+        try {
+            const roots = await getSincoProdutosRaizes();
+            setRootProducts(roots || []);
+        } catch (err) {
+            console.error('Failed to load root products', err);
+        } finally {
+            setIsRootsLoading(false);
+        }
+    };
+
+    const handleSearch = async (productCode) => {
+        const code = productCode || searchTerm;
         setError('');
-        if (!searchTerm.trim()) return;
+        if (!code?.trim()) return;
+
+        setIsDropdownOpen(false);
+        setSearchTerm(code);
         setIsLoading(true);
         try {
-            const result = await getSincoProductStructure(searchTerm);
+            const result = await getSincoProductStructure(code);
             if (result?.tree) {
                 const initial = {};
                 result.tree.forEach(item => { initial[item.CodMatFabricante] = true; });
                 setExpandedRows(initial);
             }
             setStructure(result);
+            setFilters({ texto: '', tipo: '', comPdf: false, comPendencia: false });
         } catch (err) {
             setError(err.message || 'Erro ao carregar estrutura.');
             setStructure(null);
@@ -129,24 +176,130 @@ const SINCOProductStructure = () => {
         }
     };
 
-    // Build visible rows respecting collapse
+    // Build visible rows respecting collapse and FILTERS
     const buildVisibleRows = (tree) => {
+        if (!tree) return [];
+
+        const { texto, tipo, comPdf, comPendencia } = filters;
+        const hasActiveFilters = texto || tipo || comPdf || comPendencia;
+
+        let filteredTree = tree;
+
+        if (hasActiveFilters) {
+            // First pass: mark matching items
+            const matches = new Set();
+            tree.forEach(item => {
+                let match = true;
+                if (texto) {
+                    const textMatch =
+                        item.CodMatFabricante?.toLowerCase().includes(texto.toLowerCase()) ||
+                        item.DescResumo?.toLowerCase().includes(texto.toLowerCase());
+                    if (!textMatch) match = false;
+                }
+                if (tipo && item.txtTipoDesenho !== tipo) match = false;
+                if (comPdf && !item.hasPdfFile) match = false;
+                if (comPendencia && !structure?.unresolvedComments?.includes(item.CodMatFabricante)) match = false;
+
+                if (match) matches.add(item.CodMatFabricante);
+            });
+
+            // Second pass: include all parents of matching items
+            const keep = new Set(matches);
+            for (let i = tree.length - 1; i >= 0; i--) {
+                const item = tree[i];
+                if (keep.has(item.CodMatFabricante)) {
+                    // Find parent
+                    for (let j = i - 1; j >= 0; j--) {
+                        if (tree[j].nivel < item.nivel) {
+                            keep.add(tree[j].CodMatFabricante);
+                            break;
+                        }
+                    }
+                }
+            }
+            filteredTree = tree.filter(item => keep.has(item.CodMatFabricante));
+        }
+
         const rows = [];
         let hideBelow = -1;
-        for (let i = 0; i < tree.length; i++) {
-            const item = tree[i];
+
+        for (let i = 0; i < filteredTree.length; i++) {
+            const item = filteredTree[i];
+
             if (hideBelow !== -1) {
                 if (item.nivel <= hideBelow) hideBelow = -1;
                 else continue;
             }
-            const isExpanded = expandedRows[item.CodMatFabricante];
-            const hasStructChildren = i + 1 < tree.length && tree[i + 1].nivel > item.nivel;
+
+            // Force expand if filtering, otherwise respect state
+            const isExpanded = hasActiveFilters ? true : expandedRows[item.CodMatFabricante];
+            const hasStructChildren = i + 1 < filteredTree.length && filteredTree[i + 1].nivel > item.nivel;
             const hasMatsOrProcs = (item.materiais?.length > 0 || item.processos?.length > 0);
             const hasChildren = hasStructChildren || hasMatsOrProcs;
+
             if (!isExpanded && hasStructChildren) hideBelow = item.nivel;
+
             rows.push({ item, idx: i, isExpanded, hasChildren });
         }
         return rows;
+    };
+
+    // Aglutinar materiais e exportar Excel
+    const handleGenerateBOM = () => {
+        if (!structure || !structure.tree) return;
+
+        const materialsMap = new Map();
+
+        structure.tree.forEach(item => {
+            if (item.materiais && item.materiais.length > 0) {
+                const parentQtd = parseFloat(item.QtdeTotal || 1);
+
+                item.materiais.forEach(mat => {
+                    const matQtd = parseFloat(mat.quantity || 0);
+                    const totalNeeded = parentQtd * matQtd;
+                    const code = mat.materialCode || 'S/COD';
+
+                    if (materialsMap.has(code)) {
+                        materialsMap.get(code).total += totalNeeded;
+                    } else {
+                        materialsMap.set(code, {
+                            codigo: code,
+                            descricao: mat.materialDescDetal || mat.materialDesc || '—',
+                            unidade: mat.unidade || '—',
+                            familia: mat.familia || '—',
+                            total: totalNeeded
+                        });
+                    }
+                });
+            }
+        });
+
+        const exportData = Array.from(materialsMap.values()).map(m => ({
+            'Código': m.codigo,
+            'Descrição': m.descricao,
+            'Família': m.familia,
+            'Unidade': m.unidade,
+            'Qtd Total': parseFloat(m.total.toFixed(4))
+        })).sort((a, b) => a.Descrição.localeCompare(b.Descrição));
+
+        if (exportData.length === 0) {
+            alert('Nenhum material de consumo encontrado nesta estrutura.');
+            return;
+        }
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        // Ajustar largura das colunas
+        ws['!cols'] = [{ wch: 15 }, { wch: 50 }, { wch: 20 }, { wch: 10 }, { wch: 15 }];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "BOM Materiais");
+        XLSX.writeFile(wb, `BOM_Materiais_${structure.rootCode}.xlsx`);
+    };
+
+    const handleExportPDF = async () => {
+        // Será implementado a seguir usando um serviço importado
+        const { default: generateSincoStructurePdf } = await import('../../services/sincoStructurePdfGenerator');
+        generateSincoStructurePdf(structure, user);
     };
 
     return (
@@ -164,23 +317,47 @@ const SINCOProductStructure = () => {
                             <p className="text-sm text-slate-500">Verifique a árvore de montagem, materiais e processos.</p>
                         </div>
                     </div>
-                    <form onSubmit={handleSearch} className="flex gap-2 w-full md:w-96">
-                        <input
-                            type="text"
-                            placeholder="Buscar código (ex: MT...)"
-                            className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
-                        />
-                        <button
-                            type="submit"
-                            disabled={isLoading || !searchTerm.trim()}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg flex items-center font-medium transition-colors disabled:opacity-50"
-                        >
-                            <Search className="w-4 h-4 mr-2" />
-                            Buscar
-                        </button>
-                    </form>
+                    <div className="w-full md:w-[480px] relative">
+                        <label className="text-xs font-bold text-slate-500 mb-1 block uppercase tracking-wider">Selecione o Produto Raiz:</label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder={isRootsLoading ? "Carregando produtos..." : "Buscar código ou descrição..."}
+                                className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                value={searchTerm}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value);
+                                    setIsDropdownOpen(true);
+                                }}
+                                onFocus={() => setIsDropdownOpen(true)}
+                            />
+                            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+
+                            {isDropdownOpen && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-y-auto z-50">
+                                    {rootProducts
+                                        .filter(p => p.label.toLowerCase().includes(searchTerm.toLowerCase()))
+                                        .map((p, i) => (
+                                            <div
+                                                key={i}
+                                                className="px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-blue-50 transition-colors"
+                                                onClick={() => handleSearch(p.value)}
+                                            >
+                                                <div className="font-mono font-bold text-sm text-blue-700">{p.value}</div>
+                                                {p.description && <div className="text-xs text-slate-500 truncate mt-0.5">{p.description}</div>}
+                                            </div>
+                                        ))}
+                                    {rootProducts.filter(p => p.label.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                                        <div className="p-4 text-center text-sm text-slate-500">Nenhum produto encontrado. Busque ou pressione Enter.</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        {/* Overlay to close dropdown */}
+                        {isDropdownOpen && (
+                            <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)}></div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -223,11 +400,63 @@ const SINCOProductStructure = () => {
                                 <span className="bg-slate-100 text-slate-600 font-bold px-4 py-1.5 rounded-lg text-sm">
                                     {structure.tree.length} Itens
                                 </span>
-                                <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm">
+                                <button onClick={handleGenerateBOM} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm">
                                     <FileText className="w-4 h-4 mr-2" />
-                                    Gerar Lista de Materiais (BOM)
+                                    BOM Materiais (Excel)
+                                </button>
+                                <button onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm">
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    Imprimir Ficha Técnica
                                 </button>
                             </div>
+                        </div>
+
+                        {/* Table Filters Header */}
+                        <div className="bg-slate-50 border-b px-5 py-3 flex flex-wrap gap-4 items-center">
+                            <div className="flex items-center gap-2 text-slate-500 font-medium text-sm">
+                                <Filter className="w-4 h-4" /> Filtros:
+                            </div>
+
+                            <input
+                                type="text"
+                                placeholder="Filtrar código/descrição..."
+                                className="border border-slate-300 rounded text-sm px-3 py-1.5 w-64 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                value={filters.texto}
+                                onChange={e => setFilters(prev => ({ ...prev, texto: e.target.value }))}
+                            />
+
+                            <select
+                                className="border border-slate-300 rounded text-sm px-3 py-1.5 bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                value={filters.tipo}
+                                onChange={e => setFilters(prev => ({ ...prev, tipo: e.target.value }))}
+                            >
+                                <option value="">Todos os Tipos</option>
+                                <option value="CONJUNTO DE MONTAGEM">Conjunto de Montagem</option>
+                                <option value="CONJUNTO DE SOLDA">Conjunto de Solda</option>
+                                <option value="CHAPARIA">Chaparia</option>
+                                <option value="MATERIAL">Material</option>
+                                <option value="PINTADO">Pintado</option>
+                            </select>
+
+                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer bg-red-50 hover:bg-red-100 text-red-700 font-medium px-3 py-1.5 rounded border border-red-200 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.comPdf}
+                                    onChange={e => setFilters(prev => ({ ...prev, comPdf: e.target.checked }))}
+                                    className="rounded border-red-300 text-red-600 focus:ring-red-500"
+                                />
+                                <FileText className="w-4 h-4" /> Somente com PDF
+                            </label>
+
+                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer bg-amber-50 hover:bg-amber-100 text-amber-700 font-medium px-3 py-1.5 rounded border border-amber-200 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.comPendencia}
+                                    onChange={e => setFilters(prev => ({ ...prev, comPendencia: e.target.checked }))}
+                                    className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                Somente com Pendência
+                            </label>
                         </div>
 
                         {/* Table */}
@@ -248,10 +477,10 @@ const SINCOProductStructure = () => {
                                 </thead>
                                 <tbody>
                                     {buildVisibleRows(structure.tree).map(({ item, idx, isExpanded, hasChildren }) => {
-                                        const hasPdf    = item.hasPdfFile;
-                                        const pdfPath   = item.pdfPath;
+                                        const hasPdf = item.hasPdfFile;
+                                        const pdfPath = item.pdfPath;
                                         const hasWarning = structure.unresolvedComments?.includes(item.CodMatFabricante);
-                                        const indentPx  = item.nivel === 0 ? 0 : (item.nivel - 1) * 20;
+                                        const indentPx = item.nivel === 0 ? 0 : (item.nivel - 1) * 20;
 
                                         return (
                                             <React.Fragment key={idx}>
