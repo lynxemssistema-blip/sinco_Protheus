@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import Sidebar from '../components/Sidebar';
 import ProductDocuments from '../components/ProductDocuments';
 import { Search, Package, AlertCircle, Loader2, ChevronRight, Network, FileText, X, Layers } from 'lucide-react';
@@ -23,7 +23,7 @@ const WhereUsedPage = () => {
         setResult(null);
 
         try {
-            const response = await axios.get(`/api/materials/where-used/${searchCode.trim()}`);
+            const response = await api.get(`/materials/where-used/${searchCode.trim()}`);
             setResult(response.data);
         } catch (err) {
             if (err.response?.status === 404) {
@@ -146,8 +146,8 @@ const WhereUsedPage = () => {
                                                 }
                                             }}
                                             className={`p-2 rounded-lg transition-all ${result.tem_arquivos
-                                                    ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
-                                                    : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                                                ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
+                                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                                                 }`}
                                             title={result.tem_arquivos ? `${result.arquivos_count} Documento(s)` : "Sem Documentos"}
                                         >
@@ -227,8 +227,8 @@ const WhereUsedPage = () => {
                                                                             }
                                                                         }}
                                                                         className={`p-2 rounded-lg transition-all ${item.tem_arquivos
-                                                                                ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
-                                                                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                                                                            ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
+                                                                            : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                                                                             }`}
                                                                         title={item.tem_arquivos ? `${item.arquivos_count} Documento(s)` : "Sem Documentos"}
                                                                     >
