@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const mysqlPool = require('../services/mysqlService');
+const XLSX = require('xlsx');
+const archiver = require('archiver');
+const fs = require('fs');
+const nodePath = require('path');
+const ExcelJS = require('exceljs');
 
 // GET /api/pedidos
 router.get('/', async (req, res) => {
@@ -1485,6 +1490,219 @@ router.get('/op-mirror/:id', async (req, res) => {
     } catch (err) {
         console.error('[OP Mirror Error]', err);
         res.status(500).json({ error: 'Erro interno ao gerar espelho de OP', details: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pedidos/op-mirror/:id/export-laser
+// Exporta componentes com operação MO0013 para o template Espelho OS-Corte.xls
+// Retorna um ZIP contendo: template preenchido + Excel de resumo
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/op-mirror/:id/export-laser', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Step 1: Verifica existência do pedido
+        const orderResult = await db.query(
+            `SELECT TRIM(c5.c5_num) AS pedido, TRIM(sa1.a1_nome) AS nome_cliente
+             FROM sc5010 c5
+             LEFT JOIN sa1010 sa1
+               ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli
+               AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+             WHERE TRIM(c5.c5_num) = $1 AND COALESCE(c5.d_e_l_e_t_, '') = ''`,
+            [id]
+        );
+        if (orderResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Pedido não encontrado.' });
+        }
+
+        // Step 2: Explode BOM e filtra apenas componentes com operação MO0013
+        const laserQuery = `
+            WITH RECURSIVE
+            pv_itens AS (
+                SELECT
+                    TRIM(c6.c6_item) AS item_pedido,
+                    TRIM(c6.c6_produto) AS produto_venda,
+                    COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0) AS qtd_venda
+                FROM sc6010 c6
+                LEFT JOIN sc2010 c2
+                    ON c2.c2_filial = c6.c6_filial
+                    AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num)
+                    AND c2.c2_itempv = c6.c6_item
+                    AND c2.c2_sequen = '001'
+                    AND COALESCE(c2.d_e_l_e_t_, '') = ''
+                WHERE TRIM(c6.c6_num) = $1
+                  AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                  AND COALESCE(TRIM(c6.c6_numop), '') != ''
+            ),
+            estrutura AS (
+                SELECT
+                    pv.item_pedido,
+                    0 AS nivel,
+                    pv.produto_venda AS componente,
+                    pv.qtd_venda AS qtd_necessaria
+                FROM pv_itens pv
+
+                UNION ALL
+
+                SELECT
+                    e.item_pedido,
+                    e.nivel + 1,
+                    CAST(TRIM(g1.g1_comp) AS VARCHAR(30)) AS componente,
+                    (e.qtd_necessaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria
+                FROM estrutura e
+                JOIN sg1010 g1
+                    ON TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 15
+            ),
+            laser_agg AS (
+                SELECT
+                    TRIM(e.componente) AS cod_componente,
+                    MIN(TRIM(sb1.b1_desc)) AS descricao,
+                    SUM(e.qtd_necessaria)::numeric AS qtd_requerida
+                FROM estrutura e
+                LEFT JOIN sb1010 sb1
+                    ON TRIM(sb1.b1_cod) = TRIM(e.componente)
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel > 0
+                  AND EXISTS (
+                      SELECT 1 FROM sg2010 g2
+                      WHERE TRIM(g2.g2_produto) = TRIM(e.componente)
+                        AND TRIM(g2.g2_recurso) = 'MO0013'
+                        AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                  )
+                GROUP BY TRIM(e.componente)
+            )
+            SELECT
+                lc.cod_componente,
+                lc.descricao,
+                lc.qtd_requerida,
+                (
+                    SELECT TRIM(g1_mtc.g1_comp)
+                    FROM sg1010 g1_mtc
+                    WHERE TRIM(g1_mtc.g1_cod) = lc.cod_componente
+                      AND TRIM(g1_mtc.g1_comp) LIKE 'MTC%'
+                      AND COALESCE(g1_mtc.d_e_l_e_t_, '') = ''
+                    LIMIT 1
+                ) AS material_chapa
+            FROM laser_agg lc
+            ORDER BY lc.cod_componente;
+        `;
+
+        const laserResult = await db.query(laserQuery, [id]);
+        const components = laserResult.rows;
+
+        if (components.length === 0) {
+            return res.status(404).json({ error: 'Nenhum componente com operação MO0013 encontrado para este pedido.' });
+        }
+
+        // Step 3: Busca caminhos de PDF no MySQL (tipo "desenho" tem prioridade)
+        const componentCodes = components.map(c => c.cod_componente);
+        const placeholders = componentCodes.map(() => '?').join(',');
+        const [docsRows] = await mysqlPool.execute(
+            `SELECT TRIM(produto_codigo) AS produto_codigo, url_arquivo, tipo
+             FROM produtos_docs WHERE produto_codigo IN (${placeholders})`,
+            componentCodes
+        );
+        const docsMap = {};
+        docsRows.forEach(row => {
+            if (!docsMap[row.produto_codigo]) docsMap[row.produto_codigo] = [];
+            docsMap[row.produto_codigo].push(row);
+        });
+        components.forEach(comp => {
+            const docs = docsMap[comp.cod_componente] || [];
+            const drawing = docs.find(d => String(d.tipo || '').toLowerCase().includes('desenho'));
+            comp.pdf_path = drawing ? drawing.url_arquivo : (docs.length > 0 ? docs[0].url_arquivo : '');
+        });
+
+        // Step 4: Lê o template .xls da rede
+        const templatePath = process.env.LASER_TEMPLATE_PATH ||
+            '\\\\192.168.1.253\\Estrutura Lynx\\023-SGQ\\023-001-FORMULARIOS\\Espelho OS-Corte.xls';
+
+        let templateBuffer;
+        try {
+            templateBuffer = fs.readFileSync(templatePath);
+        } catch (err) {
+            return res.status(500).json({
+                error: `Não foi possível ler o template em: ${templatePath}`,
+                details: err.message
+            });
+        }
+
+        // Step 5: Preenche a aba "Import XLS" a partir da linha 7
+        const workbook = XLSX.read(templateBuffer, { type: 'buffer' });
+        const sheetName = 'Import XLS';
+        if (!workbook.SheetNames.includes(sheetName)) {
+            return res.status(500).json({ error: `Aba "${sheetName}" não encontrada no template.` });
+        }
+
+        const sheet = workbook.Sheets[sheetName];
+
+        components.forEach((comp, idx) => {
+            const row = 7 + idx;
+            sheet[`A${row}`] = { v: comp.cod_componente, t: 's' };
+            sheet[`B${row}`] = { v: parseFloat(comp.qtd_requerida), t: 'n' };
+            sheet[`H${row}`] = { v: comp.material_chapa || '', t: 's' };
+            sheet[`K${row}`] = { v: comp.pdf_path || '', t: 's' };
+        });
+
+        // Atualiza o range da aba para incluir todas as novas linhas
+        const lastRow = 6 + components.length; // 0-indexed last row
+        const currentRange = XLSX.utils.decode_range(sheet['!ref'] || 'A1:K6');
+        currentRange.e.r = Math.max(currentRange.e.r, lastRow);
+        currentRange.e.c = Math.max(currentRange.e.c, 10); // coluna K = índice 10
+        sheet['!ref'] = XLSX.utils.encode_range(currentRange);
+
+        const templateFilled = XLSX.write(workbook, { type: 'buffer', bookType: 'xls' });
+
+        // Step 6: Cria Excel de resumo (ExcelJS)
+        const summaryWb = new ExcelJS.Workbook();
+        const ws = summaryWb.addWorksheet('Componentes MO0013');
+        ws.columns = [
+            { header: 'Cód Componente',     key: 'cod',   width: 20 },
+            { header: 'Descrição',          key: 'desc',  width: 40 },
+            { header: 'Qtde Requerida',     key: 'qtd',   width: 15 },
+            { header: 'Material Chapa MTC', key: 'chapa', width: 22 },
+            { header: 'Endereço PDF',       key: 'pdf',   width: 55 },
+        ];
+        ws.getRow(1).eachCell(cell => {
+            cell.font = { bold: true };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        });
+        components.forEach(comp => {
+            ws.addRow({
+                cod:   comp.cod_componente,
+                desc:  comp.descricao || '',
+                qtd:   parseFloat(comp.qtd_requerida),
+                chapa: comp.material_chapa || '',
+                pdf:   comp.pdf_path || '',
+            });
+        });
+        const summaryBuffer = await summaryWb.xlsx.writeBuffer();
+
+        // Step 7: Monta o ZIP e envia
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const pedidoRef = id.trim();
+        const zipName      = `Corte-Laser_${pedidoRef}_${dateStr}.zip`;
+        const templateName = `Espelho-OS-Corte_${pedidoRef}_${dateStr}.xls`;
+        const summaryName  = `Componentes-MO0013_${pedidoRef}_${dateStr}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+        const archive = archiver('zip', { zlib: { level: 6 } });
+        archive.on('error', err => { throw err; });
+        archive.pipe(res);
+        archive.append(Buffer.from(templateFilled), { name: templateName });
+        archive.append(Buffer.from(summaryBuffer),  { name: summaryName });
+        await archive.finalize();
+
+    } catch (err) {
+        console.error('[Export Laser Error]', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Erro ao gerar exportação laser', details: err.message });
+        }
     }
 });
 

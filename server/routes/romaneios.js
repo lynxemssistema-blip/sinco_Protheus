@@ -88,6 +88,26 @@ router.get('/types', async (req, res) => {
             if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro valor_unitario:', e.message);
         }
 
+        // Tabela de Recebimentos Parciais
+        try {
+            await conn.execute(`
+                CREATE TABLE IF NOT EXISTS app_romaneio_recebimentos (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    romaneio_id INT NOT NULL,
+                    romaneio_item_id INT NOT NULL,
+                    quantidade DECIMAL(15,2) NOT NULL,
+                    data_recebimento DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    usuario VARCHAR(100),
+                    observacao TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_item (romaneio_item_id)
+                )
+            `);
+            console.log('✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.');
+        } catch (e) {
+            console.error('⚠️ [Romaneios] Erro app_romaneio_recebimentos:', e.message);
+        }
+
         conn.release();
     } catch (err) {
         console.error('⚠️ [Romaneios] Falha geral na migração:', err.message);
@@ -258,13 +278,41 @@ router.put('/:id/status', async (req, res) => {
     }
 });
 
-// Deletar Romaneio
-router.delete('/:id', async (req, res) => {
+// --- RECEBIMENTOS PARCIAIS: ESPECÍFICAS ANTES DAS GENÉRICAS ---
+// 4. Deletar um recebimento específico (Movido para cá para não cair no router.delete('/:id'))
+router.delete('/recebimentos/:id', async (req, res) => {
     try {
-        await mysqlPool.execute('DELETE FROM app_romaneios WHERE id = ?', [req.params.id]);
-        res.json({ message: 'Romaneio excluído com sucesso' });
+        const recebimentoId = req.params.id;
+
+        const [result] = await mysqlPool.execute('DELETE FROM app_romaneio_recebimentos WHERE id = ?', [recebimentoId]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Recebimento não encontrado' });
+        }
+
+        res.json({ message: 'Recebimento excluído com sucesso' });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Deletar Romaneio (com cascade)
+router.delete('/:id', async (req, res) => {
+    const conn = await mysqlPool.getConnection();
+    try {
+        await conn.beginTransaction();
+        const id = req.params.id;
+        await conn.execute('DELETE FROM app_romaneio_recebimentos WHERE romaneio_id = ?', [id]);
+        await conn.execute('DELETE FROM app_romaneio_revisions WHERE romaneio_id = ?', [id]);
+        await conn.execute('DELETE FROM app_romaneio_items WHERE romaneio_id = ?', [id]);
+        await conn.execute('DELETE FROM app_romaneios WHERE id = ?', [id]);
+        await conn.commit();
+        res.json({ message: 'Romaneio excluído com sucesso' });
+    } catch (err) {
+        await conn.rollback();
+        res.status(500).json({ error: err.message });
+    } finally {
+        conn.release();
     }
 });
 
@@ -394,5 +442,187 @@ router.get('/items/search', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// --- RECEBIMENTOS PARCIAIS ---
+
+// 1. Listar itens de romaneios com saldo pendente ou já recebido (Filtros avançados)
+router.get('/recebimentos/pendentes', async (req, res) => {
+    try {
+        const { search, fornecedor, romaneioId, viewMode, tipoRomaneio } = req.query;
+        // viewMode: 'pendentes' ou 'todos'
+
+        let query = `
+            SELECT 
+                i.id as item_id, i.romaneio_id, i.codigo_produto, i.descricao_produto, 
+                i.quantidade as quantidade_enviada, i.pedido, i.item_pedido,
+                r.cliente_nome as fornecedor_nome, r.cliente_cod as fornecedor_cod, r.data_liberacao, r.status as romaneio_status,
+                r.data_previsao_retorno, t.description as romaneio_tipo, t.id as tipo_id,
+                COALESCE(SUM(rec.quantidade), 0) as quantidade_recebida,
+                (i.quantidade - COALESCE(SUM(rec.quantidade), 0)) as saldo_pendente,
+                MAX(rec.data_recebimento) as data_ultimo_recebimento,
+                SUBSTRING_INDEX(GROUP_CONCAT(rec.usuario ORDER BY rec.data_recebimento DESC SEPARATOR '|'), '|', 1) as ultimo_usuario
+            FROM app_romaneio_items i
+            JOIN app_romaneios r ON i.romaneio_id = r.id
+            LEFT JOIN app_romaneio_types t ON r.tipo_id = t.id
+            LEFT JOIN app_romaneio_recebimentos rec ON i.id = rec.romaneio_item_id
+            WHERE 1=1
+        `;
+
+        const params = [];
+
+        if (search) {
+            query += ` AND (i.codigo_produto LIKE ? OR i.descricao_produto LIKE ?)`;
+            params.push(`%${search}%`, `%${search}%`);
+        }
+
+        if (fornecedor) {
+            query += ` AND (r.cliente_nome LIKE ? OR r.cliente_cod LIKE ?)`;
+            params.push(`%${fornecedor}%`, `%${fornecedor}%`);
+        }
+
+        if (romaneioId) {
+            query += ` AND r.id = ?`;
+            params.push(romaneioId);
+        }
+
+        if (tipoRomaneio) {
+            query += ` AND r.tipo_id = ?`;
+            params.push(tipoRomaneio);
+        }
+
+        query += ` GROUP BY i.id, i.romaneio_id, i.codigo_produto, i.descricao_produto, i.quantidade, i.pedido, i.item_pedido, r.cliente_nome, r.cliente_cod, r.data_liberacao, r.status, r.data_previsao_retorno, t.description, t.id`;
+
+        // Having clause para filtrar pelo saldo
+        if (viewMode === 'pendentes' || !viewMode) {
+            query += ` HAVING saldo_pendente > 0`;
+        }
+
+        query += ` ORDER BY r.data_liberacao DESC LIMIT 500`;
+
+        const [rows] = await mysqlPool.execute(query, params);
+
+        // ENRICHMENT: Docs (from MySQL) and OP (from PostgreSQL)
+        if (rows.length > 0) {
+            const productCodes = [...new Set(rows.map(r => r.codigo_produto).filter(c => c))];
+
+            // Fetch Docs
+            let docsMap = {};
+            if (productCodes.length > 0) {
+                const CHUNK_SIZE = 100;
+                for (let i = 0; i < productCodes.length; i += CHUNK_SIZE) {
+                    const chunk = productCodes.slice(i, i + CHUNK_SIZE);
+                    const placeholders = chunk.map(() => '?').join(',');
+                    const [docsRows] = await mysqlPool.execute(
+                        `SELECT DISTINCT TRIM(produto_codigo) as produto_codigo, url_arquivo, tipo FROM produtos_docs WHERE produto_codigo IN (${placeholders})`,
+                        chunk
+                    );
+                    docsRows.forEach(row => {
+                        if (!docsMap[row.produto_codigo]) docsMap[row.produto_codigo] = [];
+                        docsMap[row.produto_codigo].push(row);
+                    });
+                }
+            }
+
+            // Fetch OP from Postgres
+            const orderPairs = rows.map(r => ({ pedido: String(r.pedido || '').trim(), item: String(r.item_pedido || '').trim() }))
+                .filter(p => p.pedido && p.item);
+
+            let pgMap = {};
+            if (orderPairs.length > 0) {
+                try {
+                    // Create parameterized tuples string for Postgres IN clause
+                    const tupleValues = orderPairs.map((_, i) => `($${(i * 2) + 1}, $${(i * 2) + 2})`).join(', ');
+                    const pgParams = orderPairs.flatMap(p => [p.pedido, p.item]);
+                    const pgQuery = `
+                        SELECT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item, TRIM(c2_num) as op_num 
+                        FROM public.sc2010 
+                        WHERE (TRIM(c2_pedido), TRIM(c2_itempv)) IN (${tupleValues}) 
+                          AND COALESCE(d_e_l_e_t_, '') = ''
+                    `;
+                    const pgResult = await db.query(pgQuery, pgParams);
+                    pgResult.rows.forEach(r => {
+                        pgMap[`${r.pedido}-${r.item}`] = r.op_num;
+                    });
+                } catch (pgErr) {
+                    console.error('Erro ao buscar OP no Postgres:', pgErr.message);
+                }
+            }
+
+            // Map data back to rows
+            rows.forEach(row => {
+                // Attach Docs
+                const docs = docsMap[row.codigo_produto] || [];
+                row.has_docs = docs.length > 0;
+                row.docs_count = docs.length;
+                const drawing = docs.find(d => String(d.tipo).toLowerCase().includes('desenho'));
+                row.has_drawing = !!drawing;
+                row.drawing_url = drawing ? drawing.url_arquivo : null;
+                row.first_doc = docs.length > 0 ? docs[0].url_arquivo : null;
+
+                // Attach OP
+                if (row.pedido && row.item_pedido) {
+                    const op = pgMap[`${String(row.pedido).trim()}-${String(row.item_pedido).trim()}`];
+                    row.op_num = op || null;
+                }
+            });
+        }
+
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Registrar um recebimento para um item
+router.post('/items/:itemId/receber', async (req, res) => {
+    try {
+        const { romaneio_id, quantidade, usuario, observacao, data_recebimento } = req.body;
+        const romaneio_item_id = req.params.itemId;
+
+        if (!quantidade || quantidade <= 0) {
+            return res.status(400).json({ error: 'Quantidade inválida' });
+        }
+
+        let dataFormatada = data_recebimento || new Date();
+        if (typeof dataFormatada === 'string' && dataFormatada.includes('T')) {
+            dataFormatada = dataFormatada.replace('T', ' ') + (dataFormatada.length === 16 ? ':00' : '');
+        }
+
+        await mysqlPool.execute(
+            `INSERT INTO app_romaneio_recebimentos
+                            (romaneio_id, romaneio_item_id, quantidade, usuario, observacao, data_recebimento)
+                        VALUES(?, ?, ?, ?, ?, ?)`,
+            [
+                romaneio_id,
+                romaneio_item_id,
+                quantidade,
+                usuario || 'Sistema',
+                observacao || '',
+                dataFormatada
+            ]
+        );
+
+        res.json({ message: 'Recebimento registrado com sucesso' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. Histórico de recebimentos de um item
+router.get('/items/:itemId/historico', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.execute(
+            `SELECT * FROM app_romaneio_recebimentos 
+             WHERE romaneio_item_id = ?
+                            ORDER BY data_recebimento DESC, created_at DESC`,
+            [req.params.itemId]
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 
 module.exports = router;

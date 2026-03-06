@@ -2,21 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer } from 'lucide-react';
 import { getRomaneios, deleteRomaneio, updateRomaneioStatus } from '../services/api';
 import RomaneioForm from '../components/RomaneioForm';
+import useStickyState from '../hooks/useStickyState';
 
 export default function Romaneios() {
-    const [view, setView] = useState('list'); // list | form
+    const [view, setView] = useStickyState('list', '@metalfisa:roma_view'); // list | form
     const [romaneios, setRomaneios] = useState([]);
-    const [selectedId, setSelectedId] = useState(null);
+    const [selectedId, setSelectedId] = useStickyState(null, '@metalfisa:roma_selectedId');
     const [initialStep, setInitialStep] = useState(1);
     const [loading, setLoading] = useState(false);
 
     // Filters
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         search: '',
         status: '',
         startDate: '',
         endDate: ''
-    });
+    }, '@metalfisa:roma_filters');
 
     useEffect(() => {
         if (view === 'list') fetchRomaneios();
@@ -378,7 +379,7 @@ function ProductSearch() {
             )}
 
             {/* Print Stylesheet */}
-            <style jsx>{`
+            <style>{`
                 @media print {
                     body * {
                         visibility: hidden;

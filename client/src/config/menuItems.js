@@ -2,7 +2,8 @@ import {
     LayoutDashboard, ShoppingCart, Settings as SettingsIcon, Menu, Package,
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
-    Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers
+    Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
+    FileUp, Target, History, GitMerge, Inbox
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -41,6 +42,7 @@ export const MENU_GROUPS = [
         items: [
             { id: 'painel', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'matriz', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
+            { id: 'apontamento_vertical', label: 'Apontamento Vertical/Operação', path: '/pcp/apontamento-vertical', icon: ClipboardList },
             { id: 'gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
             { id: 'ops', label: 'Ordens de Produção', path: '/producao', icon: Factory },
             { id: 'ops_detalhe', label: 'Consulta Detalhada OP', path: '/producao/op', icon: ClipboardCheck },
@@ -63,6 +65,7 @@ export const MENU_GROUPS = [
         label: 'Logística',
         items: [
             { id: 'romaneios', label: 'Expedição (Romaneios)', path: '/romaneios', icon: Truck },
+            { id: 'recebimentos', label: 'Recebimento de Retornos', path: '/recebimentos', icon: Inbox },
             { id: 'estoque', label: 'Estoque & Saldos', path: '/saldo-materiais', icon: Package }
         ]
     },
@@ -83,6 +86,16 @@ export const MENU_GROUPS = [
             { id: 'sgq', label: 'Gestão SGQ', path: '/sgq', icon: Building2 },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
             { id: 'relatorios', label: 'Relatórios Gerais', path: '/relatorios', icon: FileText }
+        ]
+    },
+    {
+        id: 'vmi',
+        label: 'VMI',
+        items: [
+            { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
+            { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },
+            { id: 'vmi_estrategia', label: 'Estratégia de Produção', path: '/vmi/estrategia', icon: GitMerge },
+            { id: 'vmi_historico', label: 'Histórico & Evolução', path: '/vmi/historico', icon: History }
         ]
     },
     {

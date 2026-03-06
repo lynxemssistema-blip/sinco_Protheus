@@ -19,12 +19,14 @@ const ProductionOrders = React.lazy(() => import('./pages/ProductionOrders'));
 const ProductionOrdersByOp = React.lazy(() => import('./pages/ProductionOrdersByOp'));
 const ProductCatalog = React.lazy(() => import('./pages/ProductCatalog'));
 const Romaneios = React.lazy(() => import('./pages/Romaneios'));
+const RecebimentoRomaneios = React.lazy(() => import('./pages/RecebimentoRomaneios'));
 const BOMGenerator = React.lazy(() => import('./pages/BOMGenerator'));
 const Login = React.lazy(() => import('./pages/Login'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const ProductionControl = React.lazy(() => import('./pages/ProductionControl'));
 const ProductionAnalytics = React.lazy(() => import('./pages/ProductionAnalytics'));
 const ProductionMatrixPage = React.lazy(() => import('./pages/ProductionMatrixPage'));
+const VerticalAppointmentPage = React.lazy(() => import('./pages/VerticalAppointmentPage'));
 const EngineeringOrdersPage = React.lazy(() => import('./pages/EngineeringOrdersPage'));
 const ProductionGanttPlanning = React.lazy(() => import('./pages/ProductionGanttPlanning'));
 const StockBalances = React.lazy(() => import('./pages/StockBalances'));
@@ -50,6 +52,10 @@ const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/Si
 const ApontamentoPorUsuarioOpPage = React.lazy(() => import('./pages/pcp/ApontamentoPorUsuarioOpPage'));
 const AvisosHistorico = React.lazy(() => import('./pages/AvisosHistorico'));
 const SINCOProductStructure = React.lazy(() => import('./pages/sinco/SINCOProductStructure'));
+const VMIUploadPage = React.lazy(() => import('./pages/vmi/VMIUploadPage'));
+const VMIDashboardPage = React.lazy(() => import('./pages/vmi/VMIDashboardPage'));
+const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage'));
+const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -218,6 +224,11 @@ function App() {
                                                 <Romaneios />
                                             </Layout>
                                         } />
+                                        <Route path="/recebimentos" element={
+                                            <Layout>
+                                                <RecebimentoRomaneios />
+                                            </Layout>
+                                        } />
                                         <Route path="/saldo-materiais" element={
                                             <Layout>
                                                 <StockBalances />
@@ -251,6 +262,11 @@ function App() {
                                         <Route path="/producao-matrix" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionMatrixPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/apontamento-vertical" element={
+                                            <Layout fullWidth={true}>
+                                                <VerticalAppointmentPage />
                                             </Layout>
                                         } />
                                         <Route path="/visao-producao" element={
@@ -368,6 +384,28 @@ function App() {
                                         <Route path="/pcp/apontamento-por-usuario-op" element={
                                             <Layout fullWidth={true}>
                                                 <ApontamentoPorUsuarioOpPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* VMI Routes */}
+                                        <Route path="/vmi/leitura" element={
+                                            <Layout fullWidth={true}>
+                                                <VMIUploadPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/vmi/dashboard" element={
+                                            <Layout fullWidth={true}>
+                                                <VMIDashboardPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/vmi/estrategia" element={
+                                            <Layout fullWidth={true}>
+                                                <VMIEstrategiaPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/vmi/historico" element={
+                                            <Layout fullWidth={true}>
+                                                <VMIHistoricoPage />
                                             </Layout>
                                         } />
                                     </Route>

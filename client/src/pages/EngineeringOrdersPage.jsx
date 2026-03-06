@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
     Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight,
     Package, Layers, FileText, FileSpreadsheet, Loader2,
-    GripVertical, Settings, X, Eye, EyeOff
+    GripVertical, Settings, X, Eye, EyeOff, Scissors
 } from 'lucide-react';
 import {
     getPedidosFlat, getProdutos, getReportDownloadUrl,
@@ -21,6 +21,7 @@ import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
+import useStickyState from '../hooks/useStickyState';
 
 // ─── Column definitions ────────────────────────────────────────────────────────
 const ALL_COLUMNS = [
@@ -221,9 +222,9 @@ const EngineeringOrdersPage = () => {
     const limit = 50;
 
     // Tipo frontend filter (multi-select)
-    const [tipoFilter, setTipoFilter] = useState([]);
+    const [tipoFilter, setTipoFilter] = useStickyState([], '@metalfisa:eng_tipoFilter');
     // Emissão frontend filter (single date)
-    const [emissaoFilter, setEmissaoFilter] = useState('');
+    const [emissaoFilter, setEmissaoFilter] = useStickyState('', '@metalfisa:eng_emissaoFilter');
     const [showSettings, setShowSettings] = useState(false);
     const [colConfig, setColConfig] = useState(() => loadColConfigLocal());
 
@@ -334,6 +335,17 @@ const EngineeringOrdersPage = () => {
         setOrders(prev => prev.map(i =>
             (i.pedido === pedido && i.item === itemCode) ? { ...i, ...newData } : i
         ));
+    };
+
+    // Exportar Espelho OS Corte Laser (MO0013) — requer filtro por pedido específico
+    const handleDownloadLaserExport = () => {
+        const pedido = (filters.pedido || '').trim();
+        if (!pedido) {
+            alert('Filtre por um número de pedido específico para gerar o Espelho OS Corte (Laser).');
+            return;
+        }
+        const token = localStorage.getItem('@MetalFisa:token') || '';
+        window.open(`/api/pedidos/op-mirror/${encodeURIComponent(pedido)}/export-laser?token=${token}`, '_blank');
     };
 
     // Excel — export ALL data matching current filters (no pagination limit)
@@ -712,6 +724,14 @@ const EngineeringOrdersPage = () => {
                             title="Exportar Excel (todos os filtros)"
                         >
                             <FileSpreadsheet className="h-4 w-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleDownloadLaserExport}
+                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium rounded-lg text-sm px-3 py-2.5 transition-colors flex items-center justify-center"
+                            title="Exportar OS Corte Laser (MO0013) — filtre por pedido específico"
+                        >
+                            <Scissors className="h-4 w-4" />
                         </button>
                     </div>
 

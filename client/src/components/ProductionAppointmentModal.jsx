@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Save, Clock, X, CheckSquare, ChevronRight, CheckCircle, AlertTriangle, History, ChevronDown, ChevronUp, Play, Pause, Square, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppointmentHistory } from '../services/api';
@@ -34,6 +34,18 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [showHistory, setShowHistory] = useState(false);
+    const qtdInputRef = useRef(null);
+
+    // Auto-focus no campo de quantidade ao abrir o modal
+    useEffect(() => {
+        // Um pequeno delay garante que o modal terminou de renderizar na tela
+        const timer = setTimeout(() => {
+            if (qtdInputRef.current) {
+                qtdInputRef.current.focus();
+            }
+        }, 100);
+        return () => clearTimeout(timer);
+    }, []);
 
     // No tick interval — purely event-driven
 
@@ -279,10 +291,11 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                                 <span className="text-xs font-bold text-slate-500">Saldo: {balance}</span>
                             </div>
                             <input type="number" step="0.01" required
+                                ref={qtdInputRef}
                                 max={balance}
                                 className="w-full border rounded p-2 text-lg text-slate-900 border-slate-300 focus:border-green-500 outline-none"
                                 value={formData.quantidade} onChange={e => setFormData({ ...formData, quantidade: e.target.value })}
-                                placeholder={`Máx: ${balance}`} autoFocus={false} />
+                                placeholder={`Máx: ${balance}`} autoFocus />
 
                             <div className="mt-1 flex justify-between text-[11px]">
                                 <span className="text-slate-400">Pedido: {planned} | Já Prod: {produced}</span>

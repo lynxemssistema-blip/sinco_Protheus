@@ -135,6 +135,9 @@ app.use('/api/sgq-documents', require('./routes/sgq_documents'));
 // AI Document Assistant & Import/Export
 app.use('/api/ai', require('./routes/ai'));
 
+// VMI — Vendor Managed Inventory
+app.use('/api/vmi', require('./routes/vmi'));
+
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));

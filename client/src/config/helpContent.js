@@ -214,6 +214,29 @@ export const HELP_CONTENT = {
         ],
     },
 
+    '/pcp/apontamento-vertical': {
+        id: 'apontamento-vertical',
+        category: 'PCP',
+        categoryColor: '#d97706',
+        title: 'Apontamento Vertical (Fila Mestre)',
+        icon: 'List',
+        description: 'Fila vertical contínua para apontamentos massivos e rastreabilidade visual.',
+        steps: [
+            'Filtre pelas OPs, Pedidos, Clientes ou Produtos desejados.',
+            'A lista apresenta em coluna o progresso exato de cada peça.',
+            'Clique em APONTAR para lançar quantidades usando o Autofocus do formulário.',
+            'Visualize o último operador e a data de apontamento abaixo da meta de Planejamento.',
+            'Ícones vermelhos de PDF permitem abrir os desenhos diretamente da engenharia.'
+        ],
+        tips: [
+            'A Fila Vertical possui filtro rigoroso para prevenir tráfego excessivo de rede, use barras de busca.',
+        ],
+        links: [
+            { label: 'Matriz de Produção', path: '/producao-matrix' },
+            { label: 'Controle de Produção', path: '/controle-producao' },
+        ],
+    },
+
     // =============================================================
     // ENGENHARIA
     // =============================================================
@@ -581,6 +604,75 @@ export const HELP_CONTENT = {
         ],
         links: [
             { label: 'Pedidos de Venda', path: '/' },
+        ],
+    },
+
+    // =============================================================
+    // VMI (VENDOR MANAGED INVENTORY)
+    // =============================================================
+    '/vmi': {
+        id: 'vmi-dashboard',
+        category: 'Comercial',
+        categoryColor: '#2563eb',
+        title: 'VMI Dashboard',
+        icon: 'BarChart',
+        description: 'Painel Central do VMI (Estoque Gerenciado pelo Fornecedor).',
+        steps: [
+            'Acesse o Dashboard para verificar a saúde dos níveis de estoque dos clientes.',
+            'Verifique alertas de ruptura (estoque baixo) ou excesso.',
+            'Acompanhe o consumo médio diário e a cobertura de dias restantes.',
+        ],
+        links: [
+            { label: 'VMI Estratégia', path: '/vmi/estrategia' },
+            { label: 'VMI Upload', path: '/vmi/upload' },
+        ],
+    },
+
+    '/vmi/estrategia': {
+        id: 'vmi-estrategia',
+        category: 'Comercial',
+        categoryColor: '#2563eb',
+        title: 'VMI Estratégia',
+        icon: 'TrendingUp',
+        description: 'Análise aprofundada da estratégia de abastecimento via Kanban VMI.',
+        steps: [
+            'Revise os parâmetros Min, Max e de Segurança acordados com o cliente.',
+            'Acompanhe simulações visuais da queima em tempo real frente aos Lead Times VMI.'
+        ],
+        links: [
+            { label: 'VMI Dashboard', path: '/vmi' },
+        ],
+    },
+
+    '/vmi/historico': {
+        id: 'vmi-historico',
+        category: 'Comercial',
+        categoryColor: '#2563eb',
+        title: 'VMI Histórico',
+        icon: 'History',
+        description: 'Histórico cronológico de movimentações e envios programados VMI.',
+        steps: [
+            'Consulte um log auditável das leituras do cliente.',
+            'Analise a progressão exata antes das reposições de produtos.',
+        ],
+        links: [
+            { label: 'VMI Dashboard', path: '/vmi' },
+        ],
+    },
+
+    '/vmi/upload': {
+        id: 'vmi-upload',
+        category: 'Comercial',
+        categoryColor: '#2563eb',
+        title: 'VMI Upload de Dados',
+        icon: 'UploadCloud',
+        description: 'Envio em lote (planilha/csv) de contagens periódicas do estoque do cliente.',
+        steps: [
+            'Gere e faça upload do relatório padronizado do cliente.',
+            'O sistema processa colunas SKU e Quantidade para gerar alertas na matriz VMI.'
+        ],
+        links: [
+            { label: 'VMI Dashboard', path: '/vmi' },
         ],
     },
 

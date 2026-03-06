@@ -438,4 +438,435 @@ LIMIT 2000;
   }
 });
 
+// GET /api/producao/vertical-pendencias - Buscar todas as operações pendentes (roteiro completo) baseadas no filtro
+router.get('/vertical-pendencias', async (req, res) => {
+  try {
+    const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate } = req.query;
+
+    if (!op && !pedido && !produto && !cliente && !plan_inicio_de && !plan_inicio_ate && !plan_fim_de && !plan_fim_ate) {
+      return res.status(400).json({ error: 'É obrigatório informar ao menos um filtro (OP, Pedido, Produto, Cliente ou Período de Planejamento).' });
+    }
+
+    console.log(`🏭 [VERTICAL-PENDENCIAS] Buscando roteiro completo com Filtros:`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
+
+    let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''"];
+    let paramsArr = [];
+    let pCount = 1;
+
+    // PRE-FILTER BY DATE on MySQL
+    let opFilterFromMySQL = null;
+    if (plan_inicio_de || plan_inicio_ate || plan_fim_de || plan_fim_ate) {
+      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE 1=1`;
+      let mysqlParams = [];
+
+      if (plan_inicio_de) {
+        mysqlQuery += ` AND data_planejada_inicio >= ?`;
+        mysqlParams.push(`${plan_inicio_de} 00:00:00`);
+      }
+      if (plan_inicio_ate) {
+        mysqlQuery += ` AND data_planejada_inicio <= ?`;
+        mysqlParams.push(`${plan_inicio_ate} 23:59:59`);
+      }
+      if (plan_fim_de) {
+        mysqlQuery += ` AND data_planejada_fim >= ?`;
+        mysqlParams.push(`${plan_fim_de} 00:00:00`);
+      }
+      if (plan_fim_ate) {
+        mysqlQuery += ` AND data_planejada_fim <= ?`;
+        mysqlParams.push(`${plan_fim_ate} 23:59:59`);
+      }
+
+      const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
+      if (plannedOps.length === 0) {
+        return res.json([]); // No OPs planned in this date range at all
+      }
+      opFilterFromMySQL = plannedOps.map(o => o.op_numero);
+    }
+
+    if (opFilterFromMySQL) {
+      if (opFilterFromMySQL.length > 5000) {
+        opFilterFromMySQL = opFilterFromMySQL.slice(0, 5000);
+      }
+      const inPlaceholders = opFilterFromMySQL.map((_, i) => `$${pCount + i}`).join(',');
+      conditions.push(`TRIM(c2.c2_num) IN (${inPlaceholders})`);
+      paramsArr.push(...opFilterFromMySQL);
+      pCount += opFilterFromMySQL.length;
+    }
+
+    if (op) {
+      conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
+      paramsArr.push(`%${op.trim()}%`);
+    }
+    if (pedido) {
+      conditions.push(`TRIM(c2.c2_pedido) ILIKE $${pCount++}`);
+      paramsArr.push(`%${pedido.trim()}%`);
+    }
+    if (produto) {
+      conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
+      paramsArr.push(`%${produto.trim()}%`);
+      pCount++;
+    }
+    if (cliente) {
+      conditions.push(`(TRIM(c6.c6_cli) ILIKE $${pCount} OR TRIM(a1.a1_nome) ILIKE $${pCount})`);
+      paramsArr.push(`%${cliente.trim()}%`);
+      pCount++;
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    // Query Protheus sem restrição de g2_recurso
+    const pgQuery = `
+      SELECT
+        TRIM(c2.c2_num) AS op,
+        TRIM(c2.c2_item) AS item_op,
+        TRIM(c2.c2_sequen) AS sequen_op,
+        TRIM(c2.c2_produto) AS produto,
+        TRIM(c2.c2_pedido) AS pedido,
+        TRIM(c2.c2_itempv) AS item_pedido,
+        c2.c2_quant::numeric AS qtd_op,
+        COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
+        TRIM(g2.g2_operac) AS operacao_codigo,
+        TRIM(g2.g2_descri) AS operacao_desc,
+        TRIM(g2.g2_recurso) AS recurso_codigo
+      FROM public.sc2010 c2
+      INNER JOIN public.sg2010 g2
+        ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sc6010 c6
+        ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sa1010 a1
+        ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja) AND COALESCE(a1.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sb1010 b1
+        ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
+      ${whereClause}
+      ORDER BY c2.c2_pedido ASC, c2.c2_num ASC, g2.g2_operac ASC
+    `;
+
+    const pgResult = await db.query(pgQuery, paramsArr);
+    const opsList = pgResult.rows;
+
+    if (opsList.length === 0) {
+      return res.json([]);
+    }
+
+    // Enrichment via MySQL Appointments
+    const opCodes = [...new Set(opsList.map(o => o.op))];
+    const opCodOperacoes = [...new Set(opsList.map(o => o.operacao_codigo).filter(Boolean))];
+    const opPlaceholders = opCodes.map(() => '?').join(',');
+    const opOperacPlaceholders = opCodOperacoes.map(() => '?').join(',');
+
+    let appointments = [];
+    if (opCodes.length > 0 && opCodOperacoes.length > 0) {
+      const [aRows] = await mysqlPool.query(`
+        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+               SUM(quantidade) as total_produzido
+        FROM app_production_appointments
+        WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+      `, [...opCodes, ...opCodOperacoes]);
+      appointments = aRows;
+    }
+
+    // Precisamos de plans para filtrar pendências pelas datas planejadas também
+    let plans = [];
+    if (opCodes.length > 0 && opCodOperacoes.length > 0) {
+      const [pRows] = await mysqlPool.query(`
+        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+               data_planejada_inicio, data_planejada_fim
+        FROM app_production_planning
+        WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+      `, [...opCodes, ...opCodOperacoes]);
+      plans = pRows;
+    }
+
+    // Merge e filtro local (apenas pendentes)
+    const pendingList = opsList.map(opRow => {
+      const a = appointments.find(appt =>
+        appt.op_numero === opRow.op &&
+        appt.op_item === opRow.item_op &&
+        appt.op_sequencia === opRow.sequen_op &&
+        appt.operacao_codigo === opRow.operacao_codigo
+      );
+
+      const qtd_planejada = parseFloat(opRow.qtd_op) || 0;
+      const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
+
+      let status = 'PENDENTE';
+      if (qtd_apontada >= qtd_planejada && qtd_planejada > 0) {
+        status = 'CONCLUIDO';
+      } else if (qtd_apontada > 0) {
+        status = 'PARCIAL';
+      }
+
+      const p = plans.find(plan =>
+        plan.op_numero === opRow.op &&
+        plan.op_item === opRow.item_op &&
+        plan.op_sequencia === opRow.sequen_op &&
+        plan.operacao_codigo === opRow.operacao_codigo
+      );
+
+      return {
+        ...opRow,
+        qtd_apontada,
+        status,
+        planejamento_inicio: p ? p.data_planejada_inicio : null,
+        planejamento_fim: p ? p.data_planejada_fim : null
+      };
+    }).filter(item => item.status !== 'CONCLUIDO'); // Mantém PENDENTE e PARCIAL
+
+    let finalList = pendingList;
+    if (plan_inicio_de) {
+      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio >= `${plan_inicio_de} 00:00:00`);
+    }
+    if (plan_inicio_ate) {
+      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio <= `${plan_inicio_ate} 23:59:59`);
+    }
+    if (plan_fim_de) {
+      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim >= `${plan_fim_de} 00:00:00`);
+    }
+    if (plan_fim_ate) {
+      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim <= `${plan_fim_ate} 23:59:59`);
+    }
+
+    res.json(finalList);
+  } catch (err) {
+    console.error('Erro na rota vertical-pendencias:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// GET /api/producao/vertical/:operacao - Buscar fila de produção por Recurso (máquina/setor)
+router.get('/vertical/:operacao', async (req, res) => {
+  try {
+    let { operacao } = req.params;
+    operacao = String(operacao).trim(); // Mantém o código do recurso como veio (ex: 'MO0004')
+    const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate } = req.query;
+
+    console.log(`🏭 [VERTICAL] Buscando fila para recurso: ${operacao} com Filtros`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
+
+    let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''", "TRIM(g2.g2_recurso) = $1"];
+    let paramsArr = [operacao];
+    let pCount = 2;
+
+    // PRE-FILTER BY DATE on MySQL
+    let opFilterFromMySQL = null;
+    if (plan_inicio_de || plan_inicio_ate || plan_fim_de || plan_fim_ate) {
+      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE 1=1`;
+      let mysqlParams = [];
+
+      if (plan_inicio_de) {
+        mysqlQuery += ` AND data_planejada_inicio >= ?`;
+        mysqlParams.push(`${plan_inicio_de} 00:00:00`);
+      }
+      if (plan_inicio_ate) {
+        mysqlQuery += ` AND data_planejada_inicio <= ?`;
+        mysqlParams.push(`${plan_inicio_ate} 23:59:59`);
+      }
+      if (plan_fim_de) {
+        mysqlQuery += ` AND data_planejada_fim >= ?`;
+        mysqlParams.push(`${plan_fim_de} 00:00:00`);
+      }
+      if (plan_fim_ate) {
+        mysqlQuery += ` AND data_planejada_fim <= ?`;
+        mysqlParams.push(`${plan_fim_ate} 23:59:59`);
+      }
+
+      const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
+      if (plannedOps.length === 0) {
+        return res.json([]); // No OPs planned in this date range at all
+      }
+      opFilterFromMySQL = plannedOps.map(o => o.op_numero);
+    }
+
+    if (opFilterFromMySQL) {
+      if (opFilterFromMySQL.length > 5000) {
+        opFilterFromMySQL = opFilterFromMySQL.slice(0, 5000);
+      }
+      const inPlaceholders = opFilterFromMySQL.map((_, i) => `$${pCount + i}`).join(',');
+      conditions.push(`TRIM(c2.c2_num) IN (${inPlaceholders})`);
+      paramsArr.push(...opFilterFromMySQL);
+      pCount += opFilterFromMySQL.length;
+    }
+
+    if (op) {
+      conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
+      paramsArr.push(`%${op.trim()}%`);
+    }
+    if (pedido) {
+      conditions.push(`TRIM(c2.c2_pedido) ILIKE $${pCount++}`);
+      paramsArr.push(`%${pedido.trim()}%`);
+    }
+    if (produto) {
+      conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
+      paramsArr.push(`%${produto.trim()}%`);
+      pCount++;
+    }
+    if (cliente) {
+      conditions.push(`(TRIM(c6.c6_cli) ILIKE $${pCount} OR TRIM(a1.a1_nome) ILIKE $${pCount})`);
+      paramsArr.push(`%${cliente.trim()}%`);
+      pCount++;
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    // Query Protheus: Busca todas as OPs ativas que passam por este RECURSO (g2_recurso)
+    // O dropdown é populado com recursos (SH1010 → MO0004), por isso filtramos por g2_recurso,
+    // não por g2_operac (que é o código numérico da operação).
+    const pgQuery = `
+      SELECT
+        TRIM(c2.c2_num) AS op,
+        TRIM(c2.c2_item) AS item_op,
+        TRIM(c2.c2_sequen) AS sequen_op,
+        TRIM(c2.c2_produto) AS produto,
+        TRIM(c2.c2_pedido) AS pedido,
+        TRIM(c2.c2_itempv) AS item_pedido,
+        c2.c2_quant::numeric AS qtd_op,
+        COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
+        CASE
+          WHEN c6.c6_entreg IS NOT NULL AND c6.c6_entreg <> ''
+          THEN TO_CHAR(TO_DATE(c6.c6_entreg, 'YYYYMMDD'), 'YYYY-MM-DD')
+          ELSE NULL
+        END AS data_entrega,
+        TRIM(g2.g2_operac) AS operacao_codigo,
+        TRIM(g2.g2_descri) AS operacao_desc,
+        TRIM(g2.g2_recurso) AS recurso_codigo
+      FROM public.sc2010 c2
+      INNER JOIN public.sg2010 g2
+        ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sc6010 c6
+        ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sa1010 a1
+        ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja) AND COALESCE(a1.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sb1010 b1
+        ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
+      ${whereClause}
+      ORDER BY c6.c6_entreg ASC NULLS LAST, c2.c2_pedido ASC, c2.c2_num ASC
+    `;
+
+    const pgResult = await db.query(pgQuery, paramsArr);
+    const opsList = pgResult.rows;
+
+    console.log(`📋 [VERTICAL] Encontradas ${opsList.length} OPs na estrutura para a operação ${operacao}.`);
+
+    if (opsList.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. Enrichment com Planejamento e Apontamentos do MySQL
+    // Usamos os códigos reais de OP e de operação presentes nas linhas retornadas
+    const opCodes = [...new Set(opsList.map(o => o.op))];
+    const opCodOperacoes = [...new Set(opsList.map(o => o.operacao_codigo).filter(Boolean))];
+    const opPlaceholders = opCodes.map(() => '?').join(',');
+    const opOperacPlaceholders = opCodOperacoes.map(() => '?').join(',');
+
+    let plans = [];
+    let appointments = [];
+
+    if (opCodes.length > 0 && opCodOperacoes.length > 0) {
+      // Buscar Planejamentos para todas as OPs + operações presentes no resultado
+      const [pRows] = await mysqlPool.query(`
+        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+               data_planejada_inicio, data_planejada_fim
+        FROM app_production_planning
+        WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+      `, [...opCodes, ...opCodOperacoes]);
+      plans = pRows;
+
+      // Buscar Apontamentos para todas as OPs + operações presentes no resultado
+      const [aRows] = await mysqlPool.query(`
+        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+               SUM(quantidade) as total_produzido,
+               MIN(data_inicio) as primeira_data,
+               MAX(data_fim) as ultima_data,
+               GROUP_CONCAT(DISTINCT usuario SEPARATOR ', ') as usuarios
+        FROM app_production_appointments
+        WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+      `, [...opCodes, ...opCodOperacoes]);
+      appointments = aRows;
+    }
+
+    // 2.5 Verificar documentos de produto (PDF) no MySQL
+    const codigosProdutos = [...new Set(opsList.map(o => o.produto).filter(Boolean))];
+    const docsMap = {};
+    if (codigosProdutos.length > 0) {
+      try {
+        const prodPlaceholders = codigosProdutos.map(() => '?').join(',');
+        const [docsResult] = await mysqlPool.query(
+          `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${prodPlaceholders})`,
+          codigosProdutos
+        );
+        docsResult.forEach(d => {
+          if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
+          docsMap[d.produto_codigo].push(d);
+        });
+      } catch (err) {
+        console.error('⚠️ [VERTICAL] Erro ao buscar arquivos PDF:', err.message);
+      }
+    }
+
+    // 3. Mesclar os dados
+    const enrichedList = opsList.map(opRow => {
+      const p = plans.find(plan =>
+        plan.op_numero === opRow.op &&
+        plan.op_item === opRow.item_op &&
+        plan.op_sequencia === opRow.sequen_op &&
+        plan.operacao_codigo === opRow.operacao_codigo
+      );
+
+      const a = appointments.find(appt =>
+        appt.op_numero === opRow.op &&
+        appt.op_item === opRow.item_op &&
+        appt.op_sequencia === opRow.sequen_op &&
+        appt.operacao_codigo === opRow.operacao_codigo
+      );
+
+      const qtd_planejada = parseFloat(opRow.qtd_op) || 0;
+      const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
+
+      let status = 'PENDENTE';
+      if (qtd_apontada >= qtd_planejada && qtd_planejada > 0) {
+        status = 'CONCLUIDO';
+      } else if (qtd_apontada > 0) {
+        status = 'PARCIAL';
+      }
+
+      const docs = docsMap[opRow.produto] || [];
+      const tem_arquivos = docs.length > 0;
+      const primeiro_arquivo = docs.length > 0 ? docs[0].url_arquivo : null;
+
+      return {
+        ...opRow,
+        status,
+        planejamento_inicio: p ? p.data_planejada_inicio : null,
+        planejamento_fim: p ? p.data_planejada_fim : null,
+        qtd_apontada: qtd_apontada,
+        usuarios_apontamento: a ? a.usuarios : null,
+        ultima_data_apontamento: a ? a.ultima_data : null,
+        tem_arquivos,
+        primeiro_arquivo
+      };
+    });
+
+    let finalList = enrichedList;
+    if (plan_inicio_de) {
+      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio >= `${plan_inicio_de} 00:00:00`);
+    }
+    if (plan_inicio_ate) {
+      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio <= `${plan_inicio_ate} 23:59:59`);
+    }
+    if (plan_fim_de) {
+      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim >= `${plan_fim_de} 00:00:00`);
+    }
+    if (plan_fim_ate) {
+      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim <= `${plan_fim_ate} 23:59:59`);
+    }
+
+    res.json(finalList);
+
+  } catch (err) {
+    console.error('❌ [VERTICAL ROUTE ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

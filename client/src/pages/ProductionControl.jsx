@@ -12,6 +12,8 @@ import ProductionAppointmentModal from '../components/ProductionAppointmentModal
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
 import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto } from '../services/api';
+import useStickyState from '../hooks/useStickyState';
+import { toast } from 'react-toastify';
 
 // ... (other imports)
 
@@ -24,12 +26,12 @@ export default function ProductionControl() {
     const [macroModalOp, setMacroModalOp] = useState(null);
     const [macroOperations, setMacroOperations] = useState([]);
     const [showLegend, setShowLegend] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useStickyState(1, '@metalfisa:prod_currentPage');
     const [totalPages, setTotalPages] = useState(0);
     const [total, setTotal] = useState(0);
-    const [calcType, setCalcType] = useState('op_specific');
+    const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
 
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         op: '',
         pedido: '',
         item: '',
@@ -39,9 +41,9 @@ export default function ProductionControl() {
         operacao: '',
         status: '',
         pending_delivery: true // Default: Only show items with balance to deliver
-    });
+    }, '@metalfisa:prod_filters');
 
-    const [sortConfig, setSortConfig] = useState(null);
+    const [sortConfig, setSortConfig] = useStickyState(null, '@metalfisa:prod_sortConfig');
     // Map of cod_produto_op -> { hasDoc: bool, url: string|null }
     const [productDocs, setProductDocs] = useState({});
     const [expandedRows, setExpandedRows] = useState({});
@@ -70,6 +72,14 @@ export default function ProductionControl() {
     };
 
     const loadData = async (page = currentPage) => {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
+            setOps([]);
+            setTotalPages(0);
+            setTotal(0);
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         try {
             const params = { ...filters, page, limit: 50 };
@@ -124,6 +134,10 @@ export default function ProductionControl() {
     }, [ops]);
 
     const handleSearch = () => {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
+            toast.warning('Por favor, informe um Pedido, Cliente, Produto ou OP para buscar.');
+            return;
+        }
         setCurrentPage(1);
         loadData(1);
     };
@@ -360,7 +374,12 @@ export default function ProductionControl() {
                             {loading ? (
                                 <tr><td colSpan="10" className="p-8 text-center text-slate-500">Carregando...</td></tr>
                             ) : ops.length === 0 ? (
-                                <tr><td colSpan="10" className="p-8 text-center text-slate-500">Nenhuma operação encontrada</td></tr>
+                                <tr>
+                                    <td colSpan="10" className="p-8 text-center text-slate-500">
+                                        <div className="font-medium text-slate-700">Nenhuma operação em exibição</div>
+                                        <div className="text-sm mt-1">Por questões de performance, a busca não é automática. <br />Preencha um OP, Pedido, Produto ou Cliente e clique em Buscar.</div>
+                                    </td>
+                                </tr>
                             ) : (
                                 ops.map((op, idx) => {
                                     const status = getOpStatus(op);

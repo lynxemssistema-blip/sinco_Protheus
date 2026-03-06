@@ -3,6 +3,7 @@ import {
     Search, Filter, Calendar, ClipboardList, ChevronDown, ChevronRight,
     RefreshCw, AlertCircle, CheckCircle, Clock, File, FileText
 } from 'lucide-react';
+import api from '../../services/api';
 import ServiceOrderItems from '../../components/sinco/ServiceOrderItems';
 
 const resolvePdfPath = (filePath) => {
@@ -43,12 +44,9 @@ const ServiceOrdersPage = () => {
             if (filters.status && filters.status !== 'todos') params.append('status', filters.status);
 
             // Dynamically determine the base URL
-            const response = await fetch(`/api/sinco/os?${params.toString()}`);
+            const response = await api.get(`/sinco/os?${params.toString()}`);
 
-            if (!response.ok) throw new Error('Falha ao buscar Ordens de Serviço');
-
-            const data = await response.json();
-            setOrders(data);
+            setOrders(response.data);
         } catch (error) {
             console.error('Erro ao buscar OS:', error);
         } finally {

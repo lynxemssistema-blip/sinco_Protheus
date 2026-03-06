@@ -221,6 +221,8 @@ export const getProductionAnalytics = (params) => api.get('/production/analytics
 export const getProcessList = () => api.get('/production/processes').then(res => res.data);
 export const getPedidosEvolution = (params) => api.get('/production/tracking-evolution', { params }).then(res => ({ ...res.data, pedidos: res.data.agrupado || [] }));
 export const getTrackingComparison = (params) => api.get('/production/tracking-comparison', { params }).then(res => res.data);
+export const getVerticalProduction = (operacao, params) => api.get(`/producao/vertical/${encodeURIComponent(operacao)}`, { params }).then(res => res.data);
+export const getVerticalPendencies = (params) => api.get(`/producao/vertical-pendencias`, { params }).then(res => res.data);
 
 export const getStockMainBalances = async (params) => {
     const response = await api.get('/stock/balances', { params });

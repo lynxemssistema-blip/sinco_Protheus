@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput } from 'lucide-react';
+import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet } from 'lucide-react';
 import { getProdutos, saveProductImage } from '../services/api';
 import { useFilters } from '../contexts/FilterContext';
 import ProductDocuments from '../components/ProductDocuments';
@@ -9,6 +9,7 @@ import BulkImportModal from '../components/BulkImportModal';
 import ProductAssociationsModal from '../components/ProductAssociationsModal';
 import ProductImageModal from '../components/ProductImageModal';
 import { importProductWeights } from '../services/api'; // Import function
+import * as XLSX from 'xlsx';
 
 const ProductCatalog = () => {
     const { productFilters, updateProductFilters } = useFilters();
@@ -57,6 +58,62 @@ const ProductCatalog = () => {
     const handlePageChange = (newPage) => {
         if (newPage >= 1 && newPage <= totalPages) {
             updateProductFilters({ page: newPage });
+        }
+    };
+
+    const handleExportExcel = async () => {
+        try {
+            setLoading(true);
+            const { data } = await getProdutos({
+                ...productFilters,
+                limit: 999999, // Fetch amostral grande para burlar a paginação visual
+                page: 1
+            });
+
+            if (!data || data.length === 0) {
+                alert('Nenhum dado encontrado com o filtro atual para exportar.');
+                return;
+            }
+
+            // Mapeando dados para a planilha
+            const excelData = data.map(item => ({
+                'Código': item.codigo,
+                'Descrição': item.descricao,
+                'Tipo': item.tipo,
+                'UM': item.unidade,
+                'Grupo': item.grupo,
+                'Peso (kg)': item.metadados?.peso_kg ? Number(item.metadados.peso_kg) : '',
+                'Operação': item.metadados?.operacao || '',
+                'Op c/ Doc.': item.tem_arquivos ? 'Sim' : 'Não',
+                'Estoque Total': item.estoque_total || 0,
+                'Associações (Qtd)': item.associacoes?.length || 0
+            }));
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(excelData);
+
+            // Largura de Colunas para ficar legível
+            ws['!cols'] = [
+                { wch: 15 }, // Codigo
+                { wch: 45 }, // Descricao
+                { wch: 10 }, // Tipo
+                { wch: 10 }, // UM
+                { wch: 10 }, // Grupo
+                { wch: 12 }, // Peso
+                { wch: 25 }, // Operacao
+                { wch: 12 }, // Com Doc
+                { wch: 15 }, // Estoque
+                { wch: 15 }  // Associacoes
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, "Produtos");
+            XLSX.writeFile(wb, `Catalogo_Produtos_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+        } catch (err) {
+            console.error('Erro ao exportar:', err);
+            alert('Falha ao exportar a planilha.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -126,6 +183,16 @@ const ProductCatalog = () => {
                             >
                                 <FolderInput className="h-4 w-4" />
                                 <span>Importar Docs</span>
+                            </button>
+
+                            <button
+                                onClick={handleExportExcel}
+                                disabled={loading}
+                                className={`bg-slate-800 hover:bg-slate-900 focus:ring-slate-400 text-white border h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0 mr-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title="Exportar resultado atual para Excel"
+                            >
+                                <FileSpreadsheet className="h-4 w-4" />
+                                <span>Exportar XLSX</span>
                             </button>
                         </div>
 

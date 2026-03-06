@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Search, File, FileText } from 'lucide-react';
+import { getSincoOsItems } from '../../services/api';
 
 const resolvePdfPath = (filePath) => {
     if (!filePath) return null;
@@ -29,10 +30,7 @@ const ServiceOrderItems = ({ osId }) => {
 
             try {
                 setLoading(true);
-                const response = await fetch(`/api/sinco/os/${osId}/items`);
-                if (!response.ok) throw new Error('Erro ao buscar itens');
-
-                const data = await response.json();
+                const data = await getSincoOsItems(osId);
                 console.log('Items received:', data);
                 setItems(data);
             } catch (error) {

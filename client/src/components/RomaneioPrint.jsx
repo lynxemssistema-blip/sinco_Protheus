@@ -39,9 +39,14 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
                         <div>Tel: {romaneio.cliente_telefone}</div>
                     </div>
                     <div className="w-1/2 pl-2">
-                        <div className="font-bold text-xs mb-1">TRANSPORTE</div>
+                        <div className="font-bold text-xs mb-1">TRANSPORTE E RETORNO</div>
                         <div>Motorista: {romaneio.motorista_nome || '---'}</div>
                         <div>PLACA: {romaneio.veiculo_placa || '---'} - MODELO: {romaneio.veiculo_modelo || '---'}</div>
+                        {romaneio.data_previsao_retorno && (
+                            <div className="mt-2 font-bold text-red-600">
+                                Previsão de Retorno: {new Date(romaneio.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR')}
+                            </div>
+                        )}
                     </div>
                 </div>
 
