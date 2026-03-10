@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, AlertTriangle, Clock } from 'lucide-react';
+import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, AlertTriangle, Clock, ArrowUp, ArrowDown, Link, Link2Off, Globe, Briefcase, Plus, Minus } from 'lucide-react';
 
 export default function ProductionMacroModal({ op, operations, onClose, onSaveBatch }) {
 
@@ -7,6 +7,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const [expandedOps, setExpandedOps] = useState({});
     const [loading, setLoading] = useState(false);
     const [targetEndDate, setTargetEndDate] = useState('');
+    const [orderedGroups, setOrderedGroups] = useState([]);
+    const [joinedIndices, setJoinedIndices] = useState(new Set()); // Para o grupo de índice i estar "junto" com o de cima (i-1)
+    const [daysMode, setDaysMode] = useState('calendar'); // 'calendar' ou 'business'
 
     // Group operations by operation code
     const groupedByOperation = useMemo(() => {
@@ -65,40 +68,124 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
         setOperationPlans(initialPlans);
         setExpandedOps(initialExpanded);
+        setOrderedGroups(groupedByOperation);
 
         if (maxEndDate) {
             setTargetEndDate(maxEndDate);
         }
     }, [groupedByOperation]);
 
+    const subtractDays = (date, days, mode) => {
+        const result = new Date(date);
+        let count = 0;
+        while (count < days) {
+            result.setDate(result.getDate() - 1);
+            if (mode === 'business') {
+                const day = result.getDay();
+                if (day !== 0 && day !== 6) { // Ignora Sábado (6) e Domingo (0)
+                    count++;
+                }
+            } else {
+                count++;
+            }
+        }
+        return result;
+    };
+
     const calculateBackward = (endDate, currentPlans) => {
         if (!endDate) return currentPlans;
 
         const newPlans = { ...currentPlans };
 
-        // Reverse sorted codes (from last to first)
-        const sortedCodesDesc = [...groupedByOperation]
-            .sort((a, b) => b.min_sequen - a.min_sequen)
-            .map(g => g.code);
+        // Processamos de trás para frente.
+        // Se um grupo i está "junto" com o i-1, eles compartilham o mesmo bloco de tempo.
+        const reversedIndices = [...Array(orderedGroups.length).keys()].reverse();
+        
+        let currentDate = new Date(endDate);
+        let i = 0;
 
-        let lastStart = new Date(endDate);
-
-        sortedCodesDesc.forEach(code => {
-            const plan = newPlans[code];
-            if (plan.selected) {
-                const dur = parseInt(plan.duracao) || 0;
-                const currentEnd = new Date(lastStart);
-                const currentStart = new Date(currentEnd);
-                currentStart.setDate(currentEnd.getDate() - dur);
-
-                plan.start = currentStart.toISOString().split('T')[0];
-                plan.end = currentEnd.toISOString().split('T')[0];
-
-                lastStart = new Date(currentStart);
+        while (i < reversedIndices.length) {
+            const idx = reversedIndices[i];
+            const group = orderedGroups[idx];
+            
+            // Identifica o bloco de operações juntas
+            const blockIndices = [idx];
+            let lookAhead = i + 1;
+            while (lookAhead < reversedIndices.length && joinedIndices.has(reversedIndices[lookAhead - 1])) {
+                blockIndices.push(reversedIndices[lookAhead]);
+                lookAhead++;
             }
-        });
+
+            // O fim do bloco é a currentDate atual
+            const blockEndDate = new Date(currentDate);
+            let maxDur = 0;
+
+            blockIndices.forEach(bIdx => {
+                const g = orderedGroups[bIdx];
+                const plan = newPlans[g.code];
+                if (plan && plan.selected) {
+                    maxDur = Math.max(maxDur, parseInt(plan.duracao) || 0);
+                }
+            });
+
+            // O início do bloco
+            const blockStartDate = subtractDays(blockEndDate, maxDur, daysMode);
+
+            // Aplica as datas para todos no bloco
+            blockIndices.forEach(bIdx => {
+                const g = orderedGroups[bIdx];
+                const plan = newPlans[g.code];
+                if (plan && plan.selected) {
+                    plan.start = blockStartDate.toISOString().split('T')[0];
+                    plan.end = blockEndDate.toISOString().split('T')[0];
+                }
+            });
+
+            // O próximo bloco começa no início deste bloco
+            currentDate = new Date(blockStartDate);
+            
+            // Pula os índices processados no bloco
+            i = lookAhead;
+        }
 
         return newPlans;
+    };
+
+    const moveGroup = (index, direction) => {
+        const newGroups = [...orderedGroups];
+        const targetIndex = index + direction;
+        
+        if (targetIndex < 0 || targetIndex >= newGroups.length) return;
+        
+        // Swap
+        [newGroups[index], newGroups[targetIndex]] = [newGroups[targetIndex], newGroups[index]];
+        
+        setOrderedGroups(newGroups);
+        
+        // Recalculate if we have a target date
+        if (targetEndDate) {
+            setOperationPlans(prev => calculateBackward(targetEndDate, prev));
+        }
+    };
+
+    const toggleJoin = (index) => {
+        const newJoined = new Set(joinedIndices);
+        if (newJoined.has(index)) {
+            newJoined.delete(index);
+        } else {
+            newJoined.add(index);
+        }
+        setJoinedIndices(newJoined);
+        if (targetEndDate) {
+            setOperationPlans(prev => calculateBackward(targetEndDate, prev));
+        }
+    };
+
+    const toggleDaysMode = (mode) => {
+        setDaysMode(mode);
+        if (targetEndDate) {
+            setOperationPlans(prev => calculateBackward(targetEndDate, prev));
+        }
     };
 
     const handleTargetDateChange = (val) => {
@@ -139,7 +226,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     const updateOperationDuration = (code, value) => {
-        const val = parseInt(value) || 0;
+        const val = Math.max(0, parseInt(value) || 0);
         setOperationPlans(prev => {
             const updated = {
                 ...prev,
@@ -147,6 +234,11 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             };
             return targetEndDate ? calculateBackward(targetEndDate, updated) : updated;
         });
+    };
+
+    const adjustDuration = (code, delta) => {
+        const currentDur = parseInt(operationPlans[code]?.duracao) || 0;
+        updateOperationDuration(code, currentDur + delta);
     };
 
     const toggleSelectAll = () => {
@@ -169,7 +261,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             // For each selected operation, create plans for all its items
             Object.entries(operationPlans).forEach(([code, plan]) => {
                 if (plan.selected && plan.start && plan.end) {
-                    const group = groupedByOperation.find(g => g.code === code);
+                    const group = orderedGroups.find(g => g.code === code);
                     if (group) {
                         group.items.forEach(item => {
                             plansToSave.push({
@@ -227,227 +319,266 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const totalOpsToSave = Object.entries(operationPlans)
         .filter(([code, plan]) => plan.selected && plan.start && plan.end)
         .reduce((sum, [code]) => {
-            const group = groupedByOperation.find(g => g.code === code);
+            const group = orderedGroups.find(g => g.code === code);
             return sum + (group?.items.length || 0);
         }, 0);
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[95vh]">
 
                 {/* Header */}
-                <div className="p-4 border-b border-slate-100 bg-slate-50">
+                <div className="p-2 border-b border-slate-100 bg-slate-50">
                     <div className="flex justify-between items-center">
                         <div>
-                            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <Calendar className="w-5 h-5 text-slate-600" />
+                            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5 text-slate-600" />
                                 Planejamento por Operação
                             </h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-[10px] text-slate-500">
                                 OP: <span className="font-mono font-bold text-slate-700">{op.op}</span> - {op.nome_cliente}
                             </p>
-                            <p className="text-xs text-slate-600 mt-1">
-                                Defina datas para cada tipo de operação. Todas as ocorrências receberão as mesmas datas.
-                            </p>
                         </div>
-                        <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-full transition-colors">
-                            <X className="w-5 h-5 text-slate-500" />
+                        <button onClick={onClose} className="p-1.5 hover:bg-white/50 rounded-full transition-colors">
+                            <X className="w-5 h-5 text-slate-400" />
                         </button>
                     </div>
                 </div>
 
                 {/* Header and Controls */}
-                <div className="p-4 bg-slate-50 border-b space-y-4">
-                    <div className="flex justify-between items-center">
-                        <div className="text-sm text-slate-600">
+                <div className="p-2 bg-slate-50 border-b space-y-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                        <div className="text-slate-600">
                             <span className="font-bold text-slate-800">{selectedCount}</span> de {groupedByOperation.length} operações selecionadas
-                            {totalOpsToSave > 0 && <span className="ml-2 text-xs">({totalOpsToSave} registros serão salvos)</span>}
                         </div>
                         <button
                             onClick={toggleSelectAll}
-                            className="text-xs font-bold text-slate-700 hover:text-slate-900 hover:underline"
+                            className="font-bold text-slate-500 hover:text-slate-900 hover:underline"
                         >
                             {Object.values(operationPlans).every(p => p.selected) ? 'Desmarcar Todas' : 'Selecionar Todas'}
                         </button>
                     </div>
 
                     {/* Planejamento Inteligente Input */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                                Data de Entrega / Finalização OP
+                    <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm items-center">
+                        <div className="flex-1 min-w-[180px]">
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                                Data de Entrega OP
                             </label>
-                            <div className="relative">
+                            <div className="relative group/date">
                                 <input
                                     type="date"
-                                    className="w-full pl-10 pr-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-medium transition-all shadow-sm"
+                                    className="w-full pl-7 pr-2 py-1 border border-blue-100 rounded bg-blue-50/10 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-[11px] font-bold text-blue-900 transition-all shadow-sm"
                                     value={targetEndDate}
                                     onChange={(e) => handleTargetDateChange(e.target.value)}
                                 />
-                                <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-blue-400" />
+                                <Calendar className="absolute left-2 top-1.5 h-3 w-3 text-blue-500 group-focus-within/date:scale-110 transition-transform" />
                             </div>
-                            <p className="mt-1 text-[10px] text-slate-400">Define o prazo final para o cálculo retroativo.</p>
                         </div>
-                        <div className="flex items-center gap-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100/50 h-fit self-end">
-                            <AlertTriangle className="h-5 w-5 text-blue-500 flex-shrink-0" />
-                            <p className="text-[11px] text-blue-700 leading-tight">
-                                As datas são calculadas de trás para frente. <br />
-                                Ajuste os dias de cada etapa abaixo para recalcular.
-                            </p>
+
+                        {/* Mode Selector */}
+                        <div className="flex bg-slate-100 p-0.5 rounded">
+                            <button
+                                onClick={() => toggleDaysMode('calendar')}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-all ${
+                                    daysMode === 'calendar' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                            >
+                                <Globe className="w-3 h-3" /> DIAS CORRIDOS
+                            </button>
+                            <button
+                                onClick={() => toggleDaysMode('business')}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-all ${
+                                    daysMode === 'business' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                            >
+                                <Briefcase className="w-3 h-3" /> DIAS ÚTEIS
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 {/* Operations List */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {groupedByOperation.map(group => {
+                <div className="flex-1 overflow-y-auto p-3">
+                    {orderedGroups.map((group, index) => {
                         const plan = operationPlans[group.code] || { start: '', end: '', selected: false };
                         const isExpanded = expandedOps[group.code];
-                        const hasValidDates = plan.start && plan.end;
+                        const isJoined = joinedIndices.has(index);
+                        const isNextJoined = index + 1 < orderedGroups.length && joinedIndices.has(index + 1);
 
                         return (
-                            <div
-                                key={group.code}
-                                className={`border rounded-lg overflow-hidden transition-all ${plan.selected ? 'border-slate-300 bg-slate-50' : 'border-slate-200 bg-white'
-                                    }`}
-                            >
-                                {/* Operation Header */}
-                                <div className="p-3 bg-white">
-                                    <div className="flex items-start gap-3">
-                                        {/* Checkbox */}
-                                        <div
-                                            className="mt-1 cursor-pointer"
-                                            onClick={() => toggleOperation(group.code)}
+                            <React.Fragment key={group.code}>
+                                {/* Join Indicator - Integrated */}
+                                {index > 0 && (
+                                    <div className="relative h-0 flex justify-center z-20">
+                                        <button 
+                                            onClick={() => toggleJoin(index)}
+                                            className={`absolute -top-2.5 p-0.5 rounded-full border transition-all shadow-sm ${
+                                                isJoined 
+                                                ? 'bg-blue-600 border-blue-600 text-white rotate-90 scale-90' 
+                                                : 'bg-white border-slate-200 text-slate-400 hover:text-blue-500 hover:border-blue-200 scale-75'
+                                            }`}
+                                            title={isJoined ? "Desagrupar" : "Juntar"}
                                         >
-                                            {plan.selected ?
-                                                <CheckSquare className="w-5 h-5 text-slate-700" /> :
-                                                <Square className="w-5 h-5 text-slate-300" />
-                                            }
-                                        </div>
-
-                                        {/* Operation Info */}
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="font-mono font-bold text-lg text-slate-800">{group.code}</span>
-                                                <span className="text-slate-600">{group.desc}</span>
-                                                <button
-                                                    onClick={() => toggleExpand(group.code)}
-                                                    className="ml-auto text-xs text-slate-600 hover:text-slate-800 flex items-center gap-1 hover:underline"
-                                                >
-                                                    {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                                                    {group.items.length} ocorrência{group.items.length > 1 ? 's' : ''}
-                                                </button>
-                                            </div>
-
-                                            {/* Date Inputs */}
-                                            <div className="grid grid-cols-3 gap-3">
-                                                <div>
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                                                        <Clock className="w-3 h-3 inline mr-1" />
-                                                        Dias
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        className="w-full border border-slate-200 rounded p-2 text-sm focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
-                                                        value={plan.duracao}
-                                                        onChange={e => updateOperationDuration(group.code, e.target.value)}
-                                                        disabled={!plan.selected}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                                                        <Calendar className="w-3 h-3 inline mr-1" />
-                                                        Data Início
-                                                    </label>
-                                                    <input
-                                                        type="date"
-                                                        className="w-full border border-slate-200 rounded p-2 text-sm focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
-                                                        value={plan.start ? plan.start.split('T')[0] : ''}
-                                                        onChange={e => updateOperationDates(group.code, 'start', e.target.value)}
-                                                        disabled={!plan.selected}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                                                        <Calendar className="w-3 h-3 inline mr-1" />
-                                                        Data Fim
-                                                    </label>
-                                                    <input
-                                                        type="date"
-                                                        className="w-full border border-slate-200 rounded p-2 text-sm focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
-                                                        value={plan.end ? plan.end.split('T')[0] : ''}
-                                                        onChange={e => updateOperationDates(group.code, 'end', e.target.value)}
-                                                        disabled={!plan.selected}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {plan.selected && !hasValidDates && (
-                                                <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                                                    ⚠️ Defina ambas as datas para incluir esta operação
-                                                </div>
-                                            )}
-                                        </div>
+                                            <Link className="w-2.5 h-2.5" />
+                                        </button>
                                     </div>
-                                </div>
+                                )}
 
-                                {/* Expanded Items */}
-                                {isExpanded && (
-                                    <div className="border-t border-slate-200 bg-slate-50">
-                                        <div className="p-3">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Itens afetados:</h4>
-                                            <div className="space-y-1">
+                                <div
+                                    className={`relative border transition-all duration-300 flex group/item hover:shadow-md ${
+                                        isJoined ? 'mt-0 border-t-0 rounded-t-none' : 'mt-1.5 rounded-t-lg shadow-sm'
+                                    } ${
+                                        isNextJoined ? 'border-b-0 rounded-b-none' : 'rounded-b-lg shadow-sm'
+                                    } ${plan.selected ? 'border-blue-300 bg-slate-50' : 'border-slate-100 bg-white'} ${isJoined || isNextJoined ? 'bg-blue-50/5' : ''}`}
+                                >
+                                    {/* Visual Grouping Accent */}
+                                    {isJoined && (
+                                        <div className="w-1 bg-blue-500 self-stretch flex-shrink-0" />
+                                    )}
+
+                                    <div className="flex-1">
+                                        <div className={`p-1.5 border-b border-transparent ${plan.selected ? 'bg-blue-50/20' : ''}`}>
+                                            <div className="flex items-start gap-2.5">
+                                                {/* Move Controls */}
+                                                <div className="flex flex-col gap-0 mt-0.5 opacity-40 group-hover/item:opacity-100 transition-opacity">
+                                                    <button 
+                                                        disabled={index === 0}
+                                                        onClick={() => moveGroup(index, -1)}
+                                                        className="p-0.5 hover:bg-slate-200 rounded disabled:opacity-0"
+                                                    >
+                                                        <ArrowUp className="w-3 h-3 text-slate-500" />
+                                                    </button>
+                                                    <button 
+                                                        disabled={index === orderedGroups.length - 1}
+                                                        onClick={() => moveGroup(index, 1)}
+                                                        className="p-0.5 hover:bg-slate-200 rounded disabled:opacity-0"
+                                                    >
+                                                        <ArrowDown className="w-3 h-3 text-slate-500" />
+                                                    </button>
+                                                </div>
+
+                                                {/* Checkbox */}
+                                                <div
+                                                    className="mt-1 cursor-pointer hover:scale-110 transition-transform active:scale-95 px-0.5"
+                                                    onClick={() => toggleOperation(group.code)}
+                                                >
+                                                    {plan.selected ?
+                                                        <CheckSquare className="w-3.5 h-3.5 text-blue-600 drop-shadow-[0_1px_2px_rgba(37,99,235,0.2)]" /> :
+                                                        <Square className="w-3.5 h-3.5 text-slate-300" />
+                                                    }
+                                                </div>
+
+                                                {/* Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                                        <span className="font-mono font-bold text-[12px] text-slate-800 bg-slate-100 px-1 rounded">{group.code}</span>
+                                                        <span className="text-slate-600 text-[10px] font-medium truncate max-w-[200px]">{group.desc}</span>
+                                                        <button
+                                                            onClick={() => toggleExpand(group.code)}
+                                                            className="ml-auto text-[9px] text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                                                        >
+                                                            {group.items.length} {group.items.length > 1 ? 'itens' : 'item'}
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-0.5 bg-slate-100/80 px-1 py-0.5 rounded border border-slate-200 shadow-inner">
+                                                            <span className="text-[7px] font-bold text-slate-500 uppercase px-0.5">Dias</span>
+                                                            <button 
+                                                                onClick={() => adjustDuration(group.code, -1)}
+                                                                disabled={!plan.selected || plan.duracao <= 0}
+                                                                className="p-0.5 hover:bg-slate-200 rounded text-slate-500 disabled:opacity-30"
+                                                            >
+                                                                <Minus className="w-2.5 h-2.5" />
+                                                            </button>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                className="w-7 bg-transparent text-xs font-bold text-center focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                value={plan.duracao}
+                                                                onChange={e => updateOperationDuration(group.code, e.target.value)}
+                                                                disabled={!plan.selected}
+                                                            />
+                                                            <button 
+                                                                onClick={() => adjustDuration(group.code, 1)}
+                                                                disabled={!plan.selected}
+                                                                className="p-0.5 hover:bg-slate-200 rounded text-slate-500 disabled:opacity-30"
+                                                            >
+                                                                <Plus className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        <div className="flex-1 grid grid-cols-2 gap-1.5">
+                                                            <div className="relative">
+                                                                <input
+                                                                    type="date"
+                                                                    className="w-full border border-slate-100 rounded px-1.5 py-0.5 text-[10px] focus:ring-1 focus:ring-blue-500 outline-none"
+                                                                    value={plan.start ? plan.start.split('T')[0] : ''}
+                                                                    onChange={e => updateOperationDates(group.code, 'start', e.target.value)}
+                                                                    disabled={!plan.selected}
+                                                                />
+                                                                <span className="absolute -top-2 left-1 bg-white px-0.5 text-[7px] font-bold text-slate-400 uppercase tracking-tighter">Início</span>
+                                                            </div>
+                                                            <div className="relative">
+                                                                <input
+                                                                    type="date"
+                                                                    className="w-full border border-slate-100 rounded px-1.5 py-0.5 text-[10px] focus:ring-1 focus:ring-blue-500 outline-none"
+                                                                    value={plan.end ? plan.end.split('T')[0] : ''}
+                                                                    onChange={e => updateOperationDates(group.code, 'end', e.target.value)}
+                                                                    disabled={!plan.selected}
+                                                                />
+                                                                <span className="absolute -top-2 left-1 bg-white px-0.5 text-[7px] font-bold text-slate-400 uppercase tracking-tighter">Fim</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {isExpanded && (
+                                            <div className="bg-blue-50/30 p-1.5 border-t border-slate-100 grid grid-cols-4 gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
                                                 {group.items.map((item, idx) => (
-                                                    <div key={idx} className="text-xs bg-white p-2 rounded border border-slate-100 flex justify-between">
-                                                        <span>
-                                                            <span className="font-mono font-bold text-slate-700">
-                                                                Item {item.item_op}/{item.sequen}
-                                                            </span>
-                                                            <span className="text-slate-500 ml-2">{item.cod_produto_op}</span>
-                                                        </span>
-                                                        {item.data_planejada_inicio && (
-                                                            <span className="text-green-600 font-medium">✓ Já planejado</span>
-                                                        )}
+                                                    <div key={idx} className="text-[8px] bg-white border border-blue-100/50 p-1 px-1.5 rounded flex justify-between items-center shadow-xs">
+                                                        <span className="truncate opacity-70 text-slate-600 font-medium">{item.item_op}/{item.sequen}</span>
+                                                        {item.data_planejada_inicio && <span className="text-blue-500 font-bold text-[10px] leading-none">●</span>}
                                                     </div>
                                                 ))}
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            </React.Fragment>
                         );
                     })}
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-                    <div className="text-sm text-slate-600">
+                <div className="p-2 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <div className="text-[10px]">
                         {totalOpsToSave > 0 ? (
-                            <span className="text-green-600 font-medium">
-                                ✓ Pronto para salvar {totalOpsToSave} operação{totalOpsToSave > 1 ? 'ões' : ''}
+                            <span className="text-green-600 font-bold uppercase tracking-tight">
+                                ✓ {totalOpsToSave} registros prontos
                             </span>
                         ) : (
-                            <span className="text-amber-600">
-                                Selecione operações e defina datas
-                            </span>
+                            <span className="text-slate-400 italic">Selecione operações</span>
                         )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
+                            className="px-2.5 py-1 text-slate-500 hover:bg-slate-200 rounded text-[10px] font-bold transition-colors"
                         >
                             Cancelar
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={loading || totalOpsToSave === 0}
-                            className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            className="px-3.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded text-[10px] font-bold transition-colors flex items-center gap-1 disabled:opacity-50 shadow-sm"
                         >
                             {loading ? 'Salvando...' : (
                                 <>
-                                    <Save className="w-4 h-4" /> Aplicar Planejamento
+                                    <Save className="w-3 h-3" /> Aplicar Planejamento
                                 </>
                             )}
                         </button>

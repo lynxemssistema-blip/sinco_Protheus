@@ -586,9 +586,10 @@ router.get('/analytics-dashboard', async (req, res) => {
         let paramCount = 1;
 
         if (pedido_venda) {
-            whereClause += ` AND TRIM(c2.c2_pedido) = $${paramCount}`;
+            whereClause += ` AND (TRIM(c2.c2_pedido) = $${paramCount} OR TRIM(c2.c2_obs) LIKE $${paramCount + 1})`;
             params.push(pedido_venda);
-            paramCount++;
+            params.push(`${pedido_venda}%`);
+            paramCount += 2;
         }
 
         if (clienteFilter) {
@@ -610,6 +611,7 @@ router.get('/analytics-dashboard', async (req, res) => {
                 SELECT 
                     c2.c2_num,
                     c2.c2_pedido,
+                    c2.c2_obs,
                     c2.c2_itempv
                 FROM public.sc2010 c2
                 LEFT JOIN public.sc5010 sc5 ON sc5.c5_num = TRIM(c2.c2_pedido) 
@@ -634,7 +636,7 @@ router.get('/analytics-dashboard', async (req, res) => {
                 TRIM(g2.g2_descri) AS desc_operacao,
                 sc5.c5_cliente AS cod_cliente,
                 sa1.a1_nome AS nome_cliente,
-                TRIM(parent.c2_pedido) AS pedido_venda, -- INHERIT FROM PARENT
+                (TRIM(parent.c2_pedido) || ' ') || TRIM(parent.c2_obs) AS raw_pedido_obs, -- FETCH RAW FOR JS FALLBACK
                 parent.c2_itempv AS item_pedido,        -- INHERIT FROM PARENT
                 sc6.c6_produto AS produto_item,
                 TRIM(sc6.c6_descri) AS desc_produto,
@@ -730,6 +732,12 @@ router.get('/analytics-dashboard', async (req, res) => {
                     desc_produto: op.desc_produto, // Product Description
                     cliente: op.nome_cliente,
                     data_entrega: op.data_entrega_item,
+                    pedido: (function() {
+                        const parts = (op.raw_pedido_obs || '').split(' ');
+                        const ped = parts[0] || '';
+                        const obs = parts.slice(1).join(' ') || '';
+                        return ped.trim() || (obs.trim().match(/^\d+/)?.[0] || '');
+                    })(),
                     total_pecas: 0,
                     pecas_produzidas: 0,
                     planejado_inicio_min: null,
@@ -1580,6 +1588,7 @@ router.get('/operations/:id', async (req, res) => {
             c2.c2_sequen  AS sequen,
             c2.c2_produto AS cod_produto_op,
             MAX(TRIM(c2.c2_pedido)) OVER(PARTITION BY c2.c2_num, c2.c2_item) AS pedido_venda,
+            MAX(TRIM(c2.c2_obs)) OVER(PARTITION BY c2.c2_num, c2.c2_item) AS obs_venda,
             sb1.b1_desc   AS desc_produto,
             sb1.b1_tipo   AS tipo_produto,
             c2.c2_um                     AS um_op,
@@ -1673,8 +1682,14 @@ router.get('/operations/:id', async (req, res) => {
         }
 
         // 5. Merge and return
+        // Extraction logic for fallback
+        const raw_pedido = opData.pedido_venda || '';
+        const raw_obs = opData.obs_venda || '';
+        const pedido_final = raw_pedido.trim() || (raw_obs.trim().match(/^\d+/)?.[0] || '');
+
         const result = {
             ...opData,
+            pedido_venda: pedido_final,
             data_planejada_inicio: plan?.data_planejada_inicio || null,
             data_planejada_fim: plan?.data_planejada_fim || null,
             qtd_produzida_real: progress?.total_produzido || 0,
@@ -2031,7 +2046,7 @@ router.get('/conferencia/:id/historico', async (req, res) => {
 // GET /api/production/pendentes - All appointments for conferente dashboard
 router.get('/pendentes', async (req, res) => {
     try {
-        const { status = 'PENDENTE', data_inicio, data_fim } = req.query;
+        const { status = 'PENDENTE', data_inicio, data_fim, op, pedido, cliente, produto, apontador } = req.query;
 
         let sql = `
             SELECT
@@ -2069,6 +2084,19 @@ router.get('/pendentes', async (req, res) => {
             params.push(data_fim);
         }
 
+        if (op) {
+            sql += ` AND a.op_numero LIKE ?`;
+            params.push(`%${op}%`);
+        }
+        if (produto) {
+            sql += ` AND a.produto_codigo LIKE ?`;
+            params.push(`%${produto}%`);
+        }
+        if (apontador) {
+            sql += ` AND a.usuario LIKE ?`;
+            params.push(`%${apontador}%`);
+        }
+
         sql += ` ORDER BY a.data_fim DESC LIMIT 500`;
 
         const [rows] = await mysqlPool.query(sql, params);
@@ -2084,6 +2112,7 @@ router.get('/pendentes', async (req, res) => {
                                 TRIM(c2.c2_item) as item_op,
                                 TRIM(c2.c2_produto) as produto_codigo,
                                 TRIM(c2.c2_pedido) as pedido_venda,
+                                TRIM(c2.c2_obs) as obs_venda,
                                 TRIM(sa1.a1_nome) as nome_cliente,
                                 c2.c2_quant as qtd_planejada,
                                 TRIM(g2.g2_operac) as g2_operac,
@@ -2092,8 +2121,10 @@ router.get('/pendentes', async (req, res) => {
                                 TRIM(h1.h1_descri) as master_desc_recurso
                          FROM sc2010 c2
                          LEFT JOIN sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                             AND c5.c5_filial = c2.c2_filial
                              AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
                          LEFT JOIN sa1010 sa1 ON TRIM(sa1.a1_cod) = TRIM(c5.c5_cliente)
+                             AND sa1.a1_loja = c5.c5_lojacli
                              AND COALESCE(sa1.d_e_l_e_t_,'') IN ('',' ')
                          LEFT JOIN public.sg2010 g2 ON
                              btrim(g2.g2_produto) = btrim(c2.c2_produto)
@@ -2101,23 +2132,23 @@ router.get('/pendentes', async (req, res) => {
                              AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
                          LEFT JOIN public.sh1010 h1 ON
                              h1.h1_codigo = g2.g2_recurso
+                             AND h1.h1_filial = g2.g2_filial
                              AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-                         WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
-                         AND TRIM(c2.c2_num) = ANY($1)`,
+                          WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
+                          AND (TRIM(c2.c2_num) = ANY($1) OR LTRIM(TRIM(c2.c2_num), '0') = ANY($1))`,
                         [opNums]
                     ) : Promise.resolve({ rows: [] })
                 ]);
 
-                // Map results for quick lookup
+                // Map results for quick lookup using NORMALIZED keys (no leading zeros)
                 const scMap = {};
-                const routingMap = {}; // Will hold arrays of operations per OP+Item
+                const routingMap = {};
                 scRes.rows.forEach(r => {
-                    scMap[r.op_numero] = r; // Store base sc data
+                    const cleanOp = r.op_numero.replace(/^0+/, '');
+                    scMap[cleanOp] = r;
 
-                    const key = `${r.op_numero}_${r.item_op}`;
-                    if (!routingMap[key]) {
-                        routingMap[key] = [];
-                    }
+                    const key = `${cleanOp}_${r.item_op}`;
+                    if (!routingMap[key]) routingMap[key] = [];
                     routingMap[key].push(r);
                 });
 
@@ -2143,24 +2174,36 @@ router.get('/pendentes', async (req, res) => {
                 }
 
                 rows.forEach(r => {
-                    const sc = scMap[r.op_numero];
+                    const cleanOp = (r.op_numero || '').replace(/^0+/, '');
+                    const sc = scMap[cleanOp];
+                    
                     if (sc) {
-                        r.produto_codigo = sc.produto_codigo || null;
-                        r.pedido_venda = sc.pedido_venda || null;
+                        r.produto_codigo = sc.produto_codigo || r.produto_codigo || null;
+                        
+                        // Fallback logic for Pedido
+                        const raw_ped = sc.pedido_venda || '';
+                        const raw_obs = sc.obs_venda || '';
+                        r.pedido_venda = raw_ped.trim() || (raw_obs.trim().match(/^\d+/)?.[0] || null);
+                        
                         r.nome_cliente = sc.nome_cliente || null;
                         r.pdf_url = pdfMap[sc.produto_codigo] || null;
                         r.qtd_planejada = sc.qtd_planejada != null ? Number(sc.qtd_planejada) : null;
                     }
 
                     // Match operation description (from Matrix or Vertical)
-                    const routeKey = `${r.op_numero}_${r.op_item}`;
+                    const routeKey = `${cleanOp}_${r.op_item || '01'}`; // Default to 01 if missing
                     const routes = routingMap[routeKey] || [];
+                    
+                    // Priority 1: Match exactly by operacao_codigo (desc_operacao)
+                    // Priority 2: Fallback to resource (master_desc_recurso)
                     const exactRoute = routes.find(route =>
                         route.g2_operac === r.operacao_codigo || route.g2_recurso === r.operacao_codigo
                     );
 
                     if (exactRoute) {
-                        r.operacao_nome = exactRoute.master_desc_recurso || exactRoute.desc_operacao || r.operacao_codigo;
+                        const descBase = exactRoute.desc_operacao || exactRoute.master_desc_recurso || '';
+                        const recursoPart = exactRoute.g2_recurso ? `${exactRoute.g2_recurso} - ` : '';
+                        r.operacao_nome = `${recursoPart}${descBase}` || r.operacao_codigo;
                     } else {
                         r.operacao_nome = r.operacao_codigo; // Default fallback to code
                     }

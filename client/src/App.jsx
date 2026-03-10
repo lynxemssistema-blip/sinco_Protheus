@@ -106,6 +106,7 @@ const PrivateRoute = () => {
 const Layout = ({ children, fullWidth = true }) => {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const { toggleHelp } = useHelp();
+    const location = useLocation();
 
     // Check if we are on mobile to pass to Sidebar
     const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
@@ -115,6 +116,13 @@ const Layout = ({ children, fullWidth = true }) => {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    // Auto-close sidebar on mobile when navigating
+    React.useEffect(() => {
+        if (isMobile && isSidebarOpen) {
+            setIsSidebarOpen(false);
+        }
+    }, [location.pathname, isMobile]);
 
     return (
         <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex print:block">

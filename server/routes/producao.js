@@ -226,7 +226,7 @@ router.get('/op', async (req, res) => {
 
     if (op) {
       params.push(`%${op}%`);
-      whereClause += `AND (c2.c2_num LIKE $${paramCount} OR c2.c2_pedido LIKE $${paramCount}) `;
+      whereClause += `AND (c2.c2_num LIKE $${paramCount} OR c2.c2_pedido LIKE $${paramCount} OR c2.c2_obs LIKE $${paramCount}) `;
       paramCount++;
     }
 
@@ -276,7 +276,8 @@ op_base AS (
     c2.c2_local,
     CAST(c2.c2_quant AS numeric) AS qtd_op,
     -- Propagate Pedido from any sequence in the same OP/Item group
-    MAX(TRIM(c2.c2_pedido)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS pedido_venda,
+    MAX(TRIM(c2.c2_pedido)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS raw_pedido,
+    MAX(TRIM(c2.c2_obs)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS obs_venda,
 
     ( c2.c2_num
       || lpad(btrim(c2.c2_item),   2, '0')
@@ -351,7 +352,8 @@ arvore AS (
 
 SELECT
   a.op_origem,
-  a.pedido_venda,
+  a.raw_pedido,
+  a.obs_venda,
   a.filial,
   a.op,
   a.item_op,
@@ -431,7 +433,15 @@ LIMIT 2000;
       }
     }
 
-    res.json(rows);
+    // Final mapping for fallback
+    const enrichedRows = rows.map(r => {
+      const p = (r.raw_pedido || '').trim();
+      const o = (r.obs_venda || '').trim();
+      r.pedido_venda = p || (o.match(/^\d+/)?.[0] || '');
+      return r;
+    });
+
+    res.json(enrichedRows);
   } catch (err) {
     console.error('Erro ao buscar estrutura por OP:', err);
     res.status(500).json({ error: 'Erro interno ao buscar dados da OP' });
@@ -498,8 +508,9 @@ router.get('/vertical-pendencias', async (req, res) => {
       paramsArr.push(`%${op.trim()}%`);
     }
     if (pedido) {
-      conditions.push(`TRIM(c2.c2_pedido) ILIKE $${pCount++}`);
+      conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${pCount} OR TRIM(c2.c2_obs) ILIKE $${pCount})`);
       paramsArr.push(`%${pedido.trim()}%`);
+      pCount++;
     }
     if (produto) {
       conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
@@ -521,7 +532,8 @@ router.get('/vertical-pendencias', async (req, res) => {
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
         TRIM(c2.c2_produto) AS produto,
-        TRIM(c2.c2_pedido) AS pedido,
+        TRIM(c2.c2_pedido) AS raw_pedido,
+        TRIM(c2.c2_obs) AS obs_venda,
         TRIM(c2.c2_itempv) AS item_pedido,
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
@@ -606,6 +618,7 @@ router.get('/vertical-pendencias', async (req, res) => {
 
       return {
         ...opRow,
+        pedido: (opRow.raw_pedido || '').trim() || (opRow.obs_venda || '').trim().match(/^\d+/)?.[0] || '',
         qtd_apontada,
         status,
         planejamento_inicio: p ? p.data_planejada_inicio : null,
@@ -692,8 +705,9 @@ router.get('/vertical/:operacao', async (req, res) => {
       paramsArr.push(`%${op.trim()}%`);
     }
     if (pedido) {
-      conditions.push(`TRIM(c2.c2_pedido) ILIKE $${pCount++}`);
+      conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${pCount} OR TRIM(c2.c2_obs) ILIKE $${pCount})`);
       paramsArr.push(`%${pedido.trim()}%`);
+      pCount++;
     }
     if (produto) {
       conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
@@ -717,7 +731,8 @@ router.get('/vertical/:operacao', async (req, res) => {
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
         TRIM(c2.c2_produto) AS produto,
-        TRIM(c2.c2_pedido) AS pedido,
+        TRIM(c2.c2_pedido) AS raw_pedido,
+        TRIM(c2.c2_obs) AS obs_venda,
         TRIM(c2.c2_itempv) AS item_pedido,
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
@@ -834,9 +849,13 @@ router.get('/vertical/:operacao', async (req, res) => {
       const tem_arquivos = docs.length > 0;
       const primeiro_arquivo = docs.length > 0 ? docs[0].url_arquivo : null;
 
+      const rawP = (opRow.raw_pedido || '').trim();
+      const rawO = (opRow.obs_venda || '').trim();
+
       return {
         ...opRow,
         status,
+        pedido: rawP || (rawO.match(/^\d+/)?.[0] || ''),
         planejamento_inicio: p ? p.data_planejada_inicio : null,
         planejamento_fim: p ? p.data_planejada_fim : null,
         qtd_apontada: qtd_apontada,

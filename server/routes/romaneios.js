@@ -534,14 +534,20 @@ router.get('/recebimentos/pendentes', async (req, res) => {
                     const tupleValues = orderPairs.map((_, i) => `($${(i * 2) + 1}, $${(i * 2) + 2})`).join(', ');
                     const pgParams = orderPairs.flatMap(p => [p.pedido, p.item]);
                     const pgQuery = `
-                        SELECT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item, TRIM(c2_num) as op_num 
+                        SELECT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item, TRIM(c2_num) as op_num, TRIM(c2_obs) as obs
                         FROM public.sc2010 
-                        WHERE (TRIM(c2_pedido), TRIM(c2_itempv)) IN (${tupleValues}) 
-                          AND COALESCE(d_e_l_e_t_, '') = ''
+                        WHERE (
+                          (TRIM(c2_pedido), TRIM(c2_itempv)) IN (${tupleValues})
+                          OR (TRIM(COALESCE(c2_pedido, '')) = '' AND (TRIM(c2_obs), TRIM(c2_itempv)) IN (${tupleValues}))
+                        )
+                        AND COALESCE(d_e_l_e_t_, '') = ''
                     `;
                     const pgResult = await db.query(pgQuery, pgParams);
                     pgResult.rows.forEach(r => {
-                        pgMap[`${r.pedido}-${r.item}`] = r.op_num;
+                        const pedidoKey = (r.pedido || (r.obs ? (r.obs.match(/^\d+/)?.[0] || '') : '')).trim();
+                        if (pedidoKey) {
+                            pgMap[`${pedidoKey}-${r.item}`] = r.op_num;
+                        }
                     });
                 } catch (pgErr) {
                     console.error('Erro ao buscar OP no Postgres:', pgErr.message);

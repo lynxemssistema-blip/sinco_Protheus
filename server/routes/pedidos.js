@@ -99,7 +99,7 @@ router.get('/', async (req, res) => {
             AND COALESCE(c6_op.d_e_l_e_t_, '') = ''
             AND EXISTS (
                 SELECT 1 FROM public.sc2010 c2
-                WHERE c2.c2_pedido = c6_op.c6_num
+                WHERE (c2.c2_pedido = c6_op.c6_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c6_op.c6_num || '%'))
                 AND c2.c2_itempv = c6_op.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             )
@@ -123,13 +123,14 @@ router.get('/', async (req, res) => {
             ) > (
                 SELECT COUNT(DISTINCT c2_m.c2_itempv)
                 FROM public.sc2010 c2_m
-                WHERE c2_m.c2_pedido = c5.c5_num AND COALESCE(c2_m.d_e_l_e_t_, '') = ''
+                WHERE (c2_m.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_m.c2_pedido, '')) = '' AND c2_m.c2_obs LIKE c5.c5_num || '%'))
+                AND COALESCE(c2_m.d_e_l_e_t_, '') = ''
             ) AND EXISTS (
-                SELECT 1 FROM public.sc2010 c2_e WHERE c2_e.c2_pedido = c5.c5_num AND COALESCE(c2_e.d_e_l_e_t_, '') = ''
+                SELECT 1 FROM public.sc2010 c2_e WHERE (c2_e.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_e.c2_pedido, '')) = '' AND c2_e.c2_obs LIKE c5.c5_num || '%')) AND COALESCE(c2_e.d_e_l_e_t_, '') = ''
             ) THEN 'orange'
 
             -- Todos os itens sem OP
-            WHEN NOT EXISTS (SELECT 1 FROM public.sc2010 c2_none WHERE c2_none.c2_pedido = c5.c5_num AND COALESCE(c2_none.d_e_l_e_t_, '') = '') THEN 'red'
+            WHEN NOT EXISTS (SELECT 1 FROM public.sc2010 c2_none WHERE (c2_none.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_none.c2_pedido, '')) = '' AND c2_none.c2_obs LIKE c5.c5_num || '%')) AND COALESCE(c2_none.d_e_l_e_t_, '') = '') THEN 'red'
 
             -- Padrão Protheus
             WHEN c5.c5_liberok = '' AND COALESCE(c5.c5_nota, '') = '' THEN 'green'
@@ -456,7 +457,7 @@ router.get('/flat', async (req, res) => {
                 ON sb1.b1_cod = c6.c6_produto 
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             LEFT JOIN public.sc2010 c2
-                ON c2.c2_pedido = c5.c5_num
+                ON (c2.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c5.c5_num || '%'))
                 AND c2.c2_itempv = c6.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             ${whereClause}
@@ -765,7 +766,7 @@ router.get('/:id/itens', async (req, res) => {
                 AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
                 
             LEFT JOIN public.sc2010 c2
-                ON c2.c2_pedido = c5.c5_num
+                ON (c2.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c5.c5_num || '%'))
                 AND c2.c2_itempv = c6.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
 

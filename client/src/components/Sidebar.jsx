@@ -14,12 +14,32 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const [visibleItems, setVisibleItems] = useState({});
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
-    const [isCollapsed, setIsCollapsed] = useState(false); // New state for Icon-only mode
+    const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
 
     // Helper to toggle sidebar size
     const toggleSidebarSize = () => {
         setIsCollapsed(prev => !prev);
     };
+
+    // Auto-collapse logic for Tablet and Desktop
+    useEffect(() => {
+        if (isMobile) {
+            setIsCollapsed(false); // Mobile always full width when open
+            return;
+        }
+
+        const handleAutoCollapse = () => {
+            const width = window.innerWidth;
+            if (width < 1100 && width >= 768) {
+                setIsCollapsed(true);
+            } else if (width >= 1100) {
+                setIsCollapsed(false);
+            }
+        };
+
+        window.addEventListener('resize', handleAutoCollapse);
+        return () => window.removeEventListener('resize', handleAutoCollapse);
+    }, [isMobile]);
 
     // Initialize expanded groups based on active route and device
     useEffect(() => {

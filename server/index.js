@@ -140,6 +140,7 @@ app.use('/api/vmi', require('./routes/vmi'));
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
+app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 
 // Rota de Health Check

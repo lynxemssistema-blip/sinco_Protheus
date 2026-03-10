@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter, Clock, User, ClipboardList, Camera, ImagePlus, Trash2, History, FileText, ChevronDown, ChevronRight, Users, Package } from 'lucide-react';
 import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_LABELS = {
     PENDENTE: { label: 'Pendente', color: 'bg-orange-100 text-orange-700 border-orange-200' },
@@ -46,10 +47,10 @@ function OperacaoCell({ codigo, nome }) {
 }
 
 export default function ConferenciaPage() {
+    const { user: loggedUser, hasPermission } = useAuth();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState(null);
-    const [loggedUser, setLoggedUser] = useState(null);
     const [toast, setToast] = useState(null);
 
     // Filtros — inputs (digitação livre)
@@ -84,19 +85,17 @@ export default function ConferenciaPage() {
     const [historicoModal, setHistoricoModal] = useState(null);
     const [loadingHistorico, setLoadingHistorico] = useState(false);
 
-    useEffect(() => {
-        const userStr = localStorage.getItem('@MetalFisa:user');
-        if (userStr) {
-            try { setLoggedUser(JSON.parse(userStr)); } catch (e) { }
-        }
-    }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const params = { status: statusFiltro };
+            const params = { 
+                status: statusFiltro,
+                ...aplicados
+            };
             if (dataInicio) params.data_inicio = dataInicio;
             if (dataFim) params.data_fim = dataFim;
+            
             const data = await getPendentesConferencia(params);
             setRows(data || []);
             setExpandedGroups(new Set());
@@ -105,7 +104,7 @@ export default function ConferenciaPage() {
         } finally {
             setLoading(false);
         }
-    }, [statusFiltro, dataInicio, dataFim]);
+    }, [statusFiltro, dataInicio, dataFim, aplicados]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -114,7 +113,7 @@ export default function ConferenciaPage() {
         setTimeout(() => setToast(null), 3500);
     };
 
-    const canConferir = loggedUser && ['A', 'C'].includes(loggedUser.tipo || loggedUser.TipoUsuario);
+    const canConferir = hasPermission('conferencia', 'edit') || hasPermission('conferencia', 'create');
     const conferidoPor = loggedUser?.nome || loggedUser?.NomeCompleto || loggedUser?.login || loggedUser?.Login || 'Conferente';
 
     const handleConferir = async (id, status, obs = '', fotos = []) => {
@@ -123,7 +122,14 @@ export default function ConferenciaPage() {
         try {
             await submitConferencia({ id, status, observacao: obs, conferido_por: conferidoPor, fotos });
             showToast(status === 'OK' ? 'Apontamento aprovado!' : 'Apontamento recusado!', status === 'OK' ? 'success' : 'error');
-            fetchData();
+            // fetchData(); // Evitar reload total
+            setRows(prev => prev.map(r => r.id === id ? {
+                ...r,
+                conferencia_status: status,
+                conferido_por: conferidoPor,
+                conferido_em: new Date().toISOString(),
+                conferencia_obs: obs
+            } : r));
         } catch (err) {
             console.error('Erro ao conferir:', err);
             showToast('Erro ao registrar conferência. Tente novamente.', 'error');
@@ -185,7 +191,14 @@ export default function ConferenciaPage() {
                 `${bulkModal.ids.length} apontamento${bulkModal.ids.length !== 1 ? 's' : ''} ${bulkModal.acao === 'OK' ? 'aprovados' : 'recusados'}!`,
                 bulkModal.acao === 'OK' ? 'success' : 'error'
             );
-            fetchData();
+            // fetchData();
+            setRows(prev => prev.map(r => bulkModal.ids.includes(r.id) ? {
+                ...r,
+                conferencia_status: bulkModal.acao,
+                conferido_por: conferidoPor,
+                conferido_em: new Date().toISOString(),
+                conferencia_obs: observacao.trim()
+            } : r));
             setBulkModal(null);
         } catch (err) {
             console.error('Erro no bulk conferir:', err);
@@ -345,9 +358,9 @@ export default function ConferenciaPage() {
                     <div className="mt-3">
                         <p className="text-xs font-medium text-slate-600 mb-2">Fotos (opcional — máx. 5)</p>
                         <div className="flex flex-wrap gap-2">
-                            {fotosModal.map((src, idx) => (
+                            {fotosModal.map((_, idx) => (
                                 <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 group">
-                                    <img src={src} alt={`foto ${idx + 1}`} className="w-full h-full object-cover" />
+                                    <img src={fotosPreview[idx]} alt={`foto ${idx + 1}`} className="w-full h-full object-cover" />
                                     <button onClick={() => removerFoto(idx)} className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
                                         <Trash2 className="w-4 h-4 text-white" />
                                     </button>
@@ -360,10 +373,10 @@ export default function ConferenciaPage() {
                                 </button>
                             )}
                         </div>
-                        <input ref={fotoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFotosChange} />
-                        <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                        <input ref={fotoInputRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleFotosChange} />
+                        <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1 leading-tight">
                             <ImagePlus className="w-3 h-3" />
-                            No celular: câmera ou galeria. No PC: selecione arquivos de imagem.
+                            Toque no ícone acima para tirar foto na hora ou escolher arquivo.
                         </p>
                     </div>
 
@@ -386,80 +399,77 @@ export default function ConferenciaPage() {
         const st = STATUS_LABELS[row.conferencia_status] || STATUS_LABELS.PENDENTE;
         const isSaving = savingId === row.id;
         return (
-            <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-bold text-blue-700">{row.op_numero}</td>
-                <td className="px-4 py-3 text-xs">
+            <tr key={row.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
+                <td className="px-2 py-1.5 md:px-4 md:py-3 font-bold text-blue-700 text-xs md:text-sm">{row.op_numero}</td>
+                <td className="px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs">
                     {row.pedido_venda
                         ? <span className="font-medium text-slate-700">{row.pedido_venda}</span>
                         : <span className="text-slate-300">—</span>}
                     {row.nome_cliente && (
-                        <p className="text-[10px] text-slate-400 truncate max-w-[120px]" title={row.nome_cliente}>{row.nome_cliente}</p>
+                        <p className="text-[9px] md:text-[10px] text-slate-400 truncate max-w-[100px] md:max-w-[120px]" title={row.nome_cliente}>{row.nome_cliente}</p>
                     )}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-700">{row.produto_codigo || '-'}</td>
-                <td className="px-4 py-3 text-center"><PdfCell url={row.pdf_url} /></td>
-                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{row.op_item} / {row.op_sequencia}</td>
-                <td className="px-4 py-3"><OperacaoCell codigo={row.operacao_codigo} nome={row.operacao_nome} /></td>
-                <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                <td className="px-2 py-1.5 md:px-4 md:py-3 font-mono text-[10px] md:text-xs text-slate-700">{row.produto_codigo || '-'}</td>
+                <td className="px-2 py-1.5 md:px-4 md:py-3 text-center"><PdfCell url={row.pdf_url} /></td>
+                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-3 text-slate-500 font-mono text-[10px] md:text-xs">{row.op_item}/{row.op_sequencia}</td>
+                <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-3"><OperacaoCell codigo={row.operacao_codigo} nome={row.operacao_nome} /></td>
+                <td className="px-2 py-1.5 md:px-4 md:py-3">
+                    <div className="flex items-center gap-1.5 md:gap-2">
+                        <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px] md:text-[10px] font-bold flex-shrink-0">
                             {(row.usuario || 'U').charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-slate-700 text-xs">{row.usuario || '-'}</span>
+                        <span className="text-slate-700 text-[10px] md:text-xs truncate max-w-[60px] md:max-w-none">{row.usuario || '-'}</span>
                     </div>
                 </td>
-                <td className="px-4 py-3">
-                    <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold text-xs">
+                <td className="px-2 py-1.5 md:px-4 md:py-3">
+                    <span className="bg-green-100/80 text-green-800 px-1.5 py-0.5 rounded font-bold text-[10px] md:text-xs whitespace-nowrap">
                         {Number(row.quantidade || 0).toFixed(0)} pc
                     </span>
                 </td>
-                <td className="px-4 py-3 text-xs text-slate-500 font-mono">{fmtDatetime(row.criado_em)}</td>
-                <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${st.color}`}>
-                        {row.conferencia_status === 'OK' && <CheckCircle className="w-3 h-3" />}
-                        {row.conferencia_status === 'PENDENTE' && <AlertTriangle className="w-3 h-3" />}
-                        {row.conferencia_status === 'DIVERGENTE' && <XCircle className="w-3 h-3" />}
+                <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs text-slate-500 font-mono leading-tight">{fmtDatetime(row.criado_em)}</td>
+                <td className="px-2 py-1.5 md:px-4 md:py-3">
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold border ${st.color}`}>
                         {st.label}
                     </span>
                     {row.conferencia_obs && (
-                        <p className="text-[10px] text-red-500 italic mt-0.5 max-w-[160px] truncate" title={row.conferencia_obs}>
+                        <p className="text-[9px] text-red-500 italic mt-0.5 max-w-[120px] truncate" title={row.conferencia_obs}>
                             {row.conferencia_obs}
                         </p>
                     )}
                 </td>
-                <td className="px-4 py-3 text-xs text-slate-500">
+                <td className="hidden md:table-cell px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs text-slate-500">
                     {row.conferido_por ? (
                         <div>
-                            <p className="font-medium text-slate-700">{row.conferido_por}</p>
-                            <p className="text-[10px] font-mono">{fmtDatetime(row.conferido_em)}</p>
+                            <p className="font-medium text-slate-700 leading-none">{row.conferido_por}</p>
+                            <p className="text-[9px] font-mono mt-0.5 opacity-60">{fmtDatetime(row.conferido_em)}</p>
                         </div>
                     ) : (
                         <span className="text-slate-300">—</span>
                     )}
                 </td>
-                <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1.5">
-                        <button onClick={() => openHistorico(row)} title="Ver histórico" className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-lg transition">
-                            <History className="w-4 h-4" />
+                <td className="px-2 py-1.5 md:px-4 md:py-3">
+                    <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openHistorico(row)} title="Ver histórico" className="p-1 md:p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded transition">
+                            <History className="w-3.5 h-3.5 md:w-4 md:h-4" />
                         </button>
                         {canConferir && (
                             <>
                                 {row.conferencia_status === 'PENDENTE' && (<>
-                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Aprovar" className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition disabled:opacity-50">
-                                        {isSaving ? <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Aprovar" className="p-1 md:p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded transition disabled:opacity-50">
+                                        {isSaving ? <div className="w-3.5 h-3.5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />}
                                     </button>
-                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar" className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition disabled:opacity-50">
-                                        <XCircle className="w-4 h-4" />
+                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar" className="p-1 md:p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded transition disabled:opacity-50">
+                                        <XCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                     </button>
                                 </>)}
                                 {row.conferencia_status === 'OK' && (
-                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar (reverter aprovação)" className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition disabled:opacity-50">
-                                        <XCircle className="w-4 h-4" />
+                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar" className="p-1 md:p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded transition disabled:opacity-50">
+                                        <XCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                     </button>
                                 )}
                                 {row.conferencia_status === 'DIVERGENTE' && (
-                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Re-aprovar (reverter recusa)" className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition disabled:opacity-50">
-                                        {isSaving ? <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Re-aprovar" className="p-1 md:p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded transition disabled:opacity-50">
+                                        {isSaving ? <div className="w-3.5 h-3.5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />}
                                     </button>
                                 )}
                             </>
@@ -471,104 +481,104 @@ export default function ConferenciaPage() {
     };
 
     const TABLE_HEADERS = (
-        <thead className="bg-slate-50 text-slate-600 text-xs font-medium border-b border-slate-200">
+        <thead className="bg-slate-50 text-slate-500 text-[10px] md:text-xs font-bold border-b border-slate-200 sticky top-0 z-10">
             <tr>
-                <th className="px-4 py-3">OP</th>
-                <th className="px-4 py-3">Pedido / Cliente</th>
-                <th className="px-4 py-3">Produto</th>
-                <th className="px-4 py-3">PDF</th>
-                <th className="px-4 py-3">Item / Seq</th>
-                <th className="px-4 py-3">Operação</th>
-                <th className="px-4 py-3"><div className="flex items-center gap-1"><User className="w-3 h-3" /> Apontador</div></th>
-                <th className="px-4 py-3">Qtd</th>
-                <th className="px-4 py-3"><div className="flex items-center gap-1"><Clock className="w-3 h-3" /> Apontado em</div></th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Conferente</th>
-                <th className="px-4 py-3 text-center">Ações</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">OP</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">PV / Cliente</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Produto</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 text-center">PDF</th>
+                <th className="hidden lg:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Seq</th>
+                <th className="hidden sm:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Operação</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Apontador</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Qtd</th>
+                <th className="hidden sm:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Data</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Status</th>
+                <th className="hidden md:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Conferente</th>
+                <th className="px-2 py-2 md:px-4 md:py-3 text-center whitespace-nowrap">Ações</th>
             </tr>
         </thead>
     );
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-screen-2xl mx-auto">
+        <div className="p-2 md:p-6 space-y-3 max-w-screen-2xl mx-auto">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <ClipboardList className="w-6 h-6 text-blue-600" />
+                    <h1 className="text-lg md:text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <ClipboardList className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
                         Conferência de Apontamentos
                     </h1>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                        Aprovação e recusa de apontamentos de produção
+                    <p className="text-[11px] md:text-sm text-slate-500">
+                        Aprovação de produção
                         {!canConferir && (
                             <span className="ml-2 text-orange-500 font-medium">
-                                (somente visualização — sem permissão de conferir)
+                                (somente visualização)
                             </span>
                         )}
                     </p>
                 </div>
-                <button onClick={fetchData} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition">
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <button onClick={fetchData} className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition w-full sm:w-auto">
+                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     Atualizar
                 </button>
             </div>
 
             {/* Cards resumo */}
             {statusFiltro === 'TODOS' && (
-                <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
-                        <AlertTriangle className="w-8 h-8 text-orange-400" />
-                        <div><p className="text-2xl font-bold text-orange-600">{totalPendente}</p><p className="text-xs text-orange-500">Pendentes</p></div>
+                <div className="grid grid-cols-3 gap-2 md:gap-4">
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-2 md:p-4 flex items-center gap-2 md:gap-3">
+                        <AlertTriangle className="w-5 h-5 md:w-8 md:h-8 text-orange-400" />
+                        <div><p className="text-lg md:text-2xl font-bold text-orange-600 leading-none">{totalPendente}</p><p className="text-[9px] md:text-xs text-orange-500 mt-0.5">Pendentes</p></div>
                     </div>
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-                        <CheckCircle className="w-8 h-8 text-green-400" />
-                        <div><p className="text-2xl font-bold text-green-600">{totalAprovado}</p><p className="text-xs text-green-500">Aprovados</p></div>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-2 md:p-4 flex items-center gap-2 md:gap-3">
+                        <CheckCircle className="w-5 h-5 md:w-8 md:h-8 text-green-400" />
+                        <div><p className="text-lg md:text-2xl font-bold text-green-600 leading-none">{totalAprovado}</p><p className="text-[9px] md:text-xs text-green-500 mt-0.5">Aprovados</p></div>
                     </div>
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-                        <XCircle className="w-8 h-8 text-red-400" />
-                        <div><p className="text-2xl font-bold text-red-600">{totalRecusado}</p><p className="text-xs text-red-500">Recusados</p></div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-2 md:p-4 flex items-center gap-2 md:gap-3">
+                        <XCircle className="w-5 h-5 md:w-8 md:h-8 text-red-400" />
+                        <div><p className="text-lg md:text-2xl font-bold text-red-600 leading-none">{totalRecusado}</p><p className="text-[9px] md:text-xs text-red-500 mt-0.5">Recusados</p></div>
                     </div>
                 </div>
             )}
 
             {/* Filtros */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-2 md:p-4 space-y-2 md:space-y-3">
                 {/* Linha 1: Status + Datas */}
-                <div className="flex flex-wrap gap-3 items-end">
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-500">Status</label>
-                        <select className="border rounded-lg px-3 py-1.5 text-sm bg-white" value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)}>
+                <div className="flex flex-wrap gap-2 md:gap-3 items-end">
+                    <div className="flex flex-col gap-0.5">
+                        <label className="text-[10px] md:text-xs text-slate-500 font-medium">Status</label>
+                        <select className="border rounded-lg px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm bg-white" value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)}>
                             <option value="PENDENTE">Pendentes</option>
                             <option value="OK">Aprovados</option>
                             <option value="DIVERGENTE">Recusados</option>
                             <option value="TODOS">Todos</option>
                         </select>
                     </div>
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-500">Data Início</label>
-                        <input type="date" className="border rounded-lg px-3 py-1.5 text-sm" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+                    <div className="flex flex-col gap-0.5">
+                        <label className="text-[10px] md:text-xs text-slate-500 font-medium">Início</label>
+                        <input type="date" className="border rounded-lg px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
                     </div>
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-500">Data Fim</label>
-                        <input type="date" className="border rounded-lg px-3 py-1.5 text-sm" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+                    <div className="flex flex-col gap-0.5">
+                        <label className="text-[10px] md:text-xs text-slate-500 font-medium">Fim</label>
+                        <input type="date" className="border rounded-lg px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm" value={dataFim} onChange={e => setDataFim(e.target.value)} />
                     </div>
                 </div>
 
                 {/* Linha 2: Campos individuais + botão Filtrar */}
                 <div className="flex flex-wrap gap-2 items-end">
                     {[
-                        { label: 'OP', val: filtroOP, set: setFiltroOP, ph: 'OP...' },
-                        { label: 'Pedido', val: filtroPedido, set: setFiltroPedido, ph: 'PV...' },
-                        { label: 'Cliente', val: filtroCliente, set: setFiltroCliente, ph: 'Nome...' },
-                        { label: 'Produto', val: filtroProduto, set: setFiltroProduto, ph: 'Código...' },
-                        { label: 'Apontador', val: filtroApontador, set: setFiltroApontador, ph: 'Usuário...' },
-                        { label: 'Operação', val: filtroOperacao, set: setFiltroOperacao, ph: 'Cód. ou nome...' },
+                        { label: 'OP', val: filtroOP, set: setFiltroOP, ph: 'OP...', w: 'w-24 md:w-32' },
+                        { label: 'PV', val: filtroPedido, set: setFiltroPedido, ph: 'PV...', w: 'w-24 md:w-32' },
+                        { label: 'Cliente', val: filtroCliente, set: setFiltroCliente, ph: 'Cliente...', w: 'w-28 md:w-40' },
+                        { label: 'Produto', val: filtroProduto, set: setFiltroProduto, ph: 'Cód...', w: 'w-24 md:w-36' },
+                        { label: 'Apt.', val: filtroApontador, set: setFiltroApontador, ph: 'User...', w: 'w-24 md:w-32' },
+                        { label: 'Op.', val: filtroOperacao, set: setFiltroOperacao, ph: 'Op...', w: 'w-24 md:w-36' },
                     ].map(f => (
-                        <div key={f.label} className="flex flex-col gap-1">
-                            <label className="text-xs text-slate-500">{f.label}</label>
+                        <div key={f.label} className="flex flex-col gap-0.5">
+                            <label className="text-[10px] md:text-xs text-slate-500 font-medium">{f.label}</label>
                             <input
                                 type="text"
-                                className="border rounded-lg px-3 py-1.5 text-sm w-36"
+                                className={`border rounded-lg px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm ${f.w}`}
                                 placeholder={f.ph}
                                 value={f.val}
                                 onChange={e => f.set(e.target.value)}
@@ -576,16 +586,16 @@ export default function ConferenciaPage() {
                             />
                         </div>
                     ))}
-                    <div className="flex gap-2 items-end pb-0.5">
+                    <div className="flex gap-1.5 items-end pb-0.5">
                         <button
                             onClick={aplicarFiltros}
-                            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                            className="flex items-center gap-1.5 px-3 py-1 md:px-4 md:py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs md:text-sm font-medium transition"
                         >
-                            <Filter className="w-3.5 h-3.5" />
+                            <Filter className="w-3 md:w-3.5 h-3 md:h-3.5" />
                             Filtrar
                         </button>
                         {hasAplicados && (
-                            <button onClick={limparFiltros} className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition">
+                            <button onClick={limparFiltros} className="px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition">
                                 Limpar
                             </button>
                         )}
@@ -594,9 +604,9 @@ export default function ConferenciaPage() {
 
                 {/* Badge dos filtros aplicados */}
                 {hasAplicados && (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1 md:gap-1.5">
                         {Object.entries(aplicados).filter(([, v]) => v).map(([k, v]) => (
-                            <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-full text-xs font-medium">
+                            <span key={k} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 rounded-full text-[9px] md:text-[10px] font-medium">
                                 {k}: <span className="font-bold">{v}</span>
                             </span>
                         ))}
@@ -647,70 +657,68 @@ export default function ConferenciaPage() {
                                                 className="bg-blue-50 hover:bg-blue-100 border-b border-blue-200 cursor-pointer select-none"
                                                 onClick={() => toggleGroup(grupo.key)}
                                             >
-                                                <td className="px-4 py-2.5 font-bold text-blue-700">
-                                                    <div className="flex items-center gap-1.5">
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5 font-bold text-blue-700 text-xs md:text-sm">
+                                                    <div className="flex items-center gap-1">
                                                         {isExpanded
-                                                            ? <ChevronDown className="w-4 h-4 flex-shrink-0 text-blue-500" />
-                                                            : <ChevronRight className="w-4 h-4 flex-shrink-0 text-blue-500" />}
+                                                            ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" />
+                                                            : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" />}
                                                         {grupo.op_numero}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-2.5 text-xs">
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5 text-[10px] md:text-xs">
                                                     {grupo.pedido_venda
                                                         ? <span className="font-medium text-slate-700">{grupo.pedido_venda}</span>
                                                         : <span className="text-slate-300">—</span>}
                                                     {grupo.nome_cliente && (
-                                                        <p className="text-[10px] text-slate-400 truncate max-w-[120px]" title={grupo.nome_cliente}>{grupo.nome_cliente}</p>
+                                                        <p className="text-[9px] md:text-[10px] text-slate-400 truncate max-w-[100px] md:max-w-[120px]" title={grupo.nome_cliente}>{grupo.nome_cliente}</p>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-2.5 font-mono text-xs text-slate-700">{grupo.produto_codigo || '-'}</td>
-                                                <td className="px-4 py-2.5 text-center"><PdfCell url={grupo.pdf_url} /></td>
-                                                <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">{grupo.op_item} / {grupo.op_sequencia}</td>
-                                                <td className="px-4 py-2.5"><OperacaoCell codigo={grupo.operacao_codigo} nome={grupo.operacao_nome} /></td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5 font-mono text-[10px] md:text-xs text-slate-700">{grupo.produto_codigo || '-'}</td>
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5 text-center"><PdfCell url={grupo.pdf_url} /></td>
+                                                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-2.5 text-slate-500 font-mono text-[10px] md:text-xs">{grupo.op_item}/{grupo.op_sequencia}</td>
+                                                <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-2.5"><OperacaoCell codigo={grupo.operacao_codigo} nome={grupo.operacao_nome} /></td>
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5">
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] md:text-xs font-medium">
                                                         <Users className="w-3 h-3" />
-                                                        {grupo.rows.length} apt{grupo.rows.length !== 1 ? 's' : '.'}
+                                                        {grupo.rows.length}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-2.5">
-                                                    <div className="flex flex-col text-xs gap-0.5">
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5">
+                                                    <div className="flex flex-col text-[10px] md:text-xs gap-0">
                                                         {qtdPlan != null && (
-                                                            <span className="text-slate-400 flex items-center gap-1">
-                                                                <Package className="w-3 h-3" />
-                                                                Plan: <span className="font-medium text-slate-600">{qtdPlan.toFixed(0)}</span>
+                                                            <span className="text-slate-400 flex items-center gap-1 scale-90 origin-left">
+                                                                <Package className="w-2.5 h-2.5" />
+                                                                P:{qtdPlan.toFixed(0)}
                                                             </span>
                                                         )}
-                                                        <span className="text-slate-600 font-bold">Apt: {qtdApt.toFixed(0)}</span>
+                                                        <span className="text-slate-600 font-bold leading-none">A:{qtdApt.toFixed(0)}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-2.5"></td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${badge.color}`}>
+                                                <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-2.5"></td>
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5">
+                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold ${badge.color}`}>
                                                         {badge.label}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-2.5"></td>
-                                                <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                                                <td className="hidden md:table-cell px-2 py-1.5 md:px-4 md:py-2.5"></td>
+                                                <td className="px-2 py-1.5 md:px-4 md:py-2.5" onClick={e => e.stopPropagation()}>
                                                     {canConferir && (
-                                                        <div className="flex items-center gap-1 justify-center flex-wrap">
+                                                        <div className="flex items-center gap-1 justify-center">
                                                             <button
                                                                 disabled={savingId === 'bulk'}
                                                                 onClick={() => openBulkModal(grupo.rows.map(r => r.id), 'OK', grupo)}
-                                                                className="flex items-center gap-1 px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-xs font-medium transition disabled:opacity-50"
-                                                                title="Aprovar todos do grupo"
+                                                                className="flex items-center gap-1 px-1.5 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded text-[10px] font-bold transition disabled:opacity-50"
+                                                                title="Aprovar grupo"
                                                             >
-                                                                <CheckCircle className="w-3.5 h-3.5" />
-                                                                Aprovar
+                                                                OK
                                                             </button>
                                                             <button
                                                                 disabled={savingId === 'bulk'}
                                                                 onClick={() => openBulkModal(grupo.rows.map(r => r.id), 'DIVERGENTE', grupo)}
-                                                                className="flex items-center gap-1 px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-medium transition disabled:opacity-50"
-                                                                title="Recusar todos do grupo"
+                                                                className="flex items-center gap-1 px-1.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-[10px] font-bold transition disabled:opacity-50"
+                                                                title="Recusar grupo"
                                                             >
-                                                                <XCircle className="w-3.5 h-3.5" />
-                                                                Recusar
+                                                                X
                                                             </button>
                                                         </div>
                                                     )}
@@ -722,40 +730,62 @@ export default function ConferenciaPage() {
                                                 const isSaving = savingId === row.id;
                                                 return (
                                                     <tr key={row.id} className="bg-white hover:bg-slate-50 border-b border-slate-100">
-                                                        <td className="py-2 pl-10 pr-2 text-slate-300 text-xs whitespace-nowrap">└─</td>
-                                                        <td className="px-2 py-2" colSpan={5}></td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                                                                    {(row.usuario || 'U').charAt(0).toUpperCase()}
+                                                        {/* Indent - smaller on mobile */}
+                                                        <td className="py-1 md:py-2 pl-2 md:pl-10 pr-1 text-slate-300 text-[10px] whitespace-nowrap">└─</td>
+                                                        
+                                                        {/* Spacer - hidden on mobile to save space */}
+                                                        <td className="hidden md:table-cell px-2 py-1 md:py-2" colSpan={5}></td>
+                                                        
+                                                        {/* On mobile, we might need a colSpan to fill the gap if we hidden 5 columns */}
+                                                        {/* Actually, the table will collapse correctly if we just hide them. But wait, if headers are still there, alignment will break. */}
+                                                        {/* Better: Use one cell for all info on mobile, and the desktop layout on md+ */}
+                                                        
+                                                        {/* On mobile, we merge many columns into one to avoid overflow */}
+                                                        <td className="px-1 py-1 md:px-4 md:py-2" colSpan={window.innerWidth < 768 ? 6 : 1}>
+                                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                                                                {/* Apontador */}
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px] font-bold flex-shrink-0">
+                                                                        {(row.usuario || 'U').charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                    <span className="text-slate-700 text-[10px] md:text-xs truncate max-w-[80px] md:max-w-none">{row.usuario || '-'}</span>
                                                                 </div>
-                                                                <span className="text-slate-700 text-xs">{row.usuario || '-'}</span>
+
+                                                                {/* Quantidade */}
+                                                                <span className="bg-green-100/60 text-green-800 px-1.5 py-0.5 rounded font-bold text-[10px] md:text-xs">
+                                                                    {Number(row.quantidade || 0).toFixed(0)} pc
+                                                                </span>
+
+                                                                {/* Data - remove nowrap on small screens if needed, but here we just wrap in flex */}
+                                                                <span className="text-[10px] md:text-xs text-slate-500 font-mono">{fmtDatetime(row.criado_em)}</span>
+
+                                                                {/* Status - only on mobile */}
+                                                                <span className="md:hidden inline-flex items-center px-1 py-0.5 rounded-full text-[9px] font-semibold border bg-orange-100/50 text-orange-700 border-orange-200/50">
+                                                                    Pendente
+                                                                </span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-2">
-                                                            <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold text-xs">
-                                                                {Number(row.quantidade || 0).toFixed(0)} pc
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-xs text-slate-500 font-mono whitespace-nowrap">{fmtDatetime(row.criado_em)}</td>
-                                                        <td className="px-4 py-2">
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border bg-orange-100 text-orange-700 border-orange-200">
-                                                                <AlertTriangle className="w-3 h-3" />
+
+                                                        {/* Desktop only columns */}
+                                                        <td className="hidden md:table-cell px-2 py-1 md:px-4 md:py-2">
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold border bg-orange-100/50 text-orange-700 border-orange-200/50">
                                                                 Pendente
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-2 text-xs text-slate-400">—</td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex items-center justify-center gap-1.5">
-                                                                <button onClick={() => openHistorico(row)} title="Ver histórico" className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-lg transition">
-                                                                    <History className="w-4 h-4" />
+                                                        <td className="hidden md:table-cell px-2 py-1 md:px-4 md:py-2 text-[10px] text-slate-400">—</td>
+
+                                                        {/* Actions - always visible */}
+                                                        <td className="px-2 py-1 md:px-4 md:py-2">
+                                                            <div className="flex items-center justify-center gap-1">
+                                                                <button onClick={() => openHistorico(row)} title="Histórico" className="p-1 md:p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded transition">
+                                                                    <History className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                                                 </button>
                                                                 {canConferir && (<>
-                                                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Aprovar" className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition disabled:opacity-50">
-                                                                        {isSaving ? <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'OK')} title="Aprovar" className="p-1 md:p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded transition disabled:opacity-50">
+                                                                        {isSaving ? <div className="w-3.5 h-3.5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />}
                                                                     </button>
-                                                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar" className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition disabled:opacity-50">
-                                                                        <XCircle className="w-4 h-4" />
+                                                                    <button disabled={isSaving} onClick={() => openAcaoModal(row.id, 'DIVERGENTE')} title="Recusar" className="p-1 md:p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded transition disabled:opacity-50">
+                                                                        <XCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                                                     </button>
                                                                 </>)}
                                                             </div>
@@ -890,8 +920,9 @@ export default function ConferenciaPage() {
                                                                 <div className="flex gap-1 mt-2 flex-wrap">
                                                                     {fotos.map((f, fi) => (
                                                                         <a key={fi} href={f} target="_blank" rel="noopener noreferrer"
-                                                                            className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center text-[9px] text-slate-400 hover:opacity-80 transition">
-                                                                            <Camera className="w-4 h-4" />
+                                                                            className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-white flex items-center justify-center text-[9px] text-slate-400 hover:opacity-80 transition shadow-sm">
+                                                                            <img src={f} alt="conf" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                                                                            <Camera className="w-4 h-4 hidden" />
                                                                         </a>
                                                                     ))}
                                                                 </div>

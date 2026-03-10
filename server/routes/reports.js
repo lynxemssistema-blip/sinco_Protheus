@@ -49,7 +49,8 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
             c2.c2_num as op,
             MAX(c5.c5_cliente) as cod_cliente,
             MAX(a1.a1_nome) as cliente_nome,
-            MAX(c2.c2_pedido) as pedido_venda,
+            MAX(c2.c2_pedido) as raw_pedido,
+            MAX(c2.c2_obs) as obs_venda,
             MAX(c2.c2_datpri) as data_entrega_prevista,
             SUM(c2.c2_quant::numeric) as qtd_total_planejada,
             SUM(c2.c2_quje::numeric) as qtd_total_apontada_erp
@@ -126,10 +127,13 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
         if (percent >= 100) status = 'CONCLUIDO';
         else if (percent > 0) status = 'EM_ANDAMENTO';
 
+        const rawP = (pgRow.raw_pedido || '').trim();
+        const rawO = (pgRow.obs_venda || '').trim();
+
         return {
             op: pgRow.op.trim(),
             cliente: pgRow.cliente_nome?.trim() || 'N/A',
-            pedido: pgRow.pedido_venda?.trim() || 'N/A',
+            pedido: rawP || (rawO.match(/^\d+/)?.[0] || 'N/A'),
             data_entrega: pgRow.data_entrega_prevista,
             plan_inicio: myData.plan_inicio,
             plan_fim: myData.plan_fim,
