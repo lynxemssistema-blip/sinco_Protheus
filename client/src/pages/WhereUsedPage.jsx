@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import api from '../services/api';
+import api, { getFileUrl } from '../services/api';
 import Sidebar from '../components/Sidebar';
 import ProductDocuments from '../components/ProductDocuments';
 import { Search, Package, AlertCircle, Loader2, ChevronRight, Network, FileText, X, Layers } from 'lucide-react';
@@ -140,7 +140,7 @@ const WhereUsedPage = () => {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (result.arquivos_count === 1 && result.primeiro_arquivo) {
-                                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(result.primeiro_arquivo)}`, '_blank');
+                                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(result.primeiro_arquivo)}`), '_blank');
                                                 } else {
                                                     setSelectedProduct({ codigo: result.productCode, descricao: result.description });
                                                 }
@@ -221,7 +221,7 @@ const WhereUsedPage = () => {
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (item.arquivos_count === 1 && item.primeiro_arquivo) {
-                                                                                window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.primeiro_arquivo)}`, '_blank');
+                                                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.primeiro_arquivo)}`), '_blank');
                                                                             } else {
                                                                                 setSelectedProduct({ codigo: item.produto_pai, descricao: item.descricao_produto_pai });
                                                                             }

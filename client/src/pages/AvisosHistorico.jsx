@@ -6,19 +6,13 @@ import {
     FileSearch, Calendar as CalendarIcon, Camera, Image as ImageIcon, Mic, MicOff,
     Paperclip, X, FileText, Download, Play, Pause
 } from 'lucide-react';
-import api from '../services/api';
+import { api, getBaseUrl, getFileUrl } from '../services/api';
 import { io } from 'socket.io-client';
 import { format, isToday, isYesterday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // === Media helper: build full URL for media ===
-const mediaUrl = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http')) return url;
-    const host = window.location.hostname;
-    const port = window.location.port === '' || window.location.port === '80' || window.location.port === '443' ? '' : ':3001';
-    return `${window.location.protocol}//${host}${port}${url}`;
-};
+const mediaUrl = (url) => getFileUrl(url);
 
 // === Inline Media Renderer ===
 const MediaBubble = ({ msg }) => {
@@ -226,10 +220,7 @@ const AvisosHistorico = () => {
 
         loadInitialData();
 
-        const isProd = window.location.port === '' || window.location.port === '80' || window.location.port === '443';
-        const socketUrl = isProd
-            ? `${window.location.protocol}//${window.location.host}`
-            : `${window.location.protocol}//${window.location.hostname}:3001`;
+        const socketUrl = getBaseUrl();
 
         const newSocket = io(socketUrl);
         newSocket.on('connect', () => { newSocket.emit('join_user', user.id); });

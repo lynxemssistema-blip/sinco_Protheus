@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Printer, Box, FileText } from 'lucide-react';
-import { getStockMainBalances } from '../services/api';
+import { getStockMainBalances, getFileUrl } from '../services/api';
 
 export default function StockBalances() {
     const [loading, setLoading] = useState(false);
@@ -177,7 +177,7 @@ export default function StockBalances() {
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         if (row.primeiro_arquivo) {
-                                                            window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`, '_blank');
+                                                            window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`), '_blank');
                                                         }
                                                     }}
                                                     className="hover:bg-red-50 p-0.5 rounded transition-colors"

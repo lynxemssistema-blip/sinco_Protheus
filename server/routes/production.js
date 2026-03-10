@@ -2106,7 +2106,7 @@ router.get('/pendentes', async (req, res) => {
             try {
                 const opNums = [...new Set(rows.map(r => r.op_numero).filter(Boolean))];
 
-                const [scRes] = await Promise.all([
+                const [scRes, [planRows]] = await Promise.all([
                     opNums.length ? db.query(
                         `SELECT TRIM(c2.c2_num) as op_numero,
                                 TRIM(c2.c2_item) as item_op,
@@ -2137,7 +2137,13 @@ router.get('/pendentes', async (req, res) => {
                           WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
                           AND (TRIM(c2.c2_num) = ANY($1) OR LTRIM(TRIM(c2.c2_num), '0') = ANY($1))`,
                         [opNums]
-                    ) : Promise.resolve({ rows: [] })
+                    ) : Promise.resolve({ rows: [] }),
+                    opNums.length ? mysqlPool.query(
+                        `SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
+                         FROM app_production_planning
+                         WHERE op_numero IN (${opNums.map(() => '?').join(',')})`,
+                        opNums
+                    ) : Promise.resolve([[]])
                 ]);
 
                 // Map results for quick lookup using NORMALIZED keys (no leading zeros)
@@ -2150,6 +2156,14 @@ router.get('/pendentes', async (req, res) => {
                     const key = `${cleanOp}_${r.item_op}`;
                     if (!routingMap[key]) routingMap[key] = [];
                     routingMap[key].push(r);
+                });
+
+                // Map planning for quick lookup
+                const planMap = {};
+                (planRows || []).forEach(p => {
+                    const cleanOp = (p.op_numero || '').replace(/^0+/, '');
+                    const key = `${cleanOp}_${p.op_item}_${p.op_sequencia}_${p.operacao_codigo}`;
+                    planMap[key] = p;
                 });
 
                 // Collect product codes for PDF check
@@ -2188,6 +2202,14 @@ router.get('/pendentes', async (req, res) => {
                         r.nome_cliente = sc.nome_cliente || null;
                         r.pdf_url = pdfMap[sc.produto_codigo] || null;
                         r.qtd_planejada = sc.qtd_planejada != null ? Number(sc.qtd_planejada) : null;
+                    }
+
+                    // Merge Planned Dates
+                    const planKey = `${cleanOp}_${r.op_item || '01'}_${r.op_sequencia}_${r.operacao_codigo}`;
+                    const plan = planMap[planKey];
+                    if (plan) {
+                        r.data_planejada_inicio = plan.data_planejada_inicio;
+                        r.data_planejada_fim = plan.data_planejada_fim;
                     }
 
                     // Match operation description (from Matrix or Vertical)

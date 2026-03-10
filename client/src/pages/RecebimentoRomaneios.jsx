@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Search, Calendar, FileText, ChevronRight, ChevronDown, Filter, DownloadCloud, History, FileDown, RefreshCw, Layers } from 'lucide-react';
-import api from '../services/api';
+import api, { getFileUrl } from '../services/api';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 
@@ -289,9 +289,9 @@ export default function RecebimentoRomaneios() {
 
     const handlePdfClick = (item) => {
         if (item.has_drawing && item.drawing_url) {
-            window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`, '_blank');
+            window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank');
         } else if (item.docs_count === 1 && item.first_doc) {
-            window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.first_doc)}`, '_blank');
+            window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank');
         } else if (item.has_docs) {
             toast.info("O item possui múltiplos anexos sem um desenho principal definido. Verifique na engenharia.");
         } else {

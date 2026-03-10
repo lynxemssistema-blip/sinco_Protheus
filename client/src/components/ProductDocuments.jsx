@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Link as LinkIcon, Plus, Trash2, ExternalLink } from 'lucide-react';
-import api, { getProductDocuments } from '../services/api';
+import api, { getProductDocuments, getFileUrl } from '../services/api';
 
 // Componente deve ser inserido na página de Estrutura ou Detalhe
 const ProductDocuments = ({ produtoCodigo }) => {
@@ -162,7 +162,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <a
-                                            href={`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(doc.url_arquivo)}`}
+                                            href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(doc.url_arquivo)}`)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-xs text-blue-600 hover:underline flex items-center gap-1 truncate font-medium bg-blue-50 px-2 py-1 rounded"

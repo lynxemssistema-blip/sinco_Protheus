@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageSquare, CheckCircle, Reply } from 'lucide-react';
-import api from '../services/api';
+import api, { getBaseUrl } from '../services/api';
 import { io } from 'socket.io-client';
 import { useLocation } from 'react-router-dom';
 
@@ -39,10 +39,7 @@ const FloatingAvisos = () => {
 
         // ==== TEMPO REAL (SOCKET.IO) ====
         if (signed && user?.id) {
-            const isProd = window.location.port === '' || window.location.port === '80' || window.location.port === '443';
-            const socketUrl = isProd
-                ? `${window.location.protocol}//${window.location.host}`
-                : `${window.location.protocol}//${window.location.hostname}:3001`;
+            const socketUrl = getBaseUrl();
 
             console.log('🔌 [DEBUG] FloatingAvisos Socket:', socketUrl);
             const socket = io(socketUrl);

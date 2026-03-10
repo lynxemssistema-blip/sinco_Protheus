@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter, Clock, User, ClipboardList, Camera, ImagePlus, Trash2, History, FileText, ChevronDown, ChevronRight, Users, Package } from 'lucide-react';
-import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico } from '../services/api';
+import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico, getFileUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_LABELS = {
@@ -20,7 +20,7 @@ function PdfCell({ url }) {
     if (url) {
         return (
             <a
-                href={`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(url)}`}
+                href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(url)}`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Abrir desenho PDF"
@@ -426,6 +426,12 @@ export default function ConferenciaPage() {
                         {Number(row.quantidade || 0).toFixed(0)} pc
                     </span>
                 </td>
+                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs text-slate-500 font-mono leading-tight whitespace-nowrap">
+                    {row.data_planejada_inicio ? fmtDatetime(row.data_planejada_inicio).split(' ')[0] : '-'}
+                </td>
+                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs text-slate-500 font-mono leading-tight whitespace-nowrap">
+                    {row.data_planejada_fim ? fmtDatetime(row.data_planejada_fim).split(' ')[0] : '-'}
+                </td>
                 <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-3 text-[10px] md:text-xs text-slate-500 font-mono leading-tight">{fmtDatetime(row.criado_em)}</td>
                 <td className="px-2 py-1.5 md:px-4 md:py-3">
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold border ${st.color}`}>
@@ -491,6 +497,8 @@ export default function ConferenciaPage() {
                 <th className="hidden sm:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Operação</th>
                 <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Apontador</th>
                 <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Qtd</th>
+                <th className="hidden lg:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Início Plan.</th>
+                <th className="hidden lg:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Fim Plan.</th>
                 <th className="hidden sm:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Data</th>
                 <th className="px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Status</th>
                 <th className="hidden md:table-cell px-2 py-2 md:px-4 md:py-3 whitespace-nowrap">Conferente</th>
@@ -694,6 +702,12 @@ export default function ConferenciaPage() {
                                                         <span className="text-slate-600 font-bold leading-none">A:{qtdApt.toFixed(0)}</span>
                                                     </div>
                                                 </td>
+                                                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-2.5 text-[10px] md:text-xs text-slate-500 font-mono whitespace-nowrap">
+                                                    {grupo.rows[0]?.data_planejada_inicio ? fmtDatetime(grupo.rows[0].data_planejada_inicio).split(' ')[0] : '-'}
+                                                </td>
+                                                <td className="hidden lg:table-cell px-2 py-1.5 md:px-4 md:py-2.5 text-[10px] md:text-xs text-slate-500 font-mono whitespace-nowrap">
+                                                    {grupo.rows[0]?.data_planejada_fim ? fmtDatetime(grupo.rows[0].data_planejada_fim).split(' ')[0] : '-'}
+                                                </td>
                                                 <td className="hidden sm:table-cell px-2 py-1.5 md:px-4 md:py-2.5"></td>
                                                 <td className="px-2 py-1.5 md:px-4 md:py-2.5">
                                                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold ${badge.color}`}>
@@ -734,14 +748,14 @@ export default function ConferenciaPage() {
                                                         <td className="py-1 md:py-2 pl-2 md:pl-10 pr-1 text-slate-300 text-[10px] whitespace-nowrap">└─</td>
                                                         
                                                         {/* Spacer - hidden on mobile to save space */}
-                                                        <td className="hidden md:table-cell px-2 py-1 md:py-2" colSpan={5}></td>
+                                                        <td className="hidden md:table-cell px-2 py-1 md:py-2" colSpan={7}></td>
                                                         
                                                         {/* On mobile, we might need a colSpan to fill the gap if we hidden 5 columns */}
                                                         {/* Actually, the table will collapse correctly if we just hide them. But wait, if headers are still there, alignment will break. */}
                                                         {/* Better: Use one cell for all info on mobile, and the desktop layout on md+ */}
                                                         
                                                         {/* On mobile, we merge many columns into one to avoid overflow */}
-                                                        <td className="px-1 py-1 md:px-4 md:py-2" colSpan={window.innerWidth < 768 ? 6 : 1}>
+                                                        <td className="px-1 py-1 md:px-4 md:py-2" colSpan={window.innerWidth < 768 ? 8 : 1}>
                                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                                                                 {/* Apontador */}
                                                                 <div className="flex items-center gap-1.5">

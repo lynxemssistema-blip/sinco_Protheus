@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, Plus, ArrowRight, Save, Trash2, FileText, CheckCircle, Truck, Printer, History, Edit, Search as SearchIcon } from 'lucide-react';
+import { Loader2, Plus, ArrowRight, Save, Trash2, FileText, CheckCircle, Truck, Printer, History, Edit, Search as SearchIcon, Camera, Image, X } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import {
     getClientes, getRomaneioTypes, createRomaneio, addRomaneioItem, updateRomaneio,
     getRomaneioById, updateRomaneioStatus, getProductionOrdersByOp,
     updateRomaneioItem, deleteRomaneioItem, createRevision, getRevisions, getRevisionDetails,
-    getProdutos // Added
+    getProdutos, // Added
+    uploadRomaneioPhoto, // Added
+    getFileUrl
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import RomaneioPrint from './RomaneioPrint';
@@ -36,7 +38,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         veiculo_modelo: '',
         veiculo_placa: '',
         data_liberacao: new Date().toISOString().split('T')[0], // Default Today
-        data_previsao_retorno: ''
+        data_previsao_retorno: '',
+        fotos: []
     });
 
     // Main Data
@@ -49,6 +52,10 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     const [clients, setClients] = useState([]);
     const [revisions, setRevisions] = useState([]);
     const [showRevisions, setShowRevisions] = useState(false);
+
+    // Photos state (for current session)
+    const [fotosModal, setFotosModal] = useState([]); // File objects
+    const [fotosPreview, setFotosPreview] = useState([]); // Object URLs
 
     // Item Form
     const [activeTab, setActiveTab] = useState('op'); // 'op' | 'manual'
@@ -121,7 +128,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 veiculo_modelo: data.veiculo_modelo || '',
                 veiculo_placa: data.veiculo_placa || '',
                 data_liberacao: data.data_liberacao ? data.data_liberacao.substring(0, 10) : new Date().toISOString().split('T')[0],
-                data_previsao_retorno: data.data_previsao_retorno ? data.data_previsao_retorno.substring(0, 10) : ''
+                data_previsao_retorno: data.data_previsao_retorno ? data.data_previsao_retorno.substring(0, 10) : '',
+                fotos: data.fotos ? (typeof data.fotos === 'string' ? JSON.parse(data.fotos) : data.fotos) : []
             });
 
             // Populate search field for better UX
@@ -210,6 +218,25 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         setClientSearch(`${cli.codigo} - ${cli.nome}`);
     };
 
+    const handleFotosChange = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        const novos = [...fotosModal, ...files].slice(0, 5 - header.fotos.length);
+        setFotosModal(novos);
+        const newPreviews = novos.map(f => URL.createObjectURL(f));
+        setFotosPreview(newPreviews);
+    };
+
+    const removerFotoSession = (idx) => {
+        const novos = fotosModal.filter((_, i) => i !== idx);
+        setFotosModal(novos);
+        setFotosPreview(novos.map(f => URL.createObjectURL(f)));
+    };
+
+    const removerFotoExistente = (url) => {
+        setHeader({ ...header, fotos: header.fotos.filter(f => f !== url) });
+    };
+
     const saveHeader = async () => {
         // Validate: cliente_nome is required (can be manual or from database)
         if (!header.cliente_nome || header.cliente_nome.trim().length === 0) {
@@ -220,17 +247,33 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
 
         setLoading(true);
         try {
+            let fotosUrls = [...header.fotos];
+
+            // Upload new photos if any
+            if (fotosModal.length > 0) {
+                for (const file of fotosModal) {
+                    const res = await uploadRomaneioPhoto(file);
+                    fotosUrls.push(res.url);
+                }
+            }
+
+            const headerToSave = { ...header, fotos: fotosUrls };
+
             if (currRomaneioId) {
                 // EDIT MODE
-                await updateRomaneio(currRomaneioId, header);
+                await updateRomaneio(currRomaneioId, headerToSave);
                 // Reload to get full object for printing and refresh state
                 loadRomaneio(currRomaneioId);
+                setFotosModal([]);
+                setFotosPreview([]);
                 alert('Dados atualizados!');
             } else {
                 // CREATE MODE
-                const res = await createRomaneio({ ...header, usuario: user?.nome || user?.login });
+                const res = await createRomaneio({ ...headerToSave, usuario: user?.nome || user?.login });
                 setCurrRomaneioId(res.id);
                 loadRomaneio(res.id);
+                setFotosModal([]);
+                setFotosPreview([]);
                 setStep(2); // Auto-advance to items
             }
         } catch (err) {
@@ -505,6 +548,60 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         </div>
                     </div>
 
+                    {/* Photos Section */}
+                    <div className="border-t pt-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                            <Camera className="w-4 h-4 text-blue-600" />
+                            Fotos do Romaneio (Máx. 5)
+                        </label>
+                        
+                        <div className="grid grid-cols-5 gap-2 mb-3">
+                            {/* Existing Photos */}
+                            {header.fotos.map((url, i) => (
+                                <div key={`exist-${i}`} className="relative group aspect-square bg-slate-100 rounded-lg overflow-hidden border">
+                                    <img src={getFileUrl(url)} alt="Romaneio" className="w-full h-full object-cover" />
+                                    <button 
+                                        onClick={() => removerFotoExistente(url)}
+                                        className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                            
+                            {/* Session Previews */}
+                            {fotosPreview.map((url, i) => (
+                                <div key={`prev-${i}`} className="relative group aspect-square bg-blue-50 rounded-lg overflow-hidden border border-blue-200">
+                                    <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                                    <button 
+                                        onClick={() => removerFotoSession(i)}
+                                        className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                    <div className="absolute bottom-0 left-0 right-0 bg-blue-600 text-white text-[8px] text-center py-0.5">Novo</div>
+                                </div>
+                            ))}
+
+                            {/* Add Button */}
+                            {(header.fotos.length + fotosModal.length) < 5 && (
+                                <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all group">
+                                    <Plus className="w-6 h-6 text-slate-400 group-hover:text-blue-500" />
+                                    <span className="text-[10px] text-slate-500 group-hover:text-blue-600 font-bold mt-1">Anexar</span>
+                                    <input 
+                                        type="file" 
+                                        hidden 
+                                        accept="image/*" 
+                                        capture="environment"
+                                        multiple 
+                                        onChange={handleFotosChange} 
+                                    />
+                                </label>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">Dica: No celular, você pode tirar fotos diretamente com a câmera.</p>
+                    </div>
+
                     <button onClick={saveHeader} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-blue-700">
                         {loading ? <Loader2 className="animate-spin" /> : (currRomaneioId ? <Save className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />)}
                         {currRomaneioId ? 'Salvar Alterações' : 'Avançar'}
@@ -532,8 +629,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         </button>
                     </div>
 
-                    {/* Add Item Tabs */}
-                    {!editingItem && (
+                    {/* Add Item Tabs - Only if Rascunho */}
+                    {!editingItem && currRomaneioData?.status === 'Rascunho' && (
                         <div className="bg-white border rounded p-4">
                             {/* Tabs */}
                             <div className="flex gap-4 mb-4 border-b">
@@ -600,7 +697,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                             <td className="p-2 text-center">
                                                                 {r.tem_arquivos ? (
                                                                     <button
-                                                                        onClick={() => window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(r.primeiro_arquivo)}`, '_blank')}
+                                                                        onClick={() => window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(r.primeiro_arquivo)}`), '_blank')}
                                                                         className="text-red-600 hover:text-red-800 underline"
                                                                         title="Abrir PDF"
                                                                     >
@@ -694,7 +791,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(prod.primeiro_arquivo)}`, '_blank');
+                                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(prod.primeiro_arquivo)}`), '_blank');
                                                             }}
                                                             className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 ml-2"
                                                             title="Ver PDF"
@@ -786,6 +883,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 <th className="p-2 text-right">Peso Tot.</th>
                                 <th className="p-2 text-right">Área (m²)</th>
                                 <th className="p-2 text-right">Qtd</th>
+                                <th className="p-2 text-right">Qtd Rec.</th>
                                 <th className="p-2 text-left">Obs</th>
                                 <th className="p-2 text-center">PDF</th>
                                 <th className="p-2 text-right">Vlr. Unit</th>
@@ -803,7 +901,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                         {it.peso_kg ? (Number(it.peso_kg) * Number(it.quantidade || 0)).toFixed(3) : '-'}
                                     </td>
                                     <td className="p-2 text-right">{it.area_pintura_m2 ? Number(it.area_pintura_m2).toFixed(2) : '-'}</td>
-                                    <td className="p-2 text-right font-bold">{it.quantidade}</td>
+                                    <td className={`p-2 text-right font-bold ${Number(it.qtd_recebida) >= Number(it.quantidade) ? 'text-green-600' : 'text-slate-900'}`}>
+                                        {Number(it.quantidade || 0)}
+                                    </td>
+                                    <td className={`p-2 text-right font-bold ${Number(it.qtd_recebida) > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                        {Number(it.qtd_recebida || 0)}
+                                        {Number(it.qtd_recebida) >= Number(it.quantidade) && <CheckCircle className="w-3 h-3 inline ml-1 text-green-600" />}
+                                    </td>
                                     <td className="p-2 text-xs text-slate-500">{it.comentario}</td>
                                     <td className="p-2 text-center">
                                         <button
@@ -833,9 +937,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     <td className="p-2 text-right font-bold text-slate-700">
                                         R$ {(Number(it.valor_unitario || 0) * Number(it.quantidade || 0)).toFixed(2)}
                                     </td>
-                                    <td className="p-2 flex gap-2 justify-end">
-                                        <button onClick={() => startEditItem(it)} className="text-blue-600 hover:bg-blue-100 p-1 rounded"><Edit className="w-4 h-4" /></button>
-                                        <button onClick={() => handleDeleteItem(it.id)} className="text-red-600 hover:bg-red-100 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
+                                    <td className="p-2 w-24">
+                                        {currRomaneioData?.status === 'Rascunho' && (
+                                            <div className="flex gap-2 justify-end">
+                                                <button onClick={() => startEditItem(it)} className="text-blue-600 hover:bg-blue-100 p-1 rounded"><Edit className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteItem(it.id)} className="text-red-600 hover:bg-red-100 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

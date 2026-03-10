@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet } from 'lucide-react';
-import { getProdutos, saveProductImage } from '../services/api';
+import { getProdutos, saveProductImage, getFileUrl } from '../services/api';
 import { useFilters } from '../contexts/FilterContext';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
@@ -499,7 +499,7 @@ const ProductCatalog = () => {
                                                                     {prod.primeiro_arquivo && (
                                                                         <button
                                                                             onClick={() => {
-                                                                                window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(prod.primeiro_arquivo)}`, '_blank');
+                                                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(prod.primeiro_arquivo)}`), '_blank');
                                                                                 setOpenMenuProductId(null);
                                                                             }}
                                                                             className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"

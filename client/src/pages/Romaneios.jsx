@@ -178,15 +178,17 @@ export default function Romaneios() {
                                 <th className="p-4">Tipo</th>
                                 <th className="p-4">Liberação</th>
                                 <th className="p-4">Prev. Retorno</th>
+                                <th className="p-4">Qtd Enviada</th>
+                                <th className="p-4">Qtd Recebida</th>
                                 <th className="p-4">Status</th>
                                 <th className="p-4 text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan="7" className="p-8 text-center text-slate-400">Carregando...</td></tr>
+                                <tr><td colSpan="10" className="p-8 text-center text-slate-400">Carregando...</td></tr>
                             ) : !Array.isArray(romaneios) || romaneios.length === 0 ? (
-                                <tr><td colSpan="7" className="p-8 text-center text-slate-400">Nenhum romaneio encontrado.</td></tr>
+                                <tr><td colSpan="10" className="p-8 text-center text-slate-400">Nenhum romaneio encontrado.</td></tr>
                             ) : (
                                 romaneios.map(r => (
                                     <tr key={r.id} className="hover:bg-slate-50">
@@ -204,6 +206,12 @@ export default function Romaneios() {
                                         </td>
                                         <td className="p-4 text-slate-600 font-medium text-sm">
                                             {r.data_previsao_retorno ? new Date(r.data_previsao_retorno).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td className="p-4 text-slate-600 font-bold text-sm">
+                                            {Number(r.total_enviado || 0)}
+                                        </td>
+                                        <td className={`p-4 font-bold text-sm ${Number(r.total_recebido) > 0 && Number(r.total_recebido) >= Number(r.total_enviado) ? 'text-green-600' : 'text-slate-600'}`}>
+                                            {Number(r.total_recebido || 0)}
                                         </td>
                                         <td className="p-4">
                                             <select

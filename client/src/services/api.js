@@ -1,7 +1,21 @@
 import axios from 'axios';
 
+export const getBaseUrl = () => {
+    const { protocol, hostname, port } = window.location;
+    // Se estiver em produção (sem porta ou portas padrão), assume que a API está no mesmo host
+    // Se estiver em dev (porta 3000 ou 5173), assume que a API está na 3001
+    const isDev = port === '3000' || port === '5173' || port === '5174';
+    const apiPort = isDev ? ':3001' : (port ? `:${port}` : '');
+    
+    // Para casos específicos onde o frontend roda em porta diferente mas a API está na 3001
+    // (Padrão do boilerplate usado no projeto)
+    const finalPort = (isDev && !port.includes('3001')) ? ':3001' : apiPort;
+
+    return `${protocol}//${hostname}${finalPort}`;
+};
+
 const api = axios.create({
-    baseURL: '/api',
+    baseURL: `${getBaseUrl()}/api`,
     maxContentLength: Infinity,
     maxBodyLength: Infinity
 });
@@ -152,6 +166,17 @@ export const searchRomaneioItems = async (query) => {
     return response.data;
 };
 
+export const uploadRomaneioPhoto = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/romaneios/upload-photo', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data'
+        }
+    });
+    return response.data;
+};
+
 
 // Stock API
 export const getStockBalance = async (codigo) => {
@@ -240,7 +265,9 @@ export const submitConferenciaBulk = ({ ids, status, observacao, conferido_por, 
 export const getProductionAnalytics = (params) => api.get('/production/analytics', { params }).then(res => res.data);
 export const getProcessList = () => api.get('/production/processes').then(res => res.data);
 export const getPedidosEvolution = (params) => api.get('/production/tracking-evolution', { params }).then(res => ({ ...res.data, pedidos: res.data.agrupado || [] }));
+export const getTrackingHistory = (params) => api.get('/production/tracking-history', { params }).then(res => res.data);
 export const getTrackingComparison = (params) => api.get('/production/tracking-comparison', { params }).then(res => res.data);
+export const getProductionAnalyticsDashboard = (params) => api.get('/production/analytics-dashboard', { params }).then(res => res.data);
 export const getVerticalProduction = (operacao, params) => api.get(`/producao/vertical/${encodeURIComponent(operacao)}`, { params }).then(res => res.data);
 export const getVerticalPendencies = (params) => api.get(`/producao/vertical-pendencias`, { params }).then(res => res.data);
 
@@ -302,10 +329,18 @@ export const deleteSalesNote = (id) => api.delete(`/sales/notes/${id}`).then(res
 export const savePCPForecast = (data) => api.post('/pedidos/pcp-forecasts', data).then(res => res.data);
 export const getPCPForecastHistory = (pedido, item) => api.get(`/pedidos/items/${pedido}/${item}/pcp-forecasts/history`).then(res => res.data);
 
+export const getFileUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    const base = getBaseUrl();
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+};
+
 export const getReportDownloadUrl = (type, params, category = 'production') => {
     const query = new URLSearchParams(params).toString();
-    const cleanBaseURL = api.defaults.baseURL.replace(/\/$/, '');
-    return `${cleanBaseURL}/reports/${category}/${type}?${query}`;
+    const base = getBaseUrl();
+    return `${base}/api/reports/${category}/${type}?${query}`;
 };
 
 export { api };

@@ -3,7 +3,7 @@ import {
     UploadCloud, FileSpreadsheet, RefreshCw, Layers, Trash2,
     CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, XCircle, FileDown
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, getFileUrl } from '../../services/api';
 import * as XLSX from 'xlsx';
 import ConfirmModal from '../../components/ConfirmModal';
 
@@ -557,7 +557,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                     <FileUp className="w-4 h-4 text-indigo-500" /> Importar Planilha de Demanda
                 </h3>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <a href={`http://${window.location.hostname}:3001/api/vmi/modelo`}
+                    <a href={getFileUrl('/api/vmi/modelo')}
                         download="Modelo_Demanda_VMI.xlsx"
                         className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-600 border border-dashed border-slate-300 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition whitespace-nowrap"
                         title="Baixar planilha modelo para preenchimento">

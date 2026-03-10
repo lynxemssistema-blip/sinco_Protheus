@@ -5,6 +5,8 @@ import { FilterProvider } from './contexts/FilterContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TimerProvider } from './contexts/TimerContext';
 import { HelpProvider, useHelp } from './contexts/HelpContext';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Core components (eagerly loaded — used on every page)
 import Sidebar from './components/Sidebar';
@@ -435,6 +437,17 @@ function App() {
                     </HelpProvider>
                 </TimerProvider>
             </FilterProvider>
+            <ToastContainer 
+                position="bottom-right"
+                autoClose={4000}
+                hideProgressBar={false}
+                newestOnTop
+                closeOnClick
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme="colored"
+            />
         </AuthProvider>
     )
 }

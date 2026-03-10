@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Layers, Search, Save, CheckCircle, RefreshCcw, AlertCircle, X, Link2Off, Download, FileText } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, getFileUrl } from '../../services/api';
 import ConfirmModal from '../../components/ConfirmModal';
 
 function PdfCell({ url }) {
     if (url) {
         return (
-            <a href={`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(url)}`}
+            <a href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(url)}`)}
                 target="_blank" rel="noopener noreferrer"
                 title="Abrir desenho PDF" onClick={e => e.stopPropagation()}>
                 <FileText className="w-5 h-5 text-red-500 hover:text-red-700 transition mx-auto" />

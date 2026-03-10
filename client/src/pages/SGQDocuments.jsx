@@ -20,6 +20,7 @@ import {
     Trash2
 } from 'lucide-react';
 import api from '../services/api';
+import DOMPurify from 'dompurify';
 
 const SGQDocuments = () => {
     const navigate = useNavigate();
@@ -513,7 +514,7 @@ const SGQDocuments = () => {
                         {aiHistory.map((msg, i) => (
                             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`max-w-[85%] rounded-xl p-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'}`}>
-                                    <div dangerouslySetInnerHTML={{ __html: msg.text }} />
+                                    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(msg.text) }} />
                                 </div>
                             </div>
                         ))}

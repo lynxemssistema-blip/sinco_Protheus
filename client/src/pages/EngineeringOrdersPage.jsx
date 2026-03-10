@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
     getPedidosFlat, getProdutos, getReportDownloadUrl,
-    getUserPreference, saveUserPreference
+    getFileUrl, getUserPreference, saveUserPreference
 } from '../services/api';
 
 import DocsModal from '../components/DocsModal';
@@ -410,9 +410,9 @@ const EngineeringOrdersPage = () => {
                         <button
                             onClick={() => {
                                 if (item.has_drawing && item.drawing_url) {
-                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`, '_blank');
+                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank');
                                 } else if (item.docs_count === 1 && item.first_doc) {
-                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.first_doc)}`, '_blank');
+                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank');
                                 } else {
                                     handleOpenDocs(item.codigo, item.descricao);
                                 }

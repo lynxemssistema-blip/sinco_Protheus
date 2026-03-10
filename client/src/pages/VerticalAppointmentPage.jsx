@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, List, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer } from 'lucide-react';
-import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch } from '../services/api';
+import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl } from '../services/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -502,7 +502,7 @@ export default function VerticalAppointmentPage() {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 if (row.primeiro_arquivo) {
-                                                                    const viewUrl = `http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`;
+                                                                    const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`);
                                                                     window.open(viewUrl, '_blank');
                                                                 }
                                                             }}

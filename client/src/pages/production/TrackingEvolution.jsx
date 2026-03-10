@@ -5,7 +5,11 @@ import {
     ChevronDown, RefreshCw, BarChart3, LayoutDashboard,
     ArrowRightLeft, FileSpreadsheet, ArrowRight, Users
 } from 'lucide-react';
-import axios from 'axios';
+import {
+    getPedidosEvolution,
+    getTrackingHistory,
+    getTrackingComparison
+} from '../../services/api';
 import { Bar } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -89,9 +93,9 @@ export default function TrackingEvolution() {
                 data_inicio: filters.data_inicio ? filters.data_inicio.replace(/-/g, '') : '',
                 data_fim: filters.data_fim ? filters.data_fim.replace(/-/g, '') : ''
             };
-            const response = await axios.get('/api/production/tracking-evolution', { params });
-            setSummary(response.data.resumo);
-            setGroupedData(response.data.agrupado || []);
+            const response = await getPedidosEvolution(params);
+            setSummary(response.resumo);
+            setGroupedData(response.agrupado || []);
         } catch (error) {
             console.error('Error fetching evolution data:', error);
             alert('Erro ao carregar dados de evolução');
@@ -105,11 +109,11 @@ export default function TrackingEvolution() {
         setLoading(true);
         try {
             const params = { ...filters, page, limit: 50 };
-            const response = await axios.get('/api/production/tracking-history', { params });
-            setHistory(response.data.data);
-            setHistoryTotal(response.data.total);
-            setHistoryPage(response.data.page);
-            setHistoryTotalPages(response.data.totalPages);
+            const response = await getTrackingHistory(params);
+            setHistory(response.data);
+            setHistoryTotal(response.total);
+            setHistoryPage(response.page);
+            setHistoryTotalPages(response.totalPages);
         } catch (error) {
             console.error('Error fetching history:', error);
             // alert('Erro ao carregar histórico');
@@ -123,9 +127,9 @@ export default function TrackingEvolution() {
         setComparisonLoading(true);
         try {
             const params = { ...filters };
-            const response = await axios.get('/api/production/tracking-comparison', { params });
-            setComparisonSummary(response.data.resumo);
-            setComparisonData(response.data.operacoes);
+            const response = await getTrackingComparison(params);
+            setComparisonSummary(response.resumo);
+            setComparisonData(response.operacoes);
         } catch (error) {
             console.error('Error fetching comparison data:', error);
             alert('Erro ao carregar dados de comparação');

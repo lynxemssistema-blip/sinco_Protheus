@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History } from 'lucide-react';
-import { getProductionMatrix, saveAppointment, getProductDocuments } from '../services/api';
+import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl } from '../services/api';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
@@ -367,7 +367,7 @@ export default function ProductionMatrixPage() {
                                                 {/* Botão de PDF */}
                                                 {item.doc_url ? (
                                                     <a
-                                                        href={`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.doc_url)}`}
+                                                        href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.doc_url)}`)}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-red-50 text-red-600 rounded border border-red-100 text-[10px] font-bold hover:bg-red-100 transition-colors"

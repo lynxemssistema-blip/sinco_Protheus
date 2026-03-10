@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Search } from 'lucide-react';
-import axios from 'axios';
+import { getProductionAnalyticsDashboard } from '../services/api';
 
 export default function ProductionGanttPlanning() {
     const [pedido, setPedido] = useState('');
@@ -32,8 +32,8 @@ export default function ProductionGanttPlanning() {
 
             // Backend treats filters as "LIKE" automatically
 
-            const res = await axios.get(`/api/production/analytics-dashboard?${params.toString()}`);
-            setData(res.data);
+            const res = await getProductionAnalyticsDashboard(Object.fromEntries(params));
+            setData(res);
         } catch (err) {
             console.error('❌ [DEBUG] API Error:', err);
             alert('Erro ao carregar dados: ' + err.message);

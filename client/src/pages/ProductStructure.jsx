@@ -4,7 +4,7 @@ import { ArrowLeft, Layers, Box, FileText, Database, ChevronDown, ChevronRight, 
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
-import { getEstruturaProduto, getStockBalance, getProductRoute } from '../services/api';
+import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
 
@@ -277,7 +277,7 @@ const ProductStructure = () => {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 if (item.primeiro_arquivo) {
-                                                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(item.primeiro_arquivo)}`, '_blank');
+                                                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.primeiro_arquivo)}`), '_blank');
                                                                 }
                                                             }}
                                                             className="hover:bg-red-50 p-0.5 rounded transition-colors"

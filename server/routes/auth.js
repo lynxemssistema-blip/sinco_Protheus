@@ -4,7 +4,11 @@ const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-const SECRET_KEY = process.env.JWT_SECRET || 'metalfisa_secret_key_123';
+const SECRET_KEY = process.env.JWT_SECRET;
+if (!SECRET_KEY) {
+    console.error('FATAL ERROR: JWT_SECRET is not defined in the environment.');
+    process.exit(1);
+}
 
 const dbConfig = {
     host: process.env.MYSQL_HOST,

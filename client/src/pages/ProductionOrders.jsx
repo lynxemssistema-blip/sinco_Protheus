@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Loader2, Hash, FileText, ChevronDown, ChevronUp, Package, Calendar, AlertCircle } from 'lucide-react';
-import { getProductionOrders } from '../services/api';
+import { getProductionOrders, getFileUrl } from '../services/api';
 import DocsModal from '../components/DocsModal';
 
 export default function ProductionOrders() {
@@ -202,7 +202,7 @@ export default function ProductionOrders() {
                                                                                 e.stopPropagation();
                                                                                 if (row.arquivos_count === 1 && row.primeiro_arquivo) {
                                                                                     // Abrir direto
-                                                                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`, '_blank');
+                                                                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`), '_blank');
                                                                                 } else {
                                                                                     openDocs(row.codnoarvore, row.descnoarvore);
                                                                                 }

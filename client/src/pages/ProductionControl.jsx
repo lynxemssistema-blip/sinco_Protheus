@@ -11,7 +11,7 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
-import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto } from '../services/api';
+import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
 
@@ -413,7 +413,7 @@ export default function ProductionControl() {
                                                     if (hasDoc && url) {
                                                         return (
                                                             <button
-                                                                onClick={() => window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(url)}`, '_blank')}
+                                                                onClick={() => window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(url)}`), '_blank')}
                                                                 className="p-1 rounded hover:bg-red-50 transition-colors"
                                                                 title="Abrir Desenho/PDF"
                                                             >

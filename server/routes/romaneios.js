@@ -2,6 +2,36 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Postgres
 const mysqlPool = require('../services/mysqlService'); // MySQL
+const { requirePermission } = require('../middlewares/rbac');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+// --- Multer disk storage for Romaneio photos ---
+const uploadsDir = path.join(__dirname, '..', 'uploads', 'romaneios');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname) || '.jpg';
+        const uniqueName = `${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`;
+        cb(null, uniqueName);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max per photo
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|webp/;
+        const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+        cb(null, allowed.test(ext));
+    }
+});
 
 // --- FORNECEDORES (Postgres SA2010) ---
 router.get('/clientes', async (req, res) => {
@@ -103,9 +133,50 @@ router.get('/types', async (req, res) => {
                     INDEX idx_item (romaneio_item_id)
                 )
             `);
+            
+            // Garantir colunas se a tabela já existia
+            try { await conn.execute("ALTER TABLE app_romaneio_recebimentos ADD COLUMN romaneio_id INT NOT NULL AFTER id"); } catch(e){}
+            try { await conn.execute("ALTER TABLE app_romaneio_recebimentos ADD COLUMN romaneio_item_id INT NOT NULL AFTER romaneio_id"); } catch(e){}
+            try { await conn.execute("ALTER TABLE app_romaneio_recebimentos ADD INDEX idx_romaneio (romaneio_id)"); } catch(e){}
+            try { await conn.execute("ALTER TABLE app_romaneio_recebimentos ADD INDEX idx_item (romaneio_item_id)"); } catch(e){}
+
             console.log('✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.');
         } catch (e) {
             console.error('⚠️ [Romaneios] Erro app_romaneio_recebimentos:', e.message);
+        }
+
+        // Coluna fotos (JSON)
+        try {
+            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN fotos JSON NULL");
+            console.log('✅ [Romaneios] Coluna fotos criada.');
+        } catch (e) {
+            if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro fotos column:', e.message);
+        }
+
+        // Coluna current_revision
+        try {
+            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN current_revision INT DEFAULT 1");
+            console.log('✅ [Romaneios] Coluna current_revision criada.');
+        } catch (e) {
+            if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro current_revision:', e.message);
+        }
+
+        // Tabela de Revisões
+        try {
+            await conn.execute(`
+                CREATE TABLE IF NOT EXISTS app_romaneio_revisions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    romaneio_id INT NOT NULL,
+                    revision_number INT NOT NULL,
+                    snapshot_data JSON NOT NULL,
+                    reason TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_romaneio_rev (romaneio_id)
+                )
+            `);
+            console.log('✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.');
+        } catch (e) {
+            console.error('⚠️ [Romaneios] Erro app_romaneio_revisions:', e.message);
         }
 
         conn.release();
@@ -114,14 +185,25 @@ router.get('/types', async (req, res) => {
     }
 })();
 
+// Endpoint de Upload de Foto
+router.post('/upload-photo', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Nenhuma imagem recebida.' });
+        const url = `/uploads/romaneios/${req.file.filename}`;
+        res.json({ url });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Criar Romaneio (Cabeçalho)
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
     try {
         const {
             cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
             cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
             motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-            usuario, data_liberacao, data_previsao_retorno
+            usuario, data_liberacao, data_previsao_retorno, fotos
         } = req.body;
 
         const [result] = await mysqlPool.execute(
@@ -129,15 +211,16 @@ router.post('/', async (req, res) => {
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
                 cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
                 motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-                usuario, data_liberacao, data_previsao_retorno
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                usuario, data_liberacao, data_previsao_retorno, fotos
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
                 cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
                 motorista_nome, motorista_cnh, motorista_cnh_validade || null, veiculo_modelo, veiculo_placa,
                 usuario || 'Sistema',
-                data_liberacao || new Date(), // Default to now if not provided
-                data_previsao_retorno || null
+                data_liberacao || new Date(),
+                data_previsao_retorno || null,
+                fotos ? (typeof fotos === 'string' ? fotos : JSON.stringify(fotos)) : null
             ]
         );
 
@@ -149,13 +232,13 @@ router.post('/', async (req, res) => {
 });
 
 // Atualizar Romaneio (Cabeçalho)
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
         const {
             cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
             cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
             motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-            data_liberacao, data_previsao_retorno
+            data_liberacao, data_previsao_retorno, fotos
         } = req.body;
 
         await mysqlPool.execute(
@@ -163,13 +246,14 @@ router.put('/:id', async (req, res) => {
                 cliente_cod=?, cliente_loja=?, cliente_nome=?, tipo_id=?, observacao_geral=?,
                 cliente_endereco=?, cliente_bairro=?, cliente_cidade=?, cliente_uf=?, cliente_cep=?, cliente_telefone=?,
                 motorista_nome=?, motorista_cnh=?, motorista_cnh_validade=?, veiculo_modelo=?, veiculo_placa=?,
-                data_liberacao=?, data_previsao_retorno=?
+                data_liberacao=?, data_previsao_retorno=?, fotos=?
              WHERE id = ?`,
             [
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
                 cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
                 motorista_nome, motorista_cnh, motorista_cnh_validade || null, veiculo_modelo, veiculo_placa,
                 data_liberacao, data_previsao_retorno || null,
+                fotos ? (typeof fotos === 'string' ? fotos : JSON.stringify(fotos)) : null,
                 req.params.id
             ]
         );
@@ -187,7 +271,9 @@ router.get('/', async (req, res) => {
         const { search, status, startDate, endDate } = req.query;
 
         let query = `
-            SELECT r.*, t.description as tipo_descricao 
+            SELECT r.*, t.description as tipo_descricao,
+                (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_items WHERE romaneio_id = r.id) as total_enviado,
+                (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_id = r.id) as total_recebido
             FROM app_romaneios r
             LEFT JOIN app_romaneio_types t ON r.tipo_id = t.id
             WHERE 1=1
@@ -237,7 +323,8 @@ router.get('/:id', async (req, res) => {
         if (romaneio.length === 0) return res.status(404).json({ error: 'Romaneio não encontrado' });
 
         const [itens] = await mysqlPool.query(`
-            SELECT i.*, d.peso_kg, d.area_pintura_m2 
+            SELECT i.*, d.peso_kg, d.area_pintura_m2,
+                (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_item_id = i.id) as qtd_recebida
             FROM app_romaneio_items i
             LEFT JOIN produtos_docs d ON d.produto_codigo = i.codigo_produto
             WHERE i.romaneio_id = ?
@@ -250,7 +337,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Adicionar Item
-router.post('/:id/items', async (req, res) => {
+router.post('/:id/items', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
         const { pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario } = req.body;
         const romaneio_id = req.params.id;
@@ -268,7 +355,7 @@ router.post('/:id/items', async (req, res) => {
 });
 
 // Atualizar Status
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
         const { status } = req.body;
         await mysqlPool.execute('UPDATE app_romaneios SET status = ? WHERE id = ?', [status, req.params.id]);
@@ -280,7 +367,7 @@ router.put('/:id/status', async (req, res) => {
 
 // --- RECEBIMENTOS PARCIAIS: ESPECÍFICAS ANTES DAS GENÉRICAS ---
 // 4. Deletar um recebimento específico (Movido para cá para não cair no router.delete('/:id'))
-router.delete('/recebimentos/:id', async (req, res) => {
+router.delete('/recebimentos/:id', requirePermission('recebimentos', 'delete'), async (req, res) => {
     try {
         const recebimentoId = req.params.id;
 
@@ -297,7 +384,7 @@ router.delete('/recebimentos/:id', async (req, res) => {
 });
 
 // Deletar Romaneio (com cascade)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('romaneios', 'delete'), async (req, res) => {
     const conn = await mysqlPool.getConnection();
     try {
         await conn.beginTransaction();
@@ -318,7 +405,7 @@ router.delete('/:id', async (req, res) => {
 
 // --- ITENS ---
 // Editar Item
-router.put('/:id/items/:itemId', async (req, res) => {
+router.put('/:id/items/:itemId', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
         const { quantidade, comentario, valor_unitario } = req.body;
         await mysqlPool.execute(
@@ -332,7 +419,7 @@ router.put('/:id/items/:itemId', async (req, res) => {
 });
 
 // Deletar Item
-router.delete('/:id/items/:itemId', async (req, res) => {
+router.delete('/:id/items/:itemId', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
         await mysqlPool.execute(
             'DELETE FROM app_romaneio_items WHERE id = ? AND romaneio_id = ?',
@@ -346,7 +433,7 @@ router.delete('/:id/items/:itemId', async (req, res) => {
 
 // --- REVISÕES ---
 // Criar Nova Revisão
-router.post('/:id/revisions', async (req, res) => {
+router.post('/:id/revisions', requirePermission('romaneios', 'edit'), async (req, res) => {
     const conn = await mysqlPool.getConnection();
     try {
         await conn.beginTransaction();
@@ -580,7 +667,7 @@ router.get('/recebimentos/pendentes', async (req, res) => {
 });
 
 // 2. Registrar um recebimento para um item
-router.post('/items/:itemId/receber', async (req, res) => {
+router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'), async (req, res) => {
     try {
         const { romaneio_id, quantidade, usuario, observacao, data_recebimento } = req.body;
         const romaneio_item_id = req.params.itemId;

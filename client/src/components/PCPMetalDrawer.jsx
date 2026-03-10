@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Bot, Send, Loader2, ChevronDown, ChevronUp, Database, CheckCircle2, AlertCircle, Cpu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-
+import DOMPurify from 'dompurify';
 // ── Inline Markdown renderer ──────────────────────────────────────────────────
 function renderInline(text) {
     return text
@@ -20,12 +20,12 @@ function RenderMarkdown({ text }) {
                 if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-blue-800 mt-4 mb-1 border-b border-blue-100 pb-1">{line.slice(3)}</h2>;
                 if (line.startsWith('# ')) return <h1 key={i} className="text-lg font-bold text-blue-900 mt-4 mb-2">{line.slice(2)}</h1>;
                 if (line.startsWith('- ') || line.startsWith('* '))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: renderInline(line.slice(2)) }} /></div>;
+                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2))) }} /></div>;
                 if (/^\d+\./.test(line))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: renderInline(line.replace(/^\d+\.\s*/, '')) }} /></div>;
+                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, ''))) }} /></div>;
                 if (line.startsWith('```')) return null;
                 if (!line.trim()) return <div key={i} className="h-1" />;
-                return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderInline(line) }} />;
+                return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line)) }} />;
             })}
         </div>
     );
@@ -65,7 +65,7 @@ function ReasoningPanel({ steps }) {
                         <div key={i} className="flex items-start gap-2 px-3 py-1.5">
                             <span className="shrink-0 mt-0.5 text-base leading-none">{step.icon || '▶'}</span>
                             <span className="text-slate-700 flex-1"
-                                dangerouslySetInnerHTML={{ __html: renderInline(step.message || '') }} />
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(step.message || '')) }} />
                         </div>
                     ))}
                     {!isDone && !hasError && (
