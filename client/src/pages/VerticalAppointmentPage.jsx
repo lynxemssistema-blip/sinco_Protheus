@@ -465,6 +465,12 @@ export default function VerticalAppointmentPage() {
                                                     {getStatusIcon(row.status)}
                                                     <span>{row.status}</span>
                                                 </div>
+                                                {row.tem_pendencia_conferencia && (
+                                                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                                        <Clock className="w-3 h-3" />
+                                                        Conf. Pendente
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 align-top">
                                                 <div className="font-mono font-bold text-slate-800">{row.op}-{row.item_op} <span className="text-slate-400 font-normal">({row.sequen_op})</span></div>

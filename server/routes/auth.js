@@ -66,8 +66,12 @@ router.post('/login', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
-    // Bypass auth for document visualization (files opened directly in new browser tabs)
-    if (req.originalUrl.startsWith('/api/docs/view') || req.path === '/docs/view') {
+    // Bypass auth for document visualization and VMI model download
+    if (
+        req.originalUrl.startsWith('/api/docs/view') || 
+        req.path === '/docs/view' ||
+        req.originalUrl.startsWith('/api/vmi/modelo')
+    ) {
         return next();
     }
 

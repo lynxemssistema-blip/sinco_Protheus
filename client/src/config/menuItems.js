@@ -3,7 +3,7 @@ import {
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
-    FileUp, Target, History, GitMerge, Inbox
+    FileUp, Target, History, GitMerge, Inbox, ShieldCheck
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -43,6 +43,7 @@ export const MENU_GROUPS = [
             { id: 'painel', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'matriz', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
             { id: 'apontamento_vertical', label: 'Apontamento Vertical/Operação', path: '/pcp/apontamento-vertical', icon: ClipboardList },
+            { id: 'conferencia', label: 'Conferência de Apontamentos', path: '/pcp/conferencia', icon: ShieldCheck },
             { id: 'gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
             { id: 'ops', label: 'Ordens de Produção', path: '/producao', icon: Factory },
             { id: 'ops_detalhe', label: 'Consulta Detalhada OP', path: '/producao/op', icon: ClipboardCheck },
@@ -92,6 +93,7 @@ export const MENU_GROUPS = [
         id: 'vmi',
         label: 'VMI',
         items: [
+            { id: 'vmi_demanda', label: 'Demanda e Mapeamento VMI', path: '/vmi/demanda', icon: ClipboardList },
             { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
             { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },
             { id: 'vmi_estrategia', label: 'Estratégia de Produção', path: '/vmi/estrategia', icon: GitMerge },

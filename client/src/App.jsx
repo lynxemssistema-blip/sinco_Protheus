@@ -27,6 +27,7 @@ const ProductionControl = React.lazy(() => import('./pages/ProductionControl'));
 const ProductionAnalytics = React.lazy(() => import('./pages/ProductionAnalytics'));
 const ProductionMatrixPage = React.lazy(() => import('./pages/ProductionMatrixPage'));
 const VerticalAppointmentPage = React.lazy(() => import('./pages/VerticalAppointmentPage'));
+const ConferenciaPage = React.lazy(() => import('./pages/ConferenciaPage'));
 const EngineeringOrdersPage = React.lazy(() => import('./pages/EngineeringOrdersPage'));
 const ProductionGanttPlanning = React.lazy(() => import('./pages/ProductionGanttPlanning'));
 const StockBalances = React.lazy(() => import('./pages/StockBalances'));
@@ -56,6 +57,7 @@ const VMIUploadPage = React.lazy(() => import('./pages/vmi/VMIUploadPage'));
 const VMIDashboardPage = React.lazy(() => import('./pages/vmi/VMIDashboardPage'));
 const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage'));
 const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
+const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -269,6 +271,11 @@ function App() {
                                                 <VerticalAppointmentPage />
                                             </Layout>
                                         } />
+                                        <Route path="/pcp/conferencia" element={
+                                            <Layout>
+                                                <ConferenciaPage />
+                                            </Layout>
+                                        } />
                                         <Route path="/visao-producao" element={
                                             <Layout>
                                                 <ProductionAnalytics />
@@ -388,6 +395,11 @@ function App() {
                                         } />
 
                                         {/* VMI Routes */}
+                                        <Route path="/vmi/demanda" element={
+                                            <Layout fullWidth={true}>
+                                                <DemandaVMIContainer />
+                                            </Layout>
+                                        } />
                                         <Route path="/vmi/leitura" element={
                                             <Layout fullWidth={true}>
                                                 <VMIUploadPage />

@@ -1103,6 +1103,7 @@ router.get('/', async (req, res) => {
                 op_numero, op_item, op_sequencia, operacao_codigo,
                 SUM(quantidade) as total_produzido,
                 COUNT(*) as num_apontamentos,
+                SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
                 MIN(data_inicio) as data_real_inicio,
                 MAX(data_fim) as data_real_fim,
                 MAX(data_fim) as ultimo_apontamento
@@ -1131,6 +1132,7 @@ router.get('/', async (req, res) => {
                 data_planejada_inicio: plan?.data_planejada_inicio || null,
                 data_planejada_fim: plan?.data_planejada_fim || null,
                 qtd_produzida_real: progress?.total_produzido || 0,
+                tem_pendencia_conferencia: progress ? progress.pendencias_conferencia > 0 : false,
                 ultimo_apontamento: progress?.ultimo_apontamento || null,
                 data_real_fim: progress?.data_real_fim || null
             };
@@ -1403,6 +1405,7 @@ router.get('/matrix', async (req, res) => {
                 const [a] = await mysqlPool.query(
                     `SELECT op_numero, op_item, op_sequencia, operacao_codigo,
             SUM(quantidade) as total_produzido,
+            SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
             MIN(data_inicio) as data_real_inicio,
             MAX(data_fim) as data_real_fim
                      FROM app_production_appointments
@@ -1486,11 +1489,13 @@ router.get('/matrix', async (req, res) => {
 
                     let minRealStart = null;
                     let maxRealEnd = null;
+                    let tem_pendencia = false;
 
                     if (appt) {
                         totalProduzida = Number(appt.total_produzido || 0);
                         if (appt.data_real_inicio) minRealStart = new Date(appt.data_real_inicio);
                         if (appt.data_real_fim) maxRealEnd = new Date(appt.data_real_fim);
+                        tem_pendencia = appt.pendencias_conferencia > 0;
                     }
 
                     // Datas Planejadas (MySQL priority > ERP fallback)
@@ -1518,6 +1523,7 @@ router.get('/matrix', async (req, res) => {
                         qtd_produzida: totalProduzida,
                         percentual,
                         status,
+                        tem_pendencia,
                         dates: {
                             plan_start: start,
                             plan_end: end,
@@ -1770,6 +1776,24 @@ router.post('/plan-batch', async (req, res) => {
     }
 });
 
+// Multer para upload de fotos na conferência
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const uploadDir = path.join(__dirname, '../uploads/conferencias');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const uploadConferencia = multer({
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, uploadDir),
+        filename: (_req, file, cb) => cb(null, 'conf_' + Date.now() + '_' + Math.random().toString(36).slice(2) + path.extname(file.originalname))
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Somente imagens são permitidas'));
+    }
+});
+
 // POST /api/production/appoint - Save Appointment
 router.post('/appoint', async (req, res) => {
     try {
@@ -1815,11 +1839,21 @@ router.post('/appoint', async (req, res) => {
 
         const materiaisJson = materiais_utilizados ? JSON.stringify(materiais_utilizados) : null;
 
+        // Fetch verification config
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        let initialStatus = 'OK';
+        if (configRows.length > 0 && configRows[0].general_config) {
+            let config = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (config.enable_production_verification) {
+                initialStatus = 'PENDENTE';
+            }
+        }
+
         await mysqlPool.execute(`
             INSERT INTO app_production_appointments
-    (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson]);
+    (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
 
         // Se houver materiais com solicitacao_id, marcar solicitação como ENTREGUE (se já não estiver)
         if (materiais_utilizados && Array.isArray(materiais_utilizados)) {
@@ -1848,29 +1882,297 @@ router.get('/appointments/:op', async (req, res) => {
     try {
         const { item, sequencia, operacao } = req.query;
 
-        let sql = 'SELECT * FROM app_production_appointments WHERE op_numero = ?';
+        let sql = `
+            SELECT a.*, u.fotoUsuario as usuario_foto 
+            FROM app_production_appointments a
+            LEFT JOIN usuario u ON u.NomeCompleto = a.usuario OR u.Login = a.usuario
+            WHERE a.op_numero = ?
+        `;
         const params = [req.params.op];
 
         // Filter by specific operation if provided
         if (item) {
-            sql += ' AND op_item = ?';
+            sql += ' AND a.op_item = ?';
             params.push(item);
         }
         if (sequencia) {
-            sql += ' AND op_sequencia = ?';
+            sql += ' AND a.op_sequencia = ?';
             params.push(sequencia);
         }
         if (operacao) {
-            sql += ' AND operacao_codigo = ?';
+            sql += ' AND a.operacao_codigo = ?';
             params.push(operacao);
         }
 
-        sql += ' ORDER BY data_inicio DESC';
+        sql += ' ORDER BY a.data_inicio DESC';
 
         const [rows] = await mysqlPool.query(sql, params);
         res.json(rows);
     } catch (err) {
         console.error('[APPOINTMENTS HISTORY ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Ensure conferencia history table exists
+mysqlPool.execute(`
+    CREATE TABLE IF NOT EXISTS app_conferencia_historico (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        appointment_id INT NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        conferido_por VARCHAR(100) NOT NULL,
+        observacao TEXT,
+        fotos LONGTEXT,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_appointment (appointment_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`).catch(e => console.error('[CONFERENCIA HISTORY TABLE]', e.message));
+
+// POST /api/production/conferencia - Approve/Reject Appointment (aceita JSON ou multipart com fotos)
+router.post('/conferencia', uploadConferencia.array('fotos', 5), async (req, res) => {
+    try {
+        const { id, status, observacao, conferido_por } = req.body;
+
+        if (!id || !status || !conferido_por) {
+            return res.status(400).json({ error: 'Campos obrigatórios: id, status, conferido_por' });
+        }
+        if (!['OK', 'DIVERGENTE'].includes(status)) {
+            return res.status(400).json({ error: 'Status inválido. Use OK ou DIVERGENTE.' });
+        }
+
+        const fotosPaths = (req.files || []).map(f => '/uploads/conferencias/' + f.filename);
+        const fotosJson = fotosPaths.length > 0 ? JSON.stringify(fotosPaths) : null;
+
+        // Update current status on the appointment
+        await mysqlPool.execute(`
+            UPDATE app_production_appointments
+            SET conferencia_status = ?, conferido_por = ?, conferido_em = NOW(), conferencia_obs = ?, conferencia_fotos = ?
+            WHERE id = ?
+        `, [status, conferido_por, observacao || null, fotosJson, id]);
+
+        // Insert into history log
+        await mysqlPool.execute(`
+            INSERT INTO app_conferencia_historico (appointment_id, status, conferido_por, observacao, fotos)
+            VALUES (?, ?, ?, ?, ?)
+        `, [id, status, conferido_por, observacao || null, fotosJson]);
+
+        res.json({ message: 'Conferência registrada com sucesso', fotos: fotosPaths });
+    } catch (err) {
+        console.error('[CONFERENCIA ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/production/conferencia/bulk - Bulk approve/reject multiple appointments
+router.post('/conferencia/bulk', uploadConferencia.array('fotos', 5), async (req, res) => {
+    try {
+        const { ids, status, observacao, conferido_por } = req.body;
+
+        if (!ids || !status || !conferido_por) {
+            return res.status(400).json({ error: 'ids, status e conferido_por são obrigatórios' });
+        }
+        if (!['OK', 'DIVERGENTE'].includes(status)) {
+            return res.status(400).json({ error: 'Status inválido' });
+        }
+
+        let idArray;
+        try {
+            idArray = typeof ids === 'string' ? JSON.parse(ids) : ids;
+        } catch (e) {
+            return res.status(400).json({ error: 'ids inválido' });
+        }
+        if (!Array.isArray(idArray) || idArray.length === 0) {
+            return res.status(400).json({ error: 'ids deve ser um array não vazio' });
+        }
+
+        const fotosPaths = (req.files || []).map(f => '/uploads/conferencias/' + f.filename);
+        const fotosJson = fotosPaths.length > 0 ? JSON.stringify(fotosPaths) : null;
+
+        const placeholders = idArray.map(() => '?').join(',');
+        await mysqlPool.execute(
+            `UPDATE app_production_appointments
+             SET conferencia_status = ?, conferido_por = ?, conferido_em = NOW(), conferencia_obs = ?, conferencia_fotos = ?
+             WHERE id IN (${placeholders})`,
+            [status, conferido_por, observacao || null, fotosJson, ...idArray]
+        );
+
+        for (const id of idArray) {
+            await mysqlPool.execute(
+                `INSERT INTO app_conferencia_historico (appointment_id, status, conferido_por, observacao, fotos)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [id, status, conferido_por, observacao || null, fotosJson]
+            );
+        }
+
+        res.json({ ok: true, count: idArray.length });
+    } catch (err) {
+        console.error('[CONFERENCIA BULK ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/production/conferencia/:id/historico - History of all actions for an appointment
+router.get('/conferencia/:id/historico', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await mysqlPool.query(`
+            SELECT id, status, conferido_por, observacao, fotos, criado_em
+            FROM app_conferencia_historico
+            WHERE appointment_id = ?
+            ORDER BY criado_em DESC
+        `, [id]);
+        res.json(rows);
+    } catch (err) {
+        console.error('[CONFERENCIA HISTORICO ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/production/pendentes - All appointments for conferente dashboard
+router.get('/pendentes', async (req, res) => {
+    try {
+        const { status = 'PENDENTE', data_inicio, data_fim } = req.query;
+
+        let sql = `
+            SELECT
+                a.id,
+                a.op_numero,
+                a.op_item,
+                a.op_sequencia,
+                a.operacao_codigo,
+                a.usuario,
+                a.quantidade,
+                a.data_inicio,
+                a.data_fim,
+                a.observacao,
+                a.conferencia_status,
+                a.conferido_por,
+                a.conferido_em,
+                a.conferencia_obs,
+                a.data_fim as criado_em
+            FROM app_production_appointments a
+            WHERE 1=1
+        `;
+        const params = [];
+
+        if (status !== 'TODOS') {
+            sql += ` AND a.conferencia_status = ?`;
+            params.push(status);
+        }
+
+        if (data_inicio) {
+            sql += ` AND DATE(a.data_fim) >= ?`;
+            params.push(data_inicio);
+        }
+        if (data_fim) {
+            sql += ` AND DATE(a.data_fim) <= ?`;
+            params.push(data_fim);
+        }
+
+        sql += ` ORDER BY a.data_fim DESC LIMIT 500`;
+
+        const [rows] = await mysqlPool.query(sql, params);
+
+        // Enrich with Protheus (PostgreSQL) + MySQL data
+        if (rows.length > 0) {
+            try {
+                const opNums = [...new Set(rows.map(r => r.op_numero).filter(Boolean))];
+
+                const [scRes] = await Promise.all([
+                    opNums.length ? db.query(
+                        `SELECT TRIM(c2.c2_num) as op_numero,
+                                TRIM(c2.c2_item) as item_op,
+                                TRIM(c2.c2_produto) as produto_codigo,
+                                TRIM(c2.c2_pedido) as pedido_venda,
+                                TRIM(sa1.a1_nome) as nome_cliente,
+                                c2.c2_quant as qtd_planejada,
+                                TRIM(g2.g2_operac) as g2_operac,
+                                TRIM(g2.g2_recurso) as g2_recurso,
+                                TRIM(g2.g2_descri) as desc_operacao,
+                                TRIM(h1.h1_descri) as master_desc_recurso
+                         FROM sc2010 c2
+                         LEFT JOIN sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                             AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
+                         LEFT JOIN sa1010 sa1 ON TRIM(sa1.a1_cod) = TRIM(c5.c5_cliente)
+                             AND COALESCE(sa1.d_e_l_e_t_,'') IN ('',' ')
+                         LEFT JOIN public.sg2010 g2 ON
+                             btrim(g2.g2_produto) = btrim(c2.c2_produto)
+                             AND btrim(g2.g2_filial) = btrim(c2.c2_filial)
+                             AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                         LEFT JOIN public.sh1010 h1 ON
+                             h1.h1_codigo = g2.g2_recurso
+                             AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                         WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
+                         AND TRIM(c2.c2_num) = ANY($1)`,
+                        [opNums]
+                    ) : Promise.resolve({ rows: [] })
+                ]);
+
+                // Map results for quick lookup
+                const scMap = {};
+                const routingMap = {}; // Will hold arrays of operations per OP+Item
+                scRes.rows.forEach(r => {
+                    scMap[r.op_numero] = r; // Store base sc data
+
+                    const key = `${r.op_numero}_${r.item_op}`;
+                    if (!routingMap[key]) {
+                        routingMap[key] = [];
+                    }
+                    routingMap[key].push(r);
+                });
+
+                // Collect product codes for PDF check
+                const prodCodes = [...new Set(
+                    Object.values(scMap).map(r => r.produto_codigo).filter(Boolean)
+                )];
+
+                let pdfMap = {};
+                if (prodCodes.length) {
+                    try {
+                        const placeholders = prodCodes.map((_, i) => '?').join(',');
+                        const [pdfRows] = await mysqlPool.query(
+                            `SELECT produto_codigo, MIN(url_arquivo) as url
+                             FROM produtos_docs WHERE produto_codigo IN (${placeholders})
+                             GROUP BY produto_codigo`,
+                            prodCodes
+                        );
+                        pdfRows.forEach(r => { pdfMap[r.produto_codigo] = r.url; });
+                    } catch (e) {
+                        console.warn('[PENDENTES PDF]', e.message);
+                    }
+                }
+
+                rows.forEach(r => {
+                    const sc = scMap[r.op_numero];
+                    if (sc) {
+                        r.produto_codigo = sc.produto_codigo || null;
+                        r.pedido_venda = sc.pedido_venda || null;
+                        r.nome_cliente = sc.nome_cliente || null;
+                        r.pdf_url = pdfMap[sc.produto_codigo] || null;
+                        r.qtd_planejada = sc.qtd_planejada != null ? Number(sc.qtd_planejada) : null;
+                    }
+
+                    // Match operation description (from Matrix or Vertical)
+                    const routeKey = `${r.op_numero}_${r.op_item}`;
+                    const routes = routingMap[routeKey] || [];
+                    const exactRoute = routes.find(route =>
+                        route.g2_operac === r.operacao_codigo || route.g2_recurso === r.operacao_codigo
+                    );
+
+                    if (exactRoute) {
+                        r.operacao_nome = exactRoute.master_desc_recurso || exactRoute.desc_operacao || r.operacao_codigo;
+                    } else {
+                        r.operacao_nome = r.operacao_codigo; // Default fallback to code
+                    }
+                });
+            } catch (e) {
+                console.warn('[PENDENTES ENRICH]', e.message);
+            }
+        }
+
+        res.json(rows);
+    } catch (err) {
+        console.error('[PENDENTES ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2301,7 +2603,7 @@ router.get('/appointments/:op', async (req, res) => {
         let query = `
 SELECT
 id, op_numero, op_item, op_sequencia, operacao_codigo,
-    quantidade, data_inicio, data_fim, usuario, recurso, criado_em, observacao
+    quantidade, data_inicio, data_fim, usuario, recurso, data_fim as criado_em, observacao
             FROM app_production_appointments
             WHERE op_numero = ?
     `;
@@ -2311,7 +2613,7 @@ id, op_numero, op_item, op_sequencia, operacao_codigo,
         if (sequencia) { query += ` AND op_sequencia = ? `; params.push(sequencia); }
         if (operacao) { query += ` AND operacao_codigo = ? `; params.push(operacao); }
 
-        query += ` ORDER BY data_fim DESC, criado_em DESC`;
+        query += ` ORDER BY data_fim DESC`;
 
         const [rows] = await mysqlPool.query(query, params);
         res.json(rows);

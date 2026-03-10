@@ -489,6 +489,46 @@ export default function Settings() {
                                         />
                                     </button>
                                 </div>
+
+                                {/* Flow de Produção */}
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-medium text-slate-800">Fluxo de Produção - Módulo de Conferência</h4>
+                                            <p className="text-sm text-slate-500">Exige que apontamentos de operários sejam aprovados por um usuário Conferente (Tipo 'C').</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleGeneralConfig('enable_production_verification')}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.enable_production_verification ? 'bg-blue-600' : 'bg-slate-200'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.enable_production_verification ? 'translate-x-6' : 'translate-x-1'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {companyForm.general_config?.enable_production_verification && (
+                                        <div className="pl-4 border-l-2 border-blue-200 pt-2 pb-2">
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Comportamento do Saldo (Estoque Virtual)</label>
+                                            <select
+                                                className="w-full md:w-2/3 p-2 border rounded-lg bg-white text-sm"
+                                                value={companyForm.general_config?.verification_mode || 'INDIRECT'}
+                                                onChange={e => setCompanyForm(prev => ({
+                                                    ...prev,
+                                                    general_config: {
+                                                        ...prev.general_config,
+                                                        verification_mode: e.target.value
+                                                    }
+                                                }))}
+                                            >
+                                                <option value="INDIRECT">Padrão - Peças caem no saldo imediatamente e ficam PENDENTES de conferência</option>
+                                                <option value="QUARANTINE">Quarentena - Peças NÃO caem no saldo até que o conferente aprove o apontamento</option>
+                                            </select>
+                                            <p className="text-xs text-slate-500 mt-1">Este modo altera a visualização da barra de progresso em toda a fábrica e nos relatórios de OP.</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -655,6 +695,8 @@ export default function Settings() {
                                     >
                                         <option value="U">Usuário (Padrão)</option>
                                         <option value="A">Administrador (Total)</option>
+                                        <option value="C">Conferente (aprova/recusa apontamentos)</option>
+                                        <option value="AP">Apontador (registra produção no chão de fábrica)</option>
                                     </select>
                                 </div>
 
@@ -795,6 +837,8 @@ export default function Settings() {
                                         <option value="all">Tipo (Todos)</option>
                                         <option value="A">Admin</option>
                                         <option value="U">Usuário</option>
+                                        <option value="C">Conferente</option>
+                                        <option value="AP">Apontador</option>
                                     </select>
                                     {(userFilter || pcFilter !== 'all' || typeFilter !== 'all') && (
                                         <button
@@ -856,8 +900,12 @@ export default function Settings() {
                                                 </td>
                                                 <td className="px-6 py-3">
                                                     {u.TipoUsuario === 'A'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 print:bg-transparent print:border print:border-indigo-800">Admin</span>
-                                                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 print:bg-transparent print:border print:border-green-800">Usuário</span>
+                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Admin</span>
+                                                        : u.TipoUsuario === 'C'
+                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Conferente</span>
+                                                        : u.TipoUsuario === 'AP'
+                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Apontador</span>
+                                                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Usuário</span>
                                                     }
                                                 </td>
                                                 <td className="px-6 py-3 text-right print:hidden">
@@ -1105,8 +1153,8 @@ export default function Settings() {
                                                                             <button
                                                                                 onClick={() => togglePerm(item.id, action)}
                                                                                 className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all ${p[`can_${action}`]
-                                                                                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                                                        : 'bg-white border-slate-300 text-transparent hover:border-indigo-300'
+                                                                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                                                    : 'bg-white border-slate-300 text-transparent hover:border-indigo-300'
                                                                                     }`}
                                                                             >
                                                                                 <Check className="w-4 h-4" />

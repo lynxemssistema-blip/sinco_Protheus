@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw } from 'lucide-react';
+import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History } from 'lucide-react';
 import { getProductionMatrix, saveAppointment, getProductDocuments } from '../services/api';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
@@ -429,6 +429,22 @@ export default function ProductionMatrixPage() {
                                                             </div>
                                                             <div className="text-xs font-medium pb-1">{opData.percentual}%</div>
 
+                                                            {opData.tem_pendencia && (
+                                                                <div
+                                                                    className="mt-0.5 flex justify-center cursor-pointer"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const opObj = buildOpObject(item, opCode);
+                                                                        if (opObj) setHistoryTarget(opObj);
+                                                                    }}
+                                                                >
+                                                                    <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" title="Apontamentos pendentes de conferência nesta operação. Clique para verificar.">
+                                                                        <Clock className="w-2.5 h-2.5" />
+                                                                        Conf.
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
                                                             {/* TIMER: Static badge showing started time (no live counter) */}
                                                             {cellTimer && (
                                                                 <div className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 ${isRunning ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
@@ -472,6 +488,18 @@ export default function ProductionMatrixPage() {
                                                                         title="Zerar Tempo"
                                                                     >
                                                                         <RotateCcw className="w-3.5 h-3.5 fill-current" />
+                                                                    </button>
+
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const opObj = buildOpObject(item, opCode);
+                                                                            if (opObj) setHistoryTarget(opObj);
+                                                                        }}
+                                                                        className="p-1 hover:bg-indigo-100 text-indigo-600 rounded-full"
+                                                                        title="Ver Histórico / Conferir"
+                                                                    >
+                                                                        <History className="w-3.5 h-3.5" />
                                                                     </button>
                                                                 </div>
                                                             )}

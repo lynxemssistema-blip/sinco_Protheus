@@ -5,6 +5,7 @@ import {
     Loader2, AlertCircle, ChevronRight, Trash2, Eye,
     BarChart2, TrendingUp, TrendingDown, Minus
 } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function VMIHistoricoPage() {
     const [leituras, setLeituras] = useState([]);
@@ -15,6 +16,7 @@ export default function VMIHistoricoPage() {
     const [loadingDetalhe, setLoadingDetalhe] = useState(false);
     const [comparativo, setComparativo] = useState(null);
     const [loadingComp, setLoadingComp] = useState(false);
+    const [confirm, setConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
     useEffect(() => {
         fetchLeituras();
@@ -65,16 +67,22 @@ export default function VMIHistoricoPage() {
         }
     };
 
-    const remover = async (id, e) => {
+    const remover = (id, e) => {
         e.stopPropagation();
-        if (!window.confirm('Remover esta leitura do histórico?')) return;
-        try {
-            await api.delete(`/vmi/leituras/${id}`);
-            setLeituras(prev => prev.filter(l => l.id !== id));
-            if (expandido === id) { setExpandido(null); setDetalhe(null); }
-        } catch {
-            alert('Erro ao remover leitura.');
-        }
+        setConfirm({
+            isOpen: true,
+            title: 'Remover Histórico',
+            message: 'Tem certeza que deseja remover esta leitura do histórico? Esta ação é permanente.',
+            onConfirm: async () => {
+                try {
+                    await api.delete(`/vmi/leituras/${id}`);
+                    setLeituras(prev => prev.filter(l => l.id !== id));
+                    if (expandido === id) { setExpandido(null); setDetalhe(null); }
+                } catch {
+                    alert('Erro ao remover leitura.');
+                }
+            }
+        });
     };
 
     const fmtDate = (dt) => new Date(dt).toLocaleString('pt-BR', {
@@ -291,6 +299,14 @@ export default function VMIHistoricoPage() {
                     </div>
                 ))}
             </div>
+
+            <ConfirmModal 
+                isOpen={confirm.isOpen}
+                onClose={() => setConfirm(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirm.onConfirm}
+                title={confirm.title}
+                message={confirm.message}
+            />
         </div>
     );
 }

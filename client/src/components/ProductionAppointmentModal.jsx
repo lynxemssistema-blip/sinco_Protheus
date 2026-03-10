@@ -213,6 +213,23 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                                                         {' '}{dataFim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
+
+                                                {/* Status da Conferência */}
+                                                {(item.conferencia_status || item.conferencia_obs) && (
+                                                    <div className="flex flex-wrap items-center gap-2 mt-1.5 mb-1 text-[10px]">
+                                                        {item.conferencia_status === 'OK' && <span className="text-green-600 font-bold border border-green-200 bg-green-50 px-1.5 py-0.5 rounded">Conf: OK</span>}
+                                                        {item.conferencia_status === 'PENDENTE' && <span className="text-amber-600 font-bold border border-amber-200 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> Conf: Pendente</span>}
+                                                        {item.conferencia_status === 'DIVERGENTE' && <span className="text-red-600 font-bold border border-red-200 bg-red-50 px-1.5 py-0.5 rounded">Conf: Divergente</span>}
+
+                                                        {item.conferido_por && <span className="text-slate-500 italic">por {item.conferido_por}</span>}
+                                                    </div>
+                                                )}
+
+                                                {item.conferencia_obs && (
+                                                    <div className="text-[10px] text-red-600 italic bg-red-50 border border-red-100 px-2 py-1 rounded mt-1">
+                                                        <span className="font-bold">Nota do Conferente:</span> {item.conferencia_obs}
+                                                    </div>
+                                                )}
                                                 {item.observacao && (
                                                     <div className="text-xs text-slate-500 italic bg-slate-50 px-2 py-1 rounded mt-1">
                                                         "{item.observacao}"

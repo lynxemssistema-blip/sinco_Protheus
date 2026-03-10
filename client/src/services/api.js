@@ -217,6 +217,26 @@ export const saveProductionPlan = (data) => api.post('/production/plan', data).t
 export const saveProductionPlanBatch = (plans) => api.post('/production/plan-batch', { plans }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);
 export const getAppointmentHistory = (op, item, sequencia, operacao) => api.get(`/production/appointments/${op}`, { params: { item, sequencia, operacao } }).then(res => res.data);
+export const submitConferencia = ({ id, status, observacao, conferido_por, fotos = [] }) => {
+    const form = new FormData();
+    form.append('id', id);
+    form.append('status', status);
+    form.append('conferido_por', conferido_por);
+    if (observacao) form.append('observacao', observacao);
+    fotos.forEach(f => form.append('fotos', f));
+    return api.post('/production/conferencia', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(res => res.data);
+};
+export const getPendentesConferencia = (params) => api.get('/production/pendentes', { params }).then(res => res.data);
+export const getConferenciaHistorico = (id) => api.get(`/production/conferencia/${id}/historico`).then(res => res.data);
+export const submitConferenciaBulk = ({ ids, status, observacao, conferido_por, fotos = [] }) => {
+    const form = new FormData();
+    form.append('ids', JSON.stringify(ids));
+    form.append('status', status);
+    form.append('observacao', observacao || '');
+    form.append('conferido_por', conferido_por);
+    fotos.forEach(f => form.append('fotos', f));
+    return api.post('/production/conferencia/bulk', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(res => res.data);
+};
 export const getProductionAnalytics = (params) => api.get('/production/analytics', { params }).then(res => res.data);
 export const getProcessList = () => api.get('/production/processes').then(res => res.data);
 export const getPedidosEvolution = (params) => api.get('/production/tracking-evolution', { params }).then(res => ({ ...res.data, pedidos: res.data.agrupado || [] }));

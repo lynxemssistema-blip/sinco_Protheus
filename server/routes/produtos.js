@@ -106,15 +106,19 @@ router.get('/', async (req, res) => {
         }
 
         // 5. Client Code Filter (Search in SZ1010)
+        // Normaliza o termo buscado e o campo z1_codcli (remove caracteres não-alfanuméricos)
+        // para que "33.11.10572" encontre "33111057204" e vice-versa
         if (req.query.client_code) {
-            const clientCodeTerm = `%${req.query.client_code}%`;
-            baseQuery += ` AND EXISTS (
-                SELECT 1 FROM public.sz1010 z1 
-                WHERE TRIM(z1.z1_produto) = TRIM(sb1.b1_cod) 
-                AND TRIM(COALESCE(z1.d_e_l_e_t_, '')) <> '*'
-                AND TRIM(z1.z1_codcli) ILIKE $${paramIndex++}
-             )`;
-            params.push(clientCodeTerm);
+            const cleanedTerm = req.query.client_code.replace(/[^a-zA-Z0-9]/g, '');
+            if (cleanedTerm.length > 0) {
+                baseQuery += ` AND EXISTS (
+                    SELECT 1 FROM public.sz1010 z1
+                    WHERE TRIM(z1.z1_produto) = TRIM(sb1.b1_cod)
+                    AND TRIM(COALESCE(z1.d_e_l_e_t_, '')) <> '*'
+                    AND regexp_replace(trim(z1.z1_codcli), '[^a-zA-Z0-9]', '', 'g') ILIKE $${paramIndex++}
+                )`;
+                params.push(`%${cleanedTerm}%`);
+            }
         }
 
         // 6. File Path Filter (Multi-word search in MySQL produtos_docs)

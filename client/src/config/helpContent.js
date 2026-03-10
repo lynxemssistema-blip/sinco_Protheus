@@ -610,6 +610,34 @@ export const HELP_CONTENT = {
     // =============================================================
     // VMI (VENDOR MANAGED INVENTORY)
     // =============================================================
+    '/vmi/demanda': {
+        id: 'vmi-demanda',
+        category: 'Comercial',
+        categoryColor: '#2563eb',
+        title: 'Base e Mapeamento VMI',
+        icon: 'Layers',
+        description: 'Interface para importar demandas de clientes, gerenciar a base de itens VMI e realizar o mapeamento com o Protheus.',
+        steps: [
+            'A página é dividida em duas abas principais no topo: "1. Importação e Base" e "2. Mapeamento Protheus".',
+            'Sincronia Manual: Por segurança e performance, os dados não carregam automaticamente ao entrar. Clique sempre no botão "Atualizar" (ícone de setas circulares) para visualizar as informações.',
+            'Importação: Na primeira aba, clique em "Importar Planilha" para subir o Excel do cliente. O sistema abrirá um modo de Pré-visualização; revise os dados e clique em "Confirmar e Gravar" se estiver correto.',
+            'Lotes de Importação: À esquerda, cada arquivo importado gera um "card". Selecione o card para ver apenas os dados daquele arquivo ou clique em "Ver Tudo" para a base completa.',
+            'Agrupamento: Use o seletor no topo da tabela para mudar a visão entre "Lista Plana", "Por Produto Pai" (Equipamento) ou "Por Pedido de Venda".',
+            'Colunas de Status: A coluna "Tipo" mostra a classificação atual do item no Protheus (PCP, Novo, Revisão, Restrição) com cores distintas.',
+            'Vínculo Protheus: A coluna "Cód. Protheus" exibe o B1_COD associado ao item após o mapeamento ser concluído.',
+            'Limpeza de Dados: No topo, o botão "Limpar Base" remove todos os dados. Ações de exclusão agora solicitam confirmação em uma janela centralizada antes de prosseguir.',
+            'Exportação: O botão "Exportar Excel" gera um arquivo com 3 abas detalhando a demanda de forma geral, por equipamento e por pedido.',
+        ],
+        tips: [
+            'Ao realizar o mapeamento na aba 2, você pode usar o botão "Sugerir Vínculos" para que o sistema busque automaticamente os melhores matches no Protheus.',
+            'Passe o mouse sobre as siglas de "Tipo" para ver a descrição detalhada e o status da peça na engenharia.',
+        ],
+        links: [
+            { label: 'VMI Dashboard', path: '/vmi/dashboard' },
+            { label: 'VMI Estratégia', path: '/vmi/estrategia' },
+        ],
+    },
+
     '/vmi': {
         id: 'vmi-dashboard',
         category: 'Comercial',

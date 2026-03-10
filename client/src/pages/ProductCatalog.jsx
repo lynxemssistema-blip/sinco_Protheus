@@ -76,18 +76,24 @@ const ProductCatalog = () => {
             }
 
             // Mapeando dados para a planilha
-            const excelData = data.map(item => ({
-                'Código': item.codigo,
-                'Descrição': item.descricao,
-                'Tipo': item.tipo,
-                'UM': item.unidade,
-                'Grupo': item.grupo,
-                'Peso (kg)': item.metadados?.peso_kg ? Number(item.metadados.peso_kg) : '',
-                'Operação': item.metadados?.operacao || '',
-                'Op c/ Doc.': item.tem_arquivos ? 'Sim' : 'Não',
-                'Estoque Total': item.estoque_total || 0,
-                'Associações (Qtd)': item.associacoes?.length || 0
-            }));
+            const excelData = data.map(item => {
+                const temRefs = item.referencias && item.referencias.length > 0;
+                return {
+                    'Código': item.codigo,
+                    'Descrição': item.descricao,
+                    'Cliente': temRefs ? item.referencias.map(r => r.cliente).filter(Boolean).join(' - ') : '',
+                    'Cód. Prod. Cliente': temRefs ? item.referencias.map(r => r.desenho).filter(Boolean).join(' - ') : '',
+                    'Rev. Cliente': temRefs ? item.referencias.map(r => r.revisao).filter(Boolean).join(' - ') : '',
+                    'Tipo': item.tipo,
+                    'UM': item.unidade,
+                    'Grupo': item.grupo,
+                    'Peso (kg)': item.metadados?.peso_kg ? Number(item.metadados.peso_kg) : '',
+                    'Operação': item.metadados?.operacao || '',
+                    'Op c/ Doc.': item.tem_arquivos ? 'Sim' : 'Não',
+                    'Estoque Total': item.estoque_total || 0,
+                    'Associações (Qtd)': item.associacoes?.length || 0
+                };
+            });
 
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.json_to_sheet(excelData);
@@ -96,6 +102,9 @@ const ProductCatalog = () => {
             ws['!cols'] = [
                 { wch: 15 }, // Codigo
                 { wch: 45 }, // Descricao
+                { wch: 30 }, // Cliente
+                { wch: 20 }, // Cód. Prod. Cliente
+                { wch: 15 }, // Rev. Cliente
                 { wch: 10 }, // Tipo
                 { wch: 10 }, // UM
                 { wch: 10 }, // Grupo
