@@ -3,7 +3,7 @@ import {
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
-    FileUp, Target, History, GitMerge, Inbox, ShieldCheck
+    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -93,7 +93,8 @@ export const MENU_GROUPS = [
         id: 'vmi',
         label: 'VMI',
         items: [
-            { id: 'vmi_demanda', label: 'Demanda e Mapeamento VMI', path: '/vmi/demanda', icon: ClipboardList },
+            { id: 'vmi_demanda', label: 'VMI Forecast', path: '/vmi/forecast', icon: ClipboardList },
+            { id: 'vmi_pedido', label: 'VMI Pedido', path: '/vmi/pedido', icon: ListOrdered },
             { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
             { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },
             { id: 'vmi_estrategia', label: 'Estratégia de Produção', path: '/vmi/estrategia', icon: GitMerge },

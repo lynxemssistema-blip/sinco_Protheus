@@ -172,6 +172,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
     };
 
     const [salvandoTodos, setSalvandoTodos] = useState(false);
+    const [desvinculandoTodos, setDesvinculandoTodos] = useState(false);
 
     const handleSalvarTodos = async () => {
         // Monta a lista: para cada item sem mapeamento que tenha sugestão ou seleção manual
@@ -225,6 +226,33 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
         } finally {
             setSalvandoTodos(false);
         }
+    };
+
+    const handleDesvincularTodos = () => {
+        const mapeadosAtuais = Object.keys(mapeamentos);
+        if (mapeadosAtuais.length === 0) {
+            showToast('Nenhum item mapeado para desvincular.');
+            return;
+        }
+
+        setConfirm({
+            isOpen: true,
+            title: 'Desvincular Todos',
+            message: `Tem certeza que deseja remover o vínculo de TODOS os ${mapeadosAtuais.length} itens mapeados?`,
+            onConfirm: async () => {
+                setDesvinculandoTodos(true);
+                try {
+                    await api.post('/vmi/mapeamento/desvincular-lote', { codigos: mapeadosAtuais });
+                    setMapeamentos({});
+                    showToast(`${mapeadosAtuais.length} vínculos removidos.`);
+                } catch (err) {
+                    showToast('Erro ao remover vínculos em lote.');
+                    console.error(err);
+                } finally {
+                    setDesvinculandoTodos(false);
+                }
+            }
+        });
     };
 
     const handleConfirmarVinculo = async (codigo_cliente) => {
@@ -341,7 +369,27 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                 try {
                     await api.delete(`/vmi/mapeamento/${encodeURIComponent(codigo_cliente)}`);
                     setMapeamentos(prev => { const n = { ...prev }; delete n[codigo_cliente]; return n; });
-                    showToast('Vínculo removido.');
+                    showToast('Vínculo removido. Buscando sugestão...');
+                    
+                    // Busca sugestão automaticamente após desvincular
+                    setBuscando(true);
+                    try {
+                        const res = await api.post('/vmi/mapeamento/sugerir', { codigos: [codigo_cliente] });
+                        const novasSugs = res.data.sugestoes || {};
+                        const novasBases = res.data.bases || {};
+                        const autoSel = {};
+                        for (const [cod, opts] of Object.entries(novasSugs)) {
+                            if (opts.length === 1) autoSel[cod] = opts[0];
+                            else if (opts.length > 1 && opts[0].score >= 4) autoSel[cod] = opts[0];
+                        }
+                        setSugestoes(prev => ({ ...prev, ...novasSugs }));
+                        setBases(prev => ({ ...prev, ...novasBases }));
+                        if (Object.keys(autoSel).length > 0) setSelecoes(prev => ({ ...prev, ...autoSel }));
+                    } catch (e) {
+                         console.error('Erro ao buscar sugestão pós-desvinculo', e);
+                    } finally {
+                        setBuscando(false);
+                    }
                 } catch {
                     // fallback local (se endpoint não existir ainda)
                     setMapeamentos(prev => { const n = { ...prev }; delete n[codigo_cliente]; return n; });
@@ -384,6 +432,12 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                 ? <><RefreshCcw className="w-4 h-4 animate-spin" /> Salvando...</>
                                 : <><Save className="w-4 h-4" /> Salvar Todos ({demandas.filter(d => !mapeamentos[d.codigo_cliente] && (selecoes[d.codigo_cliente] || sugestoes[d.codigo_cliente]?.[0])).length})</>
                             }
+                        </button>
+                        <button onClick={handleDesvincularTodos} disabled={desvinculandoTodos || Object.keys(mapeamentos).length === 0}
+                            className="px-4 py-2 border border-red-300 bg-red-50 text-red-700 rounded shadow-sm hover:bg-red-100 font-medium flex items-center gap-2 text-sm disabled:opacity-40">
+                            {desvinculandoTodos
+                                ? <><RefreshCcw className="w-4 h-4 animate-spin" /> ...</>
+                                : <><Link2Off className="w-4 h-4" /> Desvincular Todos ({Object.keys(mapeamentos).length})</>}
                         </button>
                         <button onClick={handleBuscarSugestoes} disabled={loading || buscando}
                             className="px-4 py-2 bg-fuchsia-600 text-white rounded shadow hover:bg-fuchsia-700 font-medium flex items-center gap-2 text-sm disabled:opacity-50">
@@ -554,13 +608,6 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                                     {jaMapeado.descricao_protheus}
                                                                 </span>
                                                             </div>
-                                                            <div className="flex flex-col gap-1 items-end">
-                                                                <button onClick={() => handleDesvincular(d.codigo_cliente)}
-                                                                    title="Remover vínculo"
-                                                                    className="text-slate-300 hover:text-red-400 flex-shrink-0 mt-0.5">
-                                                                    <Link2Off className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
                                                         </div>
                                                     ) : options.length > 0 ? (
                                                         /* Cards de sugestões */
@@ -639,14 +686,20 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                 {/* Ação */}
                                                 <td className="px-4 py-3 text-center align-top">
                                                     {jaMapeado ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-1 rounded">
-                                                            <CheckCircle className="w-3.5 h-3.5" /> Vinculado
-                                                        </span>
+                                                        <button
+                                                            onClick={() => handleDesvincular(d.codigo_cliente)}
+                                                            title="Clique para remover este vínculo"
+                                                            className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-300 rounded text-xs font-semibold hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors flex items-center justify-center gap-1 w-full max-w-[110px] mx-auto group">
+                                                            <CheckCircle className="w-3.5 h-3.5 group-hover:hidden" />
+                                                            <Link2Off className="w-3.5 h-3.5 hidden group-hover:block" />
+                                                            <span className="group-hover:hidden">Vinculado</span>
+                                                            <span className="hidden group-hover:block">Desvincular</span>
+                                                        </button>
                                                     ) : (
                                                         <button
                                                             onClick={() => handleConfirmarVinculo(d.codigo_cliente)}
                                                             disabled={salvando[d.codigo_cliente] || !selecionado}
-                                                            className="px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-medium hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1 w-full max-w-[100px] mx-auto">
+                                                            className="px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-medium hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1 w-full max-w-[110px] mx-auto">
                                                             {salvando[d.codigo_cliente]
                                                                 ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
                                                                 : <Save className="w-3.5 h-3.5" />}

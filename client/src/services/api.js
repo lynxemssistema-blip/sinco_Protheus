@@ -105,6 +105,11 @@ export const getProductionOrdersByOp = async (op, item, sequencia, client, produ
     return response.data;
 };
 
+export const checkOpItemAvailability = async (op, item) => {
+    const response = await api.get('/romaneios/check-op-item', { params: { op, item } });
+    return response.data;
+};
+
 export const getRomaneios = async (params) => {
     const response = await api.get('/romaneios', { params });
     return response.data;
@@ -135,8 +140,8 @@ export const addRomaneioItem = async (id, itemData) => {
     return response.data;
 };
 
-export const updateRomaneioStatus = async (id, status) => {
-    const response = await api.put(`/romaneios/${id}/status`, { status });
+export const updateRomaneioStatus = async (id, status, data_alteracao, usuario) => {
+    const response = await api.put(`/romaneios/${id}/status`, { status, data_alteracao, usuario });
     return response.data;
 };
 

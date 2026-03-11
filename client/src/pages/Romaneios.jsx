@@ -3,8 +3,10 @@ import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer } from 'lucide-
 import { getRomaneios, deleteRomaneio, updateRomaneioStatus } from '../services/api';
 import RomaneioForm from '../components/RomaneioForm';
 import useStickyState from '../hooks/useStickyState';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Romaneios() {
+    const { user } = useAuth();
     const [view, setView] = useStickyState('list', '@metalfisa:roma_view'); // list | form
     const [romaneios, setRomaneios] = useState([]);
     const [selectedId, setSelectedId] = useStickyState(null, '@metalfisa:roma_selectedId');
@@ -97,12 +99,23 @@ export default function Romaneios() {
                     </div>
                 )}
                 {(view === 'form' || view === 'product_search') && (
-                    <button
-                        onClick={() => setView('list')}
-                        className="text-slate-600 hover:text-slate-900 font-medium"
-                    >
-                        Voltar para Lista
-                    </button>
+                    <div className="flex items-center gap-4 border border-red-500 border-0">
+                        {view === 'form' && selectedId && (
+                            <button
+                                onClick={() => handleEdit(selectedId)}
+                                className="text-blue-600 border border-blue-200 bg-blue-50 px-4 py-2 rounded-lg hover:bg-blue-100 font-medium flex items-center gap-2 transition"
+                            >
+                                <Edit className="w-4 h-4" />
+                                Editar Dados Principais do Romaneio
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setView('list')}
+                            className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 font-medium whitespace-nowrap transition"
+                        >
+                            Voltar para Lista de Romaneios
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -134,6 +147,7 @@ export default function Romaneios() {
                             <option value="">Todos</option>
                             <option value="Rascunho">Rascunho</option>
                             <option value="Finalizado">Finalizado</option>
+                            <option value="Enviado">Enviado</option>
                             <option value="Cancelado">Cancelado</option>
                         </select>
                     </div>
@@ -226,23 +240,36 @@ export default function Romaneios() {
                                                 className={`px-2 py-1 rounded text-xs font-medium border-0 cursor-pointer outline-none focus:ring-2 focus:ring-blue-200
                                                     ${r.status === 'Rascunho' ? 'bg-yellow-50 text-yellow-700' : ''}
                                                     ${r.status === 'Finalizado' ? 'bg-green-50 text-green-700' : ''}
+                                                    ${r.status === 'Enviado' ? 'bg-blue-50 text-blue-700' : ''}
                                                     ${r.status === 'Cancelado' ? 'bg-red-50 text-red-700' : ''}
                                                 `}
                                                 value={r.status}
                                                 onChange={async (e) => {
                                                     const newStatus = e.target.value;
-                                                    if (!window.confirm(`Mudar status para ${newStatus}?`)) return;
+                                                    
+                                                    const today = new Date().toLocaleDateString('pt-BR');
+                                                    const userDate = window.prompt(`Informe a data da alteração para o status "${newStatus}" (DD/MM/AAAA):`, today);
+                                                    
+                                                    if (userDate === null) {
+                                                        // User cancelled, revert visually
+                                                        e.target.value = r.status;
+                                                        return;
+                                                    }
+                                                    
                                                     try {
-                                                        await updateRomaneioStatus(r.id, newStatus);
+                                                        const userName = user?.nome || user?.login || 'Sistema';
+                                                        await updateRomaneioStatus(r.id, newStatus, userDate, userName);
                                                         fetchRomaneios();
                                                     } catch (err) {
-                                                        alert('Erro: ' + err.message);
+                                                        alert('Erro ao mudar status: ' + (err.response?.data?.error || err.message));
+                                                        fetchRomaneios();
                                                     }
                                                 }}
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 <option value="Rascunho">Rascunho</option>
                                                 <option value="Finalizado">Finalizado</option>
+                                                <option value="Enviado">Enviado</option>
                                                 <option value="Cancelado">Cancelado</option>
                                             </select>
                                         </td>

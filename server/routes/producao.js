@@ -298,6 +298,7 @@ arvore AS (
     ob.c2_sequen AS sequen_op,
     ob.op_origem,
     ob.raw_pedido AS pedido_venda,
+    ob.obs_venda,
 
     0 AS nivel,
     CAST(ob.c2_produto AS text) AS cod_atual,
@@ -320,6 +321,7 @@ arvore AS (
     a.sequen_op,
     a.op_origem,
     a.pedido_venda,
+    a.obs_venda,
 
     a.nivel + 1 AS nivel,
     CAST(g1.g1_comp AS text) AS cod_atual,

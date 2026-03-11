@@ -1115,4 +1115,42 @@ router.post('/mapeamento/confirmar-lote', async (req, res) => {
     }
 });
 
+// ── DELETE /api/vmi/mapeamento/:codigo_cliente ──
+// Remove um vínculo específico
+router.delete('/mapeamento/:codigo_cliente', async (req, res) => {
+    try {
+        const { codigo_cliente } = req.params;
+        await mysqlPool.query(
+            'DELETE FROM app_demanda_vmi_map WHERE codigo_produto_cliente = ?',
+            [codigo_cliente]
+        );
+        res.json({ success: true, msg: 'Vínculo removido.' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Erro ao remover vínculo.' });
+    }
+});
+
+// ── POST /api/vmi/mapeamento/desvincular-lote ──
+// Remove múltiplos vínculos de uma vez
+router.post('/mapeamento/desvincular-lote', async (req, res) => {
+    try {
+        const { codigos } = req.body;
+        if (!Array.isArray(codigos) || codigos.length === 0) {
+            return res.status(400).json({ error: 'Nenhum código fornecido.' });
+        }
+        
+        const placeholders = codigos.map(() => '?').join(',');
+        await mysqlPool.query(
+            `DELETE FROM app_demanda_vmi_map WHERE codigo_produto_cliente IN (${placeholders})`,
+            codigos
+        );
+        
+        res.json({ success: true, removidos: codigos.length });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Erro ao remover vínculos.' });
+    }
+});
+
 module.exports = router;

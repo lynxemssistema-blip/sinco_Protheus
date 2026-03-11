@@ -610,11 +610,11 @@ export const HELP_CONTENT = {
     // =============================================================
     // VMI (VENDOR MANAGED INVENTORY)
     // =============================================================
-    '/vmi/demanda': {
+    '/vmi/forecast': {
         id: 'vmi-demanda',
         category: 'Comercial',
         categoryColor: '#2563eb',
-        title: 'Base e Mapeamento VMI',
+        title: 'VMI Forecast',
         icon: 'Layers',
         description: 'Interface para importar demandas de clientes, gerenciar a base de itens VMI e realizar o mapeamento com o Protheus.',
         steps: [

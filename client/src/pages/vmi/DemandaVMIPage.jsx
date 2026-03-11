@@ -419,7 +419,7 @@ export default function DemandaVMIPage({ isTab = false }) {
         });
         addSheet('Por Pedido', sheet3);
 
-        XLSX.writeFile(wb, `Demanda_VMI_${date}.xlsx`, { cellStyles: true });
+        XLSX.writeFile(wb, `VMI_Forecast_${date}.xlsx`, { cellStyles: true });
         showToast('Excel exportado com 3 abas!');
     };
 
@@ -526,7 +526,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                             <FileSpreadsheet className="w-7 h-7 text-indigo-600" />
-                            Demanda VMI
+                            VMI Forecast
                         </h1>
                         <p className="text-slate-500 text-sm mt-1">Importação e gestão das demandas futuras enviadas pelo cliente via planilha.</p>
                     </div>

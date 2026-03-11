@@ -150,6 +150,7 @@ app.use('/api/ai', require('./routes/ai'));
 
 // VMI — Vendor Managed Inventory
 app.use('/api/vmi', require('./routes/vmi'));
+app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));

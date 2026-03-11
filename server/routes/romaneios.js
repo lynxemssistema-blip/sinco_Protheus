@@ -77,6 +77,34 @@ router.get('/clientes', async (req, res) => {
     }
 });
 
+// --- VERIFICAÇÃO DE OP ITEM ---
+router.get('/check-op-item', async (req, res) => {
+    try {
+        const { op, item } = req.query;
+        if (!op || !item) {
+            return res.status(400).json({ error: 'Parâmetros op e item são obrigatórios' });
+        }
+
+        const query = `
+            SELECT 
+                r.id AS romaneio_id,
+                r.status,
+                r.data_liberacao as data_criacao,
+                i.quantidade as qtd_enviada
+            FROM app_romaneio_items i
+            JOIN app_romaneios r ON i.romaneio_id = r.id
+            WHERE i.pedido = ? AND i.item_pedido = ?
+            ORDER BY r.data_liberacao DESC
+        `;
+
+        const [rows] = await mysqlPool.execute(query, [op, item]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao verificar OP item:', err);
+        res.status(500).json({ error: 'Erro ao verificar OP item' });
+    }
+});
+
 // --- TIPOS (MySQL) ---
 router.get('/types', async (req, res) => {
     try {
@@ -174,6 +202,7 @@ router.get('/types', async (req, res) => {
                     INDEX idx_romaneio_rev (romaneio_id)
                 )
             `);
+            try { await conn.execute("ALTER TABLE app_romaneio_revisions ADD COLUMN usuario VARCHAR(100) NULL"); } catch(e){}
             console.log('✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.');
         } catch (e) {
             console.error('⚠️ [Romaneios] Erro app_romaneio_revisions:', e.message);
@@ -368,12 +397,42 @@ router.post('/:id/items', requirePermission('romaneios', 'edit'), async (req, re
 
 // Atualizar Status
 router.put('/:id/status', requirePermission('romaneios', 'edit'), async (req, res) => {
+    const conn = await mysqlPool.getConnection();
     try {
-        const { status } = req.body;
-        await mysqlPool.execute('UPDATE app_romaneios SET status = ? WHERE id = ?', [status, req.params.id]);
-        res.json({ message: 'Status atualizado' });
+        await conn.beginTransaction();
+        const { status, data_alteracao, usuario } = req.body;
+        const romaneioId = req.params.id;
+
+        // 1. Update the status
+        await conn.execute('UPDATE app_romaneios SET status = ? WHERE id = ?', [status, romaneioId]);
+
+        // 2. Snapshot Data for Revision
+        const [rows] = await conn.query('SELECT * FROM app_romaneios WHERE id = ?', [romaneioId]);
+        if (rows.length > 0) {
+            const header = rows[0];
+            const [items] = await conn.query('SELECT * FROM app_romaneio_items WHERE romaneio_id = ?', [romaneioId]);
+            const snapshot = { header, items };
+
+            const currentRev = header.current_revision || 1;
+            const reason = `Status alterado para ${status}${data_alteracao ? ` em ${data_alteracao}` : ''}`;
+            
+            // 3. Create Revision
+            await conn.execute(
+                'INSERT INTO app_romaneio_revisions (romaneio_id, revision_number, snapshot_data, reason, usuario) VALUES (?, ?, ?, ?, ?)',
+                [romaneioId, currentRev, JSON.stringify(snapshot), reason, usuario || 'Sistema']
+            );
+
+            // 4. Increment Revision
+            await conn.execute('UPDATE app_romaneios SET current_revision = current_revision + 1 WHERE id = ?', [romaneioId]);
+        }
+
+        await conn.commit();
+        res.json({ message: 'Status atualizado com histórico registrado' });
     } catch (err) {
+        await conn.rollback();
         res.status(500).json({ error: err.message });
+    } finally {
+        conn.release();
     }
 });
 
@@ -464,9 +523,10 @@ router.post('/:id/revisions', requirePermission('romaneios', 'edit'), async (req
 
         // 2. Insert into revisions table
         const currentRev = header.current_revision || 1;
+        const { usuario } = req.body; // Se for passado
         await conn.execute(
-            'INSERT INTO app_romaneio_revisions (romaneio_id, revision_number, snapshot_data, reason) VALUES (?, ?, ?, ?)',
-            [romaneioId, currentRev, JSON.stringify(snapshot), reason]
+            'INSERT INTO app_romaneio_revisions (romaneio_id, revision_number, snapshot_data, reason, usuario) VALUES (?, ?, ?, ?, ?)',
+            [romaneioId, currentRev, JSON.stringify(snapshot), reason, usuario || 'Sistema']
         );
 
         // 3. Increment revision in main table
@@ -486,7 +546,7 @@ router.post('/:id/revisions', requirePermission('romaneios', 'edit'), async (req
 router.get('/:id/revisions', async (req, res) => {
     try {
         const [rows] = await mysqlPool.query(
-            'SELECT id, revision_number, created_at, reason FROM app_romaneio_revisions WHERE romaneio_id = ? ORDER BY revision_number DESC',
+            'SELECT id, revision_number, created_at, reason, usuario FROM app_romaneio_revisions WHERE romaneio_id = ? ORDER BY revision_number DESC',
             [req.params.id]
         );
         res.json(rows);

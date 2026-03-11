@@ -72,6 +72,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     });
     const [opResults, setOpResults] = useState([]);
     const [selectedOpItem, setSelectedOpItem] = useState(null);
+    const [opItemAlert, setOpItemAlert] = useState(null);
 
     // Manual Item Form
     const [manualItem, setManualItem] = useState({
@@ -93,6 +94,11 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             loadRevisions(romaneioId);
         }
     }, [romaneioId]);
+
+    // Ensure step updates if parent changes it
+    useEffect(() => {
+        setStep(initialStep);
+    }, [initialStep]);
 
     const handlePrint = useReactToPrint({
         contentRef: printRef,
@@ -327,6 +333,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             setNewItem({ op: '', item: '', sequencia: '', qtd_enviar: '', comentario: '' });
             setOpResults([]);
             setSelectedOpItem(null);
+            setOpItemAlert(null);
         } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
@@ -686,10 +693,22 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         <p className="text-[10px] text-slate-400 italic">Dica: No celular, você pode tirar fotos diretamente com a câmera.</p>
                     </div>
 
-                    <button onClick={saveHeader} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-blue-700">
-                        {loading ? <Loader2 className="animate-spin" /> : (currRomaneioId ? <Save className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />)}
-                        {currRomaneioId ? 'Salvar Alterações' : 'Avançar'}
-                    </button>
+                    <div className="flex gap-4 mt-4">
+                        <button onClick={saveHeader} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-blue-700 transition">
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (currRomaneioId ? <Save className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />)}
+                            {currRomaneioId ? 'Salvar Alterações' : 'Avançar'}
+                        </button>
+
+                        {currRomaneioId && (
+                            <button 
+                                onClick={() => setStep(2)} 
+                                className="bg-emerald-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-emerald-700 transition shadow"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Adicionar/Editar Item
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -794,6 +813,35 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                         )}
                                     </button>
 
+                                    {selectedOpItem && (
+                                        <div className="w-full bg-blue-50 border border-blue-200 p-3 mt-2 rounded">
+                                            {opItemAlert && opItemAlert.length > 0 && (
+                                                <div className="bg-yellow-100 border border-yellow-300 p-2 mb-3 rounded text-xs text-yellow-800">
+                                                    <div className="font-bold flex items-center gap-1 mb-1">
+                                                        <AlertCircle className="w-4 h-4" /> 
+                                                        Atenção! Este item já possui envios anteriores:
+                                                    </div>
+                                                    <ul className="list-disc list-inside ml-2">
+                                                        {opItemAlert.map((alertItem, idx) => (
+                                                            <li key={idx}>
+                                                                Romaneio <strong>#{alertItem.romaneio_id}</strong> ({alertItem.status}) - Qtd: <strong>{Number(alertItem.qtd_enviada).toFixed(2)}</strong> em {new Date(alertItem.data_criacao).toLocaleDateString()}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            <div className="flex gap-2 items-end">
+                                                <div className="flex-1 text-sm text-blue-900">
+                                                    <strong className="block text-xs mb-1 text-blue-800">OP: {selectedOpItem.op_origem}-{selectedOpItem.item_op}</strong>
+                                                    <span><strong>{selectedOpItem.codnoarvore}</strong>: {selectedOpItem.descnoarvore}</span>
+                                                </div>
+                                                <div><label className="text-xs font-bold block mb-1">Qtd Enviar</label><input type="number" className="border p-2 rounded w-24 text-sm" value={newItem.qtd_enviar} onChange={e => setNewItem({ ...newItem, qtd_enviar: e.target.value })} /></div>
+                                                <div className="flex-1 min-w-[200px]"><label className="text-xs font-bold block mb-1">Observação</label><input className="border p-2 rounded w-full text-sm" value={newItem.comentario} onChange={e => setNewItem({ ...newItem, comentario: e.target.value })} /></div>
+                                                <button onClick={addItem} className="bg-green-600 font-bold text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition shadow">Adicionar</button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {opResults.length > 0 && (
                                         <div className="w-full bg-slate-50 border p-2 mt-2 overflow-auto max-h-96">
                                             <table className="w-full text-xs">
@@ -829,11 +877,34 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                             </td>
                                                             <td className="p-2 text-center">
                                                                 <button
-                                                                    onClick={() => {
+                                                                    onClick={async () => {
                                                                         setSelectedOpItem(r);
-                                                                        // Auto-fill observation from prod doc operation
-                                                                        if (r.operacao_doc) {
-                                                                            setNewItem(prev => ({ ...prev, comentario: r.operacao_doc }));
+                                                                        
+                                                                        // Pre-fill fields
+                                                                        let initialObs = r.operacao_doc || '';
+                                                                        let initialQtd = r.qtdtotalparaop ? Number(r.qtdtotalparaop).toFixed(2) : '';
+
+                                                                        setNewItem(prev => ({ 
+                                                                            ...prev, 
+                                                                            comentario: initialObs,
+                                                                            qtd_enviar: initialQtd
+                                                                        }));
+
+                                                                        // Check previous shipments
+                                                                        if (r.op_origem && r.item_op) {
+                                                                            try {
+                                                                                const alerts = await checkOpItemAvailability(r.op_origem, r.item_op);
+                                                                                if (alerts && alerts.length > 0) {
+                                                                                    setOpItemAlert(alerts);
+                                                                                } else {
+                                                                                    setOpItemAlert(null);
+                                                                                }
+                                                                            } catch (err) {
+                                                                                console.error("Erro ao checar envios anteriores:", err);
+                                                                                setOpItemAlert(null);
+                                                                            }
+                                                                        } else {
+                                                                            setOpItemAlert(null);
                                                                         }
                                                                     }}
                                                                     className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
@@ -845,15 +916,6 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                     ))}
                                                 </tbody>
                                             </table>
-                                        </div>
-                                    )}
-
-                                    {selectedOpItem && (
-                                        <div className="w-full bg-blue-50 border border-blue-200 p-2 mt-2 flex gap-2 items-end">
-                                            <div className="flex-1 text-xs"><strong>{selectedOpItem.codnoarvore}</strong>: {selectedOpItem.descnoarvore}</div>
-                                            <div><label className="text-xs">Qtd</label><input type="number" className="border p-1 rounded w-20" value={newItem.qtd_enviar} onChange={e => setNewItem({ ...newItem, qtd_enviar: e.target.value })} /></div>
-                                            <div><label className="text-xs">Obs</label><input className="border p-1 rounded w-32" value={newItem.comentario} onChange={e => setNewItem({ ...newItem, comentario: e.target.value })} /></div>
-                                            <button onClick={addItem} className="bg-green-600 text-white p-1 px-3 rounded text-xs">Adicionar</button>
                                         </div>
                                     )}
                                 </div>
@@ -884,6 +946,42 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Manual Selection */}
+                                    {manualItem.selected && (
+                                        <div className="w-full bg-green-50 border border-green-200 p-3 mt-2 rounded flex gap-4 items-end flex-wrap">
+                                            <div className="flex-1 text-sm">
+                                                <div className="text-xs text-green-800 font-bold mb-1">Produto Selecionado:</div>
+                                                <div>{manualItem.selected.codigo} - {manualItem.selected.descricao}</div>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold block mb-1">Qtd</label>
+                                                <input type="number" className="border p-2 rounded w-20 text-sm" value={manualItem.qtd} onChange={e => setManualItem({ ...manualItem, qtd: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold block mb-1">Valor Unit. (R$)</label>
+                                                <input
+                                                    type="number" step="0.01"
+                                                    className="border p-2 rounded w-24 text-sm"
+                                                    value={manualItem.valor_unitario || ''}
+                                                    onChange={e => setManualItem({ ...manualItem, valor_unitario: e.target.value })}
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                            <div className="flex-1 min-w-[200px]">
+                                                <label className="text-xs font-bold block mb-1">Observação</label>
+                                                <input
+                                                    className="border p-2 rounded w-full text-sm"
+                                                    value={manualItem.obs}
+                                                    onChange={e => setManualItem({ ...manualItem, obs: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={addManualItem} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">Adicionar</button>
+                                                <button onClick={() => setManualItem({ ...manualItem, selected: null, results: [] })} className="text-slate-500 underline text-xs">Trocar</button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Manual Results */}
                                     {manualItem.results.length > 0 && !manualItem.selected && (
@@ -925,42 +1023,6 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                     )}
                                                 </div>
                                             ))}
-                                        </div>
-                                    )}
-
-                                    {/* Manual Selection */}
-                                    {manualItem.selected && (
-                                        <div className="w-full bg-green-50 border border-green-200 p-3 rounded flex gap-4 items-end flex-wrap">
-                                            <div className="flex-1 text-sm">
-                                                <div className="text-xs text-green-800 font-bold mb-1">Produto Selecionado:</div>
-                                                <div>{manualItem.selected.codigo} - {manualItem.selected.descricao}</div>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold block mb-1">Qtd</label>
-                                                <input type="number" className="border p-2 rounded w-20 text-sm" value={manualItem.qtd} onChange={e => setManualItem({ ...manualItem, qtd: e.target.value })} />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold block mb-1">Valor Unit. (R$)</label>
-                                                <input
-                                                    type="number" step="0.01"
-                                                    className="border p-2 rounded w-24 text-sm"
-                                                    value={manualItem.valor_unitario || ''}
-                                                    onChange={e => setManualItem({ ...manualItem, valor_unitario: e.target.value })}
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
-                                            <div className="flex-1 min-w-[200px]">
-                                                <label className="text-xs font-bold block mb-1">Observação</label>
-                                                <input
-                                                    className="border p-2 rounded w-full text-sm"
-                                                    value={manualItem.obs}
-                                                    onChange={e => setManualItem({ ...manualItem, obs: e.target.value })}
-                                                />
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={addManualItem} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">Adicionar</button>
-                                                <button onClick={() => setManualItem({ ...manualItem, selected: null, results: [] })} className="text-slate-500 underline text-xs">Trocar</button>
-                                            </div>
                                         </div>
                                     )}
                                 </div>

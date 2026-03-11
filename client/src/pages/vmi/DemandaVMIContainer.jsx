@@ -12,7 +12,7 @@ export default function DemandaVMIContainer() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Layers className="w-6 h-6 text-fuchsia-600" />
-                        Base e Mapeamento VMI
+                        VMI Forecast
                     </h1>
                     <p className="text-slate-500 text-sm mt-1">
                         Gerencie as planilhas importadas de clientes e relacione os produtos com a base do Protheus através das abas abaixo.
