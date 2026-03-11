@@ -669,10 +669,27 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             className="border p-2 rounded w-full text-sm"
                                             value={newItem.product_filter}
                                             onChange={e => setNewItem({ ...newItem, product_filter: e.target.value })}
+                                            onKeyDown={e => e.key === 'Enter' && searchOp()}
                                             placeholder="Cód Produto..."
                                         />
                                     </div>
-                                    <button onClick={searchOp} className="bg-slate-100 p-2 rounded"><Plus className="w-4" /></button>
+                                    <button 
+                                        onClick={searchOp} 
+                                        disabled={loading}
+                                        className="bg-blue-600 text-white font-medium p-2 px-4 rounded hover:bg-blue-700 flex items-center justify-center gap-2 h-[38px] disabled:bg-blue-400 min-w-[120px]"
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span className="text-sm">Buscando...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <SearchIcon className="w-4 h-4" />
+                                                <span className="text-sm">Pesquisar</span>
+                                            </>
+                                        )}
+                                    </button>
 
                                     {opResults.length > 0 && (
                                         <div className="w-full bg-slate-50 border p-2 mt-2 overflow-auto max-h-96">

@@ -444,7 +444,8 @@ export default function VerticalAppointmentPage() {
                             <thead className="bg-slate-50 text-slate-600 border-b">
                                 <tr>
                                     <th className="px-4 py-3 font-semibold">Status</th>
-                                    <th className="px-4 py-3 font-semibold">OP / Pedido</th>
+                                    <th className="px-4 py-3 font-semibold">OP</th>
+                                    <th className="px-4 py-3 font-semibold">Pedido</th>
                                     <th className="px-4 py-3 font-semibold">Entrega</th>
                                     <th className="px-4 py-3 font-semibold">Produto</th>
                                     <th className="px-4 py-3 font-semibold text-center">Progresso</th>
@@ -474,11 +475,15 @@ export default function VerticalAppointmentPage() {
                                             </td>
                                             <td className="px-4 py-3 align-top">
                                                 <div className="font-mono font-bold text-slate-800">{row.op}-{row.item_op} <span className="text-slate-400 font-normal">({row.sequen_op})</span></div>
-                                                {row.pedido && (
-                                                    <div className="text-xs text-blue-600 font-medium flex items-center gap-1 mt-0.5">
+                                            </td>
+                                            <td className="px-4 py-3 align-top">
+                                                {row.pedido ? (
+                                                    <div className="text-xs text-blue-600 font-medium flex items-center gap-1">
                                                         <span>PV: {row.pedido}</span>
                                                         {row.item_pedido && <span className="opacity-60">/{row.item_pedido}</span>}
                                                     </div>
+                                                ) : (
+                                                    <span className="text-slate-400 text-xs">-</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">

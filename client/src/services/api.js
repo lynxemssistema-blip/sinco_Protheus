@@ -234,6 +234,7 @@ export const getCompanySettings = () => api.get('/company').then(res => res.data
 export const updateCompanySettings = (data) => api.put('/company', data).then(res => res.data);
 export const updateMenuSettings = (data) => api.put('/company/menu', data).then(res => res.data);
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);
+export const setRomaneioInitialNumber = (numero) => api.post('/company/set-romaneio-number', { numero_inicial: numero }).then(res => res.data);
 
 // PRODUCTION CONTROL
 export const getProductionDashboard = (params) => api.get('/production', { params }).then(res => res.data);

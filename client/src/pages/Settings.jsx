@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 
@@ -244,6 +244,28 @@ export default function Settings() {
             alert('Erro: ' + (err.response?.data?.error || err.message));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const [romaneioNumberForm, setRomaneioNumberForm] = useState('');
+    const handleRomaneioNumberSubmit = async () => {
+        if (!romaneioNumberForm || isNaN(romaneioNumberForm)) {
+            return alert('Digite um número válido!');
+        }
+        
+        if (!confirm(`Atenção: O próximo Romaneio gerado automaticamente assumirá o número ${romaneioNumberForm}. Deseja confirmar?`)) {
+            return;
+        }
+
+        setLoadingCompany(true);
+        try {
+            const res = await setRomaneioInitialNumber(romaneioNumberForm);
+            alert(res.message);
+            setRomaneioNumberForm('');
+        } catch (err) {
+            alert('Erro: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingCompany(false);
         }
     };
 
@@ -528,6 +550,29 @@ export default function Settings() {
                                             <p className="text-xs text-slate-500 mt-1">Este modo altera a visualização da barra de progresso em toda a fábrica e nos relatórios de OP.</p>
                                         </div>
                                     )}
+                                </div>
+                                
+                                {/* Romaneio Config */}
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                    <h4 className="font-medium text-slate-800 mb-2">Numeração Automática do Romaneio</h4>
+                                    <p className="text-sm text-slate-500 mb-4">Caso prefira começar a numeração automática a partir de um valor específico, você pode alterar abaixo. O sistema começará a contar a partir de agora do número configurado.</p>
+                                    <div className="flex gap-2 items-center max-w-sm">
+                                        <input 
+                                            type="number"
+                                            className="w-full p-2 border rounded-lg text-sm"
+                                            placeholder="Ex: 7500"
+                                            value={romaneioNumberForm}
+                                            onChange={e => setRomaneioNumberForm(e.target.value)}
+                                        />
+                                        <button 
+                                            type="button"
+                                            disabled={loadingCompany}
+                                            onClick={handleRomaneioNumberSubmit}
+                                            className="bg-blue-600 text-white font-medium p-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap text-sm disabled:opacity-50"
+                                        >
+                                            Definir Número Inicial
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

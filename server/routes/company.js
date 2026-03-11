@@ -72,4 +72,23 @@ router.put('/general', async (req, res) => {
     }
 });
 
+// Set Initial Romaneio Number (AUTO_INCREMENT)
+router.post('/set-romaneio-number', async (req, res) => {
+    try {
+        const { numero_inicial } = req.body;
+        
+        if (!numero_inicial || isNaN(numero_inicial)) {
+            return res.status(400).json({ error: 'Número inicial inválido.' });
+        }
+
+        const query = `ALTER TABLE app_romaneios AUTO_INCREMENT = ${parseInt(numero_inicial, 10)}`;
+        await pool.query(query);
+
+        res.json({ message: `Próximo número de Romaneio definido para ${numero_inicial}` });
+    } catch (err) {
+        console.error("Error setting romaneio auto increment:", err);
+        res.status(500).json({ error: 'Erro ao configurar a numeração automática: ' + err.message });
+    }
+});
+
 module.exports = router;

@@ -297,7 +297,7 @@ arvore AS (
     ob.c2_item   AS item_op,
     ob.c2_sequen AS sequen_op,
     ob.op_origem,
-    ob.pedido_venda,
+    ob.raw_pedido AS pedido_venda,
 
     0 AS nivel,
     CAST(ob.c2_produto AS text) AS cod_atual,
