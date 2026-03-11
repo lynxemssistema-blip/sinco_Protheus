@@ -17,7 +17,9 @@ const requirePermission = (pageId, requiredAction = 'view') => {
             }
 
             // Administradores (Tipo 'A') têm acesso total, ignoram checagem de banco
-            if (user.tipo === 'A' || user.TipoUsuario === 'A') {
+            // JWT payload usa o campo "tipo" (não TipoUsuario)
+            const tipoUsuario = (user.tipo || user.TipoUsuario || '').toString().trim().toUpperCase();
+            if (tipoUsuario === 'A') {
                 return next();
             }
 

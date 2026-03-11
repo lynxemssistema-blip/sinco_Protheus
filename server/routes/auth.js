@@ -44,7 +44,7 @@ router.post('/login', async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.idUsuario, login: user.Login, nome: user.NomeCompleto },
+            { id: user.idUsuario, login: user.Login, nome: user.NomeCompleto, tipo: user.TipoUsuario },
             SECRET_KEY,
             { expiresIn: '8h' }
         );
@@ -86,7 +86,7 @@ const authenticateToken = (req, res, next) => {
         // Fallback: check query parameter for cases where header cannot be sent
         if (req.query && req.query.token) {
             jwt.verify(req.query.token, SECRET_KEY, (err, user) => {
-                if (err) return res.sendStatus(403);
+                if (err) return res.sendStatus(401); // token inválido/expirado = 401
                 req.user = user;
                 return next();
             });
@@ -96,7 +96,7 @@ const authenticateToken = (req, res, next) => {
     }
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return res.sendStatus(403);
+        if (err) return res.sendStatus(401); // token inválido/expirado = 401
         req.user = user;
         next();
     });
