@@ -118,7 +118,7 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
         connection = await conn.getConnection();
         await connection.beginTransaction();
 
-        // Garantir tabelas
+        // Garantir tabelas com charset utf8mb4
         await connection.query(`
             CREATE TABLE IF NOT EXISTS app_vmi_pedidos_lotes (
                 lote_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -127,8 +127,11 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
                 nome_arquivo VARCHAR(255),
                 total_linhas INT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+            ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         `);
+        // Migrar charset se tabela já existia com latin1
+        await connection.query(`ALTER TABLE app_vmi_pedidos_lotes
+            CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`).catch(() => {});
 
         await connection.query(`
             CREATE TABLE IF NOT EXISTS app_vmi_pedidos (
@@ -146,8 +149,10 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
                 INDEX (lote_id),
                 INDEX (codigo_produto_cliente),
                 INDEX (ordem_compra)
-            )
+            ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         `);
+        await connection.query(`ALTER TABLE app_vmi_pedidos
+            CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`).catch(() => {});
 
         // Inserir lote
         const [loteResult] = await connection.query(`
