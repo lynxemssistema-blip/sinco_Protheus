@@ -1,17 +1,12 @@
 import axios from 'axios';
 
 export const getBaseUrl = () => {
-    const { protocol, hostname, port } = window.location;
-    // Se estiver em produção (sem porta ou portas padrão), assume que a API está no mesmo host
-    // Se estiver em dev (porta 3000 ou 5173), assume que a API está na 3001
-    const isDev = port === '3000' || port === '5173' || port === '5174';
-    const apiPort = isDev ? ':3001' : (port ? `:${port}` : '');
-    
-    // Para casos específicos onde o frontend roda em porta diferente mas a API está na 3001
-    // (Padrão do boilerplate usado no projeto)
-    const finalPort = (isDev && !port.includes('3001')) ? ':3001' : apiPort;
-
-    return `${protocol}//${hostname}${finalPort}`;
+    // Both in dev (via Vite proxy) and prod (via Node.js static serving),
+    // the API is accessible at the same origin + '/api'.
+    // Sockets will also be accessible at the same origin.
+    // This entirely eliminates the CORS "network error" because the browser
+    // never performs a cross-origin request.
+    return '';
 };
 
 const api = axios.create({
@@ -36,9 +31,20 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // Auto-redirect to login only on 401 (token inválido/expirado)
-        // 403 = usuário autenticado mas sem permissão → NÃO redireciona
-        if (error.response?.status === 401) {
+        const status = error.response?.status;
+        const data   = error.response?.data;
+
+        // Determina se é falha de autenticação (sessão expirada / token inválido):
+        //   • 401 → sempre é falha de auth
+        //   • 403 sem corpo RBAC → servidor antigo retornando 403 para token inválido
+        //     (retro-compatibilidade). RBAC sempre retorna { error: "...negado..." }.
+        const isRbacDenial = status === 403 &&
+            data && typeof data === 'object' && data.error &&
+            (data.error.includes('negado') || data.error.includes('permissão'));
+
+        const isAuthFailure = status === 401 || (status === 403 && !isRbacDenial);
+
+        if (isAuthFailure) {
             const currentPath = window.location.pathname;
             if (currentPath !== '/login') {
                 console.warn('🔒 Session expired, redirecting to login...');
@@ -47,10 +53,11 @@ api.interceptors.response.use(
                 window.location.href = '/login';
             }
         }
+
         console.error('❌ Erro na API:', {
             message: error.message,
             url: error.config?.url,
-            status: error.response?.status,
+            status,
         });
         return Promise.reject(error);
     }
@@ -234,6 +241,7 @@ export const getCompanySettings = () => api.get('/company').then(res => res.data
 export const updateCompanySettings = (data) => api.put('/company', data).then(res => res.data);
 export const updateMenuSettings = (data) => api.put('/company/menu', data).then(res => res.data);
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);
+export const getRomaneioInitialNumber = () => api.get('/company/romaneio-number').then(res => res.data);
 export const setRomaneioInitialNumber = (numero) => api.post('/company/set-romaneio-number', { numero_inicial: numero }).then(res => res.data);
 
 // PRODUCTION CONTROL

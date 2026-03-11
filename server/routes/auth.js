@@ -86,17 +86,23 @@ const authenticateToken = (req, res, next) => {
         // Fallback: check query parameter for cases where header cannot be sent
         if (req.query && req.query.token) {
             jwt.verify(req.query.token, SECRET_KEY, (err, user) => {
-                if (err) return res.sendStatus(401); // token inválido/expirado = 401
+                if (err) {
+                    const code = err.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID';
+                    return res.status(401).json({ error: 'Sessão inválida', code });
+                }
                 req.user = user;
                 return next();
             });
             return;
         }
-        return res.sendStatus(401);
+        return res.status(401).json({ error: 'Token não fornecido', code: 'TOKEN_MISSING' });
     }
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return res.sendStatus(401); // token inválido/expirado = 401
+        if (err) {
+            const code = err.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID';
+            return res.status(401).json({ error: 'Sessão inválida', code });
+        }
         req.user = user;
         next();
     });
