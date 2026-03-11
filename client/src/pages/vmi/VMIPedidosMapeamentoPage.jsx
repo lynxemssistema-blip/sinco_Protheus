@@ -77,6 +77,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                     prodsMap[key] = {
                         codigo_base:     key,
                         codigo_original: p.codigo_produto_cliente,
+                        revisao_cliente: p.revisao_cliente || '',
                         descricao:       p.descricao_produto_cliente || ''
                     };
                 }
@@ -423,6 +424,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                                     <tr>
                                         <th className="px-4 py-3 font-semibold w-36">Cód. Base (9)</th>
                                         <th className="px-4 py-3 font-semibold w-36">Cód. Original</th>
+                                        <th className="px-4 py-3 font-semibold w-16 text-center">Rev.</th>
                                         <th className="px-4 py-3 font-semibold">Descrição no Pedido</th>
                                         <th className="px-4 py-3 font-semibold text-center w-28">🔍 Pesquisado</th>
                                         <th className="px-4 py-3 font-semibold border-l border-slate-200">Sugestões Protheus (clique para selecionar)</th>
@@ -451,6 +453,17 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                                                 {/* Código original */}
                                                 <td className="px-4 py-3 align-top">
                                                     <span className="font-mono text-xs text-slate-500">{p.codigo_original}</span>
+                                                </td>
+
+                                                {/* Revisão cliente */}
+                                                <td className="px-4 py-3 align-top text-center">
+                                                    {p.revisao_cliente ? (
+                                                        <span className="font-mono text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">
+                                                            {p.revisao_cliente}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-300 text-xs">—</span>
+                                                    )}
                                                 </td>
 
                                                 {/* Descrição */}
