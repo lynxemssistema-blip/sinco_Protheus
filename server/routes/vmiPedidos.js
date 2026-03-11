@@ -47,7 +47,8 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
             let revCliente = null;
 
             // Tratamento de Código e Revisão
-            const limpo = produtoCliente.replace(/[^a-zA-Z0-9.\-]/g, '');
+            // Remove TODOS os não-alfanuméricos (igual ao forecast): 21.23.01762 → 212301762
+            const limpo = produtoCliente.replace(/[^a-zA-Z0-9]/g, '');
             let codBase = limpo;
 
             if (limpo.length > 9) {
@@ -236,9 +237,9 @@ router.get('/', authenticateToken, async (req, res) => {
     try {
         let sql = `
             SELECT p.*,
-                   m.b1_cod, m.status_tipo_item, m.status_tipo_detalhe, m.descricao_protheus
+                   m.b1_cod, m.descricao_protheus
             FROM app_vmi_pedidos p
-            LEFT JOIN app_vmi_mapeamento m ON p.codigo_base = m.codigo_produto_cliente
+            LEFT JOIN app_demanda_vmi_map m ON p.codigo_base = m.codigo_produto_cliente
         `;
         const params = [];
         if (lote) {
