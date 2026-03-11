@@ -7,6 +7,51 @@ const { authenticateToken } = require('./auth');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// === 0. MODELO DE PLANILHA ===
+// GET /api/vmi-pedidos/modelo — retorna planilha modelo com cabeçalho e 2 linhas de exemplo
+router.get('/modelo', (_req, res) => {
+    const wb = XLSX.utils.book_new();
+
+    // Cabeçalho alinhado com o parser: A=OC, B=Item, C=Código, E=Rev, F=Descrição, H=DataEntrega, K=Qtde
+    // Colunas D, G, I, J podem existir na planilha real do cliente — mantemos slots para compatibilidade
+    const header = [
+        'Nº OC',          // A — ordem_compra
+        'Item OC',         // B — item_oc
+        'Código Produto',  // C — codigo_produto_cliente
+        'Referência',      // D — (informativo, não lido)
+        'Revisão',         // E — revisao_cliente (quando código tem ≤ 9 chars)
+        'Descrição Produto', // F — descricao_produto_cliente
+        'UN',              // G — (não lido)
+        'Data Entrega',    // H — data_entrega
+        'Dt. Negociação',  // I — (não lido)
+        'Observação',      // J — (não lido)
+        'Quantidade',      // K — quantidade
+    ];
+
+    const ex1 = ['OC-2025-001', '001', '21.23.01762', '', 'A', 'SUPORTE FRONTAL AA_10055', 'PC', '2025-08-15', '', '', 10];
+    const ex2 = ['OC-2025-001', '002', '21.23.04498A', '', '',  'TAMPA LATERAL AA_10056', 'PC', '2025-08-15', '', '', 5];
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ex1, ex2]);
+
+    // Larguras de coluna
+    ws['!cols'] = [
+        { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 10 },
+        { wch: 40 }, { wch: 5 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 12 },
+    ];
+
+    // Destaca colunas obrigatórias (A, B, C, F, H, K) em amarelo
+    const obrigatorias = ['A1', 'B1', 'C1', 'F1', 'H1', 'K1'];
+    obrigatorias.forEach(cell => {
+        if (ws[cell]) ws[cell].s = { fill: { fgColor: { rgb: 'FFF9C4' } }, font: { bold: true } };
+    });
+
+    XLSX.utils.book_append_sheet(wb, ws, 'ORDENS DE COMPRA');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Modelo_VMI_Pedido.xlsx"');
+    res.send(buffer);
+});
+
 // === 1. PARSER UPLOAD (Pré-visualização) ===
 router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });

@@ -270,6 +270,12 @@ export default function VMIPedidosPage({ isTab = false }) {
                     <FileUp className="w-4 h-4 text-indigo-500" /> Importar Pedidos de Compra (Excel)
                 </h3>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <a href={getFileUrl('/api/vmi-pedidos/modelo')}
+                        download="Modelo_VMI_Pedido.xlsx"
+                        className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-600 border border-dashed border-slate-300 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                        title="Baixar planilha modelo para preenchimento">
+                        <FileDown className="w-3.5 h-3.5" /> Baixar Modelo
+                    </a>
                     <div className="relative flex-1 max-w-xl">
                         <input type="file" accept=".xlsx,.xls" onChange={handleFileChange}
                             ref={fileInputRef} disabled={previewMode}
