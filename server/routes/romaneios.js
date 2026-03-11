@@ -145,9 +145,9 @@ router.get('/types', async (req, res) => {
             console.error('⚠️ [Romaneios] Erro app_romaneio_recebimentos:', e.message);
         }
 
-        // Coluna fotos (JSON)
+        // Coluna fotos (TEXT — compatível com MySQL 5.6 que não suporta JSON nativo)
         try {
-            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN fotos JSON NULL");
+            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN fotos TEXT NULL");
             console.log('✅ [Romaneios] Coluna fotos criada.');
         } catch (e) {
             if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro fotos column:', e.message);
@@ -168,7 +168,7 @@ router.get('/types', async (req, res) => {
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     romaneio_id INT NOT NULL,
                     revision_number INT NOT NULL,
-                    snapshot_data JSON NOT NULL,
+                    snapshot_data MEDIUMTEXT NOT NULL,
                     reason TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_romaneio_rev (romaneio_id)
