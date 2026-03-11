@@ -53,7 +53,8 @@ app.use(cors({
             process.env.CORS_ORIGIN,
             'http://192.168.1.77:3001',
             'http://localhost:5173',
-            'http://localhost:3000'
+            'http://localhost:3000',
+            'http://192.168.1.167:5173'
         ];
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
