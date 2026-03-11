@@ -338,7 +338,12 @@ export const getFileUrl = (path) => {
 };
 
 export const getReportDownloadUrl = (type, params, category = 'production') => {
-    const query = new URLSearchParams(params).toString();
+    const queryParams = { ...params };
+    const token = localStorage.getItem('@MetalFisa:token');
+    if (token) {
+        queryParams.token = token;
+    }
+    const query = new URLSearchParams(queryParams).toString();
     const base = getBaseUrl();
     return `${base}/api/reports/${category}/${type}?${query}`;
 };
