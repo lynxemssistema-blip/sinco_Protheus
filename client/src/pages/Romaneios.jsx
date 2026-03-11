@@ -178,6 +178,8 @@ export default function Romaneios() {
                                 <th className="p-4">Tipo</th>
                                 <th className="p-4">Liberação</th>
                                 <th className="p-4">Prev. Retorno</th>
+                                <th className="p-4">Peso (kg)</th>
+                                <th className="p-4">Área (m²)</th>
                                 <th className="p-4">Qtd Enviada</th>
                                 <th className="p-4">Qtd Recebida</th>
                                 <th className="p-4">Status</th>
@@ -208,6 +210,12 @@ export default function Romaneios() {
                                             {r.data_previsao_retorno ? new Date(r.data_previsao_retorno).toLocaleDateString() : '-'}
                                         </td>
                                         <td className="p-4 text-slate-600 font-bold text-sm">
+                                            {Number(r.peso_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-4 text-slate-600 font-bold text-sm">
+                                            {Number(r.area_pintura_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-4 text-slate-600 text-sm">
                                             {Number(r.total_enviado || 0)}
                                         </td>
                                         <td className={`p-4 font-bold text-sm ${Number(r.total_recebido) > 0 && Number(r.total_recebido) >= Number(r.total_enviado) ? 'text-green-600' : 'text-slate-600'}`}>

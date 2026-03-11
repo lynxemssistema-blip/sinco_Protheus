@@ -8,9 +8,13 @@ export default defineConfig({
         host: true, // Listen on all IPs
         proxy: {
             '/api': {
-                target: 'http://localhost:3001',
+                target: 'http://192.168.1.77:3001',
                 changeOrigin: true,
                 secure: false
+            },
+            '/socket.io': {
+                target: 'http://192.168.1.77:3001',
+                ws: true
             }
         }
     }

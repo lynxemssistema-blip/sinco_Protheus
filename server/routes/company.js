@@ -72,6 +72,25 @@ router.put('/general', async (req, res) => {
     }
 });
 
+// Get Current Romaneio Number (AUTO_INCREMENT)
+router.get('/romaneio-number', async (req, res) => {
+    try {
+        const query = `
+            SELECT AUTO_INCREMENT
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+            AND table_name = 'app_romaneios'
+        `;
+        const [rows] = await pool.query(query);
+        const autoIncrement = rows[0]?.AUTO_INCREMENT || 0;
+        
+        res.json({ current_number: autoIncrement });
+    } catch (err) {
+        console.error("Error fetching romaneio auto increment:", err);
+        res.status(500).json({ error: 'Erro ao buscar número do romaneio: ' + err.message });
+    }
+});
+
 // Set Initial Romaneio Number (AUTO_INCREMENT)
 router.post('/set-romaneio-number', async (req, res) => {
     try {

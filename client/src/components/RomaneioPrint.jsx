@@ -102,7 +102,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
                 <tfoot>
                     <tr className="bg-gray-50 font-bold">
                         <td colSpan="5" className="border border-black p-1 text-right">TOTAIS:</td>
-                        <td className="border border-black p-1"></td> {/* Peso Unit - Empty */}
+                        <td className="border border-black p-1">{/* Peso Unit */}</td>
                         <td className="border border-black p-1 text-right">
                             {items.reduce((acc, it) => acc + (Number(it.peso_kg || 0) * Number(it.quantidade || 0)), 0).toFixed(3)}
                         </td>
@@ -112,7 +112,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
                         <td className="border border-black p-1 text-right">
                             {items.reduce((acc, it) => acc + Number(it.quantidade || 0), 0)}
                         </td>
-                        <td className="border border-black p-1"></td> {/* Vlr Unit - Empty */}
+                        <td className="border border-black p-1">{/* Vlr Unit */}</td>
                         <td className="border border-black p-1 text-right">
                             {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
                         </td>

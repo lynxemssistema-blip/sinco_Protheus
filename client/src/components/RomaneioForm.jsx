@@ -39,7 +39,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         veiculo_placa: '',
         data_liberacao: new Date().toISOString().split('T')[0], // Default Today
         data_previsao_retorno: '',
-        fotos: []
+        fotos: [],
+        nf_saida: [],
+        nf_retorno: []
     });
 
     // Main Data
@@ -129,7 +131,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 veiculo_placa: data.veiculo_placa || '',
                 data_liberacao: data.data_liberacao ? data.data_liberacao.substring(0, 10) : new Date().toISOString().split('T')[0],
                 data_previsao_retorno: data.data_previsao_retorno ? data.data_previsao_retorno.substring(0, 10) : '',
-                fotos: data.fotos ? (typeof data.fotos === 'string' ? JSON.parse(data.fotos) : data.fotos) : []
+                fotos: data.fotos ? (typeof data.fotos === 'string' ? JSON.parse(data.fotos) : data.fotos) : [],
+                nf_saida: data.nf_saida ? (typeof data.nf_saida === 'string' ? JSON.parse(data.nf_saida) : data.nf_saida) : [],
+                nf_retorno: data.nf_retorno ? (typeof data.nf_retorno === 'string' ? JSON.parse(data.nf_retorno) : data.nf_retorno) : []
             });
 
             // Populate search field for better UX
@@ -257,7 +261,10 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 }
             }
 
-            const headerToSave = { ...header, fotos: fotosUrls };
+            const peso_total = items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.peso_kg || 0)), 0);
+            const area_pintura_total = items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.area_pintura_m2 || 0)), 0);
+
+            const headerToSave = { ...header, fotos: fotosUrls, peso_total, area_pintura_total };
 
             if (currRomaneioId) {
                 // EDIT MODE
@@ -450,6 +457,33 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
 
             {step === 1 && (
                 <div className="space-y-6 max-w-2xl">
+                    {/* Top Banner */}
+                    <div className="bg-slate-50 border p-4 rounded-xl flex justify-between items-center">
+                        <div>
+                            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider mb-1">
+                                Romaneio <span className="text-slate-900">#{currRomaneioId || 'NOVO'}</span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                                Criado por <span className="font-medium text-slate-700">{currRomaneioData?.usuario || user?.nome || 'Você'}</span> • 
+                                Em <span className="font-medium text-slate-700">{currRomaneioData?.created_at ? new Date(currRomaneioData.created_at).toLocaleDateString() : new Date().toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <div className="text-right flex gap-4">
+                            <div>
+                                <div className="text-[10px] text-slate-500 font-bold uppercase">Peso Total</div>
+                                <div className="font-mono font-bold text-slate-700">
+                                    {(items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.peso_kg || 0)), 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} <span className="text-xs font-normal">kg</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-[10px] text-slate-500 font-bold uppercase">Área Pint. Total</div>
+                                <div className="font-mono font-bold text-slate-700">
+                                    {(items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.area_pintura_m2 || 0)), 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} <span className="text-xs font-normal">m²</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Dates Section */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -531,20 +565,70 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
 
                     <div className="border-t pt-4 grid grid-cols-2 gap-4">
                         <div>
+                            <label className="block text-xs font-bold mb-1">NF de Saída (Use Enter para add)</label>
+                            <div className="border p-1 rounded-lg bg-white min-h-[42px] flex flex-wrap gap-1 items-center">
+                                {header.nf_saida.map((nf, idx) => (
+                                    <span key={idx} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded flex items-center gap-1 font-mono">
+                                        {nf} <X className="w-3 h-3 cursor-pointer hover:text-blue-900" onClick={() => setHeader({ ...header, nf_saida: header.nf_saida.filter((_, i) => i !== idx) })} />
+                                    </span>
+                                ))}
+                                <input
+                                    className="flex-1 min-w-[100px] outline-none text-sm p-1 placeholder:text-xs"
+                                    placeholder="Digite a NF..."
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const val = e.target.value.trim();
+                                            if (val && !header.nf_saida.includes(val)) {
+                                                setHeader({ ...header, nf_saida: [...header.nf_saida, val] });
+                                                e.target.value = '';
+                                            }
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold mb-1">NF de Retorno (Use Enter para add)</label>
+                            <div className="border p-1 rounded-lg bg-white min-h-[42px] flex flex-wrap gap-1 items-center">
+                                {header.nf_retorno.map((nf, idx) => (
+                                    <span key={idx} className="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded flex items-center gap-1 font-mono">
+                                        {nf} <X className="w-3 h-3 cursor-pointer hover:text-emerald-900" onClick={() => setHeader({ ...header, nf_retorno: header.nf_retorno.filter((_, i) => i !== idx) })} />
+                                    </span>
+                                ))}
+                                <input
+                                    className="flex-1 min-w-[100px] outline-none text-sm p-1 placeholder:text-xs"
+                                    placeholder="Digite a NF..."
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const val = e.target.value.trim();
+                                            if (val && !header.nf_retorno.includes(val)) {
+                                                setHeader({ ...header, nf_retorno: [...header.nf_retorno, val] });
+                                                e.target.value = '';
+                                            }
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div>
                             <label className="block text-xs font-bold mb-1">Motorista</label>
                             <input className="w-full p-2 border rounded" value={header.motorista_nome} onChange={e => setHeader({ ...header, motorista_nome: e.target.value })} />
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold mb-1">Placa Veículo</label>
-                            <input className="w-full p-2 border rounded" value={header.veiculo_placa} onChange={e => setHeader({ ...header, veiculo_placa: e.target.value })} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-xs font-bold mb-1">Placa Veículo</label>
+                                <input className="w-full p-2 border rounded" value={header.veiculo_placa} onChange={e => setHeader({ ...header, veiculo_placa: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1">Veículo Modelo</label>
+                                <input className="w-full p-2 border rounded" value={header.veiculo_modelo} onChange={e => setHeader({ ...header, veiculo_modelo: e.target.value })} />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold mb-1">Veículo Modelo</label>
-                            <input className="w-full p-2 border rounded" value={header.veiculo_modelo} onChange={e => setHeader({ ...header, veiculo_modelo: e.target.value })} />
-                        </div>
-                        <div>
+                        <div className="col-span-2">
                             <label className="block text-xs font-bold mb-1">Observação Geral</label>
-                            <textarea className="w-full p-2 border rounded" value={header.observacao_geral} onChange={e => setHeader({ ...header, observacao_geral: e.target.value })} />
+                            <textarea rows="3" className="w-full p-3 border rounded-lg text-sm bg-yellow-50 focus:bg-white transition-colors" placeholder="Digite observações importantes sobre este romaneio..." value={header.observacao_geral} onChange={e => setHeader({ ...header, observacao_geral: e.target.value })} />
                         </div>
                     </div>
 
@@ -612,21 +696,40 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             {step === 2 && (
                 <div className="space-y-6">
                     {/* Items Grid */}
-                    <div className="bg-slate-50 p-4 rounded border text-sm flex justify-between items-center">
+                    <div className="bg-slate-50 border p-4 rounded-xl flex justify-between items-center mb-6">
                         <div>
-                            <span className="font-bold">{header.cliente_nome}</span>
-                            <span className="mx-2 text-slate-300">|</span>
-                            <span className="text-slate-500">Romaneio #{currRomaneioId} (Rev {currRomaneioData?.current_revision || 1})</span>
-                            <div className="text-xs text-slate-500 mt-1">
+                            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider mb-1">
+                                Romaneio <span className="text-slate-900">#{currRomaneioId}</span>
+                                <span className="ml-2 text-xs font-normal text-slate-400">(Rev {currRomaneioData?.current_revision || 1})</span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                                <span className="font-bold text-slate-700">{header.cliente_nome}</span>
+                                <span className="mx-2 text-slate-300">|</span>
                                 {header.motorista_nome || 'Sem motorista'} - {header.veiculo_placa || 'Sem placa'} | Liberação: {header.data_liberacao ? new Date(header.data_liberacao).toLocaleDateString() : 'N/D'}
                             </div>
                         </div>
-                        <button
-                            onClick={() => setStep(1)}
-                            className="text-blue-600 hover:bg-blue-100 px-3 py-1 rounded text-xs flex gap-1 items-center font-medium transition-colors"
-                        >
-                            <Edit className="w-3 h-3" /> Editar Dados
-                        </button>
+                        <div className="text-right flex flex-col sm:flex-row items-end sm:items-center gap-4 sm:gap-6">
+                            <div className="flex gap-4 sm:border-r sm:pr-6 sm:mr-2">
+                                <div>
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Peso Total</div>
+                                    <div className="font-mono font-bold text-slate-700">
+                                        {(items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.peso_kg || 0)), 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} <span className="text-xs font-normal">kg</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Área Pint. Total</div>
+                                    <div className="font-mono font-bold text-slate-700">
+                                        {(items.reduce((acc, item) => acc + (Number(item.quantidade) * Number(item.area_pintura_m2 || 0)), 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} <span className="text-xs font-normal">m²</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setStep(1)}
+                                className="text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg text-xs flex gap-1 items-center font-bold transition-colors border border-blue-200"
+                            >
+                                <Edit className="w-4 h-4" /> Editar Dados
+                            </button>
+                        </div>
                     </div>
 
                     {/* Add Item Tabs - Only if Rascunho */}
@@ -968,7 +1071,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-xs">
                             <tr>
                                 <td colSpan="2" className="p-2 text-right">TOTAIS:</td>
-                                <td></td> {/* Peso Unit */}
+                                <td>{/* Peso Unit */}</td>
                                 <td className="p-2 text-right text-slate-900 border-x">
                                     {items.reduce((acc, it) => acc + (Number(it.peso_kg || 0) * Number(it.quantidade || 0)), 0).toFixed(3)} kg
                                 </td>
@@ -978,13 +1081,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 <td className="p-2 text-right">
                                     {items.reduce((acc, it) => acc + Number(it.quantidade || 0), 0)}
                                 </td>
-                                <td></td> {/* Obs */}
-                                <td></td> {/* PDF */}
-                                <td></td> {/* Vlr Unit */}
+                                <td>{/* Obs */}</td>
+                                <td>{/* PDF */}</td>
+                                <td>{/* Vlr Unit */}</td>
                                 <td className="p-2 text-right text-green-700 text-sm border-x border-green-200 bg-green-50">
                                     R$ {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
                                 </td>
-                                <td></td> {/* Actions */}
+                                <td>{/* Actions */}</td>
                             </tr>
                         </tfoot>
                     </table>

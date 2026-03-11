@@ -203,7 +203,8 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
             cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
             cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
             motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-            usuario, data_liberacao, data_previsao_retorno, fotos
+            usuario, data_liberacao, data_previsao_retorno, fotos,
+            nf_saida, nf_retorno, peso_total, area_pintura_total
         } = req.body;
 
         const [result] = await mysqlPool.execute(
@@ -211,8 +212,9 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
                 cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
                 motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-                usuario, data_liberacao, data_previsao_retorno, fotos
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                usuario, data_liberacao, data_previsao_retorno, fotos,
+                nf_saida, nf_retorno, peso_total, area_pintura_total
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
                 cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
@@ -220,7 +222,11 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
                 usuario || 'Sistema',
                 data_liberacao || new Date(),
                 data_previsao_retorno || null,
-                fotos ? (typeof fotos === 'string' ? fotos : JSON.stringify(fotos)) : null
+                fotos ? (typeof fotos === 'string' ? fotos : JSON.stringify(fotos)) : null,
+                nf_saida ? (typeof nf_saida === 'string' ? nf_saida : JSON.stringify(nf_saida)) : '[]',
+                nf_retorno ? (typeof nf_retorno === 'string' ? nf_retorno : JSON.stringify(nf_retorno)) : '[]',
+                peso_total || 0,
+                area_pintura_total || 0
             ]
         );
 
@@ -238,7 +244,8 @@ router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
             cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
             cliente_endereco, cliente_bairro, cliente_cidade, cliente_uf, cliente_cep, cliente_telefone,
             motorista_nome, motorista_cnh, motorista_cnh_validade, veiculo_modelo, veiculo_placa,
-            data_liberacao, data_previsao_retorno, fotos
+            data_liberacao, data_previsao_retorno, fotos,
+            nf_saida, nf_retorno, peso_total, area_pintura_total
         } = req.body;
 
         await mysqlPool.execute(
@@ -246,7 +253,8 @@ router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
                 cliente_cod=?, cliente_loja=?, cliente_nome=?, tipo_id=?, observacao_geral=?,
                 cliente_endereco=?, cliente_bairro=?, cliente_cidade=?, cliente_uf=?, cliente_cep=?, cliente_telefone=?,
                 motorista_nome=?, motorista_cnh=?, motorista_cnh_validade=?, veiculo_modelo=?, veiculo_placa=?,
-                data_liberacao=?, data_previsao_retorno=?, fotos=?
+                data_liberacao=?, data_previsao_retorno=?, fotos=?,
+                nf_saida=?, nf_retorno=?, peso_total=?, area_pintura_total=?
              WHERE id = ?`,
             [
                 cliente_cod, cliente_loja, cliente_nome, tipo_id, observacao_geral,
@@ -254,6 +262,10 @@ router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
                 motorista_nome, motorista_cnh, motorista_cnh_validade || null, veiculo_modelo, veiculo_placa,
                 data_liberacao, data_previsao_retorno || null,
                 fotos ? (typeof fotos === 'string' ? fotos : JSON.stringify(fotos)) : null,
+                nf_saida ? (typeof nf_saida === 'string' ? nf_saida : JSON.stringify(nf_saida)) : '[]',
+                nf_retorno ? (typeof nf_retorno === 'string' ? nf_retorno : JSON.stringify(nf_retorno)) : '[]',
+                peso_total || 0,
+                area_pintura_total || 0,
                 req.params.id
             ]
         );

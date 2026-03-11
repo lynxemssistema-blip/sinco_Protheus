@@ -48,7 +48,19 @@ io.on('connection', (socket) => {
 });
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://192.168.1.77:3001',
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            process.env.CORS_ORIGIN,
+            'http://192.168.1.77:3001',
+            'http://localhost:5173',
+            'http://localhost:3000'
+        ];
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));

@@ -352,7 +352,7 @@ arvore AS (
 
 SELECT
   a.op_origem,
-  a.raw_pedido,
+  a.pedido_venda AS raw_pedido,
   a.obs_venda,
   a.filial,
   a.op,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 
@@ -199,6 +199,12 @@ export default function Settings() {
             }
 
             setCompanyForm({ ...data, menu_config: menuConfig, general_config: generalConfig });
+
+            // Fetch Romaneio Number
+            const romNumData = await getRomaneioInitialNumber();
+            if (romNumData && romNumData.current_number) {
+                setRomaneioNumberForm(romNumData.current_number);
+            }
         } catch (err) {
             console.error(err);
         }
