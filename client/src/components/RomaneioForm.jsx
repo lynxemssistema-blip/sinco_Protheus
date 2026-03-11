@@ -174,7 +174,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             loadRomaneio(currRomaneioId);
             loadRevisions(currRomaneioId);
         } catch (err) {
-            alert('Erro: ' + err.message);
+            alert('Erro: ' + (err.response?.data?.error || err.message));
         } finally {
             setLoading(false);
         }
@@ -277,7 +277,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 setStep(2); // Auto-advance to items
             }
         } catch (err) {
-            alert('Erro: ' + err.message);
+            alert('Erro: ' + (err.response?.data?.error || err.message));
         } finally {
             setLoading(false);
         }
@@ -320,7 +320,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             setNewItem({ op: '', item: '', sequencia: '', qtd_enviar: '', comentario: '' });
             setOpResults([]);
             setSelectedOpItem(null);
-        } catch (err) { alert('Erro: ' + err.message); } finally { setLoading(false); }
+        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     const searchManualProduct = async () => {
@@ -337,7 +337,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             };
             const res = await getProdutos(params);
             setManualItem({ ...manualItem, results: res.data });
-        } catch (err) { alert('Erro: ' + err.message); } finally { setLoading(false); }
+        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     const addManualItem = async () => {
@@ -356,7 +356,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             await addRomaneioItem(currRomaneioId, payload);
             loadRomaneio(currRomaneioId);
             setManualItem({ search: '', client_filter: '', results: [], selected: null, qtd: '', obs: '', valor_unitario: '' });
-        } catch (err) { alert('Erro: ' + err.message); } finally { setLoading(false); }
+        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     const handleDeleteItem = async (itemId) => {
@@ -365,7 +365,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         try {
             await deleteRomaneioItem(currRomaneioId, itemId);
             loadRomaneio(currRomaneioId);
-        } catch (err) { alert('Erro: ' + err.message); } finally { setLoading(false); }
+        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     const startEditItem = (item) => {
@@ -382,7 +382,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             });
             setEditingItem(null);
             loadRomaneio(currRomaneioId);
-        } catch (err) { alert('Erro: ' + err.message); } finally { setLoading(false); }
+        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     return (

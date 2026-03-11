@@ -2048,6 +2048,45 @@ router.get('/pendentes', async (req, res) => {
     try {
         const { status = 'PENDENTE', data_inicio, data_fim, op, pedido, cliente, produto, apontador } = req.query;
 
+        let validOps = null;
+
+        // 1. Fetch matching OPs from Protheus if any metadata filters are used
+        if (pedido || cliente || produto) {
+            let pgSql = `
+                SELECT DISTINCT c2.c2_num 
+                FROM sc2010 c2
+                LEFT JOIN sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                LEFT JOIN sa1010 sa1 ON TRIM(sa1.a1_cod) = TRIM(c5.c5_cliente)
+                WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+            `;
+            let pgParams = [];
+            let paramCount = 1;
+
+            if (pedido) {
+                pgSql += ` AND (c2.c2_pedido ILIKE $${paramCount} OR c2.c2_obs ILIKE $${paramCount})`;
+                pgParams.push(`%${pedido}%`);
+                paramCount++;
+            }
+            if (cliente) {
+                pgSql += ` AND sa1.a1_nome ILIKE $${paramCount}`;
+                pgParams.push(`%${cliente}%`);
+                paramCount++;
+            }
+            if (produto) {
+                pgSql += ` AND c2.c2_produto ILIKE $${paramCount}`;
+                pgParams.push(`%${produto}%`);
+                paramCount++;
+            }
+
+            const pgRes = await db.query(pgSql, pgParams);
+            validOps = pgRes.rows.map(r => r.c2_num.trim());
+
+            if (validOps.length === 0) {
+                return res.json([]); // No matching OPs in ERP
+            }
+        }
+
+        // 2. Fetch appointments from MySQL
         let sql = `
             SELECT
                 a.id,
@@ -2088,13 +2127,15 @@ router.get('/pendentes', async (req, res) => {
             sql += ` AND a.op_numero LIKE ?`;
             params.push(`%${op}%`);
         }
-        if (produto) {
-            sql += ` AND a.produto_codigo LIKE ?`;
-            params.push(`%${produto}%`);
-        }
         if (apontador) {
             sql += ` AND a.usuario LIKE ?`;
             params.push(`%${apontador}%`);
+        }
+
+        if (validOps && validOps.length > 0) {
+            const placeholders = validOps.map(() => '?').join(',');
+            sql += ` AND a.op_numero IN (${placeholders})`;
+            params.push(...validOps);
         }
 
         sql += ` ORDER BY a.data_fim DESC LIMIT 500`;
@@ -2108,17 +2149,18 @@ router.get('/pendentes', async (req, res) => {
 
                 const [scRes, [planRows]] = await Promise.all([
                     opNums.length ? db.query(
-                        `SELECT TRIM(c2.c2_num) as op_numero,
-                                TRIM(c2.c2_item) as item_op,
-                                TRIM(c2.c2_produto) as produto_codigo,
-                                TRIM(c2.c2_pedido) as pedido_venda,
-                                TRIM(c2.c2_obs) as obs_venda,
-                                TRIM(sa1.a1_nome) as nome_cliente,
-                                c2.c2_quant as qtd_planejada,
-                                TRIM(g2.g2_operac) as g2_operac,
-                                TRIM(g2.g2_recurso) as g2_recurso,
-                                TRIM(g2.g2_descri) as desc_operacao,
-                                TRIM(h1.h1_descri) as master_desc_recurso
+                    `SELECT TRIM(c2.c2_num) as op_numero,
+                            TRIM(c2.c2_item) as item_op,
+                            TRIM(c2.c2_sequen) as op_sequencia,
+                            TRIM(c2.c2_produto) as produto_codigo,
+                            TRIM(c2.c2_pedido) as pedido_venda,
+                            TRIM(c2.c2_obs) as obs_venda,
+                            TRIM(sa1.a1_nome) as nome_cliente,
+                            c2.c2_quant as qtd_planejada,
+                            TRIM(g2.g2_operac) as g2_operac,
+                            TRIM(g2.g2_recurso) as g2_recurso,
+                            TRIM(g2.g2_descri) as desc_operacao,
+                            TRIM(h1.h1_descri) as master_desc_recurso
                          FROM sc2010 c2
                          LEFT JOIN sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
                              AND c5.c5_filial = c2.c2_filial
@@ -2151,7 +2193,12 @@ router.get('/pendentes', async (req, res) => {
                 const routingMap = {};
                 scRes.rows.forEach(r => {
                     const cleanOp = r.op_numero.replace(/^0+/, '');
-                    scMap[cleanOp] = r;
+                    
+                    // Specific key for exact Item/Sequence matching
+                    const fullKey = `${cleanOp}_${r.item_op || ''}_${r.op_sequencia || ''}`;
+                    scMap[fullKey] = r;
+                    // Keep a generic fallback for the OP just in case
+                    if (!scMap[cleanOp]) scMap[cleanOp] = r;
 
                     const key = `${cleanOp}_${r.item_op}`;
                     if (!routingMap[key]) routingMap[key] = [];
@@ -2189,7 +2236,10 @@ router.get('/pendentes', async (req, res) => {
 
                 rows.forEach(r => {
                     const cleanOp = (r.op_numero || '').replace(/^0+/, '');
-                    const sc = scMap[cleanOp];
+                    const fullKey = `${cleanOp}_${r.op_item || ''}_${r.op_sequencia || ''}`;
+                    
+                    // Match by Full Key > Generic Key
+                    const sc = scMap[fullKey] || scMap[cleanOp];
                     
                     if (sc) {
                         r.produto_codigo = sc.produto_codigo || r.produto_codigo || null;
