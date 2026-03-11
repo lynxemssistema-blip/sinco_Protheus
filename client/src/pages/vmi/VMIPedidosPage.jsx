@@ -22,7 +22,7 @@ const fmtDateFull = (d) => d
 const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
 
 
-export default function VMIPedidosPage() {
+export default function VMIPedidosPage({ isTab = false }) {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [importMeta, setImportMeta] = useState(null);
@@ -232,9 +232,10 @@ export default function VMIPedidosPage() {
     const toastBg = { ok: 'bg-slate-900', error: 'bg-red-700', warning: 'bg-amber-600' }[toast.type] || 'bg-slate-900';
 
     return (
-        <div className="p-4 md:p-6 space-y-6 max-w-screen-2xl mx-auto">
+        <div className={isTab ? 'space-y-6' : 'p-4 md:p-6 space-y-6 max-w-screen-2xl mx-auto'}>
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                {!isTab && (
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <ListOrdered className="w-7 h-7 text-indigo-600" />
@@ -242,6 +243,7 @@ export default function VMIPedidosPage() {
                     </h1>
                     <p className="text-slate-500 text-sm mt-1">Integração de pedidos baseados em datas de entrega e itens exatos das ordens de compra.</p>
                 </div>
+                )}
                 <div className="flex items-center gap-3">
                     <button onClick={handleAtualizar}
                         className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg flex items-center gap-2 text-sm font-medium transition shadow-sm">

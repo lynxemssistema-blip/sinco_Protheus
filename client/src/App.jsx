@@ -60,6 +60,7 @@ const VMIDashboardPage = React.lazy(() => import('./pages/vmi/VMIDashboardPage')
 const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage'));
 const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
+const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -405,9 +406,14 @@ function App() {
                                         } />
 
                                         {/* VMI Routes */}
-                                        <Route path="/vmi/demanda" element={
+                                        <Route path="/vmi/forecast" element={
                                             <Layout fullWidth={true}>
                                                 <DemandaVMIContainer />
+                                            </Layout>
+                                        } />
+                                        <Route path="/vmi/pedido" element={
+                                            <Layout fullWidth={true}>
+                                                <VMIPedidosContainer />
                                             </Layout>
                                         } />
                                         <Route path="/vmi/leitura" element={
