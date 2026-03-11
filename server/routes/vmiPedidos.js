@@ -113,6 +113,10 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
     const { records, _import_meta } = req.body;
     if (!records || records.length === 0) return res.status(400).json({ error: 'Nenhum dado para salvar.' });
 
+    // Sanitiza o nome do arquivo: remove tudo que não for letra, número, ponto, hífen ou underscore
+    const nomeArquivoRaw = _import_meta?.nome_arquivo || 'Upload Manual';
+    const nomeArquivo = nomeArquivoRaw.replace(/[^a-zA-Z0-9.\-_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
     let connection;
     try {
         connection = await conn.getConnection();
@@ -154,6 +158,16 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
         await connection.query(`ALTER TABLE app_vmi_pedidos
             CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`).catch(() => {});
 
+        // Verificar duplicata pelo nome sanitizado
+        const [existing] = await connection.query(
+            'SELECT lote_id FROM app_vmi_pedidos_lotes WHERE nome_arquivo = ? LIMIT 1',
+            [nomeArquivo]
+        );
+        if (existing.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ error: `Planilha "${nomeArquivo}" já foi importada anteriormente.` });
+        }
+
         // Inserir lote
         const [loteResult] = await connection.query(`
             INSERT INTO app_vmi_pedidos_lotes (usuario_id, usuario_nome, nome_arquivo, total_linhas)
@@ -161,7 +175,7 @@ router.post('/save-lote', authenticateToken, async (req, res) => {
         `, [
             req.user?.id || null,
             req.user?.nome || 'Sistema',
-            _import_meta?.nome_arquivo || 'Upload Manual',
+            nomeArquivo,
             records.length
         ]);
 

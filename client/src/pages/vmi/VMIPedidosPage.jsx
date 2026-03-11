@@ -125,8 +125,9 @@ export default function VMIPedidosPage() {
             handleCancelPreview();
             await fetchLotes();
             await fetchData();
-        } catch {
-            showToast('Erro ao gravar dados aprovados.', 'error');
+        } catch (err) {
+            const msg = err.response?.data?.error || 'Erro ao gravar dados aprovados.';
+            showToast(msg, 'error');
         } finally {
             setSaving(false);
         }
