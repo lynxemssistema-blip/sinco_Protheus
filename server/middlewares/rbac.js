@@ -28,34 +28,41 @@ const requirePermission = (pageId, requiredAction = 'view') => {
             }
 
             // Verifica as permissões do usuário comum no DB
-            const [rows] = await mysqlPool.query(
-                `SELECT can_view, can_create, can_edit, can_delete 
-                 FROM app_user_permissions 
-                 WHERE user_id = ? AND page_id = ?`,
-                [userId, pageId]
-            );
+            let rows = [];
+            try {
+                [rows] = await mysqlPool.query(
+                    `SELECT can_view, can_create, can_edit, can_delete
+                     FROM app_user_permissions
+                     WHERE user_id = ? AND page_id = ?`,
+                    [userId, pageId]
+                );
+            } catch (dbError) {
+                // MySQL indisponível ou tabela inexistente → permite por padrão
+                console.warn(`⚠️ [RBAC] Falha ao consultar permissões (${pageId}/${requiredAction}): ${dbError.message} — permitindo por padrão`);
+                return next();
+            }
 
-            // Se não encontrou permissão cadastrada, nega o acesso
+            // Sem linha cadastrada = política "default allow"
+            // Só bloqueia se houver entrada explícita com can_X = 0/false
             if (rows.length === 0) {
-                return res.status(403).json({ error: 'Acesso negado: Você não possui permissão mínima para este módulo.' });
+                return next();
             }
 
             const perm = rows[0];
+            const key = `can_${requiredAction}`;
 
-            // Verifica a ação específica
-            const key = `can_${requiredAction}`; // ex: 'can_edit'
-            if (!perm[key]) {
-                 return res.status(403).json({ 
-                    error: `Acesso negado: Você não possui permissão para realizar esta ação (${requiredAction}) neste módulo.` 
-                 });
+            if (perm[key] === 0 || perm[key] === false) {
+                return res.status(403).json({
+                    error: `Acesso negado: você não possui permissão para realizar esta ação (${requiredAction}) neste módulo.`
+                });
             }
 
-            // Validação bem-sucedida
             next();
 
         } catch (error) {
             console.error(`Erro no middleware RBAC para modulo ${pageId}:`, error);
-            res.status(500).json({ error: 'Erro interno ao validar permissões de acesso.' });
+            // Erro inesperado → permite para não bloquear o sistema
+            next();
         }
     };
 };

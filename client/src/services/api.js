@@ -36,8 +36,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // Auto-redirect to login on 401/403
-        if (error.response?.status === 401 || error.response?.status === 403) {
+        // Auto-redirect to login only on 401 (token inválido/expirado)
+        // 403 = usuário autenticado mas sem permissão → NÃO redireciona
+        if (error.response?.status === 401) {
             const currentPath = window.location.pathname;
             if (currentPath !== '/login') {
                 console.warn('🔒 Session expired, redirecting to login...');
