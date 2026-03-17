@@ -3347,7 +3347,9 @@ router.get('/estrutura/:codProduto', async (req, res) => {
 
                 // Mapeia para o formato esperado pelo frontend e tenta enriquecer com info de arquivos (da tabela local SE)
                 finalItems = pgRes.rows.map(row => {
-                    const isRestricted = (row.restri_sb1 && ['1', 'S', 'T', 'Y'].includes(row.restri_sb1.trim())) || row.restri_sz0 === 'P';
+                    const bloqueioSb1 = row.restri_sb1 && ['1', 'S', 'T', 'Y'].includes(row.restri_sb1.trim());
+                    const restricaoSz0 = row.restri_sz0 === 'P';
+                    const isRestricted = bloqueioSb1 || restricaoSz0;
                     return {
                         nivel: row.nivel,
                         codigo: row.codigo,
@@ -3357,6 +3359,8 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                         rev_metalfisa: row.rev_metalfisa,
                         rev_cliente: row.rev_cliente,
                         is_restricted: isRestricted,
+                        restri_sb1: bloqueioSb1 ? (row.restri_sb1 || '').trim() : '',
+                        restri_sz0: restricaoSz0 ? 'P' : '',
                         qtd_necessaria: Number(row.qtd_necessaria),
                         tem_arquivos: false,
                         primeiro_arquivo: null

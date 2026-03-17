@@ -1,12 +1,10 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, Database, ChevronDown, ChevronRight, Printer } from 'lucide-react';
-import jsPDFLib from 'jspdf';
-const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
-import autoTable from 'jspdf-autotable';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
+import { generateEstruturaReport } from '../services/estruturaReportPdf';
 
 const ProductStructure = () => {
     const { codigo } = useParams();
@@ -15,6 +13,7 @@ const ProductStructure = () => {
     const [structure, setStructure] = useState([]);
     const [balances, setBalances] = useState({});
     const [loading, setLoading] = useState(true);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [error, setError] = useState(null);
     const [selectedProductForStock, setSelectedProductForStock] = useState(null);
     const [expandedRoutes, setExpandedRoutes] = useState({}); // Track which items have route expanded
@@ -92,96 +91,34 @@ const ProductStructure = () => {
 
     const backLabel = 'Voltar';
 
-    const handleGeneratePDF = () => {
-        const doc = new jsPDF('landscape');
-        const dataEmissao = new Date().toLocaleDateString('pt-BR');
-        const horaEmissao = new Date().toLocaleTimeString('pt-BR');
+    const handleGeneratePDF = async () => {
+        setIsGeneratingPdf(true);
+        try {
+            // Pré-busca roteiros de todos os itens em paralelo
+            const allRoutesMap = { ...routes };
+            const missing = structure.filter(item => !allRoutesMap[item.codigo?.trim()]);
 
-        doc.setFontSize(8);
-        doc.text(`SIGA/MATR225Cus/v.12\nHora...: ${horaEmissao} - Grupo de empresa: GRUPO METALFISA / Filial: METALFISA MATRIZ`, 14, 10);
-
-        doc.setFontSize(10);
-        doc.text("Relação Simplificada das Estruturas", doc.internal.pageSize.width / 2, 10, { align: 'center' });
-        doc.text("ENGETRON ENG ELET IN", (doc.internal.pageSize.width / 2) + 50, 10);
-
-        doc.setFontSize(8);
-        doc.text(`Folha...: 1\nDT.Ref.: ${dataEmissao}\nEmissão: ${dataEmissao}`, doc.internal.pageSize.width - 14, 10, { align: 'right' });
-
-        const tableColumn = ["ITEM", "TP", "NIVEL", "CODIGO", "DESCRICAO", "QTDE.NECESSARIA", "UM", "Rv Metalfisa", "Cod Prod Cliente", "Rv Cliente", "Restrição"];
-        const tableRows = [];
-
-        structure.forEach((item, index) => {
-            const itemNum = String(index + 1).padStart(3, '0');
-            const tp = item.tipo_produto || '';
-            const nivelStr = String(item.nivel).padStart(2, '0');
-            // Adding indentation
-            const indent = "  ".repeat(item.nivel);
-            const ref = item.referencias && item.referencias[0] ? item.referencias[0] : {};
-
-            // Prefer frontend mapping overrides if available, otherwise fallback to item properties
-            const revM = item.rev_metalfisa || ref.revisao || '';
-            const codCliente = ref.desenho || '';
-            const revC = item.rev_cliente || '';
-            const restricao = item.is_restricted ? '[R]' : '';
-
-            const rowData = [
-                itemNum,
-                tp,
-                nivelStr,
-                indent + item.codigo,
-                item.descricao || '',
-                parseFloat(item.qtd_necessaria || 0).toFixed(6),
-                item.unidade || '',
-                revM,
-                codCliente,
-                revC,
-                restricao
-            ];
-
-            tableRows.push(rowData);
-        });
-
-        autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 20,
-            theme: 'plain',
-            styles: { fontSize: 7, font: 'courier', cellPadding: 1 },
-            headStyles: { fillColor: false, textColor: 20, fontStyle: 'bold', lineWidth: { bottom: 0.5 } },
-            columnStyles: {
-                0: { cellWidth: 10 },
-                1: { cellWidth: 10 },
-                2: { cellWidth: 15 },
-                3: { cellWidth: 35 },
-                4: { cellWidth: 80 },
-                5: { cellWidth: 25, halign: 'right' },
-                6: { cellWidth: 10 },
-                7: { cellWidth: 20, halign: 'center' },
-                8: { cellWidth: 35 },
-                9: { cellWidth: 20, halign: 'center' },
-                10: { cellWidth: 15, halign: 'center', textColor: '#eab308', fontStyle: 'bold' }
-            },
-            didParseCell: function (data) {
-                // Highlight [R] restriction
-                if (data.section === 'body' && data.column.index === 10 && data.cell.raw === '[R]') {
-                    data.cell.styles.fillColor = '#fef08a'; // Yellow background highlight similar to image
-                    data.cell.styles.textColor = '#854d0e';
+            await Promise.all(missing.map(async (item) => {
+                const key = item.codigo?.trim();
+                try {
+                    const data = await getProductRoute(item.codigo);
+                    allRoutesMap[key] = Array.isArray(data) ? data : [];
+                } catch {
+                    allRoutesMap[key] = [];
                 }
-            },
-            didDrawPage: function (data) {
-                const pageSize = doc.internal.pageSize;
-                const pageHeight = pageSize.height ? pageSize.height : pageSize.getHeight();
-                doc.setFontSize(7);
-                doc.setLineWidth(0.5);
-                doc.line(14, pageHeight - 7, pageSize.width - 14, pageHeight - 7);
-                doc.text("TOTVS | SmartClient", 14, pageHeight - 4);
-                doc.text("TOTVS S/A", pageSize.width / 2, pageHeight - 4, { align: 'center' });
-                doc.text(`- Hora Término: ${new Date().toLocaleTimeString('pt-BR')}`, pageSize.width - 14, pageHeight - 4, { align: 'right' });
-            },
-            margin: { top: 20, bottom: 10 }
-        });
+            }));
 
-        doc.save(`Estrutura_${codigo}_${dataEmissao.replace(/\//g, '')}.pdf`);
+            // Atualiza o cache de roteiros na tela também
+            setRoutes(allRoutesMap);
+
+            await generateEstruturaReport(structure, allRoutesMap);
+
+        } catch (err) {
+            console.error('Erro ao gerar relatório:', err);
+            alert('Falha ao gerar o relatório. Consulte o console para mais detalhes.');
+        } finally {
+            setIsGeneratingPdf(false);
+        }
     };
 
     return (
@@ -210,10 +147,15 @@ const ProductStructure = () => {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleGeneratePDF}
-                                className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                                disabled={isGeneratingPdf}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${isGeneratingPdf ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200'}`}
                             >
-                                <Printer className="h-4 w-4" />
-                                Emitir Relatório
+                                {isGeneratingPdf ? (
+                                    <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+                                ) : (
+                                    <Printer className="h-4 w-4" />
+                                )}
+                                {isGeneratingPdf ? 'Gerando PDF...' : 'Emitir Relatório'}
                             </button>
                             <button
                                 onClick={() => navigate(`/bom/${encodeURIComponent(codigo)}`)}
@@ -229,13 +171,12 @@ const ProductStructure = () => {
                         <table className="w-full text-sm text-left">
                             <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
                                 <tr>
-                                    <th className="px-6 py-4">Componente / Estrutura</th>
-                                    <th className="px-6 py-4">Código</th>
-                                    <th className="px-6 py-4">Ref. Cliente</th>
-                                    <th className="px-6 py-4 text-center">Saldo</th>
-                                    <th className="px-6 py-4">UM</th>
                                     <th className="px-6 py-4 text-center">Nível</th>
+                                    <th className="px-6 py-4">Código</th>
+                                    <th className="px-6 py-4">Descrição</th>
+                                    <th className="px-6 py-4">UM</th>
                                     <th className="px-6 py-4 text-right">Qtd Nec.</th>
+                                    <th className="px-6 py-4">Ref. Cliente</th>
                                     <th className="px-6 py-4 text-center">Roteiro</th>
                                 </tr>
                             </thead>
@@ -259,6 +200,23 @@ const ProductStructure = () => {
                                 {!loading && !error && structure.map((item, idx) => (
                                     <Fragment key={idx}>
                                         <tr className={`hover:bg-slate-50 transition-colors ${item.nivel === 0 ? 'bg-blue-50/30' : ''}`}>
+                                            
+                                            {/* Nível */}
+                                            <td className="px-6 py-3 text-center">
+                                                <span className={`
+                                                inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                                                ${item.nivel === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}
+                                            `}>
+                                                    {item.nivel}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Código */}
+                                            <td className="px-6 py-3 font-mono text-xs text-gray-600">
+                                                {item.codigo}
+                                            </td>
+                                            
+                                            {/* Descrição (Componente / Estrutura) */}
                                             <td className="px-6 py-3">
                                                 <div
                                                     className="flex items-center gap-2"
@@ -295,16 +253,24 @@ const ProductStructure = () => {
                                                     </span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-3 font-mono text-xs text-gray-600">
-                                                {item.codigo}
+
+                                            {/* Unidade (UM) */}
+                                            <td className="px-6 py-3 text-gray-500">
+                                                {item.unidade}
                                             </td>
+
+                                            {/* Qtd Nec. */}
+                                            <td className="px-6 py-3 text-right font-mono font-medium">
+                                                {(parseFloat(item.qtd_necessaria) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 })}
+                                            </td>
+                                            
+                                            {/* Ref. Cliente */}
                                             <td className="px-6 py-3 text-sm text-gray-600">
                                                 {item.referencias && item.referencias.length > 0 ? (
                                                     <div className="flex flex-col gap-1">
                                                         {item.referencias.map((ref, idx) => (
                                                             <div key={idx} className="bg-yellow-50 px-2 py-0.5 rounded border border-yellow-100 w-fit">
                                                                 <span className="font-mono font-bold text-gray-800 text-xs">{ref.desenho}</span>
-                                                                {/* <span className="text-[10px] text-gray-500 block">{ref.cliente} {ref.revisao ? `(Rev ${ref.revisao})` : ''}</span> */}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -312,36 +278,8 @@ const ProductStructure = () => {
                                                     <span className="text-gray-300">-</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-3 text-center">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <span className="font-mono text-xs font-bold text-gray-600">
-                                                        {balances[item.codigo] !== undefined
-                                                            ? parseFloat(balances[item.codigo]).toLocaleString('pt-BR')
-                                                            : '-'}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => setSelectedProductForStock({ codigo: item.codigo, descricao: item.descricao })}
-                                                        className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-all"
-                                                        title="Gerenciar Estoque"
-                                                    >
-                                                        <Database className="h-3 w-3" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-3 text-gray-500">
-                                                {item.unidade}
-                                            </td>
-                                            <td className="px-6 py-3 text-center">
-                                                <span className={`
-                                                inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
-                                                ${item.nivel === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}
-                                            `}>
-                                                    {item.nivel}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-3 text-right font-mono font-medium">
-                                                {(parseFloat(item.qtd_necessaria) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 })}
-                                            </td>
+
+                                            {/* Roteiro */}
                                             <td className="px-6 py-3 text-center">
                                                 <button
                                                     onClick={() => toggleRoute(item.codigo)}
