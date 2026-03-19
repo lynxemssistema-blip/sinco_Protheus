@@ -233,8 +233,13 @@ const SINCOProductStructure = () => {
 
             // Force expand if filtering, otherwise respect state
             const isExpanded = hasActiveFilters ? true : expandedRows[item.CodMatFabricante];
+            
+            // Verifique se o próximo item na árvore é *filho direto* deste item (nível maior)
+            // Se o nível do próximo item for igual ou menor, quer dizer que acabaram os filhos deste item.
             const hasStructChildren = i + 1 < filteredTree.length && filteredTree[i + 1].nivel > item.nivel;
             const hasMatsOrProcs = (item.materiais?.length > 0 || item.processos?.length > 0);
+            
+            // O item só tem "children" se tem componentes estruturais filhos ou se possui roteiro/material de consumo próprio
             const hasChildren = hasStructChildren || hasMatsOrProcs;
 
             if (!isExpanded && hasStructChildren) hideBelow = item.nivel;
@@ -297,9 +302,16 @@ const SINCOProductStructure = () => {
     };
 
     const handleExportPDF = async () => {
-        // Será implementado a seguir usando um serviço importado
-        const { default: generateSincoStructurePdf } = await import('../../services/sincoStructurePdfGenerator');
-        generateSincoStructurePdf(structure, user);
+        setIsLoading(true);
+        try {
+            const { default: generateSincoStructurePdf } = await import('../../services/sincoStructurePdfGenerator');
+            await generateSincoStructurePdf(structure, user);
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            alert('Falha ao gerar o PDF da Ficha Técnica.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -465,12 +477,12 @@ const SINCOProductStructure = () => {
                                 <thead>
                                     <tr className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
                                         <th className="px-4 py-3 w-14 text-center">Nível</th>
-                                        <th className="px-4 py-3 min-w-[220px]">Produto</th>
+                                        <th className="px-4 py-3 min-w-[220px]">Código</th>
                                         <th className="px-4 py-3 min-w-[200px]">Descrição</th>
+                                        <th className="px-4 py-3 w-20 text-center">Unidade</th>
+                                        <th className="px-4 py-3 w-28 text-right">Qtde Nec.</th>
                                         <th className="px-4 py-3 w-28 text-center">Observação</th>
                                         <th className="px-4 py-3 w-28 text-right">Qtde Unit.</th>
-                                        <th className="px-4 py-3 w-28 text-right">Qtde Total</th>
-                                        <th className="px-4 py-3 w-20 text-center">Unidade</th>
                                         <th className="px-4 py-3 w-20 text-center">PDF</th>
                                         <th className="px-4 py-3 w-12 text-center"></th>
                                     </tr>
@@ -530,22 +542,22 @@ const SINCOProductStructure = () => {
                                                         </div>
                                                     </td>
 
+                                                    {/* UNIDADE */}
+                                                    <td className="px-4 py-3 text-center text-xs text-slate-500 uppercase">
+                                                        {item.Unidade || '—'}
+                                                    </td>
+
+                                                    {/* QTDE TOTAL (Qtde Nec.) */}
+                                                    <td className="px-4 py-3 text-right font-mono text-xs font-bold text-slate-800">
+                                                        {fmtQtd(item.QtdeTotal)}
+                                                    </td>
+
                                                     {/* OBSERVAÇÃO */}
                                                     <td className="px-4 py-3 text-center text-xs text-slate-400">-</td>
 
                                                     {/* QTDE UNIT. */}
                                                     <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
                                                         {fmtQtd(item.QtdeTotal)}
-                                                    </td>
-
-                                                    {/* QTDE TOTAL */}
-                                                    <td className="px-4 py-3 text-right font-mono text-xs font-bold text-slate-800">
-                                                        {fmtQtd(item.QtdeTotal)}
-                                                    </td>
-
-                                                    {/* UNIDADE */}
-                                                    <td className="px-4 py-3 text-center text-xs text-slate-500 uppercase">
-                                                        {item.Unidade || '—'}
                                                     </td>
 
                                                     {/* PDF */}

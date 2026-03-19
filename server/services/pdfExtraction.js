@@ -42,29 +42,28 @@ class PDFExtractionService {
             const pdfBuffer = await fs.readFile(pdfPath);
             const pdfBase64 = pdfBuffer.toString('base64');
 
-            // Prompt otimizado para desenhos técnicos brasileiros
+            // Prompt otimizado para desenhos técnicos brasileiros (Padrão VMI Security)
             const prompt = `
 Você é um especialista em análise de desenhos técnicos de engenharia mecânica.
 
-Analise este desenho técnico e extraia as seguintes informações do CARIMBO/LEGENDA do desenho:
+Analise este desenho técnico e extraia as seguintes informações do CARIMBO/LEGENDA do desenho, localizado geralmente no canto inferior direito:
 
 INFORMAÇÕES A EXTRAIR:
-1. **Título do Desenho**: Nome/descrição da peça (ex: "CHAPA BASE", "SUPORTE LATERAL", etc)
-2. **Peso**: Peso total da peça em quilogramas (kg)
-3. **Área de Pintura**: Área total a ser pintada em metros quadrados (m²)
-4. **Material**: Material principal da peça (ex: "AÇO 1020", "ALUMÍNIO", "AÇO INOX 304")
-5. **Espessura**: Espessura do material em milímetros (mm)
-6. **Dimensões**: Dimensões principais da peça (ex: "1000x500x300")
-7. **Revisão**: Número ou letra da revisão do desenho (ex: "A", "B", "REV 01")
+1. **Título do Desenho**: Denominação / Nome da peça (ex: "Articulação da tampa", "Chapa de acesso ao Disjuntor", etc)
+2. **Peso**: Peso total da peça em quilogramas (kg). Procure EXATAMENTE pelo campo "Peso Total (kg)" no carimbo.
+3. **Área de Pintura**: Área total a ser pintada em metros quadrados (m²). Procure EXATAMENTE pelo campo "Área Total (m2)" no carimbo.
+4. **Material**: Material principal da peça (ex: "Aço", "Chapa", "Ver tabela")
+5. **Espessura**: Espessura do material em milímetros (# (mm))
+6. **Dimensões**: Dimensões principais da peça
+7. **Revisão**: Número ou letra da revisão do desenho (ex: "00", "01", "A")
 
 IMPORTANTE:
-- Se algum dado NÃO estiver visível ou disponível no desenho, use null
-- Para peso e área de pintura, extraia APENAS o valor numérico
-- Seja preciso com os valores numéricos
-- O título geralmente está no carimbo do desenho
-- Área de pintura pode estar em dm² (divida por 100 para converter para m²)
+- Se algum dado NÃO estiver visível ou disponível no desenho, use null.
+- Para peso e área de pintura, extraia APENAS o valor numérico (ex: se estiver "0.25", retorne 0.25).
+- Seja preciso com os valores numéricos. Eles geralmente ficam nas caixas de contorno vermelho perto da extremidade direita do carimbo.
+- O título está na coluna Denominação.
 
-RETORNE APENAS UM JSON VÁLIDO neste formato exato:
+RETORNE APENAS UM JSON VÁLIDO neste formato exato (sem formatação markdown \`\`\`json):
 {
   "titulo": "string ou null",
   "peso_kg": number ou null,
@@ -73,10 +72,10 @@ RETORNE APENAS UM JSON VÁLIDO neste formato exato:
   "espessura_mm": number ou null,
   "dimensoes": "string ou null",
   "revisao": "string ou null",
-  "confianca": number (0.0 a 1.0, sua confiança na precisão dos dados extraídos)
+  "confianca": number (0.0 a 1.0)
 }
 
-NÃO adicione comentários, explicações ou texto extra. APENAS o JSON.
+NÃO adicione comentários, explicações ou texto extra. APENAS o JSON vazio com os dados preenchidos.
 `;
 
             // Chamar Gemini Vision API

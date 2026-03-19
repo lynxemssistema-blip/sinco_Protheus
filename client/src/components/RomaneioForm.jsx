@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, Plus, ArrowRight, Save, Trash2, FileText, CheckCircle, Truck, Printer, History, Edit, Search as SearchIcon, Camera, Image, X } from 'lucide-react';
+import { Loader2, Plus, ArrowRight, Save, Trash2, FileText, CheckCircle, Truck, Printer, History, Edit, Search as SearchIcon, Camera, Image, X, Link as LinkIcon, ExternalLink, Info, AlertCircle } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import {
     getClientes, getRomaneioTypes, createRomaneio, addRomaneioItem, updateRomaneio,
-    getRomaneioById, updateRomaneioStatus, getProductionOrdersByOp,
+    getRomaneioById, updateRomaneioStatus, getProductionOrdersByOp, checkOpItemAvailability,
     updateRomaneioItem, deleteRomaneioItem, createRevision, getRevisions, getRevisionDetails,
-    getProdutos, // Added
-    uploadRomaneioPhoto, // Added
-    getFileUrl
+    getProdutos,
+    uploadRomaneioPhoto,
+    getRomaneioLinkedNfs, linkRomaneioNf, unlinkRomaneioNf, // NFs
+    getFileUrl,
+    downloadRomaneioBundle,
+    getProductDocs
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'react-toastify';
 import RomaneioPrint from './RomaneioPrint';
+import NfSearchModal from './RomaneioModals/NfSearchModal';
+import NfMirrorModal from './RomaneioModals/NfMirrorModal';
 
 export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess }) {
     const { user } = useAuth();
@@ -54,10 +60,18 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     const [clients, setClients] = useState([]);
     const [revisions, setRevisions] = useState([]);
     const [showRevisions, setShowRevisions] = useState(false);
+    const [loadingBundle, setLoadingBundle] = useState(false);
 
     // Photos state (for current session)
     const [fotosModal, setFotosModal] = useState([]); // File objects
     const [fotosPreview, setFotosPreview] = useState([]); // Object URLs
+
+    // Custom NF States
+    const [nfsVinculadas, setNfsVinculadas] = useState({ saida: [], retorno: [] });
+    const [isNfSearchModalOpen, setIsNfSearchModalOpen] = useState(false);
+    const [isNfMirrorModalOpen, setIsNfMirrorModalOpen] = useState(false);
+    const [currentTipoNfSearch, setCurrentTipoNfSearch] = useState('');
+    const [selectedMirrorNf, setSelectedMirrorNf] = useState(null);
 
     // Item Form
     const [activeTab, setActiveTab] = useState('op'); // 'op' | 'manual'
@@ -100,16 +114,39 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         setStep(initialStep);
     }, [initialStep]);
 
-    const handlePrint = useReactToPrint({
-        contentRef: printRef,
-        documentTitle: `Romaneio_${currRomaneioId || 'Novo'}`,
-    });
+    const handlePrint = async () => {
+        if (!currRomaneioId) return;
+        try {
+            setLoadingBundle(true);
+            const blob = await downloadRomaneioBundle(currRomaneioId);
+            if (blob) {
+                const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+                window.open(url, '_blank');
+                toast.success('Romaneio Impresso + Desenhos + Lista de Status aberto com sucesso!');
+            }
+        } catch (err) {
+            toast.error('Erro ao chamar servidor Node para Caderno: ' + err.message);
+        } finally {
+            setLoadingBundle(false);
+        }
+    };
 
     const loadTypes = async () => {
         try {
             const data = await getRomaneioTypes();
             setTypes(data);
         } catch (err) { console.error(err); }
+    };
+
+    const fetchNfsVinculadas = async (id) => {
+        try {
+            const vinculados = await getRomaneioLinkedNfs(id);
+            const saida = vinculados.filter(nf => nf.tipo_nf === 'saida');
+            const retorno = vinculados.filter(nf => nf.tipo_nf === 'retorno');
+            setNfsVinculadas({ saida, retorno });
+        } catch (err) {
+            console.error('Erro ao buscar NFs vinculadas', err);
+        }
     };
 
     const loadRomaneio = async (id) => {
@@ -148,17 +185,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             }
 
             setItems(data.itens || []);
-            // Only force step 2 if no explicit initialStep was provided (or if it matches default behavior)
-            // Actually, we should respect the passed initialStep if this is the FIRST load, 
-            // but loadRomaneio might be called after save.
-            // Let's rely on the fact that setStep(initialStep) was called on mount.
-            // But wait, initialStep is passed as prop. 
-            // If we are editing (id exists), usually we go to step 2.
-            // BUT if user clicked "Edit Header", we want Step 1.
-
-            // If prop is 1, stay 1. If prop is 2, go 2.
-            // The prop comes from parent state.
-            // setStep(initialStep); // Removed to fix error
+            await fetchNfsVinculadas(data.id);
         } catch (err) {
             console.error(err);
         } finally {
@@ -174,6 +201,39 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     };
 
     // --- ACTIONS ---
+    const handleLinkNf = async (nf, tipoNf) => {
+        if (!currRomaneioId) return alert('Salve o romaneio primeiro!');
+        setLoading(true);
+        try {
+            await linkRomaneioNf(currRomaneioId, {
+                tipo_nf: tipoNf,
+                nf_numero: nf.Num_NF,
+                nf_serie: nf.Serie || '',
+                fornecedor_cod: nf.Cod_Fornecedor,
+                fornecedor_loja: nf.Loja || header.cliente_loja || ''
+            });
+            await fetchNfsVinculadas(currRomaneioId);
+            setIsNfSearchModalOpen(false);
+        } catch (err) {
+            alert('Erro ao vincular NF: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUnlinkNf = async (nfId) => {
+        if (!window.confirm('Tem certeza que deseja desvincular esta Nota Fiscal?')) return;
+        setLoading(true);
+        try {
+            await unlinkRomaneioNf(currRomaneioId, nfId);
+            await fetchNfsVinculadas(currRomaneioId);
+        } catch (err) {
+            alert('Erro ao desvincular NF: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleCreateRevision = async () => {
         const reason = prompt('Motivo da Revisão:');
         if (!reason) return;
@@ -229,12 +289,27 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     };
 
     const handleFotosChange = (e) => {
-        const files = Array.from(e.target.files || []);
-        if (!files.length) return;
-        const novos = [...fotosModal, ...files].slice(0, 5 - header.fotos.length);
-        setFotosModal(novos);
-        const newPreviews = novos.map(f => URL.createObjectURL(f));
-        setFotosPreview(newPreviews);
+        try {
+            console.log('📸 [RomaneioForm] Inserindo imagens', e.target.files);
+            const files = Array.from(e.target.files || []);
+            if (!files.length) return;
+            
+            const existingCount = Array.isArray(header?.fotos) ? header.fotos.length : 0;
+            const limit = Math.max(0, 5 - existingCount);
+            
+            const novos = [...(fotosModal || []), ...files].slice(0, limit);
+            setFotosModal(novos);
+            
+            const newPreviews = novos.map(f => {
+                try { return URL.createObjectURL(f); } catch (err) { return ''; }
+            }).filter(Boolean);
+            
+            setFotosPreview(newPreviews);
+            e.target.value = ''; // Reset input so same file can be selected again if needed
+        } catch (error) {
+            console.error('❌ Erro ao inserir imagem:', error);
+            alert('Não foi possível carregar a imagem selecionada. Verifique se o formato é suportado.');
+        }
     };
 
     const removerFotoSession = (idx) => {
@@ -250,10 +325,10 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     const saveHeader = async () => {
         // Validate: cliente_nome is required (can be manual or from database)
         if (!header.cliente_nome || header.cliente_nome.trim().length === 0) {
-            return alert('Informe o Fornecedor');
+            return toast.warn('Informe o Fornecedor');
         }
-        if (!header.tipo_id) return alert('Selecione o Tipo de Romaneio');
-        if (!header.data_liberacao) return alert('Data de Liberação é obrigatória');
+        if (!header.tipo_id) return toast.warn('Selecione o Tipo de Romaneio');
+        if (!header.data_liberacao) return toast.warn('Data de Liberação é obrigatória');
 
         setLoading(true);
         try {
@@ -279,7 +354,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 loadRomaneio(currRomaneioId);
                 setFotosModal([]);
                 setFotosPreview([]);
-                alert('Dados atualizados!');
+                toast.success('Dados atualizados!');
             } else {
                 // CREATE MODE
                 const res = await createRomaneio({ ...headerToSave, usuario: user?.nome || user?.login });
@@ -403,7 +478,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
             {/* Hidden Print Component */}
             <div style={{ display: 'none' }}>
-                <RomaneioPrint ref={printRef} romaneio={currRomaneioData} items={items} typeDescription={types.find(t => t.id == header.tipo_id)?.description} />
+                <RomaneioPrint ref={printRef} romaneio={currRomaneioData} items={items} nfs={nfsVinculadas} typeDescription={types.find(t => t.id == header.tipo_id)?.description} />
+                <button id="btn-print-romaneio" onClick={handlePrint}>Print</button>
             </div>
 
             {/* Steps / Toolbar */}
@@ -428,6 +504,25 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
 
                 {step === 2 && (
                     <div className="flex gap-2">
+                        <button
+                            onClick={async () => {
+                                if (!currRomaneioId) return;
+                                try {
+                                    setLoadingBundle(true);
+                                    await downloadRomaneioBundle(currRomaneioId);
+                                    toast.success('Caderno de Engenharia gerado silenciosamente e salvo na rede no local correto!');
+                                } catch (err) {
+                                    toast.error('Erro ao gerar Caderno silancioso: ' + (err.response?.data?.error || err.message));
+                                } finally {
+                                    setLoadingBundle(false);
+                                }
+                            }}
+                            disabled={loadingBundle}
+                            className="text-red-600 hover:bg-red-50 p-2 rounded flex gap-2 items-center text-xs border border-red-200 font-medium disabled:opacity-50"
+                        >
+                            <FileText className="w-4 h-4" /> 
+                            {loadingBundle ? 'Gerando...' : 'Gerar conjunto de PDF'}
+                        </button>
                         <button onClick={() => setShowRevisions(!showRevisions)} className="text-slate-600 hover:bg-slate-100 p-2 rounded flex gap-2 items-center text-xs border">
                             <History className="w-4 h-4" /> Histórico ({revisions.length})
                         </button>
@@ -532,14 +627,21 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                             <div className="absolute z-10 w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-auto mt-1">
                                 {clients.map(cli => (
                                     <div
-                                        key={cli.codigo}
+                                        key={`${cli.codigo}-${cli.loja}-${cli.tipo}`}
                                         className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 transition-colors"
                                         onClick={() => selectClient(cli)}
                                     >
-                                        <div className="font-bold text-slate-900">{cli.nome}</div>
+                                        <div className="font-bold text-slate-900 flex items-center justify-between">
+                                            <span>{cli.nome}</span>
+                                            {cli.tipo && (
+                                                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ml-2 ${cli.tipo === 'Fornecedor' ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
+                                                    {cli.tipo}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-slate-500 mt-1">
-                                            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{cli.codigo}/{cli.loja}</span>
-                                            <span className="ml-2">{cli.nreduz}</span>
+                                            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded border">{cli.codigo}/{cli.loja}</span>
+                                            <span className="ml-2 font-medium">{cli.nreduz}</span>
                                             {cli.cidade && <span className="ml-2">• {cli.cidade}</span>}
                                         </div>
                                     </div>
@@ -571,53 +673,117 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                     </div>
 
                     <div className="border-t pt-4 grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold mb-1">NF de Saída (Use Enter para add)</label>
-                            <div className="border p-1 rounded-lg bg-white min-h-[42px] flex flex-wrap gap-1 items-center">
-                                {header.nf_saida.map((nf, idx) => (
-                                    <span key={idx} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded flex items-center gap-1 font-mono">
-                                        {nf} <X className="w-3 h-3 cursor-pointer hover:text-blue-900" onClick={() => setHeader({ ...header, nf_saida: header.nf_saida.filter((_, i) => i !== idx) })} />
-                                    </span>
-                                ))}
-                                <input
-                                    className="flex-1 min-w-[100px] outline-none text-sm p-1 placeholder:text-xs"
-                                    placeholder="Digite a NF..."
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            const val = e.target.value.trim();
-                                            if (val && !header.nf_saida.includes(val)) {
-                                                setHeader({ ...header, nf_saida: [...header.nf_saida, val] });
-                                                e.target.value = '';
-                                            }
-                                        }
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold mb-1">NF de Retorno (Use Enter para add)</label>
-                            <div className="border p-1 rounded-lg bg-white min-h-[42px] flex flex-wrap gap-1 items-center">
-                                {header.nf_retorno.map((nf, idx) => (
-                                    <span key={idx} className="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded flex items-center gap-1 font-mono">
-                                        {nf} <X className="w-3 h-3 cursor-pointer hover:text-emerald-900" onClick={() => setHeader({ ...header, nf_retorno: header.nf_retorno.filter((_, i) => i !== idx) })} />
-                                    </span>
-                                ))}
-                                <input
-                                    className="flex-1 min-w-[100px] outline-none text-sm p-1 placeholder:text-xs"
-                                    placeholder="Digite a NF..."
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            const val = e.target.value.trim();
-                                            if (val && !header.nf_retorno.includes(val)) {
-                                                setHeader({ ...header, nf_retorno: [...header.nf_retorno, val] });
-                                                e.target.value = '';
-                                            }
-                                        }
-                                    }}
-                                />
-                            </div>
+                        <div className="col-span-2">
+                            {currRomaneioId ? (
+                                <div className="border bg-slate-50 p-4 rounded-xl shadow-sm">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <FileText className="w-5 h-5 text-indigo-600" />
+                                        <h3 className="font-bold text-slate-800 text-lg">Notas Fiscais Vinculadas (Protheus)</h3>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* NFs de Saída */}
+                                        <div className="bg-white border rounded-lg overflow-hidden">
+                                            <div className="bg-slate-100 border-b p-2 flex justify-between items-center">
+                                                <div className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                                    <Truck className="w-4 h-4 text-blue-500" />
+                                                    NFs de Saída
+                                                </div>
+                                                <button 
+                                                    onClick={() => { setCurrentTipoNfSearch('saida'); setIsNfSearchModalOpen(true); }}
+                                                    className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded flex items-center gap-1 transition-colors border border-blue-200"
+                                                >
+                                                    <LinkIcon className="w-3 h-3" /> Buscar NF
+                                                </button>
+                                            </div>
+                                            <div className="p-2 min-h-[60px]">
+                                                {nfsVinculadas.saida.length === 0 ? (
+                                                    <p className="text-[10px] text-slate-400 italic text-center py-2">Nenhuma NF de Saída.</p>
+                                                ) : (
+                                                    <div className="space-y-1">
+                                                        {nfsVinculadas.saida.map(nf => (
+                                                            <div key={nf.id} className="flex items-center justify-between bg-blue-50/50 p-1.5 rounded border border-blue-100">
+                                                                <div>
+                                                                    <span className="font-mono font-bold text-blue-900 text-sm">{nf.nf_numero}</span>
+                                                                    {nf.nf_serie && <span className="text-xs text-blue-600 ml-1">Série: {nf.nf_serie}</span>}
+                                                                </div>
+                                                                <div className="flex gap-1 border-l pl-1 border-blue-200">
+                                                                    <button 
+                                                                        onClick={async () => { 
+                                                                            setSelectedMirrorNf(nf); 
+                                                                            setIsNfMirrorModalOpen(true); 
+                                                                        }}
+                                                                        className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Ver Espelho (Itens)"
+                                                                    >
+                                                                        <ExternalLink className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleUnlinkNf(nf.id)}
+                                                                        className="p-1 text-red-500 hover:bg-red-50 rounded" title="Desvincular"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* NFs de Retorno */}
+                                        <div className="bg-white border rounded-lg overflow-hidden">
+                                            <div className="bg-slate-100 border-b p-2 flex justify-between items-center">
+                                                <div className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                                    NFs de Retorno
+                                                </div>
+                                                <button 
+                                                    onClick={() => { setCurrentTipoNfSearch('retorno'); setIsNfSearchModalOpen(true); }}
+                                                    className="text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1 rounded flex items-center gap-1 transition-colors border border-emerald-200"
+                                                >
+                                                    <LinkIcon className="w-3 h-3" /> Buscar NF
+                                                </button>
+                                            </div>
+                                            <div className="p-2 min-h-[60px]">
+                                                {nfsVinculadas.retorno.length === 0 ? (
+                                                    <p className="text-[10px] text-slate-400 italic text-center py-2">Nenhuma NF de Retorno.</p>
+                                                ) : (
+                                                    <div className="space-y-1">
+                                                        {nfsVinculadas.retorno.map(nf => (
+                                                            <div key={nf.id} className="flex items-center justify-between bg-emerald-50/50 p-1.5 rounded border border-emerald-100">
+                                                                <div>
+                                                                    <span className="font-mono font-bold text-emerald-900 text-sm">{nf.nf_numero}</span>
+                                                                    {nf.nf_serie && <span className="text-xs text-emerald-600 ml-1">Série: {nf.nf_serie}</span>}
+                                                                </div>
+                                                                <div className="flex gap-1 border-l pl-1 border-emerald-200">
+                                                                    <button 
+                                                                        onClick={() => { setSelectedMirrorNf(nf); setIsNfMirrorModalOpen(true); }}
+                                                                        className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Ver Espelho (Itens)"
+                                                                    >
+                                                                        <ExternalLink className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleUnlinkNf(nf.id)}
+                                                                        className="p-1 text-red-500 hover:bg-red-50 rounded" title="Desvincular"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="border bg-slate-50 p-4 rounded-xl flex items-center gap-3 text-slate-600">
+                                    <Info className="w-5 h-5 min-w-[20px] text-blue-500" />
+                                    <span className="text-sm">Para buscar e vincular **Notas Fiscais do Protheus**, primeiro salve os dados iniciais do Romaneio clicando em <strong>Avançar</strong>.</span>
+                                </div>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-bold mb-1">Motorista</label>
@@ -1095,9 +1261,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                         <button
                                             onClick={async () => {
                                                 try {
-                                                    const response = await fetch(`http://${window.location.hostname}:3001/api/docs/${it.codigo_produto.trim()}`);
-                                                    const docs = await response.json();
+                                                    const docs = await getProductDocs(it.codigo_produto.trim());
                                                     if (docs && docs.length > 0) {
+                                                        // A abertura de nova guia nao precisa de auth api pois o browser vai mandar /view com o token url/cookies? Nao, a api view no backend permite GET sem Header Auth devido a restriçoes de browser abrindo link direto, mas os dados da tabela em si EXIGEM auth.
                                                         window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(docs[0].url_arquivo)}`, '_blank');
                                                     } else {
                                                         alert('Nenhum documento encontrado para este produto.');
@@ -1154,11 +1320,31 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         </tfoot>
                     </table>
 
-                    <div className="flex justify-end">
+
+
+                    <div className="flex justify-end mt-4">
                         <button onClick={onSuccess} className="text-slate-500 text-xs underline">Voltar para Lista</button>
                     </div>
                 </div>
             )}
+
+            {/* Modals para NFs */}
+            <NfSearchModal
+                isOpen={isNfSearchModalOpen}
+                onClose={() => setIsNfSearchModalOpen(false)}
+                onSelectNf={handleLinkNf}
+                fornecedorCod={header.cliente_cod}
+                fornecedorLoja={header.cliente_loja}
+                tipoNf={currentTipoNfSearch}
+            />
+
+            <NfMirrorModal
+                isOpen={isNfMirrorModalOpen}
+                onClose={() => setIsNfMirrorModalOpen(false)}
+                nf={selectedMirrorNf}
+                fornecedorCod={header.cliente_cod}
+            />
+
         </div>
     );
 }

@@ -20,11 +20,7 @@ export default function VerticalAppointmentPage() {
         op: '',
         pedido: '',
         produto: '',
-        cliente: '',
-        plan_inicio_de: '',
-        plan_inicio_ate: '',
-        plan_fim_de: '',
-        plan_fim_ate: ''
+        cliente: ''
     }, '@metalfisa:vert_mainFilters_v3');
 
     const [appointingOp, setAppointingOp] = useState(null);
@@ -50,7 +46,7 @@ export default function VerticalAppointmentPage() {
         if (!selectedOp) return;
 
         // Bloqueio de Performance
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate && !filters.plan_fim_de && !filters.plan_fim_ate) {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
             setData([]);
             if (showLoader) setLoading(false);
             return;
@@ -72,8 +68,8 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleSearch = () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate && !filters.plan_fim_de && !filters.plan_fim_ate) {
-            toast.warning('Por favor, informe um Pedido, Cliente, Produto, OP ou Período de Planejamento para buscar.');
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
+            toast.warning('Por favor, informe um Pedido, Cliente, Produto ou OP para buscar.');
             return;
         }
         loadData();
@@ -147,7 +143,7 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleGeneratePendingReport = async () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate && !filters.plan_fim_de && !filters.plan_fim_ate) {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
             toast.warning('Informe um filtro para buscar pendências no relatório.');
             return;
         }
@@ -311,55 +307,6 @@ export default function VerticalAppointmentPage() {
                             </div>
                         </div>
                     </div>
-
-                    <div className="bg-blue-50/30 p-4 rounded-xl border border-blue-100/50">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Calendar className="w-4 h-4 text-blue-600" />
-                            <span className="text-xs font-bold text-blue-900 uppercase tracking-widest">Filtros de Planejamento (Intervalos)</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-blue-700/70 uppercase">Início (A partir de)</label>
-                                <input
-                                    type="date"
-                                    value={filters.plan_inicio_de}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_inicio_de: e.target.value }))}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm font-semibold text-blue-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none bg-white transition-all"
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-blue-700/70 uppercase">Início (Até)</label>
-                                <input
-                                    type="date"
-                                    value={filters.plan_inicio_ate}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_inicio_ate: e.target.value }))}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm font-semibold text-blue-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none bg-white transition-all"
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-blue-700/70 uppercase">Fim (A partir de)</label>
-                                <input
-                                    type="date"
-                                    value={filters.plan_fim_de}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_fim_de: e.target.value }))}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm font-semibold text-blue-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none bg-white transition-all"
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-bold text-blue-700/70 uppercase">Fim (Até)</label>
-                                <input
-                                    type="date"
-                                    value={filters.plan_fim_ate}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_fim_ate: e.target.value }))}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm font-semibold text-blue-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none bg-white transition-all"
-                                />
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <div className="flex flex-col md:flex-row justify-between items-center pt-3 border-t gap-3">
@@ -399,7 +346,7 @@ export default function VerticalAppointmentPage() {
                     <div className="flex gap-2 items-center w-full md:w-auto mt-2 md:mt-0">
                         <button
                             onClick={() => {
-                                setFilters({ op: '', pedido: '', produto: '', cliente: '', plan_inicio_de: '', plan_inicio_ate: '', plan_fim_de: '', plan_fim_ate: '' });
+                                setFilters({ op: '', pedido: '', produto: '', cliente: '' });
                                 setFilterStatus('ABERTOS');
                                 setData([]);
                             }}

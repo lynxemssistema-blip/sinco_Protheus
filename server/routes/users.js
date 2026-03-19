@@ -2,16 +2,36 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 
+(async () => {
+    try {
+        const conn = await mysqlPool.getConnection();
+        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL");
+        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS aprovado TINYINT DEFAULT 1");
+        console.log('✅ [Users Service] Colunas de E-mail/Aprovação vidadadas na tabela usuario.');
+        conn.release();
+    } catch (err) { }
+})();
+
 // LIST USERS (GET /)
 router.get('/', async (req, res) => {
     try {
         const { setor } = req.query;
-        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, Observacoes, TemPC, fotoUsuario, telefone FROM usuario';
+        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone FROM usuario';
         const params = [];
+        const conditions = [];
 
         if (setor) {
-            query += ' WHERE Setor = ?';
+            conditions.push('Setor = ?');
             params.push(setor);
+        }
+        
+        if (req.query.aprovado !== undefined) {
+             conditions.push('aprovado = ?');
+             params.push(parseInt(req.query.aprovado));
+        }
+
+        if (conditions.length > 0) {
+            query += ' WHERE ' + conditions.join(' AND ');
         }
 
         query += ' ORDER BY NomeCompleto ASC';
@@ -27,21 +47,28 @@ router.get('/', async (req, res) => {
 // CREATE USER (POST /)
 router.post('/', async (req, res) => {
     try {
-        const { nome, login, senha, tipo, telefone } = req.body;
+        const { nome, login, senha, tipo, telefone, email } = req.body;
 
         if (!nome || !login || !senha || !tipo) {
             return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
         }
 
         // Check availability
-        const [existing] = await mysqlPool.query('SELECT idUsuario FROM usuario WHERE Login = ?', [login]);
-        if (existing.length > 0) {
+        const [existingLogin] = await mysqlPool.query('SELECT idUsuario FROM usuario WHERE Login = ?', [login]);
+        if (existingLogin.length > 0) {
             return res.status(409).json({ error: 'Login já cadastrado' });
+        }
+        
+        if (email) {
+             const [existingEmail] = await mysqlPool.query('SELECT idUsuario FROM usuario WHERE email = ?', [email]);
+             if (existingEmail.length > 0) {
+                 return res.status(409).json({ error: 'Este e-mail já está sendo utilizado por outro usuário no sistema.' });
+             }
         }
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, Observacoes, TemPC, fotoUsuario, telefone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null]
+            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null]
         );
 
         res.json({ message: 'Usuário cadastrado com sucesso!', id: result.insertId });
@@ -56,7 +83,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { nome, login, senha, tipo, telefone } = req.body;
+        const { nome, login, senha, tipo, telefone, email } = req.body;
 
         if (!nome || !login || !tipo) {
             return res.status(400).json({ error: 'Nome, Login e Tipo são obrigatórios' });
@@ -70,18 +97,30 @@ router.put('/:id', async (req, res) => {
         if (existing.length > 0) {
             return res.status(409).json({ error: 'Login já está em uso por outro usuário' });
         }
+        
+        if (email) {
+            const [existingEmail] = await mysqlPool.query(
+                'SELECT idUsuario FROM usuario WHERE email = ? AND idUsuario <> ?',
+                [email, id]
+            );
+            if (existingEmail.length > 0) {
+                 return res.status(409).json({ error: 'E-mail indisponível! Já foi registrado por outro membro ativo.' });
+            }
+        }
+
+        const aprovadoVal = req.body.aprovado !== undefined ? req.body.aprovado : 1;
 
         if (senha && senha.trim() !== '') {
             // Update WITH password
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
-                [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
+                [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
             );
         } else {
             // Update WITHOUT password
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
-                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
+                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
             );
         }
 

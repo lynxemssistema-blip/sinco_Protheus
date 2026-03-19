@@ -184,12 +184,13 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                 const opt  = selecoes[cod] || (sugestoes[cod]?.[0] ?? null);
                 if (!opt) return null;
                 return { 
-                    codigo_cliente: cod, 
-                    b1_cod: opt.b1_cod, 
-                    descricao_protheus: opt.b1_desc, 
-                    status_tipo_item: opt.status_tipo_item,
+                    codigo_cliente:      d.codigo_cliente, 
+                    b1_cod:              opt.b1_cod, 
+                    descricao_protheus:  opt.b1_desc, 
+                    status_tipo_item:    opt.status_tipo_item,
                     status_tipo_detalhe: opt.status_tipo_detalhe,
-                    pdf_url: opt.pdf_url || null 
+                    z1_revisao:          opt.z1_revisao || null,
+                    pdf_url:             opt.pdf_url || null 
                 };
             })
             .filter(Boolean);
@@ -214,6 +215,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                             descricao_protheus: v.descricao_protheus, 
                             status_tipo_item: v.status_tipo_item,
                             status_tipo_detalhe: v.status_tipo_detalhe,
+                            z1_revisao: v.z1_revisao || null,
                             pdf_url: v.pdf_url || null 
                         };
                 });
@@ -263,7 +265,8 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
             await api.post('/vmi/mapeamento/confirmar', {
                 codigo_cliente,
                 b1_cod: selected.b1_cod,
-                descricao_protheus: selected.b1_desc
+                descricao_protheus: selected.b1_desc,
+                z1_revisao: selected.z1_revisao || null
             });
             setMapeamentos(prev => ({
                 ...prev,
@@ -272,6 +275,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                     descricao_protheus: selected.b1_desc,
                     status_tipo_item: selected.status_tipo_item,
                     status_tipo_detalhe: selected.status_tipo_detalhe,
+                    z1_revisao: selected.z1_revisao || null,
                     pdf_url: selected.pdf_url || null 
                 }
             }));
@@ -408,7 +412,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                     {!isTab && (
                         <div>
                             <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                                <Layers className="w-6 h-6 text-fuchsia-600" />
+                                <Layers className="w-6 h-6 text-cyan-600" />
                                 Mapeamento VMI x Protheus
                             </h1>
                             <p className="text-slate-500 text-sm mt-1">
@@ -440,7 +444,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                 : <><Link2Off className="w-4 h-4" /> Desvincular Todos ({Object.keys(mapeamentos).length})</>}
                         </button>
                         <button onClick={handleBuscarSugestoes} disabled={loading || buscando}
-                            className="px-4 py-2 bg-fuchsia-600 text-white rounded shadow hover:bg-fuchsia-700 font-medium flex items-center gap-2 text-sm disabled:opacity-50">
+                            className="px-4 py-2 bg-cyan-600 text-white rounded shadow hover:bg-cyan-700 font-medium flex items-center gap-2 text-sm disabled:opacity-50">
                             {buscando ? (
                                 <><RefreshCcw className="w-4 h-4 animate-spin" />
                                 {progresso ? `Processando ${progresso.atual} / ${progresso.total}...` : 'Buscando...'}</>
@@ -454,7 +458,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                 {/* Barra de progresso */}
                 {progresso && (
                     <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div className="bg-fuchsia-500 h-2 transition-all duration-300"
+                        <div className="bg-cyan-500 h-2 transition-all duration-300"
                             style={{ width: `${(progresso.atual / progresso.total) * 100}%` }} />
                     </div>
                 )}
@@ -468,7 +472,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                 placeholder="Pesquisar código, descrição, B1_COD..."
                                 value={filterText}
                                 onChange={e => setFilterText(e.target.value)}
-                                className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-300" />
+                                className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-cyan-300" />
                             {filterText && (
                                 <button onClick={() => setFilterText('')}
                                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
@@ -484,7 +488,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                 { id: 'unmapped', label: `Pendentes (${stats.total - stats.mapeados})` }
                             ].map(({ id, label }) => (
                                 <button key={id} onClick={() => setFilterStatus(id)}
-                                    className={`px-3 py-1.5 transition ${filterStatus === id ? 'bg-fuchsia-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                                    className={`px-3 py-1.5 transition ${filterStatus === id ? 'bg-cyan-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                                     {label}
                                 </button>
                             ))}
@@ -492,12 +496,12 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
 
                         <span className="text-xs text-slate-400 ml-auto">
                             {stats.comSugestao > 0 && (
-                                <span className="text-fuchsia-600 font-semibold">{stats.comSugestao} com sugestão • </span>
+                                <span className="text-cyan-600 font-semibold">{stats.comSugestao} com sugestão • </span>
                             )}
                             Exibindo <strong>{demandasFiltradas.length}</strong> de {stats.total}
                             {(filterText || filterStatus !== 'all') && (
                                 <button onClick={() => { setFilterText(''); setFilterStatus('all'); }}
-                                    className="ml-2 text-fuchsia-600 underline">Limpar</button>
+                                    className="ml-2 text-cyan-600 underline">Limpar</button>
                             )}
                         </span>
                     </div>
@@ -531,7 +535,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                         <AlertCircle className="w-10 h-10 text-slate-300 mb-2" />
                         <p className="text-slate-500 text-sm">Nenhum resultado para os filtros aplicados.</p>
                         <button onClick={() => { setFilterText(''); setFilterStatus('all'); }}
-                            className="mt-2 text-xs text-fuchsia-600 underline">Limpar filtros</button>
+                            className="mt-2 text-xs text-cyan-600 underline">Limpar filtros</button>
                     </div>
                 ) : (
                     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
@@ -578,7 +582,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                 <td className="px-4 py-3 align-top text-center">
                                                     {baseCode ? (
                                                         <div className="flex flex-col items-center gap-1">
-                                                            <span className="font-mono text-[11px] text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 px-2 py-0.5 rounded"
+                                                            <span className="font-mono text-[11px] text-cyan-700 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded"
                                                                 title="Código base usado na pesquisa (9 dígitos)">
                                                                 {baseCode}
                                                             </span>
@@ -603,6 +607,11 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                                 <div className="flex items-center gap-2">
                                                                     <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                                                                     <span className="font-mono text-sm font-bold text-green-700">{jaMapeado.b1_cod}</span>
+                                                                    {jaMapeado.z1_revisao && (
+                                                                        <span className="font-mono text-[10px] font-semibold text-green-700 bg-green-50 border border-green-300 px-1.5 py-0.5 rounded" title="Revisão no Protheus">
+                                                                            Rev. Protheus: {jaMapeado.z1_revisao}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                  <span className="text-xs text-slate-500 pl-6" title={jaMapeado.descricao_protheus}>
                                                                     {jaMapeado.descricao_protheus}
@@ -620,7 +629,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                                         onClick={() => setSelecoes(prev => ({ ...prev, [d.codigo_cliente]: opt }))}
                                                                         className={`w-full text-left border rounded-lg px-3 py-2 transition-all
                                                                             ${isSelected
-                                                                                ? `border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-400`
+                                                                                ? `border-cyan-400 bg-cyan-50 ring-1 ring-cyan-400`
                                                                                 : `border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50`
                                                                             }`}>
                                                                         <div className="flex items-center gap-2 flex-wrap">
@@ -645,7 +654,7 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
                                                                             <TypeBadge type={opt.status_tipo_item} detail={opt.status_tipo_detalhe} />
                                                                             {/* Selecionado */}
                                                                             {isSelected && (
-                                                                                <span className="ml-auto text-[10px] font-bold text-fuchsia-600">✓ Selecionado</span>
+                                                                                <span className="ml-auto text-[10px] font-bold text-cyan-600">✓ Selecionado</span>
                                                                             )}
                                                                         </div>
                                                                         {/* Descrição */}

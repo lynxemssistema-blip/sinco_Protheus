@@ -13,6 +13,7 @@ import Sidebar from './components/Sidebar';
 import FloatingAvisos from './components/FloatingAvisos';
 import GlobalTimerWidget from './components/GlobalTimerWidget';
 import HelpDrawer from './components/HelpDrawer';
+import EmailBlockerModal from './components/EmailBlockerModal';
 
 // Lazy-loaded pages (code splitting — each becomes a separate chunk)
 const OrdersTable = React.lazy(() => import('./components/OrdersTable'));
@@ -61,6 +62,7 @@ const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage
 const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
 const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
+const SWorks = React.lazy(() => import('./pages/SWorks'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -138,6 +140,7 @@ const Layout = ({ children, fullWidth = true }) => {
 
             {/* Main Content */}
             <main className="flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative">
+                <EmailBlockerModal />
                 <FloatingAvisos />
                 <HelpDrawer />
 
@@ -402,6 +405,11 @@ function App() {
                                         <Route path="/pcp/apontamento-por-usuario-op" element={
                                             <Layout fullWidth={true}>
                                                 <ApontamentoPorUsuarioOpPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sworks" element={
+                                            <Layout fullWidth={true}>
+                                                <SWorks />
                                             </Layout>
                                         } />
 

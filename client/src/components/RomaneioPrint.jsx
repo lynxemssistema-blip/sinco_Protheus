@@ -1,6 +1,7 @@
 import React from 'react';
+import metalfisaLogo from '../assets/metalfisa-logo.png';
 
-const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, ref) => {
+const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription }, ref) => {
     if (!romaneio) return null;
 
     return (
@@ -9,8 +10,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
                     <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src="/logo.png" alt="MetalFisa" className="max-h-16" onError={(e) => e.target.style.display = 'none'} />
-                        <span className="font-bold text-xl ml-2">METALFISA</span>
+                        <img src={metalfisaLogo} alt="MetalFisa" className="max-h-16" />
                     </div>
                     <div className="w-2/4 p-2 text-center uppercase font-bold flex items-center justify-center text-lg border-r border-black">
                         Romaneio de {typeDescription || 'Saída'}
@@ -22,11 +22,18 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
                     </div>
                 </div>
 
-                {/* Sender Info - Static for now or loaded from config */}
+                {/* Sender Info - Dynamic */}
                 <div className="p-2 border-b border-black text-xs">
-                    <div className="font-bold">EMITENTE: METALFISA METALURGICA DE FIOS SANTO ANDRE LTDA</div>
-                    <div>RUA GUANA, 160 - CAMPESTRE - SANTO ANDRE - SP - CEP: 09070-040</div>
-                    <div>CNPJ: 57.513.792/0001-34 - IE: 626.069.176.115</div>
+                    <div className="font-bold uppercase">DADOS DA EMISSÃO / CONTROLE INTERNO</div>
+                    <div>Elaborado por: {romaneio.usuario || 'Sistema'}</div>
+                    <div className="flex gap-4 mt-0.5">
+                        <span>Emissão: {new Date(romaneio.data_liberacao || romaneio.created_at || Date.now()).toLocaleDateString('pt-BR')}</span>
+                        {romaneio.data_previsao_retorno && (
+                            <span>
+                                Previsão de Retorno: {new Date(romaneio.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR')}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Client Info */}
@@ -42,13 +49,22 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, typeDescription }, re
                         <div className="font-bold text-xs mb-1">TRANSPORTE E RETORNO</div>
                         <div>Motorista: {romaneio.motorista_nome || '---'}</div>
                         <div>PLACA: {romaneio.veiculo_placa || '---'} - MODELO: {romaneio.veiculo_modelo || '---'}</div>
-                        {romaneio.data_previsao_retorno && (
-                            <div className="mt-2 font-bold text-red-600">
-                                Previsão de Retorno: {new Date(romaneio.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR')}
-                            </div>
-                        )}
                     </div>
                 </div>
+
+                {nfs && nfs.length > 0 && (
+                    <div className="p-2 border-b border-black text-xs bg-gray-50 flex gap-4 items-center justify-center">
+                        <div className="font-bold">NOTAS FISCAIS VINCULADAS:</div>
+                        <div className="flex gap-4">
+                            {nfs.map((nf, i) => (
+                                <span key={i} className="bg-gray-200 px-2 py-0.5 rounded border border-gray-300">
+                                    <span className="font-bold uppercase mr-1">{nf.tipo_nf}:</span>
+                                    {nf.nf_numero}{nf.nf_serie ? `-${nf.nf_serie}` : ''}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Observation */}
                 <div className="p-2 min-h-12 text-xs">

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
 import { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
+import logo from '../assets/metalfisa-logo.png';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
@@ -15,6 +16,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
     const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Helper to toggle sidebar size
     const toggleSidebarSize = () => {
@@ -171,10 +173,15 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                     <div className="flex items-center justify-between w-full">
                         {!isCollapsed && (
                             <div>
-                                <h1 className="text-xl font-bold tracking-wider text-white uppercase font-mono">
-                                    MetalFisa <span className="text-blue-500">PCP</span>
-                                </h1>
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                                        <img src={logo} alt="Metalfisa" className="h-6 w-auto object-contain" />
+                                    </div>
+                                    <h1 className="text-xl font-bold tracking-wider text-white uppercase font-mono mt-1">
+                                        SINCO/METALFISA
+                                    </h1>
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
                                     <div className="h-1.5 w-1.5 rounded-none bg-green-500 animate-pulse"></div>
                                     <span className="text-[10px] text-slate-500 uppercase tracking-widest">System Online</span>
                                 </div>
@@ -201,16 +208,36 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                     </div>
                 </div>
 
+                {/* Search Menu */}
+                {!isCollapsed && (
+                    <div className="px-4 pb-2 pt-1 border-b border-slate-700/50">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Pesquisar..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full bg-slate-800 border-none text-white text-sm rounded-lg pl-9 pr-3 py-2 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-500"
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* Navigation Scroll Area */}
-                <nav className="flex-1 tech-scroll py-4 space-y-1">
+                <nav className="flex-1 tech-scroll py-4 space-y-1 overflow-y-auto">
                     {MENU_GROUPS.map((group, idx) => {
-                        // Filter items based on visibility config
-                        const visibleGroupItems = group.items.filter(item => isVisible(item.id));
+                        // Filter items based on visibility config and search term
+                        const visibleGroupItems = group.items.filter(item => {
+                            if (!isVisible(item.id)) return false;
+                            if (searchTerm && !item.label.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+                            return true;
+                        });
 
                         // Don't render empty groups
                         if (visibleGroupItems.length === 0) return null;
 
-                        const isExpanded = expandedGroups[group.id] !== false; // Default true if undefined (safety)
+                        const isExpanded = searchTerm ? true : expandedGroups[group.id] !== false; // Default true if undefined (safety)
 
                         return (
                             <div key={group.id}>

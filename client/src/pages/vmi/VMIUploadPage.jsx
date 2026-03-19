@@ -291,6 +291,7 @@ export default function VMIUploadPage() {
                     `}
                 >
                     <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
+                        aria-label="Selecionar planilha VMI (.xlsx ou .xls)"
                         onChange={(e) => processFile(e.target.files[0])} />
                     <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors
                         ${dragOver ? 'bg-blue-100' : 'bg-white shadow-sm border border-slate-200'}`}>
@@ -329,8 +330,8 @@ export default function VMIUploadPage() {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <StatCard icon={<Calendar className="w-5 h-5 text-blue-600" />}
                             label="Referência" value={parsed.mesRef.label} bg="bg-blue-50" />
-                        <StatCard icon={<Package className="w-5 h-5 text-violet-600" />}
-                            label="Itens com demanda" value={parsed.itens.length} bg="bg-violet-50" />
+                        <StatCard icon={<Package className="w-5 h-5 text-teal-600" />}
+                            label="Itens com demanda" value={parsed.itens.length} bg="bg-teal-50" />
                         <StatCard icon={<Users className="w-5 h-5 text-green-600" />}
                             label="Pedidos de clientes" value={parsed.pedidos.length} bg="bg-green-50" />
                         <StatCard icon={<Box className="w-5 h-5 text-cyan-600" />}

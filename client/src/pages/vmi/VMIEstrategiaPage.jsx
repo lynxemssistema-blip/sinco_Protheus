@@ -103,7 +103,7 @@ export default function VMIEstrategiaPage() {
 
     if (loadingLeituras) return (
         <div className="flex items-center justify-center py-32">
-            <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+            <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
         </div>
     );
 
@@ -113,7 +113,7 @@ export default function VMIEstrategiaPage() {
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center">
                         <GitMerge className="w-5 h-5 text-white" />
                     </div>
                     <div>
@@ -133,7 +133,7 @@ export default function VMIEstrategiaPage() {
                         <select
                             value={selectedId}
                             onChange={e => setSelectedId(e.target.value)}
-                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
                         >
                             {leituras.map(l => (
                                 <option key={l.id} value={l.id}>
@@ -146,7 +146,7 @@ export default function VMIEstrategiaPage() {
                 <button
                     onClick={() => fetchEstrategia(selectedId)}
                     disabled={!selectedId || loading}
-                    className="flex items-center gap-2 px-5 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-2 px-5 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                     {loading
                         ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</>
@@ -196,9 +196,9 @@ export default function VMIEstrategiaPage() {
                         <SummaryCard
                             label="Total Peças"
                             value={estrategia.resumo.total_pecas.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                            icon={<BarChart2 className="w-4 h-4 text-purple-500" />}
-                            color="text-purple-700"
-                            bg="bg-purple-50"
+                            icon={<BarChart2 className="w-4 h-4 text-teal-500" />}
+                            color="text-teal-700"
+                            bg="bg-teal-50"
                             raw
                         />
                     </div>
@@ -362,8 +362,8 @@ export default function VMIEstrategiaPage() {
             {/* Empty state */}
             {!estrategia && !loading && !error && leituras.length > 0 && (
                 <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-                    <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center">
-                        <GitMerge className="w-7 h-7 text-purple-400" />
+                    <div className="w-14 h-14 bg-teal-50 rounded-2xl flex items-center justify-center">
+                        <GitMerge className="w-7 h-7 text-teal-400" />
                     </div>
                     <p className="text-slate-500 font-medium">Selecione uma leitura e clique em <strong>Gerar Estratégia</strong></p>
                 </div>

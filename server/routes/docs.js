@@ -116,8 +116,8 @@ router.get('/:produto_codigo', async (req, res) => {
     try {
         const { produto_codigo } = req.params;
         const [rows] = await mysqlPool.execute(
-            'SELECT * FROM produtos_docs WHERE produto_codigo = ? ORDER BY created_at DESC',
-            [produto_codigo]
+            'SELECT * FROM produtos_docs WHERE TRIM(produto_codigo) = ? ORDER BY created_at DESC',
+            [produto_codigo.trim()]
         );
         res.json(rows);
     } catch (err) {

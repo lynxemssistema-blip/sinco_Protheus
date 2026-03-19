@@ -614,7 +614,7 @@ const AvisosHistorico = () => {
                                 return (
                                     <div key={u.idUsuario} onClick={() => { setActiveUserId(u.idUsuario); setActiveGroupId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-all border-b border-slate-100/50 ${activeUserId === u.idUsuario ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-white'}`}>
                                         <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0 shadow-sm overflow-hidden">
-                                            {u.fotoUsuario ? <img src={u.fotoUsuario} alt="" className="w-full h-full object-cover" /> : <User className="w-6 h-6" />}
+                                            {u.fotoUsuario ? <img src={u.fotoUsuario} alt={`Foto de ${u.NomeCompleto}`} className="w-full h-full object-cover" /> : <User className="w-6 h-6" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex justify-between items-baseline">
@@ -634,7 +634,7 @@ const AvisosHistorico = () => {
                                 return (
                                     <div key={g.idGrupo} onClick={() => { setActiveGroupId(g.idGrupo); setActiveUserId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-all border-b border-slate-100/50 ${activeGroupId === g.idGrupo ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-white'}`}>
                                         <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm overflow-hidden border-2 border-indigo-50">
-                                            {g.fotoGrupo ? <img src={g.fotoGrupo} alt="" className="w-full h-full object-cover" /> : <Users className="w-6 h-6" />}
+                                            {g.fotoGrupo ? <img src={g.fotoGrupo} alt={`Foto do grupo ${g.nome}`} className="w-full h-full object-cover" /> : <Users className="w-6 h-6" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex justify-between items-baseline">
@@ -726,7 +726,7 @@ const AvisosHistorico = () => {
                             {mediaPreview && (
                                 <div className="px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-3">
                                     {mediaPreview.type === 'image' && mediaPreview.preview && (
-                                        <img src={mediaPreview.preview} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-200" />
+                                        <img src={mediaPreview.preview} alt="Pré-visualização do arquivo" className="w-16 h-16 rounded-lg object-cover border border-slate-200" />
                                     )}
                                     {mediaPreview.type === 'file' && (
                                         <div className="w-16 h-16 rounded-lg bg-slate-100 flex items-center justify-center border border-slate-200">

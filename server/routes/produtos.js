@@ -170,6 +170,33 @@ router.get('/', async (req, res) => {
             }
         }
 
+        // 8. Stock Status Filter (Com Estoque/Sem Estoque)
+        if (req.query.stock_status) {
+            const stockStatus = req.query.stock_status; // 'with_stock' or 'without_stock'
+
+            const [stockRows] = await mysqlPool.execute(`
+                SELECT produto_codigo 
+                FROM app_estoque_movimentos 
+                GROUP BY produto_codigo 
+                HAVING SUM(CASE WHEN tipo = 'E' THEN quantidade ELSE 0 END) - SUM(CASE WHEN tipo = 'S' THEN quantidade ELSE 0 END) > 0
+            `);
+            const codesWithStock = stockRows.map(r => r.produto_codigo.trim());
+
+            if (stockStatus === 'with_stock') {
+                if (codesWithStock.length === 0) {
+                    baseQuery += ' AND 1=0';
+                } else {
+                    baseQuery += ` AND TRIM(sb1.b1_cod) = ANY($${paramIndex++})`;
+                    params.push(codesWithStock);
+                }
+            } else if (stockStatus === 'without_stock') {
+                if (codesWithStock.length > 0) {
+                    baseQuery += ` AND NOT (TRIM(sb1.b1_cod) = ANY($${paramIndex++}))`;
+                    params.push(codesWithStock);
+                }
+            }
+        }
+
         const query = `SELECT ${columns} ${baseQuery} ORDER BY sb1.b1_cod LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         const countQuery = `SELECT COUNT(*) AS total ${baseQuery}`;
 
@@ -801,6 +828,245 @@ router.delete('/ata/:id', async (req, res) => {
         res.json({ message: 'Item removido com sucesso.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// --- ATA VIVA (LIVE MINUTES) ---
+// GET /api/produtos/:codigo/ata - Listar itens da Ata Viva
+router.get('/:codigo/ata', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const [rows] = await mysqlPool.execute(
+            `SELECT * FROM app_produto_ata 
+             WHERE produto_codigo = ? 
+             ORDER BY created_at DESC`,
+            [codigo]
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/produtos/:codigo/ata - Criar novo item na Ata Viva
+router.post('/:codigo/ata', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const { projeto, item_projeto, numero_pedido, item_pedido, texto, usuario } = req.body;
+
+        if (!usuario) {
+            return res.status(400).json({ error: 'Usuário é obrigatório.' });
+        }
+
+        await mysqlPool.execute(
+            `INSERT INTO app_produto_ata (produto_codigo, projeto, item_projeto, numero_pedido, item_pedido, texto, usuario) 
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [codigo, projeto, item_projeto, numero_pedido, item_pedido, texto, usuario]
+        );
+        res.json({ message: 'Item da Ata Viva criado com sucesso.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/produtos/ata/:id - Editar item (apenas o criador)
+router.put('/ata/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { texto, usuario, projeto, item_projeto, numero_pedido, item_pedido } = req.body;
+
+        // 1. Verificar se o item pertence ao usuário
+        const [rows] = await mysqlPool.execute('SELECT usuario FROM app_produto_ata WHERE id = ?', [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Item não encontrado.' });
+        }
+
+        if (rows[0].usuario !== usuario) {
+            return res.status(403).json({ error: 'Permissão negada. Você só pode editar itens que você criou.' });
+        }
+
+        // 2. Atualizar
+        await mysqlPool.execute(
+            `UPDATE app_produto_ata 
+             SET texto = ?, projeto = ?, item_projeto = ?, numero_pedido = ?, item_pedido = ? 
+             WHERE id = ?`,
+            [texto, projeto, item_projeto, numero_pedido, item_pedido, id]
+        );
+
+        res.json({ message: 'Item atualizado com sucesso.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/produtos/ata/:id - Excluir item (apenas o criador)
+router.delete('/ata/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const usuario = req.body.usuario || req.query.usuario;
+
+        // 1. Verificar se o item pertence ao usuário
+        const [rows] = await mysqlPool.execute('SELECT usuario FROM app_produto_ata WHERE id = ?', [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Item não encontrado.' });
+        }
+
+        if (rows[0].usuario !== usuario) {
+            return res.status(403).json({ error: 'Permissão negada. Você só pode excluir itens que você criou.' });
+        }
+
+        // 2. Deletar
+        await mysqlPool.execute('DELETE FROM app_produto_ata WHERE id = ?', [id]);
+
+        res.json({ message: 'Item removido com sucesso.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/produtos/:codigo/extract-ai-batch - Processa documento em anexo e extrai metadados
+router.post('/:codigo/extract-ai-batch', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const PDFExtractionService = require('../services/pdfExtraction');
+
+        if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'sua_api_key_aqui') {
+            return res.status(500).json({ error: 'GEMINI_API_KEY não configurada no servidor.' });
+        }
+
+        // 1. Encontrar o documento principal (priorizando o que já é 'Desenho')
+        // Se o produto não tiver doc próprio, procura no produto de destino da sua associação
+        const [docs] = await mysqlPool.execute(
+            `SELECT p.id, p.url_arquivo, p.tipo, p.produto_codigo as origem 
+             FROM produtos_docs p
+             WHERE p.produto_codigo = ? 
+               AND p.tipo = 'Desenho'
+             
+             UNION ALL
+             
+             SELECT p.id, p.url_arquivo, p.tipo, a.produto_origem as origem
+             FROM app_produto_associacoes a
+             JOIN produtos_docs p ON p.produto_codigo = a.produto_destino
+             WHERE a.produto_origem = ?
+               AND p.tipo = 'Desenho'
+             
+             ORDER BY id DESC 
+             LIMIT 1`,
+            [codigo, codigo]
+        );
+
+        if (docs.length === 0) {
+            return res.status(404).json({ error: 'Nenhum Desenho encontrado para este produto ou em suas associações.' });
+        }
+
+        const doc = docs[0];
+
+        if (!doc.url_arquivo.toLowerCase().endsWith('.pdf')) {
+            return res.status(400).json({ error: 'O documento principal não é um PDF válido.' });
+        }
+
+        // 2. Extrair dados via Gemini
+        const extractor = new PDFExtractionService(process.env.GEMINI_API_KEY);
+        
+        // Função para resolver o caminho (importada de docs.js indiretamente / normalizar)
+        let normalizedPath = doc.url_arquivo.trim();
+        normalizedPath = normalizedPath.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
+        if (process.platform !== 'win32') {
+            normalizedPath = normalizedPath.replace(/\\/g, '/');
+            normalizedPath = normalizedPath.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+        }
+
+        const metadata = await extractor.extractFromPDF(normalizedPath);
+
+        // 3. Atualizar o banco de dados (se não for apenas preview)
+        if (req.query.preview !== 'true') {
+            await mysqlPool.execute(`
+                UPDATE produtos_docs 
+                SET titulo_desenho = COALESCE(?, titulo_desenho),
+                    peso_kg = COALESCE(?, peso_kg),
+                    area_pintura_m2 = COALESCE(?, area_pintura_m2),
+                    material = COALESCE(?, material),
+                    espessura_mm = COALESCE(?, espessura_mm),
+                    dimensoes = COALESCE(?, dimensoes),
+                    revisao = COALESCE(?, revisao),
+                    confianca = COALESCE(?, confianca),
+                    extraido_em = CURRENT_TIMESTAMP,
+                    extraido_por = 'manual_batch'
+                WHERE id = ?
+            `, [
+                metadata.titulo,
+                metadata.peso_kg,
+                metadata.area_pintura_m2,
+                metadata.material,
+                metadata.espessura_mm,
+                metadata.dimensoes,
+                metadata.revisao,
+                metadata.confianca,
+                doc.id
+            ]);
+        }
+
+        res.json({
+            message: req.query.preview === 'true' ? 'Metadados extraídos (Preview)' : 'Metadados extraídos e salvos com sucesso.',
+            codigo: codigo,
+            documento_id: doc.id,
+            url_arquivo: doc.url_arquivo,
+            metadata
+        });
+
+    } catch (err) {
+        console.error('Erro na extração em lote com IA:', err);
+        res.status(500).json({ error: 'Erro ao processar documento com Inteligência Artificial.', details: err.message });
+    }
+});
+
+// [NEW] Bulk save AI extracted metadata
+router.post('/bulk-save-ai-metadata', async (req, res) => {
+    try {
+        const { items } = req.body;
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'Lista de itens inválida vazia.' });
+        }
+
+        let updatedCount = 0;
+        let errorCount = 0;
+
+        for (const item of items) {
+            try {
+                // Ensure null instead of empty strings or undefined for numeric fields
+                const peso_kg = item.peso_kg === '' || item.peso_kg == null ? null : parseFloat(item.peso_kg);
+                const area_pintura_m2 = item.area_pintura_m2 === '' || item.area_pintura_m2 == null ? null : parseFloat(item.area_pintura_m2);
+
+                await mysqlPool.execute(`
+                    UPDATE produtos_docs 
+                    SET peso_kg = ?,
+                        area_pintura_m2 = ?,
+                        extraido_em = CURRENT_TIMESTAMP,
+                        extraido_por = 'manual_batch_review'
+                    WHERE id = ?
+                `, [
+                    peso_kg,
+                    area_pintura_m2,
+                    item.documento_id
+                ]);
+                updatedCount++;
+            } catch (itemErr) {
+                console.error(`Erro ao salvar metadados para doc ${item.documento_id}:`, itemErr);
+                errorCount++;
+            }
+        }
+
+        res.json({
+            message: 'Salvamento em lote concluído.',
+            updatedCount,
+            errorCount
+        });
+
+    } catch (err) {
+        console.error('Erro no salvamento em lote de metadados IA:', err);
+        res.status(500).json({ error: 'Erro ao salvar metadados em lote.' });
     }
 });
 

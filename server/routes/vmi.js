@@ -924,6 +924,7 @@ router.get('/mapeamento/atual', async (req, res) => {
         const data = rows.map(r => ({
             ...r,
             pdf_url: pdfMap[r.b1_cod] || null,
+            z1_revisao: r.z1_revisao || null,
             status_tipo_item: statusMap[r.b1_cod]?.status_tipo_item || (r.b1_cod ? 'PCP' : null),
             status_tipo_detalhe: statusMap[r.b1_cod]?.status_tipo_detalhe || (r.b1_cod ? 'Liberado.' : null)
         }));
@@ -1065,16 +1066,16 @@ router.post('/mapeamento/sugerir', async (req, res) => {
 // Salva o vínculo cliente x protheus na base MySQL
 router.post('/mapeamento/confirmar', async (req, res) => {
     try {
-        const { codigo_cliente, b1_cod, descricao_protheus } = req.body;
+        const { codigo_cliente, b1_cod, descricao_protheus, z1_revisao } = req.body;
         if (!codigo_cliente || !b1_cod) return res.status(400).json({ error: 'Dados insuficientes.' });
 
         const query = `
-            INSERT INTO app_demanda_vmi_map (codigo_produto_cliente, b1_cod, descricao_protheus)
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE b1_cod = VALUES(b1_cod), descricao_protheus = VALUES(descricao_protheus)
+            INSERT INTO app_demanda_vmi_map (codigo_produto_cliente, b1_cod, descricao_protheus, z1_revisao)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE b1_cod = VALUES(b1_cod), descricao_protheus = VALUES(descricao_protheus), z1_revisao = VALUES(z1_revisao)
         `;
 
-        await mysqlPool.execute(query, [codigo_cliente, b1_cod, descricao_protheus]);
+        await mysqlPool.execute(query, [codigo_cliente, b1_cod, descricao_protheus || null, z1_revisao || null]);
         res.json({ success: true, msg: 'Vínculo salvo com sucesso!' });
     } catch (err) {
         console.error(err);
@@ -1083,7 +1084,7 @@ router.post('/mapeamento/confirmar', async (req, res) => {
 });
 
 // ── POST /api/vmi/mapeamento/confirmar-lote ──
-// Salva múltiplos vínculos de uma vez (array de { codigo_cliente, b1_cod, descricao_protheus })
+// Salva múltiplos vínculos de uma vez (array de { codigo_cliente, b1_cod, descricao_protheus, z1_revisao })
 router.post('/mapeamento/confirmar-lote', async (req, res) => {
     try {
         const { vinculos } = req.body;
@@ -1091,9 +1092,9 @@ router.post('/mapeamento/confirmar-lote', async (req, res) => {
             return res.status(400).json({ error: 'Array de vínculos inválido.' });
 
         const query = `
-            INSERT INTO app_demanda_vmi_map (codigo_produto_cliente, b1_cod, descricao_protheus)
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE b1_cod = VALUES(b1_cod), descricao_protheus = VALUES(descricao_protheus)
+            INSERT INTO app_demanda_vmi_map (codigo_produto_cliente, b1_cod, descricao_protheus, z1_revisao)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE b1_cod = VALUES(b1_cod), descricao_protheus = VALUES(descricao_protheus), z1_revisao = VALUES(z1_revisao)
         `;
 
         let salvos = 0;
@@ -1101,7 +1102,7 @@ router.post('/mapeamento/confirmar-lote', async (req, res) => {
         for (const v of vinculos) {
             if (!v.codigo_cliente || !v.b1_cod) continue;
             try {
-                await mysqlPool.execute(query, [v.codigo_cliente, v.b1_cod, v.descricao_protheus || '']);
+                await mysqlPool.execute(query, [v.codigo_cliente, v.b1_cod, v.descricao_protheus || null, v.z1_revisao || null]);
                 salvos++;
             } catch (e) {
                 erros.push(v.codigo_cliente);

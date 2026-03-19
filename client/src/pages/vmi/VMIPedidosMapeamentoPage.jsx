@@ -185,6 +185,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                     descricao_protheus:  opt.b1_desc,
                     status_tipo_item:    opt.status_tipo_item,
                     status_tipo_detalhe: opt.status_tipo_detalhe,
+                    z1_revisao:          opt.z1_revisao || null,
                     pdf_url:             opt.pdf_url || null
                 };
             })
@@ -207,6 +208,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                             descricao_protheus: v.descricao_protheus,
                             status_tipo_item:   v.status_tipo_item,
                             status_tipo_detalhe:v.status_tipo_detalhe,
+                            z1_revisao:         v.z1_revisao || null,
                             pdf_url:            v.pdf_url || null
                         };
                 });
@@ -255,7 +257,8 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
             await api.post('/vmi/mapeamento/confirmar', {
                 codigo_cliente:     codigo_base,
                 b1_cod:             selected.b1_cod,
-                descricao_protheus: selected.b1_desc
+                descricao_protheus: selected.b1_desc,
+                z1_revisao:         selected.z1_revisao || null
             });
             setMapeamentos(prev => ({
                 ...prev,
@@ -264,6 +267,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                     descricao_protheus: selected.b1_desc,
                     status_tipo_item:   selected.status_tipo_item,
                     status_tipo_detalhe:selected.status_tipo_detalhe,
+                    z1_revisao:         selected.z1_revisao || null,
                     pdf_url:            selected.pdf_url || null
                 }
             }));
@@ -555,6 +559,11 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                                                                 <div className="flex items-center gap-2">
                                                                     <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                                                                     <span className="font-mono text-sm font-bold text-green-700">{jaMapeado.b1_cod}</span>
+                                                                    {jaMapeado.z1_revisao && (
+                                                                        <span className="font-mono text-[10px] font-semibold text-green-700 bg-green-50 border border-green-300 px-1.5 py-0.5 rounded" title="Revisão no Protheus">
+                                                                            Rev. Protheus: {jaMapeado.z1_revisao}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                 <span className="text-xs text-slate-500 pl-6" title={jaMapeado.descricao_protheus}>
                                                                     {jaMapeado.descricao_protheus}
@@ -565,7 +574,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
                                                         <div className="flex flex-col gap-1.5">
                                                             {options.map((opt, i) => {
                                                                 const meta       = SCORE_META[opt.score] || SCORE_META[1];
-                                                                const isSelected = selecionado?.b1_cod === opt.b1_cod;
+                                                                const isSelected = selecionado?.b1_cod === opt.b1_cod && selecionado?.z1_revisao === opt.z1_revisao;
                                                                 return (
                                                                     <button key={i}
                                                                         onClick={() => setSelecoes(prev => ({ ...prev, [p.codigo_base]: opt }))}

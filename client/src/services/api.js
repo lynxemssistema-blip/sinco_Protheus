@@ -95,6 +95,19 @@ export const getProductDocuments = async (codigo) => {
     return response.data;
 };
 
+export const extractProductAIInfo = async (codigo, options = {}) => {
+    const encodedCod = encodeURIComponent(codigo);
+    const params = new URLSearchParams();
+    if (options.preview) params.append('preview', 'true');
+    const response = await api.post(`/produtos/${encodedCod}/extract-ai-batch?${params.toString()}`);
+    return response.data;
+};
+
+export const bulkSaveAIMetadata = async (items) => {
+    const response = await api.post('/produtos/bulk-save-ai-metadata', { items });
+    return response.data;
+};
+
 export const getProductionOrders = async (params) => {
     const response = await api.get('/producao/ordens', { params });
     return response.data;
@@ -122,6 +135,26 @@ export const getRomaneioTypes = async () => {
 
 export const createRomaneio = async (data) => {
     const response = await api.post('/romaneios', data);
+    return response.data;
+};
+
+export const createRomaneioFolder = async (id) => {
+    const response = await api.post(`/romaneios/${id}/create-folder`);
+    return response.data;
+};
+
+export const getRomaneioBaseDirConfig = async () => {
+    const response = await api.get('/romaneios/config/base-dir');
+    return response.data;
+};
+
+export const downloadRomaneioBundle = async (id) => {
+    const response = await api.get(`/romaneios/${id}/generate-bundle`, { responseType: 'blob' });
+    return response.data;
+};
+
+export const getProductDocs = async (codigo) => {
+    const response = await api.get(`/docs/${encodeURIComponent(codigo)}`);
     return response.data;
 };
 
@@ -187,6 +220,31 @@ export const uploadRomaneioPhoto = async (file) => {
             'Content-Type': 'multipart/form-data'
         }
     });
+};
+
+// ROMANEIOS - NFs VINCULADAS
+export const getRomaneioNfsFromProtheus = async (params) => {
+    const response = await api.get('/romaneios/protheus/nfs', { params });
+    return response.data;
+};
+
+export const getRomaneioNfItemsFromProtheus = async (params) => {
+    const response = await api.get('/romaneios/protheus/nf-items', { params });
+    return response.data;
+};
+
+export const getRomaneioLinkedNfs = async (id) => {
+    const response = await api.get(`/romaneios/${id}/notas-fiscais`);
+    return response.data;
+};
+
+export const linkRomaneioNf = async (id, data) => {
+    const response = await api.post(`/romaneios/${id}/notas-fiscais`, data);
+    return response.data;
+};
+
+export const unlinkRomaneioNf = async (id, nfId) => {
+    const response = await api.delete(`/romaneios/${id}/notas-fiscais/${nfId}`);
     return response.data;
 };
 

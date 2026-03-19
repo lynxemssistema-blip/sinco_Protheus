@@ -926,9 +926,9 @@ const OrdersTable = () => {
                                                                             <button
                                                                                 onClick={(e) => { handlePrintOPMirror(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-${order.pedido}`}
-                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-40"
                                                                             >
-                                                                                {printingOrderId === `op-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                {printingOrderId === `op-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-500" />}
                                                                                 <span>Espelho OP (BOM + Roteiro)</span>
                                                                             </button>
                                                                             <button
@@ -1076,9 +1076,9 @@ const OrdersTable = () => {
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handlePrintOPMirror(order.pedido, e, item.item); setOpenActionMenu(null); }}
                                                                                                                             disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${order.pedido}-${item.item}`}
-                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                                                                                         >
-                                                                                                                            {printingOrderId === `op-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            {printingOrderId === `op-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-500" />}
                                                                                                                             <span>Espelho OP</span>
                                                                                                                         </button>
                                                                                                                         <button

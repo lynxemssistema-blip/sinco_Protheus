@@ -114,6 +114,21 @@ export default function VMIPedidosPage({ isTab = false }) {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    const handleDownloadModelo = async () => {
+        try {
+            const res = await api.get('/vmi-pedidos/modelo', { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'Modelo_VMI_Pedido.xlsx');
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+        } catch (err) {
+            showToast('Erro ao baixar modelo.', 'error');
+        }
+    };
+
     const handleConfirmSave = async () => {
         setSaving(true);
         try {
@@ -211,7 +226,7 @@ export default function VMIPedidosPage({ isTab = false }) {
             'Cód. Protheus': r.b1_cod || '',
             'Status Detalhe': r.status_tipo_detalhe || ''
         })));
-        
+
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
         for (let c = range.s.c; c <= range.e.c; c++) {
             const cell = XLSX.utils.encode_cell({ r: 0, c });
@@ -236,13 +251,13 @@ export default function VMIPedidosPage({ isTab = false }) {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {!isTab && (
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <ListOrdered className="w-7 h-7 text-indigo-600" />
-                        VMI Pedido
-                    </h1>
-                    <p className="text-slate-500 text-sm mt-1">Integração de pedidos baseados em datas de entrega e itens exatos das ordens de compra.</p>
-                </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <ListOrdered className="w-7 h-7 text-indigo-600" />
+                            VMI Pedido
+                        </h1>
+                        <p className="text-slate-500 text-sm mt-1">Integração de pedidos baseados em datas de entrega e itens exatos das ordens de compra.</p>
+                    </div>
                 )}
                 <div className="flex items-center gap-3">
                     <button onClick={handleAtualizar}
@@ -270,12 +285,12 @@ export default function VMIPedidosPage({ isTab = false }) {
                     <FileUp className="w-4 h-4 text-indigo-500" /> Importar Pedidos de Compra (Excel)
                 </h3>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <a href={getFileUrl('/api/vmi-pedidos/modelo')}
-                        download="Modelo_VMI_Pedido.xlsx"
+                    <button onClick={handleDownloadModelo}
+                        type="button"
                         className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-600 border border-dashed border-slate-300 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition whitespace-nowrap"
                         title="Baixar planilha modelo para preenchimento">
                         <FileDown className="w-3.5 h-3.5" /> Baixar Modelo
-                    </a>
+                    </button>
                     <div className="relative flex-1 max-w-xl">
                         <input type="file" accept=".xlsx,.xls" onChange={handleFileChange}
                             ref={fileInputRef} disabled={previewMode}
@@ -349,7 +364,7 @@ export default function VMIPedidosPage({ isTab = false }) {
                     <h3 className={`font-bold ${previewMode ? 'text-orange-800' : 'text-slate-700'}`}>
                         {previewMode ? '⚠️ Pré-visualização — Ainda NÃO SALVO' : 'Pedidos Mapeados (Ativos)'}
                     </h3>
-                    
+
                     {(previewMode || data.length > 0) && (
                         <div className="flex flex-wrap gap-2 items-center">
                             <div className="relative flex-1 min-w-[200px] max-w-sm">

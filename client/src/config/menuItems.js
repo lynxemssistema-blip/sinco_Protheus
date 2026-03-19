@@ -3,7 +3,7 @@ import {
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
-    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered
+    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -33,6 +33,7 @@ export const MENU_GROUPS = [
             { id: 'sinco_apontamento_matriz', label: 'Apontamento Matriz - OS (Sinco)', path: '/engenharia/sinco/apontamento-matrix', icon: Grid },
             { id: 'sinco_materiais', label: 'Materiais por OS (Sinco)', path: '/engenharia/sinco/materiais', icon: Database },
             { id: 'sinco_desenho', label: 'Desenho Ativo SE', path: '/sinco/desenho-ativo', icon: Monitor },
+            { id: 'sworks', label: 'SolidWorks Connect', path: '/sworks', icon: Box },
             { id: 'apontamento_usuario', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario', icon: Users }
         ]
     },

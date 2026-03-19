@@ -153,6 +153,21 @@ export default function DemandaVMIPage({ isTab = false }) {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    const handleDownloadModelo = async () => {
+        try {
+            const res = await api.get('/vmi/modelo', { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'Modelo_Demanda_VMI.xlsx');
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+        } catch (err) {
+            showToast('Erro ao baixar modelo.', 'error');
+        }
+    };
+
     const handleConfirmSave = async () => {
         setSaving(true);
         try {

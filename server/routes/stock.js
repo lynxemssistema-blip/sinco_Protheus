@@ -13,93 +13,73 @@ const dbConfig = {
     port: 3306
 };
 
-// GET /:codigo/saldo - Retorna saldo atual do produto
+// GET /:codigo/saldo - Retorna saldo atual do produto (Protheus SB2010/SB2990)
 router.get('/:codigo/saldo', async (req, res) => {
-    let connection;
     try {
         const { codigo } = req.params;
-        connection = await mysql.createConnection(dbConfig);
+        const codLimpo = codigo.trim().toUpperCase();
 
-        // Calcula saldo somando Entradas e subtraindo Saídas
-        const [rows] = await connection.execute(`
-            SELECT 
-                SUM(CASE WHEN tipo = 'E' THEN quantidade ELSE 0 END) -
-                SUM(CASE WHEN tipo = 'S' THEN quantidade ELSE 0 END) as saldo
-            FROM app_estoque_movimentos 
-            WHERE produto_codigo = ?
-        `, [codigo]);
-
-        const saldo = rows[0].saldo ? parseFloat(rows[0].saldo) : 0;
+        const query = `
+            SELECT SUM(saldo) as saldo FROM (
+                SELECT COALESCE(SUM(b2_qatu), 0) as saldo FROM public.sb2010 WHERE TRIM(b2_cod) = $1 AND COALESCE(d_e_l_e_t_, '') <> '*'
+                UNION ALL
+                SELECT COALESCE(SUM(b2_qatu), 0) as saldo FROM public.sb2990 WHERE TRIM(b2_cod) = $1 AND COALESCE(d_e_l_e_t_, '') <> '*'
+            ) t
+        `;
+        const result = await db.query(query, [codLimpo]);
+        const saldo = result.rows[0]?.saldo ? parseFloat(result.rows[0].saldo) : 0;
+        
         res.json({ saldo });
     } catch (error) {
         console.error('Erro ao buscar saldo:', error);
         res.status(500).json({ error: 'Erro ao buscar saldo' });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 
-// GET /:codigo/movimentos - Retorna histórico de movimentações
+// GET /:codigo/movimentos - Retorna histórico de movimentações (Protheus SD3010)
 router.get('/:codigo/movimentos', async (req, res) => {
-    let connection;
     try {
         const { codigo } = req.params;
-        connection = await mysql.createConnection(dbConfig);
-
-        const [rows] = await connection.execute(`
-            SELECT * FROM app_estoque_movimentos 
-            WHERE produto_codigo = ? 
-            ORDER BY data_movimento DESC
+        const query = `
+            SELECT
+                D3_FILIAL as filial,
+                D3_DOC as documento,
+                TRIM(D3_COD) as codigo,
+                D3_LOCAL as armazem,
+                COALESCE(D3_QUANT, 0)::numeric(18,6) as quantidade,
+                D3_EMISSAO as emissao,
+                D3_TM as tm,
+                D3_TIPO as tipo,
+                D3_STATUS as status
+            FROM public.SD3010
+            WHERE TRIM(D3_COD) = $1 AND D_E_L_E_T_ = ' '
+            ORDER BY D3_EMISSAO DESC, D3_DOC
             LIMIT 50
-        `, [codigo]);
+        `;
+        const result = await db.query(query, [codigo.trim().toUpperCase()]);
+        
+        // Mapear para o formato que o frontend espera (id, produto_codigo, tipo, quantidade, data_movimento, observacao)
+        const rows = result.rows.map((r, index) => ({
+            id: r.documento + '-' + index,
+            produto_codigo: r.codigo,
+            tipo: (r.tm < '500') ? 'E' : 'S',
+            quantidade: parseFloat(r.quantidade),
+            data_movimento: r.emissao, // YYYYMMDD
+            observacao: `Arm: ${r.armazem} | TM: ${r.tm} | Doc: ${r.documento}`,
+            usuario: 'Protheus' // Indicador de origem
+        }));
 
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar movimentos:', error);
         res.status(500).json({ error: 'Erro ao buscar movimentos' });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 
 // POST / - Registra nova movimentação
 router.post('/', async (req, res) => {
-    let connection;
-    try {
-        const { produto_codigo, tipo, quantidade, observacao, usuario } = req.body;
-
-        if (!produto_codigo || !tipo || !quantidade) {
-            return res.status(400).json({ error: 'Dados incompletos' });
-        }
-
-        connection = await mysql.createConnection(dbConfig);
-
-        // 1. Calcular saldo ATUAL (Antes do movimento) para registrar snapshot
-        const [saldoRows] = await connection.execute(`
-            SELECT 
-                SUM(CASE WHEN tipo = 'E' THEN quantidade ELSE 0 END) -
-                SUM(CASE WHEN tipo = 'S' THEN quantidade ELSE 0 END) as saldo
-            FROM app_estoque_movimentos 
-            WHERE produto_codigo = ?
-        `, [produto_codigo]);
-
-        const saldoAnterior = saldoRows[0].saldo ? parseFloat(saldoRows[0].saldo) : 0;
-
-        // 2. Inserir movimento
-        const [result] = await connection.execute(`
-            INSERT INTO app_estoque_movimentos 
-            (produto_codigo, tipo, quantidade, saldo_anterior, observacao, usuario)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [produto_codigo, tipo, quantidade, saldoAnterior, observacao || '', usuario || 'Admin']);
-
-        res.json({ success: true, id: result.insertId, saldo_anterior: saldoAnterior });
-
-    } catch (error) {
-        console.error('Erro ao registrar movimento:', error);
-        res.status(500).json({ error: 'Erro ao registrar movimento' });
-    } finally {
-        if (connection) await connection.end();
-    }
+    // Protheus is the source of truth for stock. Manual direct inserts from here are blocked.
+    res.status(501).json({ error: 'Lançamento manual de estoque desativado. O estoque deve ser movimentado via ERP Protheus.' });
 });
 
 // ... existing imports

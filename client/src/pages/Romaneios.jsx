@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer } from 'lucide-react';
-import { getRomaneios, deleteRomaneio, updateRomaneioStatus } from '../services/api';
+import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer, FolderPlus, FolderOpen, FileText } from 'lucide-react';
+import { getRomaneios, deleteRomaneio, updateRomaneioStatus, createRomaneioFolder, getRomaneioBaseDirConfig, downloadRomaneioBundle } from '../services/api';
 import RomaneioForm from '../components/RomaneioForm';
 import useStickyState from '../hooks/useStickyState';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +11,7 @@ export default function Romaneios() {
     const [romaneios, setRomaneios] = useState([]);
     const [selectedId, setSelectedId] = useStickyState(null, '@metalfisa:roma_selectedId');
     const [initialStep, setInitialStep] = useState(1);
+    const [formKey, setFormKey] = useState(0);
     const [loading, setLoading] = useState(false);
 
     // Filters
@@ -40,18 +41,21 @@ export default function Romaneios() {
     const handleCreate = () => {
         setSelectedId(null);
         setInitialStep(1);
+        setFormKey(k => k + 1);
         setView('form');
     };
 
     const handleEdit = (id) => {
         setSelectedId(id);
         setInitialStep(1);
+        setFormKey(k => k + 1);
         setView('form');
     };
 
     const handleView = (id) => {
         setSelectedId(id);
         setInitialStep(2);
+        setFormKey(k => k + 1);
         setView('form');
     };
 
@@ -68,6 +72,35 @@ export default function Romaneios() {
     const handleSuccess = () => {
         setView('list');
         fetchRomaneios();
+    };
+
+    const handleCreateFolder = async () => {
+        if (!selectedId) return;
+        try {
+            const res = await createRomaneioFolder(selectedId);
+            alert(res.message);
+        } catch (err) {
+            alert(err.response?.data?.error || 'Erro inesperado ao criar pasta');
+        }
+    };
+
+    const handleOpenFolder = async () => {
+        if (!selectedId) return;
+        try {
+            const { baseDir } = await getRomaneioBaseDirConfig();
+            
+            const uncPath = `${baseDir}\\RO-${selectedId}`;
+            const fileUrl = `file:///${uncPath.replace(/\\/g, '/')}`;
+            
+            navigator.clipboard.writeText(uncPath).then(() => {
+                alert(`O atalho da rede foi copiado para sua área de transferência!\n\n${uncPath}\n\nCaso o navegador não abra a pasta automaticamente (por política de segurança do Chrome/Edge), basta apertar Win+E e colar no campo de cima.`);
+                window.open(fileUrl, '_blank');
+            }).catch(() => {
+                alert(`O endereço da pasta do romaneio é:\n\n${uncPath}\n\nVocê pode copiá-lo e colar no seu Windows Explorer (Win+E).`);
+            });
+        } catch (err) {
+            alert('Erro ao buscar o diretório base configurado: ' + err.message);
+        }
     };
 
     return (
@@ -100,6 +133,35 @@ export default function Romaneios() {
                 )}
                 {(view === 'form' || view === 'product_search') && (
                     <div className="flex items-center gap-4 border border-red-500 border-0">
+                        {view === 'form' && selectedId && (
+                            <button
+                                onClick={() => document.getElementById('btn-print-romaneio')?.click()}
+                                className="bg-slate-800 text-white hover:bg-slate-900 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
+                            >
+                                <Printer className="w-4 h-4" />
+                                Imprimir Romaneio
+                            </button>
+                        )}
+                        {view === 'form' && selectedId && (
+                            <button
+                                onClick={handleOpenFolder}
+                                className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
+                                title="Abrir a pasta do romaneio na rede ou copiar o caminho"
+                            >
+                                <FolderOpen className="w-4 h-4" />
+                                Acessar Pasta da Rede
+                            </button>
+                        )}
+                        {view === 'form' && selectedId && (
+                            <button
+                                onClick={handleCreateFolder}
+                                className="bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
+                                title="Forçar a criação da pasta na rede caso ainda não exista"
+                            >
+                                <FolderPlus className="w-4 h-4" />
+                                Criar Pasta na Rede
+                            </button>
+                        )}
                         {view === 'form' && selectedId && (
                             <button
                                 onClick={() => handleEdit(selectedId)}
@@ -304,6 +366,7 @@ export default function Romaneios() {
                 </div>
             ) : view === 'form' ? (
                 <RomaneioForm
+                    key={formKey}
                     romaneioId={selectedId}
                     initialStep={initialStep}
                     onSuccess={handleSuccess}

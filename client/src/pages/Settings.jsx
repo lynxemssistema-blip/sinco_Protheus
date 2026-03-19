@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
+import EmailClient from '../components/EmailClient';
 
 export default function Settings() {
     const { user } = useAuth();
@@ -14,9 +15,11 @@ export default function Settings() {
         { id: 'general', label: 'Geral', icon: Building2 },
         { id: 'menu', label: 'Menu & Navegação', icon: Menu },
         { id: 'users', label: 'Usuários', icon: UserPlus },
+        { id: 'pending', label: 'Aprovações Pendentes', icon: ShieldAlert },
         { id: 'permissions', label: 'Permissões', icon: Shield },
         { id: 'reports', label: 'Relatórios', icon: FileText },
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
+        { id: 'email', label: 'E-mail Corporativo', icon: Mail },
     ];
 
     const formatPhone = (val) => {
@@ -37,6 +40,7 @@ export default function Settings() {
         tipo: 'U',
         setor: '',
         funcao: '',
+        email: '',
         observacoes: '',
         tem_pc: false,
         foto: null
@@ -59,7 +63,7 @@ export default function Settings() {
     };
 
     useEffect(() => {
-        if (activeTab === 'users' || activeTab === 'permissions') {
+        if (activeTab === 'users' || activeTab === 'permissions' || activeTab === 'pending') {
             loadUsers();
         }
     }, [activeTab]);
@@ -244,7 +248,7 @@ export default function Settings() {
                 await createUser(userForm);
                 alert('Usuário cadastrado com sucesso!');
             }
-            setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', observacoes: '', tem_pc: false, foto: null });
+            setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
             loadUsers();
         } catch (err) {
             alert('Erro: ' + (err.response?.data?.error || err.message));
@@ -285,6 +289,7 @@ export default function Settings() {
             tipo: u.TipoUsuario,
             setor: u.Setor || '',
             funcao: u.Funcao || '',
+            email: u.email || '',
             observacoes: u.Observacoes || '',
             tem_pc: u.TemPC === 1,
             foto: u.fotoUsuario || null
@@ -293,7 +298,7 @@ export default function Settings() {
 
     const cancelEditing = () => {
         setEditingUser(null);
-        setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', observacoes: '', tem_pc: false, foto: null });
+        setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
     };
 
     const toggleGeneralConfig = (key) => {
@@ -397,13 +402,37 @@ export default function Settings() {
         window.print();
     };
 
-    const filteredUsers = usersList.filter(u => {
+    const filteredUsers = usersList.filter(u => u.aprovado === 1).filter(u => {
         const matchesSearch = (u.NomeCompleto || '').toLowerCase().includes(userFilter.toLowerCase()) ||
             (u.Login || '').toLowerCase().includes(userFilter.toLowerCase());
         const matchesPc = pcFilter === 'all' || (pcFilter === 'yes' ? u.TemPC === 1 : u.TemPC !== 1);
         const matchesType = typeFilter === 'all' || u.TipoUsuario === typeFilter;
         return matchesSearch && matchesPc && matchesType;
     });
+
+    const pendingUsers = usersList.filter(u => u.aprovado === 0);
+
+    const handleApproveUser = async (u, newRole) => {
+        if (window.confirm(`Tem certeza que deseja aprovar o acesso de ${u.NomeCompleto}?`)) {
+            setLoading(true);
+            try {
+                await updateUser(u.idUsuario, {
+                    nome: u.NomeCompleto,
+                    login: u.Login,
+                    tipo: newRole || u.TipoUsuario || 'U',
+                    aprovado: 1,
+                    email: u.email
+                });
+                alert('Usuário aprovado com sucesso! O acesso está liberado.');
+                loadUsers();
+            } catch (e) {
+                alert('Erro ao aprovar: ' + (e.response?.data?.error || e.message));
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
 
     return (
         <div className="space-y-6">
@@ -639,6 +668,99 @@ export default function Settings() {
                     </div>
                 )}
 
+                {/* EMAIL TAB */}
+                {activeTab === 'email' && (
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" style={{ minHeight: '600px' }}>
+                        <EmailClient />
+                    </div>
+                )}
+
+                {/* PENDING / APROVAÇÕES TAB */}
+                {activeTab === 'pending' && (
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                            <ShieldAlert className="w-6 h-6 text-orange-500" />
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-800">Contas Aguardando Aprovação</h2>
+                                <p className="text-sm text-slate-500">
+                                    Estes perfis foram criados pela tela de Login, mas não possuem acesso ao sistema até que você aprove.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="p-0 overflow-auto max-h-[600px]">
+                            {pendingUsers.length === 0 ? (
+                                <div className="p-12 text-center flex flex-col items-center">
+                                    <Check className="w-12 h-12 text-green-300 mb-2" />
+                                    <p className="text-slate-500 font-medium text-lg">Nenhum cadastro pendente!</p>
+                                    <p className="text-slate-400 text-sm">Todos os usuários criados já foram avaliados.</p>
+                                </div>
+                            ) : (
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-white text-xs uppercase font-semibold text-slate-500 sticky top-0 border-b border-slate-100">
+                                        <tr>
+                                            <th className="px-6 py-4">Nome Registrado</th>
+                                            <th className="px-6 py-4">Login Desejado</th>
+                                            <th className="px-6 py-4">E-mail Cadastrado</th>
+                                            <th className="px-6 py-4">Tipo de Acesso (Assinar cargo)</th>
+                                            <th className="px-6 py-4 text-right">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {pendingUsers.map(u => (
+                                            <tr key={u.idUsuario} className="hover:bg-slate-50 transition">
+                                                <td className="px-6 py-4 font-bold text-slate-800">{u.NomeCompleto}</td>
+                                                <td className="px-6 py-4"><span className="bg-slate-100 px-2 py-1 rounded text-slate-700 font-mono text-xs">{u.Login}</span></td>
+                                                <td className="px-6 py-4 text-blue-600">{u.email || '-'}</td>
+                                                <td className="px-6 py-4">
+                                                    <select 
+                                                        className="w-full max-w-[200px] border border-slate-300 rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none select-role-temp"
+                                                        defaultValue={u.TipoUsuario || 'U'}
+                                                        id={`role-${u.idUsuario}`}
+                                                    >
+                                                        <option value="U">Usuário (Padrão)</option>
+                                                        <option value="A">Administrador (Total)</option>
+                                                        <option value="C">Conferente</option>
+                                                        <option value="AP">Apontador de Fábrica</option>
+                                                    </select>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button 
+                                                            disabled={loading}
+                                                            onClick={async () => {
+                                                                if (window.confirm("Isso excluirá a solicitação. Tem certeza?")) {
+                                                                    setLoading(true);
+                                                                    try {
+                                                                        await deleteUser(u.idUsuario);
+                                                                        loadUsers();
+                                                                    } finally { setLoading(false); }
+                                                                }
+                                                            }}
+                                                            className="text-red-500 hover:text-red-700 p-2 text-xs font-medium border border-transparent hover:border-red-200 rounded-lg bg-red-50"
+                                                        >
+                                                            Rejeitar (Excluir)
+                                                        </button>
+                                                        <button 
+                                                            disabled={loading}
+                                                            onClick={() => {
+                                                                const selectedRole = document.getElementById(`role-${u.idUsuario}`).value;
+                                                                handleApproveUser(u, selectedRole);
+                                                            }}
+                                                            className="bg-green-600 hover:bg-green-700 text-white font-medium p-2 px-4 rounded-lg flex items-center gap-2 transition"
+                                                        >
+                                                            {loading ? 'Aguarde...' : <><Check className="w-4 h-4"/> Aprovar e Dar Acesso</>}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* USERS TAB */}
                 {activeTab === 'users' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -770,6 +892,17 @@ export default function Settings() {
                                             placeholder="Ex: Projetista"
                                         />
                                     </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">E-mail Corporativo</label>
+                                    <input
+                                        type="email"
+                                        className="w-full p-2 border rounded-lg"
+                                        value={userForm.email}
+                                        onChange={e => setUserForm({ ...userForm, email: e.target.value })}
+                                        placeholder="usuario@metalfisa.com.br"
+                                    />
                                 </div>
 
                                 <div>
@@ -953,7 +1086,7 @@ export default function Settings() {
                                                     {u.TipoUsuario === 'A'
                                                         ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Admin</span>
                                                         : u.TipoUsuario === 'C'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Conferente</span>
+                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800">Conferente</span>
                                                         : u.TipoUsuario === 'AP'
                                                         ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Apontador</span>
                                                         : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Usuário</span>

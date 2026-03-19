@@ -1,0 +1,257 @@
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
+const mysqlPool = require('./mysqlService');
+const fs = require('fs').promises;
+const path = require('path');
+
+function normalizeFilePath(filePath) {
+    if (!filePath) return filePath;
+    let normalized = filePath.trim();
+    normalized = normalized.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
+    if (process.platform !== 'win32') {
+        normalized = normalized.replace(/\\/g, '/');
+        normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+    }
+    return normalized;
+}
+
+const generateRomaneioBundle = async (romaneioId) => {
+    // 1. Fetch Romaneio Header
+    const [romRows] = await mysqlPool.execute(
+        `SELECT id, cliente_nome, status, data_liberacao, data_previsao_retorno,
+        peso_total, area_pintura_total, usuario, created_at
+        FROM app_romaneios WHERE id = ?`,
+        [romaneioId]
+    );
+    if (!romRows.length) throw new Error('Romaneio não encontrado');
+    const rom = romRows[0];
+
+    // 2. Fetch Romaneio Items
+    const [itens] = await mysqlPool.execute(
+        `SELECT r.pedido as op_numero, r.item_pedido as item_producao, r.quantidade,
+         r.codigo_produto as codigo, r.descricao_produto as descricao, r.comentario
+         FROM app_romaneio_items r
+         WHERE r.romaneio_id = ?`,
+        [romaneioId]
+    );
+
+    // 2.5 Fetch Linked NFs
+    const [nfs] = await mysqlPool.execute(
+        `SELECT tipo_nf, nf_numero, nf_serie FROM app_romaneios_nfs WHERE romaneio_id = ? ORDER BY created_at ASC`,
+        [romaneioId]
+    );
+
+    // 3. Create Root Document
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // --- DRAW COVER PAGE (A4 LANDSCAPE) ---
+    // Clonando Layout do RomaneioPrint.jsx original
+    let cover = pdfDoc.addPage([841.89, 595.28]); 
+    const { width, height } = cover.getSize();
+    
+    const drawT = (text, x, y, size = 10, isBold = false, color = rgb(0,0,0)) => {
+        cover.drawText(text !== null && text !== undefined ? String(text) : '', { x, y, size, font: isBold ? fontBold : font, color });
+    };
+
+    const marginX = 30;
+    const topY = height - 40;
+    
+    // Header Outer Box
+    cover.drawRectangle({ x: marginX, y: topY - 80, width: width - (marginX * 2), height: 80, borderColor: rgb(0,0,0), borderWidth: 1 });
+    
+    // Vertical Separators
+    const col2X = marginX + 180;
+    const col3X = width - marginX - 180;
+    cover.drawLine({ start: { x: col2X, y: topY }, end: { x: col2X, y: topY - 80 }, thickness: 1 });
+    cover.drawLine({ start: { x: col3X, y: topY }, end: { x: col3X, y: topY - 80 }, thickness: 1 });
+
+    // HEADER TEXT: LOGO
+    const logoRelPath = path.join(__dirname, '../public/metalfisa-logo.png');
+    try {
+        const logoImageBytes = await fs.readFile(logoRelPath);
+        const pngImage = await pdfDoc.embedPng(logoImageBytes);
+        const scaleFactor = 50 / pngImage.height;
+        const pngDims = pngImage.scale(scaleFactor);
+        cover.drawImage(pngImage, {
+            x: marginX + 35,
+            y: topY - 65, 
+            width: pngDims.width,
+            height: pngDims.height,
+        });
+    } catch(e) { }
+
+    // Titulo Central
+    drawT('ROMANEIO DE ENTREGA CLIENTE', col2X + 90, topY - 45, 14, true);
+    
+    // Dados da Direita
+    drawT(`Nº ${rom.id}`, col3X + 50, topY - 30, 16, true);
+    drawT(`Rev: ${rom.current_revision || 1}`, col3X + 70, topY - 50, 10);
+    drawT(`Emissão: ${new Date().toLocaleDateString('pt-BR')}`, col3X + 50, topY - 65, 9);
+    
+    // Box Emitente / Autoria
+    const emitY = topY - 110;
+    cover.drawRectangle({ x: marginX, y: emitY, width: width - (marginX * 2), height: 30, borderColor: rgb(0,0,0), borderWidth: 1 });
+    
+    drawT('DADOS DA EMISSÃO / CONTROLE INTERNO', marginX + 10, emitY + 21, 8, true);
+    drawT(`Elaborado por: ${rom.usuario || 'Sistema'}`, marginX + 10, emitY + 12, 8);
+    
+    let dtEmissao = rom.data_liberacao || rom.created_at || new Date();
+    let dtPrev = rom.data_previsao_retorno ? new Date(rom.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Não estipulada';
+    drawT(`Emissão: ${new Date(dtEmissao).toLocaleDateString('pt-BR')}   |   Previsão de Retorno: ${dtPrev}`, marginX + 10, emitY + 3, 8);
+
+    // Box Transportador e Cliente
+    const colCliW = (width - marginX*2)/2;
+    const trY = emitY - 50;
+    cover.drawRectangle({ x: marginX, y: trY, width: width - (marginX * 2), height: 50, borderColor: rgb(0,0,0), borderWidth: 1 });
+    cover.drawLine({ start: { x: marginX + colCliW, y: trY + 50 }, end: { x: marginX + colCliW, y: trY }, thickness: 1 });
+    
+    drawT('DESTINATÁRIO / CLIENTE', marginX + 10, trY + 40, 8, true);
+    drawT(`${rom.cliente_nome}`, marginX + 10, trY + 30, 9);
+    drawT('Verificar endereço de entrega padrão do cadastro.', marginX + 10, trY + 20, 8);
+    
+    drawT('TRANSPORTE E RETORNO', marginX + colCliW + 10, trY + 40, 8, true);
+    drawT(`Motorista: ${rom.motorista_nome || '---'}   Placa: ${rom.veiculo_placa || '---'}`, marginX + colCliW + 10, trY + 20, 9);
+
+    // --- PRE-FETCH DRAWINGS TO CLASSIFY ---
+    const comPdf = [];
+    const semPdf = [];
+    
+    for (const item of itens) {
+        item.peso_unitario = 0; // Default
+        
+        if (!item.codigo) {
+            semPdf.push(item);
+            continue;
+        }
+        const [docs] = await mysqlPool.execute(
+            `SELECT url_arquivo, peso_kg FROM produtos_docs 
+             WHERE TRIM(produto_codigo) = ? AND url_arquivo LIKE '%.pdf%'
+             ORDER BY created_at DESC LIMIT 1`,
+            [(item.codigo || '').trim()]
+        );
+        if (docs.length > 0) {
+            item.docPath = normalizeFilePath(docs[0].url_arquivo);
+            item.peso_unitario = docs[0].peso_kg || 0;
+            item.item_index = i + 1;
+            comPdf.push(item);
+        } else {
+            semPdf.push(item);
+        }
+    }
+
+    // Draw Items Table Header
+    let tbY = trY - 30;
+    
+    if (nfs && nfs.length > 0) {
+        const nfText = nfs.map(n => `${(n.tipo_nf||'').toUpperCase()}: ${n.nf_numero}${n.nf_serie ? '-' + n.nf_serie : ''}`).join('   |   ');
+        cover.drawRectangle({ x: marginX, y: trY - 22, width: width - (marginX * 2), height: 18, borderColor: rgb(0,0,0), borderWidth: 1, color: rgb(0.95,0.98,1) });
+        
+        const labelStr = 'NOTAS FISCAIS VINCULADAS:   ';
+        const textWidth = fontBold.widthOfTextAtSize(labelStr, 8) + font.widthOfTextAtSize(nfText, 8);
+        const startX = marginX + ((width - marginX * 2) / 2) - (textWidth / 2);
+
+        drawT(labelStr, startX, trY - 16, 8, true);
+        drawT(nfText, startX + fontBold.widthOfTextAtSize(labelStr, 8), trY - 16, 8, false);
+        tbY -= 24;
+    }
+
+    cover.drawRectangle({ x: marginX, y: tbY, width: width - (marginX * 2), height: 20, borderColor: rgb(0,0,0), borderWidth: 1, color: rgb(0.9,0.9,0.9) });
+    drawT('It', marginX + 5, tbY + 6, 8, true);
+    drawT('Código', marginX + 30, tbY + 6, 8, true);
+    drawT('Pedido', marginX + 110, tbY + 6, 8, true);
+    drawT('Descrição', marginX + 180, tbY + 6, 8, true);
+    drawT('Obs.', marginX + 380, tbY + 6, 8, true);
+    drawT('Qtd Env', marginX + 500, tbY + 6, 8, true);
+    drawT('Qtd Ret', marginX + 555, tbY + 6, 8, true);
+    drawT('Saldo', marginX + 610, tbY + 6, 8, true);
+    drawT('Peso Un', marginX + 665, tbY + 6, 8, true);
+    drawT('Peso Tot', marginX + 725, tbY + 6, 8, true);
+    
+    let y = tbY - 20;
+
+    // Draw Items Table Lines
+    let tPeso = 0;
+    let tQtd = 0;
+    for (let i=0; i<itens.length; i++) {
+        const item = itens[i];
+        if (y < 80) {
+            cover = pdfDoc.addPage([841.89, 595.28]);
+            y = height - 50;
+        }
+        cover.drawLine({ start: { x: marginX, y }, end: { x: width - marginX, y }, thickness: 1 });
+        drawT(String(i+1), marginX + 5, y + 6, 8);
+        drawT(item.codigo || '-', marginX + 30, y + 6, 8);
+        const ped = item.op_numero ? item.op_numero + (item.item_producao ? '/' + item.item_producao : '') : '-';
+        drawT(ped, marginX + 110, y + 6, 8);
+        const desc = item.descricao ? item.descricao.substring(0, 48) : '-';
+        drawT(desc, marginX + 180, y + 6, 8);
+        
+        const obs = item.comentario ? item.comentario.substring(0, 25) : '';
+        drawT(obs, marginX + 380, y + 6, 8);
+
+        drawT(String(item.quantidade), marginX + 500, y + 6, 8);
+        const pu = Number(item.peso_unitario || 0);
+        const pq = Number(item.quantidade || 0);
+        tQtd += pq;
+        tPeso += (pu*pq);
+        drawT(pu.toFixed(3), marginX + 665, y + 6, 8);
+        drawT((pu*pq).toFixed(3), marginX + 725, y + 6, 8);
+        y -= 20;
+    }
+    
+    // Totals Line
+    cover.drawRectangle({ x: marginX, y: y, width: width - (marginX * 2), height: 20, borderColor: rgb(0,0,0), borderWidth: 1, color: rgb(0.95,0.95,0.95) });
+    drawT('TOTAIS:', marginX + 440, y + 6, 8, true);
+    drawT(String(tQtd), marginX + 500, y + 6, 8, true);
+    drawT(tPeso.toFixed(3), marginX + 725, y + 6, 8, true);
+
+    // --- DRAW PDF SUMMARY AT END ---
+    y -= 30;
+    if (y < 80) { cover = pdfDoc.addPage([841.89, 595.28]); y = height - 50; }
+    drawT('LISTA DE VERIFICAÇÃO DE DESENHOS', marginX, y, 10, true);
+    y -= 15;
+    
+    drawT('Itens COM PDF anexado:', marginX, y, 9, true, rgb(0, 0.5, 0));
+    drawT(comPdf.map(i => i.codigo).join(', ') || 'Nenhum', marginX + 150, y, 9);
+    y -= 15;
+    
+    drawT('Itens SEM PDF disponível:', marginX, y, 9, true, rgb(0.8, 0, 0));
+    drawT(semPdf.map(i => i.codigo).join(', ') || 'Nenhum, base 100% integra', marginX + 150, y, 9);
+    
+    // --- MERGE APPEND DRAWINGS ---
+    for (const item of comPdf) {
+        if (!item.docPath) continue;
+        try {
+            const pdfBuffer = await fs.readFile(item.docPath);
+            const srcDoc = await PDFDocument.load(pdfBuffer);
+            const pages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+            
+            for (const p of pages) {
+                const { width: pW, height: pH } = p.getSize();
+                p.drawText(`Status: ${rom.status?.toUpperCase() || 'ABERTO'}`, {
+                    x: pW - 150, y: pH - 30, size: 14, color: rgb(1, 0, 0), font: fontBold
+                });
+                
+                const dtRetorno = rom.data_previsao_retorno ? new Date(rom.data_previsao_retorno).toLocaleDateString('pt-BR') : '-';
+                const stampText = `Item ${item.item_index || '?'} | Projeto(OP): ${item.op_numero || 'Avulso'} | Romaneio: #${rom.id} | Qtd: ${item.quantidade} | Retorno: ${dtRetorno}`;
+                
+                const textWidth = fontBold.widthOfTextAtSize(stampText, 12);
+                p.drawRectangle({
+                    x: 20, y: pH - 35, width: textWidth + 10, height: 20, color: rgb(1,1,1)
+                });
+                p.drawText(stampText, {
+                    x: 25, y: pH - 30, size: 12, color: rgb(1, 0, 0), font: fontBold
+                });
+                pdfDoc.addPage(p);
+            }
+        } catch (err) {
+            console.error(`Erro ao mesclar PDF: ${item.docPath}`, err.message);
+        }
+    }
+
+    const finalPdfBytes = await pdfDoc.save();
+    return Buffer.from(finalPdfBytes);
+};
+
+module.exports = { generateRomaneioBundle };

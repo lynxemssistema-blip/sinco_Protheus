@@ -207,6 +207,58 @@ router.get('/estrutura/:codProdutoPai', async (req, res) => {
             return res.status(404).json({ error: 'Produto pai não encontrado na estrutura.' });
         }
 
+        // Fetch Protheus Metadata for the root product
+        const pgPool = require('../db');
+        let protheusData = null;
+        try {
+            // First get the base metadata from sb1010
+            const prodQuery = `
+                SELECT 
+                    TRIM(b1_rev) AS revisao,
+                    TRIM(b1_xdesen) AS desenho_cliente_base,
+                    TRIM(b1_xrevcli) AS rev_cliente_base
+                FROM public.sb1010
+                WHERE TRIM(b1_cod) = $1
+                  AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
+            `;
+            const pgResult = await pgPool.query(prodQuery, [codProdutoPai]);
+            if (pgResult.rows.length > 0) {
+                protheusData = pgResult.rows[0];
+                
+                // Now query SC6 (Pedidos de Venda) for C6_XREVM (Rev Cliente) and C6_CLI (Ref Cliente)
+                const opsQuery = `
+                    SELECT 
+                        TRIM(c6_xrevm) as c6_xrevm,
+                        TRIM(c6_cli) as c6_cli
+                    FROM public.sc6010
+                    WHERE TRIM(c6_produto) = $1
+                      AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
+                      AND (TRIM(c6_xrevm) <> '' OR TRIM(c6_cli) <> '')
+                    ORDER BY r_e_c_n_o_ DESC
+                `;
+                const opsResult = await pgPool.query(opsQuery, [codProdutoPai]);
+                
+                if (opsResult.rows.length > 0) {
+                    // Latest revision from SC6
+                    const latestRev = opsResult.rows.find(r => r.c6_xrevm)?.c6_xrevm;
+                    protheusData.rev_cliente = latestRev || protheusData.rev_cliente_base;
+                    
+                    // Unique references from C6_CLI
+                    const uniqueRefs = [...new Set(opsResult.rows.map(r => r.c6_cli).filter(c => c))];
+                    if (uniqueRefs.length > 0) {
+                        protheusData.desenho_cliente = uniqueRefs.join(' / ');
+                    } else {
+                        protheusData.desenho_cliente = protheusData.desenho_cliente_base;
+                    }
+                } else {
+                    protheusData.rev_cliente = protheusData.rev_cliente_base;
+                    protheusData.desenho_cliente = protheusData.desenho_cliente_base;
+                }
+            }
+        } catch (pgErr) {
+            console.error('⚠️ [SINCO] Erro ao buscar metadados do Protheus (Ficha Técnica):', pgErr.message);
+        }
+
         // Find unresolved comments related to the tree items
         const pieceCodes = [...new Set(items.map(i => i.CodMatFabricante))];
         let unresolvedItems = [];
@@ -304,10 +356,52 @@ router.get('/estrutura/:codProdutoPai', async (req, res) => {
             };
         });
 
+        let revisionsSummary = [];
+        if (pieceCodes.length > 0) {
+            try {
+                const cleanPieceCodes = [...new Set(pieceCodes.map(c => stripExt(c).toUpperCase()))];
+                const revQuery = `
+                    SELECT 
+                        TRIM(sb1.b1_cod) as codigo,
+                        TRIM(sb1.b1_desc) as descricao,
+                        TRIM(sb1.b1_rev) as revisao_mf,
+                        TRIM(sb1.b1_xrevcli) as revisao_cli,
+                        TRIM(sb1.b1_xdesen) as desenho_cli,
+                        sb1.b1_msblql as bloqueio_padrao,
+                        (SELECT sz0.z0_status FROM public.sz0010 sz0 WHERE TRIM(sz0.z0_produto) = TRIM(sb1.b1_cod) AND COALESCE(sz0.d_e_l_e_t_, '') <> '*' ORDER BY sz0.r_e_c_n_o_ DESC LIMIT 1) as bloqueio_eng
+                    FROM public.sb1010 sb1
+                    WHERE TRIM(sb1.b1_cod) = ANY($1::text[])
+                      AND COALESCE(sb1.d_e_l_e_t_, '') <> '*'
+                    ORDER BY sb1.b1_cod ASC
+                `;
+                const revResult = await pgPool.query(revQuery, [cleanPieceCodes]);
+                revisionsSummary = revResult.rows.map(row => {
+                    let statusText = 'Normal';
+                    if (row.bloqueio_padrao === '1' || row.bloqueio_padrao === 'S' || row.bloqueio_padrao === 'T' || row.bloqueio_padrao === 'Y') {
+                        statusText = 'Restrição (Protheus)';
+                    } else if (row.bloqueio_eng === 'P') {
+                        statusText = 'Restrição Pendente (PCP/Eng)';
+                    }
+                    return {
+                        codigo: row.codigo,
+                        descricao: row.descricao,
+                        revisao_mf: row.revisao_mf || '-',
+                        revisao_cli: row.revisao_cli || '-',
+                        desenho_cli: row.desenho_cli || '-',
+                        status: statusText
+                    };
+                });
+            } catch (rErr) {
+                console.error('⚠️ [SINCO] Erro ao buscar resumo de revisões:', rErr.message);
+            }
+        }
+
         res.json({
             rootCode: codProdutoPai,
+            protheusData,
             tree: structure,
-            unresolvedComments: unresolvedItems
+            unresolvedComments: unresolvedItems,
+            revisionsSummary
         });
 
     } catch (error) {

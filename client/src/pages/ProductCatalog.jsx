@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet } from 'lucide-react';
+import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet, Bot } from 'lucide-react';
 import { getProdutos, saveProductImage, getFileUrl } from '../services/api';
 import { useFilters } from '../contexts/FilterContext';
 import ProductDocuments from '../components/ProductDocuments';
@@ -8,6 +8,7 @@ import StockModal from '../components/StockModal';
 import BulkImportModal from '../components/BulkImportModal';
 import ProductAssociationsModal from '../components/ProductAssociationsModal';
 import ProductImageModal from '../components/ProductImageModal';
+import AIBatchExtractionModal from '../components/AIBatchExtractionModal';
 import { importProductWeights } from '../services/api'; // Import function
 import * as XLSX from 'xlsx';
 
@@ -23,9 +24,13 @@ const ProductCatalog = () => {
     const [selectedProductForImage, setSelectedProductForImage] = useState(null); // Para Imagem
     const [openMenuProductId, setOpenMenuProductId] = useState(null); // State for dropdown menu
     const [showImportModal, setShowImportModal] = useState(false);
+    const [showAIExtractionModal, setShowAIExtractionModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [totalPages, setTotalPages] = useState(1);
+    
+    // Indica se pelo menos um filtro de busca ativo existe (para habilitar IA Batch)
+    const hasSearchFilter = Boolean(productFilters.code || productFilters.search || productFilters.type || productFilters.client || productFilters.client_code || productFilters.file_path || productFilters.pdf_status);
 
     const limit = 20;
 
@@ -144,10 +149,10 @@ const ProductCatalog = () => {
                     </div>
 
                     {/* Right Group: Controls */}
-                    <div className="flex flex-wrap items-center gap-2 w-full justify-start xl:justify-end">
+                    <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto xl:ml-auto">
 
                         {/* Import Button */}
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-start sm:justify-end">
                             <input
                                 type="file"
                                 id="excel-upload"
@@ -182,41 +187,60 @@ const ProductCatalog = () => {
                                 title="Importar Pesos e Operações via Excel"
                             >
                                 <Database className="h-4 w-4" />
-                                <span>Importar Excel</span>
+                                <span className="hidden sm:inline">Excel</span>
                             </label>
 
                             <button
                                 onClick={() => setShowImportModal(true)}
-                                className="bg-white border text-gray-600 hover:text-blue-600 hover:border-blue-300 h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0 mr-2"
+                                className="bg-white border text-gray-600 hover:text-blue-600 hover:border-blue-300 h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0"
                                 title="Importação em Massa"
                             >
                                 <FolderInput className="h-4 w-4" />
-                                <span>Importar Docs</span>
+                                <span className="hidden sm:inline">Docs</span>
                             </button>
 
                             <button
                                 onClick={handleExportExcel}
                                 disabled={loading}
-                                className={`bg-slate-800 hover:bg-slate-900 focus:ring-slate-400 text-white border h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0 mr-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`bg-slate-800 hover:bg-slate-900 focus:ring-slate-400 text-white border h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 title="Exportar resultado atual para Excel"
                             >
                                 <FileSpreadsheet className="h-4 w-4" />
-                                <span>Exportar XLSX</span>
+                                <span className="hidden sm:inline">XLSX</span>
+                            </button>
+                            
+                            <button
+                                onClick={() => {
+                                    if (!hasSearchFilter) {
+                                        alert('Por favor, aplique algum filtro primeiro (ex: Código) para evitar processar milhares de documentos acidentalmente.');
+                                        return;
+                                    }
+                                    setShowAIExtractionModal(true);
+                                }}
+                                disabled={loading}
+                                className={`bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-600 h-10 px-3 rounded-lg transition-all flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm shrink-0 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title={hasSearchFilter ? "Extrair Pesos e Área via Google Gemini" : "Filtre os produtos primeiro para usar a IA"}
+                            >
+                                <Bot className="h-4 w-4" />
+                                <span className="hidden sm:inline">IA</span>
                             </button>
                         </div>
 
 
-                        {/* 1. Description Search (Multi-word) - PRINCIPAL */}
-                        <div className="relative grow md:grow-[2] min-w-[300px]">
-                            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Descrição (ex: macho m6)..."
-                                value={productFilters.search || ''}
-                                onChange={e => updateProductFilters({ search: e.target.value, page: 1 })}
-                                className="w-full h-10 pl-9 pr-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
-                            />
-                        </div>
+                        {/* Filters Container */}
+                        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto mt-2 xl:mt-0">
+                            
+                            {/* 1. Description Search (Multi-word) - PRINCIPAL */}
+                            <div className="relative grow md:grow-[2] min-w-[200px]">
+                                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Descrição (ex: macho m6)..."
+                                    value={productFilters.search || ''}
+                                    onChange={e => updateProductFilters({ search: e.target.value, page: 1 })}
+                                    className="w-full h-10 pl-9 pr-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                                />
+                            </div>
 
                         {/* 2. Code Filter */}
                         <div className="relative">
@@ -262,6 +286,25 @@ const ProductCatalog = () => {
                                 <option value="without_pdf">Sem PDF ⚪</option>
                             </select>
                         </div>
+
+                        {/* 3.2 Stock Status Filter */}
+                        <div className="relative">
+                            <select
+                                value={productFilters.stock_status || ''}
+                                onChange={e => updateProductFilters({ stock_status: e.target.value, page: 1 })}
+                                className={`h-10 pl-3 pr-8 rounded-lg border focus:border-blue-500 outline-none text-sm appearance-none cursor-pointer font-medium transition-colors
+                                    ${productFilters.stock_status === 'with_stock' ? 'bg-green-50 text-green-700 border-green-200' :
+                                        productFilters.stock_status === 'without_stock' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                            'bg-gray-50 border-gray-200'
+                                    }`}
+                            >
+                                <option value="">Todos (Estoque)</option>
+                                <option value="with_stock">Com Estoque 📦</option>
+                                <option value="without_stock">Sem Estoque ⚠️</option>
+                            </select>
+                        </div>
+                        
+                        </div> {/* End of Filters Container */}
 
                         {/* 4. File Path Filter (Multi-word) */}
                         <div className="relative grow min-w-[200px]">
@@ -619,6 +662,16 @@ const ProductCatalog = () => {
                     onClose={() => setSelectedProductForStock(null)}
                     productCode={selectedProductForStock?.codigo}
                     productName={selectedProductForStock?.descricao}
+                />
+                
+                <AIBatchExtractionModal
+                    isOpen={showAIExtractionModal}
+                    onClose={() => setShowAIExtractionModal(false)}
+                    productFilters={productFilters}
+                    onSuccess={() => {
+                        fetchProducts();
+                        setShowAIExtractionModal(false);
+                    }}
                 />
             </div>
         </div>

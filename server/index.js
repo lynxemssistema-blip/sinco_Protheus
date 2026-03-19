@@ -53,6 +53,7 @@ app.use(cors({
             process.env.CORS_ORIGIN,
             'http://192.168.1.77:3001',
             'http://localhost:5173',
+            'http://localhost:5174',
             'http://localhost:3000',
             'http://192.168.1.167:5173'
         ];
@@ -133,6 +134,9 @@ app.use('/api/compras', require('./routes/compras'));
 // Reports Route
 app.use('/api/reports', require('./routes/reports'));
 
+// Gestão Global de E-mails / SMTP / IMAP
+app.use('/api/email', require('./routes/email'));
+
 // Sales Notes Route (Ata Viva)
 app.use('/api/sales/notes', require('./routes/sales_notes'));
 
@@ -155,6 +159,7 @@ app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
 app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
+app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/romaneios'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 
 // Rota de Health Check

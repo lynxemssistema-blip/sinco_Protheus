@@ -1,10 +1,11 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer } from 'lucide-react';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download } from 'lucide-react';
 import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
+import { generateMergedDrawingsPdf } from '../services/pdfMergerService';
 
 const ProductStructure = () => {
     const { codigo } = useParams();
@@ -91,6 +92,10 @@ const ProductStructure = () => {
 
     const backLabel = 'Voltar';
 
+    const handleDownloadDrawings = () => {
+        generateMergedDrawingsPdf(structure, codigo);
+    };
+
     const handleGeneratePDF = async () => {
         setIsGeneratingPdf(true);
         try {
@@ -158,11 +163,18 @@ const ProductStructure = () => {
                                 {isGeneratingPdf ? 'Gerando PDF...' : 'Emitir Relatório'}
                             </button>
                             <button
+                                onClick={handleDownloadDrawings}
+                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                            >
+                                <Download className="h-4 w-4" />
+                                Baixar Desenhos
+                            </button>
+                            <button
                                 onClick={() => navigate(`/bom/${encodeURIComponent(codigo)}`)}
                                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
                             >
                                 <FileText className="h-4 w-4" />
-                                Gerar Lista de Materiais (BOM)
+                                Lista de Materiais
                             </button>
                         </div>
                     </div>

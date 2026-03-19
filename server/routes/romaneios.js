@@ -6,12 +6,21 @@ const { requirePermission } = require('../middlewares/rbac');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const PDFExtractionService = require('../services/pdfExtraction');
+const { generateRomaneioBundle } = require('../services/pdfBundleService');
 const crypto = require('crypto');
 
 // --- Multer disk storage for Romaneio photos ---
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'romaneios');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// --- NETWORK SHARE CONFIG (Estrutura Lynx) ---
+function getRomaneioBaseDir() {
+    if (process.env.ROMANEIOS_NETWORK_DIR) return process.env.ROMANEIOS_NETWORK_DIR;
+    if (process.platform === 'win32') return '\\\\192.168.1.253\\Estrutura Lynx\\007-ROMANEIO';
+    return '/mnt/lynx/007-ROMANEIO';
 }
 
 const storage = multer.diskStorage({
@@ -39,22 +48,20 @@ router.get('/clientes', async (req, res) => {
         const { search } = req.query;
         let query = `
             SELECT 
-                a2.a2_cod as codigo, 
-                a2.a2_loja as loja, 
-                a2.a2_nome as nome, 
-                a2.a2_nreduz as nreduz,
-                a2.a2_cgc as cnpj,
-                a2.a2_inscr as ie,
-                a2.a2_end as endereco,
-                a2.a2_bairro as bairro,
-                a2.a2_mun as cidade,
-                a2.a2_est as uf,
-                a2.a2_cep as cep,
-                a2.a2_tel as telefone,
-                a2.a2_email as email
+                a2.A2_COD as codigo, 
+                a2.A2_LOJA as loja, 
+                a2.A2_NOME as nome, 
+                a2.A2_NREDUZ as nreduz,
+                a2.A2_CGC as cnpj,
+                a2.A2_EST as uf,
+                a2.A2_MUN as cidade,
+                a2.A2_TIPO as tipo,
+                a2.A2_END as endereco,
+                a2.A2_BAIRRO as bairro,
+                a2.A2_CEP as cep,
+                a2.A2_TEL as telefone
             FROM public.sa2010 a2
-            WHERE COALESCE(a2.d_e_l_e_t_, '') IN ('', ' ')
-              AND a2.a2_tipo = 'J'
+            WHERE COALESCE(a2.D_E_L_E_T_, '') IN ('', ' ')
         `;
 
         const params = [];
@@ -67,7 +74,7 @@ router.get('/clientes', async (req, res) => {
             params.push(`%${search}%`);
         }
 
-        query += ` ORDER BY a2.a2_nome LIMIT 2000`;
+        query += ` ORDER BY a2.a2_nome ASC LIMIT 2000`;
 
         const result = await db.query(query, params);
         res.json(result.rows);
@@ -207,6 +214,34 @@ router.get('/types', async (req, res) => {
         } catch (e) {
             console.error('⚠️ [Romaneios] Erro app_romaneio_revisions:', e.message);
         }
+        // Tabela de Vínculos de NFs (Muitas NFs para 1 Romaneio)
+        try {
+            await conn.execute(`
+                CREATE TABLE IF NOT EXISTS app_romaneios_nfs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    romaneio_id INT NOT NULL,
+                    tipo_nf VARCHAR(20) NOT NULL COMMENT 'saida, retorno',
+                    nf_numero VARCHAR(50) NOT NULL,
+                    nf_serie VARCHAR(10) NOT NULL,
+                    fornecedor_cod VARCHAR(20),
+                    fornecedor_loja VARCHAR(10),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_romaneio_nf (romaneio_id),
+                    INDEX idx_nf_num (nf_numero)
+                )
+            `);
+            console.log('✅ [Romaneios] Tabela app_romaneios_nfs verificada/criada.');
+        } catch (e) {
+            console.error('⚠️ [Romaneios] Erro app_romaneios_nfs:', e.message);
+        }
+
+        // Limpar espaços em codigo_produto (dados históricos do Protheus com CHAR de largura fixa)
+        try {
+            await conn.execute("UPDATE app_romaneio_items SET codigo_produto = TRIM(codigo_produto) WHERE codigo_produto != TRIM(codigo_produto)");
+            console.log('✅ [Romaneios] codigo_produto trimmed nos itens existentes.');
+        } catch (e) {
+            console.error('⚠️ [Romaneios] Erro ao trim codigo_produto:', e.message);
+        }
 
         conn.release();
     } catch (err) {
@@ -222,6 +257,63 @@ router.post('/upload-photo', upload.single('file'), (req, res) => {
         res.json({ url });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint para retornar o caminho de rede base configurado
+router.get('/config/base-dir', requirePermission('romaneios', 'read'), (req, res) => {
+    try {
+        res.json({ baseDir: getRomaneioBaseDir() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Gerar Caderno PDF Único com Relatório e Desenhos
+router.get('/:id/generate-bundle', requirePermission('romaneios', 'read'), async (req, res) => {
+    try {
+        const id = req.params.id;
+        const pdfBuffer = await generateRomaneioBundle(id);
+        
+        // --- NEW: Cópia na pasta da rede ---
+        let rev = 1;
+        let dataCriacao = new Date().toISOString().split('T')[0];
+        try {
+            const [rows] = await mysqlPool.execute('SELECT current_revision, data_liberacao, cliente_nome FROM app_romaneios WHERE id = ?', [id]);
+            let clienteNome = 'Cliente';
+            if (rows.length > 0) {
+                rev = rows[0].current_revision || 1;
+                if (rows[0].data_liberacao) {
+                    dataCriacao = new Date(rows[0].data_liberacao).toISOString().split('T')[0];
+                }
+                clienteNome = rows[0].cliente_nome ? rows[0].cliente_nome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) : 'Cliente';
+            }
+            const baseDir = getRomaneioBaseDir();
+            const rootFolderName = `RO-${id}`;
+            const folderPath = path.join(baseDir, rootFolderName, `REV-${rev}`);
+            const fileName = `Romaneio_${id}_REV${rev}_${dataCriacao}.pdf`;
+            
+            try {
+                if (!fs.existsSync(folderPath)) {
+                    fs.mkdirSync(folderPath, { recursive: true });
+                }
+                const savePath = path.join(folderPath, fileName);
+                fs.writeFileSync(savePath, pdfBuffer);
+                console.log(`[Romaneios] PDF Copiado com sucesso para a rede: ${savePath}`);
+            } catch (networkErr) {
+                console.error(`[Romaneios] Aviso: Cópia na rede falhou silenciosamente, entregando ao browser. Erro:`, networkErr.message);
+            }
+            
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+            res.send(pdfBuffer);
+        } catch (saveErr) {
+            console.error(`[Romaneios] Falha ao tentar salvar cópia do PDF na pasta do romaneio ${id}:`, saveErr.message);
+            res.status(500).json({ error: 'Falha ao salvar na rede. ' + saveErr.message });
+        }
+    } catch (err) {
+        console.error('Erro ao gerar Caderno PDF do Romaneio:', err);
+        res.status(500).json({ error: 'Erro ao gerar caderno PDF: ' + err.message });
     }
 });
 
@@ -259,10 +351,39 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
             ]
         );
 
-        res.json({ id: result.insertId, message: 'Romaneio criado com sucesso!' });
+        // --- INTEGRAÇÃO COM DIRETÓRIO DE REDE ---
+        const insertId = result.insertId;
+        const dir = path.join(getRomaneioBaseDir(), `RO-${insertId}`);
+        fs.promises.mkdir(dir, { recursive: true })
+            .then(() => console.log(`✅ Pasta do romaneio criada na rede: ${dir}`))
+            .catch(e => console.error(`⚠️ Erro ao criar pasta de rede do romaneio (${dir}):`, e.message));
+
+        res.json({ id: insertId, message: 'Romaneio criado com sucesso!' });
     } catch (err) {
         console.error('Erro ao criar romaneio:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Criar Pasta de Rede Manualmente
+router.post('/:id/create-folder', requirePermission('romaneios', 'edit'), async (req, res) => {
+    try {
+        const romaneioId = req.params.id;
+        const baseDir = getRomaneioBaseDir();
+        const romaneioDir = path.join(baseDir, `RO-${romaneioId}`);
+
+        if (fs.existsSync(romaneioDir)) {
+            return res.status(200).json({ message: 'A pasta já existe na rede!', path: romaneioDir });
+        }
+
+        await fs.promises.mkdir(romaneioDir, { recursive: true });
+        res.status(200).json({ message: 'Pasta criada com sucesso!', path: romaneioDir });
+    } catch (err) {
+        console.error('Erro ao criar pasta manual:', err);
+        if (err.message.includes('EACCES')) {
+            return res.status(500).json({ error: 'Erro de permissão no Linux (EACCES). O diretório de rede pai não está montado ou mapeado na nuvem Sinco.' });
+        }
+        res.status(500).json({ error: 'Erro ao gravar no servidor: ' + err.message });
     }
 });
 
@@ -302,6 +423,32 @@ router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
         res.json({ message: 'Romaneio atualizado com sucesso!' });
     } catch (err) {
         console.error('Erro ao atualizar romaneio:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Verificar se um item de OP já foi enviado em romaneios anteriores
+router.get('/check-op-item', requirePermission('romaneios', 'read'), async (req, res) => {
+    try {
+        const { op, item } = req.query;
+        if (!op || !item) return res.json([]);
+
+        // Buscar itens dessa OP/Item em romaneios que NÃO estejam Cancelados
+        const [rows] = await mysqlPool.execute(`
+            SELECT 
+                r.id as romaneio_id, 
+                r.status, 
+                r.data_criacao, 
+                i.quantidade as qtd_enviada
+            FROM app_romaneio_items i
+            JOIN app_romaneios r ON i.romaneio_id = r.id
+            WHERE i.op = ? AND i.item_op = ? AND r.status != 'Cancelado'
+            ORDER BY r.data_criacao DESC
+        `, [op, item]);
+
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao verificar disponibilidade do item da OP:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -367,7 +514,7 @@ router.get('/:id', async (req, res) => {
             SELECT i.*, d.peso_kg, d.area_pintura_m2,
                 (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_item_id = i.id) as qtd_recebida
             FROM app_romaneio_items i
-            LEFT JOIN produtos_docs d ON d.produto_codigo = i.codigo_produto
+            LEFT JOIN produtos_docs d ON TRIM(d.produto_codigo) = TRIM(i.codigo_produto)
             WHERE i.romaneio_id = ?
         `, [req.params.id]);
 
@@ -386,7 +533,7 @@ router.post('/:id/items', requirePermission('romaneios', 'edit'), async (req, re
         await mysqlPool.execute(
             `INSERT INTO app_romaneio_items(romaneio_id, pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-            [romaneio_id, pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario || 0]
+            [romaneio_id, pedido, item_pedido, (codigo_produto || '').trim(), (descricao_produto || '').trim(), quantidade, comentario, valor_unitario || 0]
         );
 
         res.json({ message: 'Item adicionado' });
@@ -533,7 +680,15 @@ router.post('/:id/revisions', requirePermission('romaneios', 'edit'), async (req
         await conn.execute('UPDATE app_romaneios SET current_revision = current_revision + 1 WHERE id = ?', [romaneioId]);
 
         await conn.commit();
-        res.json({ message: 'Revisão criada com sucesso', newRevision: currentRev + 1 });
+
+        // --- INTEGRAÇÃO COM DIRETÓRIO DE REDE (REVISÃO) ---
+        const newRev = currentRev + 1;
+        const revDir = path.join(getRomaneioBaseDir(), `RO-${romaneioId}`, `REV-${newRev}`);
+        fs.promises.mkdir(revDir, { recursive: true })
+            .then(() => console.log(`✅ Pasta de revisão criada na rede: ${revDir}`))
+            .catch(e => console.error(`⚠️ Erro ao criar pasta de revisão na rede (${revDir}):`, e.message));
+
+        res.json({ message: 'Revisão criada com sucesso', newRevision: newRev });
     } catch (err) {
         await conn.rollback();
         res.status(500).json({ error: err.message });
@@ -789,5 +944,262 @@ router.get('/items/:itemId/historico', async (req, res) => {
 });
 
 
+// --- NOTAS FISCAIS E VÍNCULOS ---
+
+// Busca Cabeçalhos das NFs de um Fornecedor no Protheus (SF1010 + SA2010)
+router.get('/protheus/nfs', async (req, res) => {
+    try {
+        const { fornecedor, loja, search, globalSearch } = req.query;
+        
+        let cte1 = `
+            SELECT 
+                F1.F1_DOC AS "Num_NF",
+                F1.F1_SERIE AS "Serie",
+                F1.F1_EMISSAO AS "Data_Emissao",
+                F1.F1_FORNECE AS "Cod_Fornecedor",
+                A2.A2_NOME AS "Razao_Social_Fornecedor",
+                A2.A2_CGC AS "CNPJ_Fornecedor",
+                F1.F1_ESPECIE AS "Tipo_Doc",
+                'Retorno' AS "Direcao",
+                A2.A2_LOJA AS "Loja"
+            FROM public.sf1010 F1
+            INNER JOIN public.sa2010 A2 ON A2.A2_COD = F1.F1_FORNECE 
+                                AND A2.A2_LOJA = F1.F1_LOJA
+                                AND COALESCE(A2.D_E_L_E_T_, '') IN ('', ' ')
+            WHERE COALESCE(F1.D_E_L_E_T_, '') IN ('', ' ')
+        `;
+
+        let cte2 = `
+            SELECT 
+                F2.F2_DOC AS "Num_NF",
+                F2.F2_SERIE AS "Serie",
+                F2.F2_EMISSAO AS "Data_Emissao",
+                F2.F2_CLIENTE AS "Cod_Fornecedor",
+                COALESCE(A1.A1_NOME, A2.A2_NOME) AS "Razao_Social_Fornecedor",
+                COALESCE(A1.A1_CGC, A2.A2_CGC) AS "CNPJ_Fornecedor",
+                F2.F2_ESPECIE AS "Tipo_Doc",
+                'Saída' AS "Direcao",
+                F2.F2_LOJA AS "Loja"
+            FROM public.sf2010 F2
+            LEFT JOIN public.sa1010 A1 ON A1.A1_COD = F2.F2_CLIENTE AND A1.A1_LOJA = F2.F2_LOJA AND F2.F2_TIPO NOT IN ('B', 'D')
+            LEFT JOIN public.sa2010 A2 ON A2.A2_COD = F2.F2_CLIENTE AND A2.A2_LOJA = F2.F2_LOJA AND F2.F2_TIPO IN ('B', 'D')
+            WHERE COALESCE(F2.D_E_L_E_T_, '') IN ('', ' ')
+        `;
+
+        let sql = `
+            WITH combined_nfs AS (
+                ${cte1}
+                UNION ALL
+                ${cte2}
+            )
+            SELECT * FROM combined_nfs WHERE 1=1
+        `;
+
+        const params = [];
+        let paramIndex = 1;
+
+        if (globalSearch !== 'true') {
+            if (!fornecedor) return res.status(400).json({ error: 'Fornecedor obrigatório se não for busca global.' });
+            sql += ` AND "Cod_Fornecedor" = $${paramIndex}`;
+            params.push(fornecedor);
+            paramIndex++;
+            
+            if (loja) {
+                sql += ` AND "Loja" = $${paramIndex}`;
+                params.push(loja);
+                paramIndex++;
+            }
+        }
+
+        if (search) {
+            const tokens = search.split(/[\s\-]+/).filter(t => t.trim().length > 0);
+            
+            if (tokens.length > 0) {
+                const tokenConditions = tokens.map(token => {
+                    const isNumeric = /^\d+$/.test(token);
+                    let paddedToken = token;
+                    if (isNumeric && token.length <= 9) {
+                        paddedToken = token.padStart(9, '0');
+                    }
+                    
+                    let condition = `("Num_NF" ILIKE $${paramIndex} OR "Razao_Social_Fornecedor" ILIKE $${paramIndex}`;
+                    params.push(`%${token}%`);
+                    paramIndex++;
+
+                    if (isNumeric) {
+                        condition += ` OR "Num_NF" ILIKE $${paramIndex}`;
+                        params.push(`%${paddedToken}%`);
+                        paramIndex++;
+                    }
+                    
+                    condition += `)`;
+                    return condition;
+                });
+
+                sql += ` AND (${tokenConditions.join(' AND ')})`;
+            }
+        }
+
+        sql += ` ORDER BY "Data_Emissao" DESC LIMIT 100`;
+
+        const { rows } = await db.query(sql, params);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar NFs no Protheus:', err);
+        res.status(500).json({ error: 'Erro ao buscar Notas Fiscais.' });
+    }
+});
+
+// Busca Itens (Espelho) de uma NF no Protheus (SD1/SD2 + SB1) + cabeçalho SF1/SF2
+router.get('/protheus/nf-items', async (req, res) => {
+    try {
+        const { nf, serie, fornecedor, tipo_nf } = req.query;
+        if (!nf) return res.status(400).json({ error: 'Número da NF obrigatório.' });
+
+        const nfPadded = nf.padStart(9, '0');
+        const isSaida = (tipo_nf && tipo_nf.toLowerCase() === 'saida');
+        const tbItem = isSaida ? 'public.sd2010' : 'public.sd1010';
+        const pfx   = isSaida ? 'D2' : 'D1';
+
+        // --- Itens ---
+        let itemSql = `
+            SELECT
+                D.${pfx}_DOC    AS "Num_NF",
+                D.${pfx}_ITEM   AS "Seq",
+                D.${pfx}_COD    AS "Cod_Produto",
+                B1.B1_DESC      AS "Descricao_Produto",
+                D.${pfx}_QUANT              AS "Qtd",
+                D.${pfx}_UM                 AS "UM",
+                D.${pfx}_CF                 AS "CFOP",
+                D.${isSaida ? 'd2_prunit' : 'd1_vunit'} AS "Vl_Unit",
+                D.${pfx}_TOTAL              AS "Vl_Total"
+            FROM ${tbItem} D
+            INNER JOIN public.sb1010 B1 ON B1.B1_COD = D.${pfx}_COD
+                AND COALESCE(B1.D_E_L_E_T_, '') IN ('', ' ')
+            WHERE COALESCE(D.D_E_L_E_T_, '') IN ('', ' ')
+                AND D.${pfx}_DOC = $1
+        `;
+        const itemParams = [nfPadded];
+        let pIdx = 2;
+
+        if (serie) {
+            itemSql += ` AND D.${pfx}_SERIE = $${pIdx++}`;
+            itemParams.push(serie);
+        }
+        if (fornecedor) {
+            itemSql += ` AND (D.${pfx}_CLIENTE = $${pIdx} OR D.${pfx}_FORNECE = $${pIdx})`;
+            itemParams.push(fornecedor);
+            pIdx++;
+        }
+        itemSql += ` ORDER BY D.${pfx}_DOC, D.${pfx}_ITEM`;
+
+        // --- Cabeçalho da NF (SF1 ou SF2) ---
+        let headSql, headParams = [nfPadded];
+        if (isSaida) {
+            headSql = `
+                SELECT
+                    F2.F2_DOC      AS "Num_NF",
+                    F2.F2_SERIE    AS "Serie",
+                    F2.F2_EMISSAO  AS "Data_Emissao",
+                    F2.F2_VALBRUT  AS "Vl_Bruto",
+                    F2.F2_FRETE    AS "Vl_Frete",
+                    F2.F2_CLIENTE  AS "Parceiro_Cod",
+                    F2.F2_LOJA     AS "Parceiro_Loja",
+                    COALESCE(A1.A1_NOME, A2.A2_NOME) AS "Parceiro_Nome",
+                    COALESCE(A1.A1_CGC,  A2.A2_CGC)  AS "Parceiro_CNPJ",
+                    'Saída' AS "Direcao"
+                FROM public.sf2010 F2
+                LEFT JOIN public.sa1010 A1 ON A1.A1_COD = F2.F2_CLIENTE AND A1.A1_LOJA = F2.F2_LOJA
+                    AND COALESCE(A1.D_E_L_E_T_, '') IN ('', ' ')
+                LEFT JOIN public.sa2010 A2 ON A2.A2_COD = F2.F2_CLIENTE AND A2.A2_LOJA = F2.F2_LOJA
+                    AND COALESCE(A2.D_E_L_E_T_, '') IN ('', ' ')
+                WHERE COALESCE(F2.D_E_L_E_T_, '') IN ('', ' ')
+                    AND F2.F2_DOC = $1
+            `;
+            if (serie) { headSql += ` AND F2.F2_SERIE = $2`; headParams.push(serie); }
+        } else {
+            headSql = `
+                SELECT
+                    F1.F1_DOC      AS "Num_NF",
+                    F1.F1_SERIE    AS "Serie",
+                    F1.F1_EMISSAO  AS "Data_Emissao",
+                    F1.F1_VALBRUT  AS "Vl_Bruto",
+                    F1.F1_FRETE    AS "Vl_Frete",
+                    COALESCE(NULLIF(F1.F1_CLIENTE, ''), F1.F1_FORNECE)  AS "Parceiro_Cod",
+                    COALESCE(NULLIF(F1.F1_LOJACLI, ''), F1.F1_LOJA)     AS "Parceiro_Loja",
+                    COALESCE(A1.A1_NOME, A2.A2_NOME) AS "Parceiro_Nome",
+                    COALESCE(A1.A1_CGC, A2.A2_CGC)  AS "Parceiro_CNPJ",
+                    'Retorno' AS "Direcao"
+                FROM public.sf1010 F1
+                LEFT JOIN public.sa1010 A1 ON A1.A1_COD = F1.F1_CLIENTE AND A1.A1_LOJA = F1.F1_LOJACLI
+                    AND COALESCE(A1.D_E_L_E_T_, '') IN ('', ' ')
+                LEFT JOIN public.sa2010 A2 ON A2.A2_COD = F1.F1_FORNECE AND A2.A2_LOJA = F1.F1_LOJA
+                    AND COALESCE(A2.D_E_L_E_T_, '') IN ('', ' ')
+                WHERE COALESCE(F1.D_E_L_E_T_, '') IN ('', ' ')
+                    AND F1.F1_DOC = $1
+            `;
+            if (serie) { headSql += ` AND F1.F1_SERIE = $2`; headParams.push(serie); }
+        }
+
+        const [itemResult, headResult] = await Promise.all([
+            db.query(itemSql, itemParams),
+            db.query(headSql, headParams)
+        ]);
+
+        res.json({ header: headResult.rows[0] || null, items: itemResult.rows });
+    } catch (err) {
+        console.error('Erro ao buscar itens da NF no Protheus:', err);
+        res.status(500).json({ error: 'Erro ao buscar Itens da NF.' });
+    }
+});
+
+// Busca os Vínculos de NFs salvos no MySQL para um Romaneio
+router.get('/:id/notas-fiscais', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.execute(
+            'SELECT * FROM app_romaneios_nfs WHERE romaneio_id = ? ORDER BY created_at ASC',
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Adiciona um Vínculo de NF a um Romaneio no MySQL
+router.post('/:id/notas-fiscais', requirePermission('romaneios', 'update'), async (req, res) => {
+    try {
+        const romaneio_id = req.params.id;
+        const { tipo_nf, nf_numero, nf_serie, fornecedor_cod, fornecedor_loja } = req.body;
+
+        if (!tipo_nf || !nf_numero) {
+            return res.status(400).json({ error: 'Tipo e número da NF são obrigatórios.' });
+        }
+
+        const [result] = await mysqlPool.execute(`
+            INSERT INTO app_romaneios_nfs 
+                (romaneio_id, tipo_nf, nf_numero, nf_serie, fornecedor_cod, fornecedor_loja)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [romaneio_id, tipo_nf, nf_numero, nf_serie || '', fornecedor_cod || '', fornecedor_loja || '']);
+
+        res.json({ id: result.insertId, message: 'NF vinculada com sucesso.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Remove um Vínculo de NF
+router.delete('/:id/notas-fiscais/:nfId', requirePermission('romaneios', 'update'), async (req, res) => {
+    try {
+        const { id, nfId } = req.params;
+        await mysqlPool.execute(
+            'DELETE FROM app_romaneios_nfs WHERE id = ? AND romaneio_id = ?',
+            [nfId, id]
+        );
+        res.json({ message: 'Vínculo da NF removido.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 module.exports = router;
