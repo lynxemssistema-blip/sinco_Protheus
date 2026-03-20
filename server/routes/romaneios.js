@@ -16,6 +16,28 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// --- Migration: garantir colunas de peso/área nos itens (compatível MySQL 5.7) ---
+(async () => {
+    try {
+        const addIfMissing = async (col, type) => {
+            const [rows] = await mysqlPool.execute(
+                `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'app_romaneio_items' AND COLUMN_NAME = ?`,
+                [col]
+            );
+            if (rows[0].cnt === 0) {
+                await mysqlPool.execute(`ALTER TABLE app_romaneio_items ADD COLUMN ${col} ${type}`);
+                console.log(`[Romaneios] Coluna ${col} criada.`);
+            }
+        };
+        await addIfMissing('peso_unitario', 'DECIMAL(10,3) DEFAULT NULL');
+        await addIfMissing('area_pintura_unitario', 'DECIMAL(10,4) DEFAULT NULL');
+        console.log('[Romaneios] Colunas peso_unitario/area_pintura_unitario verificadas.');
+    } catch (e) {
+        console.warn('[Romaneios] Migration de colunas falhou:', e.message);
+    }
+})();
+
 // --- NETWORK SHARE CONFIG (Estrutura Lynx) ---
 function getRomaneioBaseDir() {
     if (process.env.ROMANEIOS_NETWORK_DIR) return process.env.ROMANEIOS_NETWORK_DIR;
@@ -273,44 +295,40 @@ router.get('/config/base-dir', requirePermission('romaneios', 'read'), (req, res
 router.get('/:id/generate-bundle', requirePermission('romaneios', 'read'), async (req, res) => {
     try {
         const id = req.params.id;
-        const pdfBuffer = await generateRomaneioBundle(id);
-        
-        // --- NEW: Cópia na pasta da rede ---
-        let rev = 1;
-        let dataCriacao = new Date().toISOString().split('T')[0];
+        const usuarioGerador = req.user?.name || req.user?.username || req.user?.email || 'Sistema';
+        const pdfBuffer = await generateRomaneioBundle(id, { usuarioGerador });
+
+        // Determinar nome do arquivo
+        let fileName = `Romaneio_${id}.pdf`;
         try {
-            const [rows] = await mysqlPool.execute('SELECT current_revision, data_liberacao, cliente_nome FROM app_romaneios WHERE id = ?', [id]);
-            let clienteNome = 'Cliente';
+            const [rows] = await mysqlPool.execute('SELECT current_revision, data_liberacao FROM app_romaneios WHERE id = ?', [id]);
             if (rows.length > 0) {
-                rev = rows[0].current_revision || 1;
-                if (rows[0].data_liberacao) {
-                    dataCriacao = new Date(rows[0].data_liberacao).toISOString().split('T')[0];
-                }
-                clienteNome = rows[0].cliente_nome ? rows[0].cliente_nome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) : 'Cliente';
+                const rev = rows[0].current_revision || 1;
+                const dataCriacao = rows[0].data_liberacao
+                    ? new Date(rows[0].data_liberacao).toISOString().split('T')[0]
+                    : new Date().toISOString().split('T')[0];
+                fileName = `Romaneio_${id}_REV${rev}_${dataCriacao}.pdf`;
             }
-            const baseDir = getRomaneioBaseDir();
-            const rootFolderName = `RO-${id}`;
-            const folderPath = path.join(baseDir, rootFolderName, `REV-${rev}`);
-            const fileName = `Romaneio_${id}_REV${rev}_${dataCriacao}.pdf`;
-            
-            try {
-                if (!fs.existsSync(folderPath)) {
-                    fs.mkdirSync(folderPath, { recursive: true });
-                }
-                const savePath = path.join(folderPath, fileName);
-                fs.writeFileSync(savePath, pdfBuffer);
-                console.log(`[Romaneios] PDF Copiado com sucesso para a rede: ${savePath}`);
-            } catch (networkErr) {
-                console.error(`[Romaneios] Aviso: Cópia na rede falhou silenciosamente, entregando ao browser. Erro:`, networkErr.message);
-            }
-            
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
-            res.send(pdfBuffer);
-        } catch (saveErr) {
-            console.error(`[Romaneios] Falha ao tentar salvar cópia do PDF na pasta do romaneio ${id}:`, saveErr.message);
-            res.status(500).json({ error: 'Falha ao salvar na rede. ' + saveErr.message });
+        } catch (e) {
+            console.warn(`[Romaneios] Não foi possível montar nome do arquivo:`, e.message);
         }
+
+        // Tentar salvar cópia na rede — nunca bloqueia a entrega do PDF ao browser
+        try {
+            const baseDir = getRomaneioBaseDir();
+            const [rows] = await mysqlPool.execute('SELECT current_revision FROM app_romaneios WHERE id = ?', [id]);
+            const rev = rows.length > 0 ? (rows[0].current_revision || 1) : 1;
+            const folderPath = path.join(baseDir, `RO-${id}`, `REV-${rev}`);
+            if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+            fs.writeFileSync(path.join(folderPath, fileName), pdfBuffer);
+            console.log(`[Romaneios] PDF salvo na rede: ${path.join(folderPath, fileName)}`);
+        } catch (networkErr) {
+            console.error(`[Romaneios] Aviso: cópia na rede falhou, entregando ao browser. Erro:`, networkErr.message);
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+        res.send(pdfBuffer);
     } catch (err) {
         console.error('Erro ao gerar Caderno PDF do Romaneio:', err);
         res.status(500).json({ error: 'Erro ao gerar caderno PDF: ' + err.message });
@@ -511,10 +529,12 @@ router.get('/:id', async (req, res) => {
         if (romaneio.length === 0) return res.status(404).json({ error: 'Romaneio não encontrado' });
 
         const [itens] = await mysqlPool.query(`
-            SELECT i.*, d.peso_kg, d.area_pintura_m2,
-                (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_item_id = i.id) as qtd_recebida
+            SELECT i.*,
+                COALESCE(i.peso_unitario,         (SELECT d.peso_kg         FROM produtos_docs d WHERE TRIM(d.produto_codigo) = TRIM(i.codigo_produto) LIMIT 1)) AS peso_kg,
+                COALESCE(i.area_pintura_unitario, (SELECT d.area_pintura_m2 FROM produtos_docs d WHERE TRIM(d.produto_codigo) = TRIM(i.codigo_produto) LIMIT 1)) AS area_pintura_m2,
+                (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_item_id = i.id) AS qtd_recebida,
+                (SELECT d.url_arquivo FROM produtos_docs d WHERE TRIM(d.produto_codigo) = TRIM(i.codigo_produto) AND d.url_arquivo IS NOT NULL AND d.url_arquivo != '' LIMIT 1) AS url_arquivo
             FROM app_romaneio_items i
-            LEFT JOIN produtos_docs d ON TRIM(d.produto_codigo) = TRIM(i.codigo_produto)
             WHERE i.romaneio_id = ?
         `, [req.params.id]);
 
@@ -625,11 +645,57 @@ router.delete('/:id', requirePermission('romaneios', 'delete'), async (req, res)
 // Editar Item
 router.put('/:id/items/:itemId', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
-        const { quantidade, comentario, valor_unitario } = req.body;
+        const { quantidade, comentario, valor_unitario, peso_unitario, area_pintura_unitario } = req.body;
+
         await mysqlPool.execute(
-            'UPDATE app_romaneio_items SET quantidade = ?, comentario = ?, valor_unitario = ? WHERE id = ? AND romaneio_id = ?',
-            [quantidade, comentario, valor_unitario || 0, req.params.itemId, req.params.id]
+            `UPDATE app_romaneio_items
+             SET quantidade = ?, comentario = ?, valor_unitario = ?,
+                 peso_unitario = ?, area_pintura_unitario = ?
+             WHERE id = ? AND romaneio_id = ?`,
+            [
+                quantidade, comentario, valor_unitario || 0,
+                peso_unitario != null && peso_unitario !== '' ? peso_unitario : null,
+                area_pintura_unitario != null && area_pintura_unitario !== '' ? area_pintura_unitario : null,
+                req.params.itemId, req.params.id
+            ]
         );
+
+        // Atualizar cadastro original do produto em produtos_docs se informado
+        if (peso_unitario != null && peso_unitario !== '' || area_pintura_unitario != null && area_pintura_unitario !== '') {
+            const [itemRows] = await mysqlPool.execute(
+                'SELECT codigo_produto FROM app_romaneio_items WHERE id = ?', [req.params.itemId]
+            );
+            if (itemRows.length > 0) {
+                const cod = itemRows[0].codigo_produto;
+                const updates = [];
+                const vals = [];
+                if (peso_unitario != null && peso_unitario !== '') { updates.push('peso_kg = ?'); vals.push(peso_unitario); }
+                if (area_pintura_unitario != null && area_pintura_unitario !== '') { updates.push('area_pintura_m2 = ?'); vals.push(area_pintura_unitario); }
+                if (updates.length > 0) {
+                    vals.push(cod.trim());
+                    // Atualiza o primeiro registro de desenho do produto (ou qualquer registro existente)
+                    await mysqlPool.execute(
+                        `UPDATE produtos_docs SET ${updates.join(', ')} WHERE TRIM(produto_codigo) = ? LIMIT 1`,
+                        vals
+                    );
+                    // Se não existe registro, insere um básico para guardar o peso/área
+                    const [existRows] = await mysqlPool.execute(
+                        'SELECT id FROM produtos_docs WHERE TRIM(produto_codigo) = ? LIMIT 1', [cod.trim()]
+                    );
+                    if (existRows.length === 0) {
+                        const insertCols = ['produto_codigo', 'titulo', 'tipo', 'url_arquivo'];
+                        const insertVals = [cod.trim(), 'Dados Técnicos', 'Técnico', ''];
+                        if (peso_unitario != null && peso_unitario !== '') { insertCols.push('peso_kg'); insertVals.push(peso_unitario); }
+                        if (area_pintura_unitario != null && area_pintura_unitario !== '') { insertCols.push('area_pintura_m2'); insertVals.push(area_pintura_unitario); }
+                        await mysqlPool.execute(
+                            `INSERT INTO produtos_docs (${insertCols.join(', ')}) VALUES (${insertCols.map(() => '?').join(', ')})`,
+                            insertVals
+                        );
+                    }
+                }
+            }
+        }
+
         res.json({ message: 'Item atualizado' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1087,8 +1153,8 @@ router.get('/protheus/nf-items', async (req, res) => {
             itemParams.push(serie);
         }
         if (fornecedor) {
-            itemSql += ` AND (D.${pfx}_CLIENTE = $${pIdx} OR D.${pfx}_FORNECE = $${pIdx})`;
-            itemParams.push(fornecedor);
+            itemSql += ` AND (TRIM(D.${pfx}_CLIENTE) = TRIM($${pIdx}) OR TRIM(D.${pfx}_FORNECE) = TRIM($${pIdx}))`;
+            itemParams.push(fornecedor.trim());
             pIdx++;
         }
         itemSql += ` ORDER BY D.${pfx}_DOC, D.${pfx}_ITEM`;
@@ -1176,8 +1242,17 @@ router.post('/:id/notas-fiscais', requirePermission('romaneios', 'update'), asyn
             return res.status(400).json({ error: 'Tipo e número da NF são obrigatórios.' });
         }
 
+        // Verificar se a NF já está vinculada a este romaneio
+        const [existing] = await mysqlPool.execute(
+            `SELECT id FROM app_romaneios_nfs WHERE romaneio_id = ? AND nf_numero = ? AND nf_serie = ? AND tipo_nf = ?`,
+            [romaneio_id, nf_numero, nf_serie || '', tipo_nf]
+        );
+        if (existing.length > 0) {
+            return res.status(409).json({ error: `A NF ${nf_numero.replace(/^0+/, '')} série ${nf_serie || '-'} já está vinculada a este romaneio.` });
+        }
+
         const [result] = await mysqlPool.execute(`
-            INSERT INTO app_romaneios_nfs 
+            INSERT INTO app_romaneios_nfs
                 (romaneio_id, tipo_nf, nf_numero, nf_serie, fornecedor_cod, fornecedor_loja)
             VALUES (?, ?, ?, ?, ?, ?)
         `, [romaneio_id, tipo_nf, nf_numero, nf_serie || '', fornecedor_cod || '', fornecedor_loja || '']);

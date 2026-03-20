@@ -5,6 +5,7 @@ const mysql = require('mysql2/promise');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 require('dotenv').config();
+const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
 const SECRET_KEY = process.env.JWT_SECRET;
 if (!SECRET_KEY) {
@@ -110,18 +111,16 @@ router.post('/recuperar-senha', async (req, res) => {
             from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
             to: email,
             subject: 'Recuperação de Acesso - MetalFisa ERP',
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 25px; color: #333; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                    <h2 style="color: #0284c7; margin-top: 0;">Recuperação de Acesso</h2>
-                    <p>Olá, <b>${user.NomeCompleto}</b>!</p>
-                    <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Seguem seus dados de login atualizados:</p>
-                    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
-                        <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
-                        <p style="margin: 0; font-size: 16px;"><b>Senha:</b> ${user.Senha}</p>
-                    </div>
-                    <p style="font-size: 14px;">Recomendamos que você anote sua senha em um local seguro e delete esta mensagem.</p>
+            html: getCorporateEmailTemplate(`
+                <h2 style="color: #0284c7; margin-top: 0; font-family: Arial, sans-serif;">Recuperação de Acesso</h2>
+                <p>Olá, <b>${user.NomeCompleto}</b>!</p>
+                <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Seguem seus dados de login atualizados:</p>
+                <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
+                    <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
+                    <p style="margin: 0; font-size: 16px;"><b>Senha:</b> ${user.Senha}</p>
                 </div>
-            `
+                <p style="font-size: 14px;">Recomendamos que você guarde sua senha em um local seguro e exclua esta mensagem caso ninguém a tenha solicitado.</p>
+            `)
         });
 
         res.json({ message: 'Os dados de acesso foram enviados para o seu e-mail!' });

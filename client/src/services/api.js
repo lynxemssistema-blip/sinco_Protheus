@@ -220,6 +220,7 @@ export const uploadRomaneioPhoto = async (file) => {
             'Content-Type': 'multipart/form-data'
         }
     });
+    return response.data;
 };
 
 // ROMANEIOS - NFs VINCULADAS

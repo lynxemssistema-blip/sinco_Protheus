@@ -141,16 +141,18 @@ const OrdersTable = () => {
 
             console.log(`📡 [OrdersTable] Fetching data... Page: ${searchPage}, View: ${searchViewMode}`);
 
+            const searchLimit = searchFilters.pedido ? 5000 : limit;
+
             let result;
             if (searchViewMode === 'flat') {
-                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit });
+                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit });
             } else {
-                result = await getPedidos({ ...searchFilters, page: searchPage, limit });
+                result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit });
             }
 
             const { data, meta } = result;
             setOrders(data);
-            setTotalPages(Math.ceil(meta.total / limit));
+            setTotalPages(Math.ceil(meta.total / searchLimit));
         } catch (err) {
             console.error(err);
             const serverError = err.response?.data;
@@ -395,6 +397,31 @@ const OrdersTable = () => {
         }
     };
 
+    const handlePrintOPByOperationWithDrawings = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-drawings-${pedido}-${itemId}` : `op-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPByOperationWithDrawingsPdf } = await import('../services/opByOperationWithDrawingsPdfGenerator');
+            await generateOPByOperationWithDrawingsPdf(mirrorData, userName);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Operation PDF with Drawings:', error);
+            alert(`Erro ao gerar Espelho com Desenhos: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handlePrintOPByOperation = async (pedido, e, itemId = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
@@ -519,7 +546,17 @@ const OrdersTable = () => {
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
+            {/* Global Overlay for PDF Generation */}
+            {printingOrderId && (
+                <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900/50 backdrop-blur-sm">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-md border border-gray-100">
+                        <Loader2 className="h-12 w-12 text-blue-600 animate-spin mb-4" />
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">Processando PDF...</h3>
+                        <p className="text-sm text-gray-600">Por favor, aguarde enquanto o sistema consolida a Estrutura da OP e anexa todos os Desenhos. Isso pode demorar alguns segundos e o download iniciará automaticamente.</p>
+                    </div>
+                </div>
+            )}
             {/* Header & Filtros */}
             <div className="p-4 border-b border-gray-100 bg-white print:hidden">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -948,6 +985,14 @@ const OrdersTable = () => {
                                                                                 <span>Por Operações (PDF)</span>
                                                                             </button>
                                                                             <button
+                                                                                onClick={(e) => { handlePrintOPByOperationWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
+                                                                                <span>OP + Desenhos (PDF)</span>
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-excel-${order.pedido}`}
                                                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-40"
@@ -1096,6 +1141,14 @@ const OrdersTable = () => {
                                                                                                                         >
                                                                                                                             {printingOrderId === `op-oper-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-500" />}
                                                                                                                             <span>Por Operações (PDF)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPByOperationWithDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
+                                                                                                                            <span>OP + Desenhos (PDF)</span>
                                                                                                                         </button>
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}
@@ -1491,14 +1544,14 @@ const OrdersTable = () => {
                             </span>
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    onClick={() => setPage(Math.max(1, page - 1))}
                                     disabled={page === 1}
                                     className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >
                                     <ChevronLeft className="h-5 w-5 text-gray-600" />
                                 </button>
                                 <button
-                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
                                     disabled={page === totalPages}
                                     className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >

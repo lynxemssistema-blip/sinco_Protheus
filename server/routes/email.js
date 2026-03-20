@@ -6,6 +6,7 @@ const simpleParser = require('mailparser').simpleParser;
 const mysqlPool = require('../services/mysqlService');
 const { requirePermission } = require('../middlewares/rbac');
 const multer = require('multer');
+const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
 // Usaremos a memória temporária para anexos antes de disparar o SMTP
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -79,7 +80,7 @@ router.post('/send', authenticateAndCheckPerm('email', 'create'), upload.array('
             to,
             subject: subject || 'Sem Assunto',
             text: text || '',
-            html: html || '',
+            html: getCorporateEmailTemplate(html || ''),
             attachments: files.map(f => ({
                 filename: f.originalname,
                 content: f.buffer

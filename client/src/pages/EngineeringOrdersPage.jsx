@@ -272,7 +272,10 @@ const EngineeringOrdersPage = () => {
     };
 
     const page = orderFilters.page;
-    const setPage = (val) => updateOrderFilters({ page: val });
+    const setPage = (val) => {
+        const newPage = typeof val === 'function' ? val(page) : val;
+        updateOrderFilters({ page: newPage });
+    };
 
     // Filtered view: chained frontend filters (tipo + emissão)
     const filteredOrders = orders.filter(item => {
@@ -823,7 +826,7 @@ const EngineeringOrdersPage = () => {
             </div>
 
             {/* Pagination */}
-            {!loading && !error && filteredOrders.length > 0 && (
+            {!loading && !error && orders.length > 0 && (
                 <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between print:hidden">
                     <span className="text-sm text-gray-500">
                         Página <span className="font-semibold text-gray-900">{page}</span> de <span className="font-semibold text-gray-900">{totalPages}</span>

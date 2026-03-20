@@ -14,11 +14,11 @@ function normalizeFilePath(filePath) {
     return normalized;
 }
 
-const generateRomaneioBundle = async (romaneioId) => {
+const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     // 1. Fetch Romaneio Header
     const [romRows] = await mysqlPool.execute(
         `SELECT id, cliente_nome, status, data_liberacao, data_previsao_retorno,
-        peso_total, area_pintura_total, usuario, created_at
+        peso_total, area_pintura_total, usuario, created_at, fotos
         FROM app_romaneios WHERE id = ?`,
         [romaneioId]
     );
@@ -28,7 +28,8 @@ const generateRomaneioBundle = async (romaneioId) => {
     // 2. Fetch Romaneio Items
     const [itens] = await mysqlPool.execute(
         `SELECT r.pedido as op_numero, r.item_pedido as item_producao, r.quantidade,
-         r.codigo_produto as codigo, r.descricao_produto as descricao, r.comentario
+         r.codigo_produto as codigo, r.descricao_produto as descricao, r.comentario,
+         r.peso_unitario as item_peso_unitario
          FROM app_romaneio_items r
          WHERE r.romaneio_id = ?`,
         [romaneioId]
@@ -93,9 +94,12 @@ const generateRomaneioBundle = async (romaneioId) => {
     const emitY = topY - 110;
     cover.drawRectangle({ x: marginX, y: emitY, width: width - (marginX * 2), height: 30, borderColor: rgb(0,0,0), borderWidth: 1 });
     
+    const agora = new Date();
+    const dtGeracaoPdf = `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR')}`;
+
     drawT('DADOS DA EMISSÃO / CONTROLE INTERNO', marginX + 10, emitY + 21, 8, true);
-    drawT(`Elaborado por: ${rom.usuario || 'Sistema'}`, marginX + 10, emitY + 12, 8);
-    
+    drawT(`Elaborado por: ${rom.usuario || 'Sistema'}   |   PDF gerado por: ${usuarioGerador || 'Sistema'}   em: ${dtGeracaoPdf}`, marginX + 10, emitY + 12, 8);
+
     let dtEmissao = rom.data_liberacao || rom.created_at || new Date();
     let dtPrev = rom.data_previsao_retorno ? new Date(rom.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Não estipulada';
     drawT(`Emissão: ${new Date(dtEmissao).toLocaleDateString('pt-BR')}   |   Previsão de Retorno: ${dtPrev}`, marginX + 10, emitY + 3, 8);
@@ -111,30 +115,44 @@ const generateRomaneioBundle = async (romaneioId) => {
     drawT('Verificar endereço de entrega padrão do cadastro.', marginX + 10, trY + 20, 8);
     
     drawT('TRANSPORTE E RETORNO', marginX + colCliW + 10, trY + 40, 8, true);
-    drawT(`Motorista: ${rom.motorista_nome || '---'}   Placa: ${rom.veiculo_placa || '---'}`, marginX + colCliW + 10, trY + 20, 9);
+    drawT(`Motorista: ${rom.motorista_nome || '---'}   Placa: ${rom.veiculo_placa || '---'}`, marginX + colCliW + 10, trY + 28, 9);
+    const nfStr = nfs.length > 0
+        ? nfs.map(n => `${(n.tipo_nf || '').toUpperCase()}: ${(n.nf_numero || '').replace(/^0+/, '')}${n.nf_serie ? '-' + n.nf_serie : ''}`).join('   ')
+        : 'Nenhuma NF vinculada';
+    drawT(`NFs: ${nfStr}`, marginX + colCliW + 10, trY + 15, 8);
 
     // --- PRE-FETCH DRAWINGS TO CLASSIFY ---
     const comPdf = [];
     const semPdf = [];
     
-    for (const item of itens) {
-        item.peso_unitario = 0; // Default
-        
+    for (let i = 0; i < itens.length; i++) {
+        const item = itens[i];
+        // Peso: prioriza campo direto do item, senão busca em produtos_docs
+        item.peso_unitario = Number(item.item_peso_unitario || 0);
+
         if (!item.codigo) {
             semPdf.push(item);
             continue;
         }
         const [docs] = await mysqlPool.execute(
-            `SELECT url_arquivo, peso_kg FROM produtos_docs 
-             WHERE TRIM(produto_codigo) = ? AND url_arquivo LIKE '%.pdf%'
-             ORDER BY created_at DESC LIMIT 1`,
+            `SELECT url_arquivo, peso_kg FROM produtos_docs
+             WHERE TRIM(produto_codigo) = ?
+             ORDER BY CASE WHEN url_arquivo LIKE '%.pdf%' THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
             [(item.codigo || '').trim()]
         );
         if (docs.length > 0) {
-            item.docPath = normalizeFilePath(docs[0].url_arquivo);
-            item.peso_unitario = docs[0].peso_kg || 0;
-            item.item_index = i + 1;
-            comPdf.push(item);
+            // Sempre pega o peso se não tiver no item
+            if (!item.peso_unitario && docs[0].peso_kg) {
+                item.peso_unitario = Number(docs[0].peso_kg);
+            }
+            const urlArq = (docs[0].url_arquivo || '').toLowerCase();
+            if (urlArq.includes('.pdf')) {
+                item.docPath = normalizeFilePath(docs[0].url_arquivo);
+                item.item_index = i + 1;
+                comPdf.push(item);
+            } else {
+                semPdf.push(item);
+            }
         } else {
             semPdf.push(item);
         }
@@ -163,10 +181,9 @@ const generateRomaneioBundle = async (romaneioId) => {
     drawT('Descrição', marginX + 180, tbY + 6, 8, true);
     drawT('Obs.', marginX + 380, tbY + 6, 8, true);
     drawT('Qtd Env', marginX + 500, tbY + 6, 8, true);
-    drawT('Qtd Ret', marginX + 555, tbY + 6, 8, true);
-    drawT('Saldo', marginX + 610, tbY + 6, 8, true);
-    drawT('Peso Un', marginX + 665, tbY + 6, 8, true);
-    drawT('Peso Tot', marginX + 725, tbY + 6, 8, true);
+    drawT('PDF', marginX + 560, tbY + 6, 8, true);
+    drawT('Peso Un', marginX + 620, tbY + 6, 8, true);
+    drawT('Peso Tot', marginX + 690, tbY + 6, 8, true);
     
     let y = tbY - 20;
 
@@ -191,12 +208,17 @@ const generateRomaneioBundle = async (romaneioId) => {
         drawT(obs, marginX + 380, y + 6, 8);
 
         drawT(String(item.quantidade), marginX + 500, y + 6, 8);
+        if (item.docPath) {
+            cover.drawText('SIM', { x: marginX + 560, y: y + 6, size: 8, font: fontBold, color: rgb(0, 0.5, 0) });
+        } else {
+            cover.drawText('NAO', { x: marginX + 560, y: y + 6, size: 8, font: fontBold, color: rgb(0.7, 0.1, 0.1) });
+        }
         const pu = Number(item.peso_unitario || 0);
         const pq = Number(item.quantidade || 0);
         tQtd += pq;
         tPeso += (pu*pq);
-        drawT(pu.toFixed(3), marginX + 665, y + 6, 8);
-        drawT((pu*pq).toFixed(3), marginX + 725, y + 6, 8);
+        drawT(pu.toFixed(3), marginX + 620, y + 6, 8);
+        drawT((pu*pq).toFixed(3), marginX + 690, y + 6, 8);
         y -= 20;
     }
     
@@ -204,20 +226,9 @@ const generateRomaneioBundle = async (romaneioId) => {
     cover.drawRectangle({ x: marginX, y: y, width: width - (marginX * 2), height: 20, borderColor: rgb(0,0,0), borderWidth: 1, color: rgb(0.95,0.95,0.95) });
     drawT('TOTAIS:', marginX + 440, y + 6, 8, true);
     drawT(String(tQtd), marginX + 500, y + 6, 8, true);
-    drawT(tPeso.toFixed(3), marginX + 725, y + 6, 8, true);
+    drawT(tPeso.toFixed(3), marginX + 690, y + 6, 8, true);
 
-    // --- DRAW PDF SUMMARY AT END ---
-    y -= 30;
-    if (y < 80) { cover = pdfDoc.addPage([841.89, 595.28]); y = height - 50; }
-    drawT('LISTA DE VERIFICAÇÃO DE DESENHOS', marginX, y, 10, true);
-    y -= 15;
-    
-    drawT('Itens COM PDF anexado:', marginX, y, 9, true, rgb(0, 0.5, 0));
-    drawT(comPdf.map(i => i.codigo).join(', ') || 'Nenhum', marginX + 150, y, 9);
-    y -= 15;
-    
-    drawT('Itens SEM PDF disponível:', marginX, y, 9, true, rgb(0.8, 0, 0));
-    drawT(semPdf.map(i => i.codigo).join(', ') || 'Nenhum, base 100% integra', marginX + 150, y, 9);
+    // (PDF summary section removed — column in table now indicates per item)
     
     // --- MERGE APPEND DRAWINGS ---
     for (const item of comPdf) {
@@ -247,6 +258,56 @@ const generateRomaneioBundle = async (romaneioId) => {
             }
         } catch (err) {
             console.error(`Erro ao mesclar PDF: ${item.docPath}`, err.message);
+        }
+    }
+
+    // --- DRAW PHOTOS IN REMAINING SPACE ON THE SAME PAGE ---
+    let fotos = [];
+    try { fotos = JSON.parse(rom.fotos || '[]'); } catch (_) {}
+    if (Array.isArray(fotos) && fotos.length > 0) {
+        const photosPerRow = 5;
+        const photoAreaTop = y - 10;        // just below totals row
+        const photoAreaBottom = 20;         // bottom margin
+        const availableH = photoAreaTop - photoAreaBottom;
+        const availableW = width - marginX * 2;
+
+        const rows = Math.ceil(fotos.length / photosPerRow);
+        const photoW = Math.floor((availableW - (photosPerRow - 1) * 4) / photosPerRow);
+        const photoH = Math.floor((availableH - 18 - (rows - 1) * 4) / rows); // 18 for label
+
+        // Label
+        cover.drawText('FOTOS DO ROMANEIO', {
+            x: marginX, y: photoAreaTop - 12,
+            size: 8, font: fontBold, color: rgb(0.2, 0.2, 0.2)
+        });
+
+        for (let fi = 0; fi < fotos.length; fi++) {
+            const fotoUrl = fotos[fi];
+            const fotoFilename = fotoUrl.replace(/^.*\/uploads\/romaneios\//, '');
+            const fotoPath = path.join(__dirname, '..', 'uploads', 'romaneios', fotoFilename);
+            try {
+                const imgBytes = await fs.readFile(fotoPath);
+                let img;
+                const lc = fotoFilename.toLowerCase();
+                if (lc.endsWith('.png')) {
+                    img = await pdfDoc.embedPng(imgBytes);
+                } else {
+                    img = await pdfDoc.embedJpg(imgBytes);
+                }
+                const col = fi % photosPerRow;
+                const rowIdx = Math.floor(fi / photosPerRow);
+                const imgX = marginX + col * (photoW + 4);
+                const imgY = photoAreaTop - 18 - (rowIdx + 1) * (photoH + 4) + 4;
+                const scaled = img.scaleToFit(photoW, photoH);
+                cover.drawImage(img, {
+                    x: imgX + (photoW - scaled.width) / 2,
+                    y: imgY + (photoH - scaled.height) / 2,
+                    width: scaled.width,
+                    height: scaled.height
+                });
+            } catch (e) {
+                console.error(`Erro ao embutir foto: ${fotoPath}`, e.message);
+            }
         }
     }
 

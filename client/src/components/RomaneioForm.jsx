@@ -215,7 +215,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             await fetchNfsVinculadas(currRomaneioId);
             setIsNfSearchModalOpen(false);
         } catch (err) {
-            alert('Erro ao vincular NF: ' + err.message);
+            alert('Erro ao vincular NF: ' + (err.response?.data?.error || err.message));
         } finally {
             setLoading(false);
         }
@@ -467,7 +467,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             await updateRomaneioItem(currRomaneioId, editingItem.id, {
                 quantidade: editingItem.quantidade,
                 comentario: editingItem.comentario,
-                valor_unitario: editingItem.valor_unitario
+                valor_unitario: editingItem.valor_unitario,
+                peso_unitario: editingItem.peso_unitario,
+                area_pintura_unitario: editingItem.area_pintura_unitario
             });
             setEditingItem(null);
             loadRomaneio(currRomaneioId);
@@ -1200,7 +1202,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                     {editingItem && (
                         <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
                             <h4 className="font-bold text-sm mb-2 text-yellow-800">Editando Item: {editingItem.codigo_produto}</h4>
-                            <div className="flex gap-4">
+                            <div className="flex flex-wrap gap-4">
                                 <div>
                                     <label className="block text-xs font-bold">Quantidade</label>
                                     <input type="number" className="border p-2 rounded w-24" value={editingItem.quantidade} onChange={e => setEditingItem({ ...editingItem, quantidade: e.target.value })} />
@@ -1213,7 +1215,16 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     <label className="block text-xs font-bold">Valor (R$)</label>
                                     <input type="number" step="0.01" className="border p-2 rounded w-24" value={editingItem.valor_unitario} onChange={e => setEditingItem({ ...editingItem, valor_unitario: e.target.value })} />
                                 </div>
+                                <div>
+                                    <label className="block text-xs font-bold">Peso Unit. (kg)</label>
+                                    <input type="number" step="0.001" className="border p-2 rounded w-28" placeholder={editingItem.peso_kg ? Number(editingItem.peso_kg).toFixed(3) : '0.000'} value={editingItem.peso_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, peso_unitario: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold">Área Pint. Unit. (m²)</label>
+                                    <input type="number" step="0.0001" className="border p-2 rounded w-32" placeholder={editingItem.area_pintura_m2 ? Number(editingItem.area_pintura_m2).toFixed(4) : '0.0000'} value={editingItem.area_pintura_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, area_pintura_unitario: e.target.value })} />
+                                </div>
                             </div>
+                            <p className="text-xs text-yellow-700 mt-2">Os valores de peso e área serão atualizados no cadastro do produto.</p>
                             <div className="flex gap-2 mt-3">
                                 <button onClick={saveEditItem} className="bg-green-600 text-white px-3 py-1 rounded text-xs">Salvar</button>
                                 <button onClick={() => setEditingItem(null)} className="bg-slate-300 text-slate-800 px-3 py-1 rounded text-xs">Cancelar</button>
@@ -1258,26 +1269,21 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     </td>
                                     <td className="p-2 text-xs text-slate-500">{it.comentario}</td>
                                     <td className="p-2 text-center">
-                                        <button
-                                            onClick={async () => {
-                                                try {
-                                                    const docs = await getProductDocs(it.codigo_produto.trim());
-                                                    if (docs && docs.length > 0) {
-                                                        // A abertura de nova guia nao precisa de auth api pois o browser vai mandar /view com o token url/cookies? Nao, a api view no backend permite GET sem Header Auth devido a restriçoes de browser abrindo link direto, mas os dados da tabela em si EXIGEM auth.
-                                                        window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(docs[0].url_arquivo)}`, '_blank');
-                                                    } else {
-                                                        alert('Nenhum documento encontrado para este produto.');
-                                                    }
-                                                } catch (error) {
-                                                    console.error('Erro ao abrir PDF:', error);
-                                                    alert('Erro ao abrir documento.');
-                                                }
-                                            }}
-                                            className="p-2 rounded-lg transition-all text-red-600 hover:bg-red-50 ring-1 ring-red-200"
-                                            title="Abrir PDF do Produto"
-                                        >
-                                            <FileText className="w-4 h-4" />
-                                        </button>
+                                        {it.url_arquivo ? (
+                                            <button
+                                                onClick={() => {
+                                                    window.open(`http://${window.location.hostname}:3001/api/docs/view?path=${encodeURIComponent(it.url_arquivo)}`, '_blank');
+                                                }}
+                                                className="p-2 rounded-lg transition-all text-red-600 hover:bg-red-50 ring-1 ring-red-200"
+                                                title="Abrir PDF do Produto"
+                                            >
+                                                <FileText className="w-4 h-4" />
+                                            </button>
+                                        ) : (
+                                            <div className="p-2 text-slate-300" title="Sem PDF cadastrado">
+                                                <FileText className="w-4 h-4" />
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="p-2 text-right">
                                         R$ {it.valor_unitario ? Number(it.valor_unitario).toFixed(2) : '0.00'}
