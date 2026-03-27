@@ -41,6 +41,9 @@ const Reports = React.lazy(() => import('./pages/Reports'));
 const SGQDashboard = React.lazy(() => import('./pages/SGQDashboard'));
 const SGQTraining = React.lazy(() => import('./pages/SGQTraining'));
 const SGQDocuments = React.lazy(() => import('./pages/SGQDocuments'));
+const MapeamentoProcessos = React.lazy(() => import('./pages/sgq/MapeamentoProcessos'));
+const CargosFuncoes = React.lazy(() => import('./pages/sgq/CargosFuncoes'));
+const CurriculosAnalyzer = React.lazy(() => import('./pages/rh/CurriculosAnalyzer'));
 const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const MaterialManagementPage = React.lazy(() => import('./pages/MaterialManagementPage'));
 const WhereUsedPage = React.lazy(() => import('./pages/WhereUsedPage'));
@@ -50,6 +53,7 @@ const ServiceOrderProductionMatrixPage = React.lazy(() => import('./pages/sinco/
 const ServiceOrderMaterialsPage = React.lazy(() => import('./pages/sinco/ServiceOrderMaterialsPage'));
 const SINCOActiveDrawing = React.lazy(() => import('./pages/SINCO/SINCOActiveDrawing'));
 const TrackingEvolution = React.lazy(() => import('./pages/production/TrackingEvolution'));
+const SINCOFormularioPrincipal = React.lazy(() => import('./pages/sinco/SINCOFormularioPrincipal'));
 const ProductionEvolution = React.lazy(() => import('./pages/ProductionEvolution'));
 const InternalRequestsPage = React.lazy(() => import('./pages/InternalRequestsPage'));
 const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/SincoApontamentoPorUsuarioPage'));
@@ -63,6 +67,12 @@ const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage')
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
 const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
 const SWorks = React.lazy(() => import('./pages/SWorks'));
+const ProtheusStudyChat = React.lazy(() => import('./pages/admin/ProtheusStudyChat'));
+const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
+const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
+const FaturamentoPainel = React.lazy(() => import('./pages/FaturamentoPainel'));
+const ControleFaturamento = React.lazy(() => import('./pages/ControleFaturamento'));
+const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverview'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -87,8 +97,9 @@ const PrivateRoute = () => {
     // Find pageId for current path
     const pageId = PATH_TO_PAGE_ID[location.pathname];
 
-    // If there's a mapped page and user is NOT admin, check permission
-    if (pageId && user?.tipo !== 'A' && !hasPermission(pageId, 'view')) {
+    // If there's a mapped page and user is NOT admin,    // Check permissions
+    if (pageId && pageId !== 'protheus-estudo' && user?.tipo !== 'A' && !hasPermission(pageId, 'view')) {
+        // allow basic access fallback if no specific page found?     
         return (
             <Layout>
                 <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8">
@@ -107,10 +118,9 @@ const PrivateRoute = () => {
     return <Outlet />;
 };
 
-// Layout Component
 const Layout = ({ children, fullWidth = true }) => {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
-    const { toggleHelp } = useHelp();
+    const { toggleHelp, isOpen, isPinned } = useHelp();
     const location = useLocation();
 
     // Check if we are on mobile to pass to Sidebar
@@ -139,7 +149,7 @@ const Layout = ({ children, fullWidth = true }) => {
             />
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative">
+            <main className={`flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative ${isOpen && isPinned && !isMobile ? 'pr-[420px]' : ''}`}>
                 <EmailBlockerModal />
                 <FloatingAvisos />
                 <HelpDrawer />
@@ -223,6 +233,11 @@ function App() {
                                         <Route path="/bom-generator" element={
                                             <Layout>
                                                 <BOMGenerator />
+                                            </Layout>
+                                        } />
+                                        <Route path="/rh/curriculos" element={
+                                            <Layout fullWidth={true}>
+                                                <CurriculosAnalyzer />
                                             </Layout>
                                         } />
                                         <Route path="/engenharia/pedidos" element={
@@ -325,6 +340,16 @@ function App() {
                                                 <SGQDashboard />
                                             </Layout>
                                         } />
+                                        <Route path="/sgq/mapeamento-processos" element={
+                                            <Layout fullWidth={true}>
+                                                <MapeamentoProcessos />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sgq/cargos-funcoes" element={
+                                            <Layout fullWidth={true}>
+                                                <CargosFuncoes />
+                                            </Layout>
+                                        } />
                                         <Route path="/sgq/documentos" element={
                                             <SGQDocuments />
                                         } />
@@ -363,6 +388,46 @@ function App() {
                                                 <AvisosHistorico />
                                             </Layout>
                                         } />
+
+                                        {/* Itens Faturar - Comercial/Vendas */}
+                                        <Route path="/vendas/itens-faturar" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando itens a faturar...</div>}>
+                                                    <ItensAFaturar />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+
+                                        {/* Controle de Faturamento Comercial */}
+                                        <Route path="/comercial/faturamento" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando painel de acompanhamento...</div>}>
+                                                    <ControleFaturamento />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+
+                                        <Route path="/vendas/faturamento-historico" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando histórico...</div>}>
+                                                    <FaturamentoSolicitacoesHistorico />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+
+                                        {/* Financeiro / Faturamento */}
+                                        <Route path="/financeiro/faturamento" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando painel financeiro...</div>}>
+                                                    <FaturamentoPainel />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+                                        <Route path="/admin/protheus-estudo" element={
+                                            <Layout fullWidth={true}>
+                                                <ProtheusStudyChat />
+                                            </Layout>
+                                        } />
                                         <Route path="/pcp/gestao-materiais" element={<MaterialManagementPage />} />
                                         <Route path="/pcp/onde-usado" element={<WhereUsedPage />} />
 
@@ -395,6 +460,11 @@ function App() {
                                         <Route path="/sinco/desenho-ativo" element={
                                             <Layout>
                                                 <SINCOActiveDrawing />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/sinco/formulario" element={
+                                            <Layout fullWidth={true}>
+                                                <SINCOFormularioPrincipal />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/apontamento-por-usuario" element={
@@ -442,6 +512,13 @@ function App() {
                                         <Route path="/vmi/historico" element={
                                             <Layout fullWidth={true}>
                                                 <VMIHistoricoPage />
+                                            </Layout>
+                                        } />
+                                        
+                                        {/* Protheus Forms */}
+                                        <Route path="/protheus" element={
+                                            <Layout>
+                                                <ProtheusOverview />
                                             </Layout>
                                         } />
                                     </Route>
