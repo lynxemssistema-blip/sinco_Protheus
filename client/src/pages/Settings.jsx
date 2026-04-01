@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail } from 'lucide-react';
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber } from '../services/api';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2 } from 'lucide-react';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
@@ -52,6 +52,8 @@ export default function Settings() {
     const [userFilter, setUserFilter] = useState('');
     const [pcFilter, setPcFilter] = useState('all');
     const [typeFilter, setTypeFilter] = useState('all');
+    const [selectedUsers, setSelectedUsers] = useState(new Set());
+    const [sendingCredentials, setSendingCredentials] = useState(false);
 
     const loadUsers = async () => {
         try {
@@ -63,7 +65,7 @@ export default function Settings() {
     };
 
     useEffect(() => {
-        if (activeTab === 'users' || activeTab === 'permissions' || activeTab === 'pending') {
+        if (activeTab === 'general' || activeTab === 'users' || activeTab === 'permissions' || activeTab === 'pending') {
             loadUsers();
         }
     }, [activeTab]);
@@ -97,6 +99,18 @@ export default function Settings() {
     };
 
     const handlePermUserChange = (userId) => {
+        if (!userId) {
+            setPermSelectedUser(null);
+            setPermMatrix({});
+            return;
+        }
+
+        if (userId.startsWith('PROFILE_')) {
+            setPermSelectedUser(userId);
+            setPermMatrix({}); // Empty matrix for bulk definition
+            return;
+        }
+
         const uid = parseInt(userId);
         setPermSelectedUser(uid || null);
         if (uid) loadUserPermissions(uid);
@@ -158,8 +172,25 @@ export default function Settings() {
             const permsArray = Object.entries(permMatrix)
                 .filter(([_, p]) => p.can_view || p.can_create || p.can_edit || p.can_delete)
                 .map(([page_id, p]) => ({ page_id, ...p }));
-            await saveUserPermissions(permSelectedUser, permsArray);
-            alert('Permissões salvas com sucesso!');
+
+            if (typeof permSelectedUser === 'string' && permSelectedUser.startsWith('PROFILE_')) {
+                const profileType = permSelectedUser.replace('PROFILE_', '');
+                const targetUsers = usersList.filter(u => u.TipoUsuario === profileType);
+                
+                if (targetUsers.length === 0) {
+                    alert('Nenhum usuário encontrado neste perfil para aplicar as permissões.');
+                    setPermSaving(false);
+                    return;
+                }
+
+                for (const user of targetUsers) {
+                    await saveUserPermissions(user.idUsuario, permsArray);
+                }
+                alert(`Permissões salvas com sucesso para todos os ${targetUsers.length} usuários do perfil selecionado!`);
+            } else {
+                await saveUserPermissions(permSelectedUser, permsArray);
+                alert('Permissões salvas com sucesso!');
+            }
         } catch (err) {
             alert('Erro ao salvar permissões: ' + err.message);
         } finally {
@@ -410,6 +441,59 @@ export default function Settings() {
         return matchesSearch && matchesPc && matchesType;
     });
 
+    const toggleUserSelection = (userId) => {
+        setSelectedUsers(prev => {
+            const next = new Set(prev);
+            if (next.has(userId)) next.delete(userId);
+            else next.add(userId);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedUsers.size === filteredUsers.length) {
+            setSelectedUsers(new Set());
+        } else {
+            setSelectedUsers(new Set(filteredUsers.map(u => u.idUsuario)));
+        }
+    };
+
+    const handleSendCredentials = async () => {
+        if (selectedUsers.size === 0) return;
+
+        const selectedList = usersList.filter(u => selectedUsers.has(u.idUsuario));
+        const withoutEmail = selectedList.filter(u => !u.email);
+        const withEmail = selectedList.filter(u => u.email);
+
+        if (withEmail.length === 0) {
+            alert('Nenhum dos usuários selecionados possui e-mail cadastrado.');
+            return;
+        }
+
+        let confirmMsg = `Deseja enviar os dados de acesso por e-mail para ${withEmail.length} usuário(s)?`;
+        if (withoutEmail.length > 0) {
+            confirmMsg += `\n\n⚠️ ${withoutEmail.length} usuário(s) SEM e-mail serão ignorados:\n` + withoutEmail.map(u => `  • ${u.NomeCompleto}`).join('\n');
+        }
+        confirmMsg += `\n\nSerão enviados para:\n` + withEmail.map(u => `  ✉️ ${u.NomeCompleto} → ${u.email}`).join('\n');
+
+        if (!window.confirm(confirmMsg)) return;
+
+        setSendingCredentials(true);
+        try {
+            const result = await sendUserCredentials([...selectedUsers]);
+            let msg = `✅ ${result.results.success.length} e-mail(s) enviado(s) com sucesso!`;
+            if (result.results.failed.length > 0) {
+                msg += `\n\n❌ ${result.results.failed.length} falharam:\n` + result.results.failed.map(f => `  • ${f.nome}: ${f.reason}`).join('\n');
+            }
+            alert(msg);
+            setSelectedUsers(new Set());
+        } catch (err) {
+            alert('Erro ao enviar credenciais: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setSendingCredentials(false);
+        }
+    };
+
     const pendingUsers = usersList.filter(u => u.aprovado === 0);
 
     const handleApproveUser = async (u, newRole) => {
@@ -609,6 +693,46 @@ export default function Settings() {
                                         </button>
                                     </div>
                                 </div>
+                                
+                                {/* Notificações de Faturamento por E-mail */}
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                    <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Mail className="w-5 h-5 text-indigo-500" /> Notificações de Faturamento</h4>
+                                    <p className="text-sm text-slate-500 mb-4">Selecione os usuários que receberão um e-mail automático com os detalhes das novas solicitações de faturamento criadas pela Expedição.</p>
+                                    <div className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
+                                        {usersList.filter(u => u.aprovado === 1 && u.email).map(u => {
+                                            const isChecked = (companyForm.general_config?.faturamento_emails || []).includes(u.idUsuario);
+                                            return (
+                                                <label key={u.idUsuario} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border-b border-gray-50 last:border-0">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isChecked}
+                                                        onChange={(e) => {
+                                                            const currentEmails = companyForm.general_config?.faturamento_emails || [];
+                                                            let newEmails;
+                                                            if (e.target.checked) {
+                                                                newEmails = [...currentEmails, u.idUsuario];
+                                                            } else {
+                                                                newEmails = currentEmails.filter(id => id !== u.idUsuario);
+                                                            }
+                                                            setCompanyForm(prev => ({
+                                                                ...prev,
+                                                                general_config: { ...prev.general_config, faturamento_emails: newEmails }
+                                                            }));
+                                                        }}
+                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                    />
+                                                    <div className="flex flex-col cursor-pointer">
+                                                        <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
+                                                        <span className="text-xs text-slate-500">{u.email}</span>
+                                                    </div>
+                                                </label>
+                                            );
+                                        })}
+                                        {usersList.filter(u => u.aprovado === 1 && u.email).length === 0 && (
+                                            <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário com e-mail válido cadastrado no sistema.</p>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -721,6 +845,7 @@ export default function Settings() {
                                                         <option value="A">Administrador (Total)</option>
                                                         <option value="C">Conferente</option>
                                                         <option value="AP">Apontador de Fábrica</option>
+                                                        <option value="CLI">Cliente (Acesso Externo)</option>
                                                     </select>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
@@ -870,6 +995,7 @@ export default function Settings() {
                                         <option value="A">Administrador (Total)</option>
                                         <option value="C">Conferente (aprova/recusa apontamentos)</option>
                                         <option value="AP">Apontador (registra produção no chão de fábrica)</option>
+                                        <option value="CLI">Cliente (Acesso Restrito Externo)</option>
                                     </select>
                                 </div>
 
@@ -959,6 +1085,17 @@ export default function Settings() {
                                 <div className="flex justify-between items-center mb-4 print:hidden">
                                     <h3 className="text-lg font-bold text-slate-800">Usuários Cadastrados</h3>
                                     <div className="flex items-center gap-3">
+                                        {selectedUsers.size > 0 && (
+                                            <button
+                                                onClick={handleSendCredentials}
+                                                disabled={sendingCredentials}
+                                                className="bg-sky-600 text-white pl-3 pr-4 py-1.5 rounded-lg text-sm font-medium hover:bg-sky-700 disabled:opacity-60 flex items-center gap-2 transition-all shadow-sm"
+                                                title={`Enviar dados de acesso para ${selectedUsers.size} usuário(s) selecionado(s)`}
+                                            >
+                                                {sendingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                {sendingCredentials ? 'Enviando...' : `Enviar Credenciais (${selectedUsers.size})`}
+                                            </button>
+                                        )}
                                         <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
                                             {filteredUsers.length} de {usersList.length} Usuários
                                         </span>
@@ -1023,6 +1160,7 @@ export default function Settings() {
                                         <option value="U">Usuário</option>
                                         <option value="C">Conferente</option>
                                         <option value="AP">Apontador</option>
+                                        <option value="CLI">Cliente</option>
                                     </select>
                                     {(userFilter || pcFilter !== 'all' || typeFilter !== 'all') && (
                                         <button
@@ -1044,6 +1182,15 @@ export default function Settings() {
                                 <table className="w-full text-left text-sm text-slate-600">
                                     <thead className="bg-slate-50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
                                         <tr>
+                                            <th className="px-3 py-3 w-10 print:hidden">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500 cursor-pointer"
+                                                    checked={filteredUsers.length > 0 && selectedUsers.size === filteredUsers.length}
+                                                    onChange={toggleSelectAll}
+                                                    title="Selecionar/Desmarcar todos"
+                                                />
+                                            </th>
                                             <th className="px-6 py-3">Nome</th>
                                             <th className="px-6 py-3">Login</th>
                                             <th className="px-6 py-3">Setor/Função</th>
@@ -1055,16 +1202,29 @@ export default function Settings() {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredUsers.map(u => (
-                                            <tr key={u.idUsuario} className={`transition-colors ${editingUser?.idUsuario === u.idUsuario ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
-                                                <td className="px-6 py-3 font-medium text-slate-900 flex items-center gap-3">
-                                                    {u.fotoUsuario ? (
-                                                        <img src={u.fotoUsuario} alt="Foto do Usuário na Lista" className="w-8 h-8 rounded-full object-cover border border-slate-200" />
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs ring-1 ring-slate-200">
-                                                            {(u.NomeCompleto || 'U').charAt(0).toUpperCase()}
+                                            <tr key={u.idUsuario} className={`transition-colors ${selectedUsers.has(u.idUsuario) ? 'bg-sky-50/60' : editingUser?.idUsuario === u.idUsuario ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                                <td className="px-3 py-3 print:hidden">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500 cursor-pointer"
+                                                        checked={selectedUsers.has(u.idUsuario)}
+                                                        onChange={() => toggleUserSelection(u.idUsuario)}
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-3 font-medium text-slate-900">
+                                                    <div className="flex items-center gap-3">
+                                                        {u.fotoUsuario ? (
+                                                            <img src={u.fotoUsuario} alt="Foto do Usuário na Lista" className="w-8 h-8 rounded-full object-cover border border-slate-200" />
+                                                        ) : (
+                                                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs ring-1 ring-slate-200">
+                                                                {(u.NomeCompleto || 'U').charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        <div>
+                                                            <div>{u.NomeCompleto}</div>
+                                                            {u.email && <div className="text-xs text-slate-400 font-normal">{u.email}</div>}
                                                         </div>
-                                                    )}
-                                                    {u.NomeCompleto}
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-3">{u.Login}</td>
                                                 <td className="px-6 py-3 text-xs w-48">
@@ -1089,6 +1249,8 @@ export default function Settings() {
                                                         ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800">Conferente</span>
                                                         : u.TipoUsuario === 'AP'
                                                         ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Apontador</span>
+                                                        : u.TipoUsuario === 'CLI'
+                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Cliente</span>
                                                         : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Usuário</span>
                                                     }
                                                 </td>
@@ -1123,7 +1285,7 @@ export default function Settings() {
                                         ))}
                                         {filteredUsers.length === 0 && (
                                             <tr>
-                                                <td colSpan="7" className="px-6 py-12 text-center text-slate-400">
+                                                <td colSpan="8" className="px-6 py-12 text-center text-slate-400">
                                                     Nenhum usuário encontrado.
                                                 </td>
                                             </tr>
@@ -1227,33 +1389,43 @@ export default function Settings() {
                                         <p className="text-sm text-slate-500">Defina o que cada usuário pode acessar e fazer em cada tela.</p>
                                     </div>
                                 </div>
-                                {permSelectedUser && (
-                                    <button
-                                        onClick={handleSavePermissions}
-                                        disabled={permSaving}
-                                        className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 font-medium transition-colors text-sm shadow-sm"
-                                    >
-                                        <Save className="w-4 h-4" />
-                                        {permSaving ? 'Salvando...' : 'Salvar Permissões'}
-                                    </button>
-                                )}
+                                    {permSelectedUser && (
+                                        <button
+                                            onClick={handleSavePermissions}
+                                            disabled={permSaving}
+                                            className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 font-medium transition-colors text-sm shadow-sm"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                            {permSaving ? 'Salvando...' : (typeof permSelectedUser === 'string' && permSelectedUser.startsWith('PROFILE_') ? 'Salvar para Todos do Perfil' : 'Salvar Permissões')}
+                                        </button>
+                                    )}
                             </div>
 
                             {/* User selector */}
                             <div className="mb-6">
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Selecione o Usuário:</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Selecione o Usuário ou Perfil (Lote):</label>
                                 <select
                                     className="w-full md:w-96 p-3 border border-slate-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                     value={permSelectedUser || ''}
                                     onChange={(e) => handlePermUserChange(e.target.value)}
                                 >
-                                    <option value="">-- Selecione um usuário --</option>
+                                    <option value="">-- Selecione --</option>
+                                    
+                                    <optgroup label="Aplicar a todos de um Perfil (Lote)">
+                                        <option value="PROFILE_U">Todos os Usuários Padrão</option>
+                                        <option value="PROFILE_C">Todos os Conferentes</option>
+                                        <option value="PROFILE_AP">Todos os Apontadores</option>
+                                        <option value="PROFILE_CLI">Todos os Clientes Externos</option>
+                                    </optgroup>
+
+                                    <optgroup label="Usuários Individuais">
                                     {usersList.filter(u => u.TipoUsuario !== 'A').map(u => (
                                         <option key={u.idUsuario} value={u.idUsuario}>{u.NomeCompleto} ({u.Login})</option>
                                     ))}
+                                    </optgroup>
                                     <optgroup label="Administradores (acesso total)">
                                         {usersList.filter(u => u.TipoUsuario === 'A').map(u => (
-                                            <option key={u.idUsuario} value={u.idUsuario} disabled>{u.NomeCompleto} ({u.Login}) — Admin</option>
+                                            <option key={u.idUsuario} value={u.idUsuario}>{u.NomeCompleto} ({u.Login}) — Admin</option>
                                         ))}
                                     </optgroup>
                                 </select>
@@ -1358,7 +1530,7 @@ export default function Settings() {
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Shield className="w-12 h-12 text-slate-300 mb-3" />
                                     <p className="text-slate-400 font-medium">Selecione um usuário acima para gerenciar suas permissões.</p>
-                                    <p className="text-xs text-slate-400 mt-1">Administradores (Admin) possuem acesso total automaticamente.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Administradores (Admin) possuem acesso total automaticamente caso não tenham permissões específicas definidas.</p>
                                 </div>
                             )}
                         </div>

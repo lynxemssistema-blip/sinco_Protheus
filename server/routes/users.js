@@ -1,6 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
+const nodemailer = require('nodemailer');
+const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+
+const SMTP_CONFIG = {
+    host: 'smtp.task.com.br',
+    port: 587,
+    secure: false,
+    auth: {
+        user: 'sincometal@metalfisa.com.br',
+        pass: 'Pro1042@sm'
+    },
+    tls: { rejectUnauthorized: false }
+};
 
 (async () => {
     try {
@@ -213,6 +226,10 @@ router.get('/my-permissions', async (req, res) => {
 // GET /permissions/:userId — admin loads permissions for a specific user
 router.get('/permissions/:userId', async (req, res) => {
     try {
+        if (req.params.userId.startsWith('PROFILE_')) {
+            return res.json([]);
+        }
+        
         const [rows] = await mysqlPool.query(
             'SELECT page_id, can_view, can_create, can_edit, can_delete FROM app_user_permissions WHERE user_id = ?',
             [req.params.userId]
@@ -238,21 +255,51 @@ router.put('/permissions/:userId', async (req, res) => {
         const conn = await mysqlPool.getConnection();
         try {
             await conn.beginTransaction();
-            await conn.query('DELETE FROM app_user_permissions WHERE user_id = ?', [userId]);
+            if (userId.startsWith('PROFILE_')) {
+                const profileType = userId.split('_')[1];
+                const [targetUsers] = await conn.query('SELECT idUsuario FROM usuario WHERE TipoUsuario = ? AND aprovado = 1', [profileType]);
+                
+                if (targetUsers.length > 0) {
+                    const userIds = targetUsers.map(u => u.idUsuario);
+                    await conn.query('DELETE FROM app_user_permissions WHERE user_id IN (?)', [userIds]);
 
-            if (permissions.length > 0) {
-                const values = permissions.map(p => [
-                    parseInt(userId),
-                    p.page_id,
-                    p.can_view ? 1 : 0,
-                    p.can_create ? 1 : 0,
-                    p.can_edit ? 1 : 0,
-                    p.can_delete ? 1 : 0
-                ]);
-                await conn.query(
-                    'INSERT INTO app_user_permissions (user_id, page_id, can_view, can_create, can_edit, can_delete) VALUES ?',
-                    [values]
-                );
+                    if (permissions.length > 0) {
+                        const values = [];
+                        for (const u of userIds) {
+                            for (const p of permissions) {
+                                values.push([
+                                    u,
+                                    p.page_id,
+                                    p.can_view ? 1 : 0,
+                                    p.can_create ? 1 : 0,
+                                    p.can_edit ? 1 : 0,
+                                    p.can_delete ? 1 : 0
+                                ]);
+                            }
+                        }
+                        await conn.query(
+                            'INSERT INTO app_user_permissions (user_id, page_id, can_view, can_create, can_edit, can_delete) VALUES ?',
+                            [values]
+                        );
+                    }
+                }
+            } else {
+                await conn.query('DELETE FROM app_user_permissions WHERE user_id = ?', [userId]);
+
+                if (permissions.length > 0) {
+                    const values = permissions.map(p => [
+                        parseInt(userId),
+                        p.page_id,
+                        p.can_view ? 1 : 0,
+                        p.can_create ? 1 : 0,
+                        p.can_edit ? 1 : 0,
+                        p.can_delete ? 1 : 0
+                    ]);
+                    await conn.query(
+                        'INSERT INTO app_user_permissions (user_id, page_id, can_view, can_create, can_edit, can_delete) VALUES ?',
+                        [values]
+                    );
+                }
             }
 
             await conn.commit();
@@ -266,6 +313,116 @@ router.put('/permissions/:userId', async (req, res) => {
     } catch (error) {
         console.error('Erro ao salvar permissões:', error);
         res.status(500).json({ error: 'Erro ao salvar permissões' });
+    }
+});
+
+// ──── Send Credentials Email ───────────────────────────────────────────────────
+
+// POST /send-credentials — sends access credentials via email to selected users
+router.post('/send-credentials', async (req, res) => {
+    try {
+        const { userIds } = req.body;
+
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ error: 'Selecione ao menos um usuário.' });
+        }
+
+        // Fetch users with their passwords (plain text stored in DB)
+        const placeholders = userIds.map(() => '?').join(',');
+        const [users] = await mysqlPool.query(
+            `SELECT idUsuario, NomeCompleto, Login, Senha, email, TipoUsuario, Setor, Funcao 
+             FROM usuario WHERE idUsuario IN (${placeholders})`,
+            userIds
+        );
+
+        if (users.length === 0) {
+            return res.status(404).json({ error: 'Nenhum usuário encontrado.' });
+        }
+
+        const transporter = nodemailer.createTransport(SMTP_CONFIG);
+        const results = { success: [], failed: [] };
+
+        // Determine access URL
+        const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3000';
+
+        for (const user of users) {
+            if (!user.email) {
+                results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: 'Sem e-mail cadastrado' });
+                continue;
+            }
+
+            const tipoLabel = {
+                'A': 'Administrador',
+                'U': 'Usuário',
+                'C': 'Conferente',
+                'AP': 'Apontador',
+                'CLI': 'Cliente'
+            }[user.TipoUsuario] || 'Usuário';
+
+            const emailHtml = `
+                <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Seus Dados de Acesso ao Sistema</h2>
+                <p style="font-size: 15px;">Olá, <b>${user.NomeCompleto}</b>!</p>
+                <p style="font-size: 15px; color: #475569;">Você está recebendo os seus dados de acesso ao <b>Sistema ERP da Metalfisa</b>. Utilize as informações abaixo para efetuar seu login:</p>
+                
+                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
+                    <table style="border-collapse: collapse; width: 100%;">
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário:</b></td>
+                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Login}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>🔑 Senha:</b></td>
+                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Senha}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏷️ Perfil:</b></td>
+                            <td style="padding: 8px 0; font-size: 14px; color: #334155;">${tipoLabel}</td>
+                        </tr>
+                        ${user.Setor ? `
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏢 Setor:</b></td>
+                            <td style="padding: 8px 0; font-size: 14px; color: #334155;">${user.Setor}${user.Funcao ? ` — ${user.Funcao}` : ''}</td>
+                        </tr>
+                        ` : ''}
+                    </table>
+                </div>
+
+                <div style="background: #f8fafc; border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #0ea5e9;">
+                    <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #0369a1;">🌐 Como Acessar</p>
+                    <p style="margin: 0; font-size: 14px; color: #475569;">
+                        Abra o navegador e acesse: <a href="${serverUrl}" style="color: #0284c7; text-decoration: underline; font-weight: bold;">${serverUrl}</a>
+                    </p>
+                </div>
+
+                <div style="background: #fffbeb; border-radius: 8px; padding: 14px 18px; margin-top: 20px; border: 1px solid #fde68a;">
+                    <p style="margin: 0; font-size: 13px; color: #92400e;">
+                        ⚠️ <b>Importante:</b> Estas credenciais são pessoais e intransferíveis. Por segurança, recomendamos que você exclua este e-mail após anotar seus dados ou guarde-o em local seguro.
+                    </p>
+                </div>
+            `;
+
+            try {
+                await transporter.sendMail({
+                    from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                    to: user.email,
+                    subject: '🔐 Seus Dados de Acesso — MetalFisa ERP',
+                    html: getCorporateEmailTemplate(emailHtml)
+                });
+
+                results.success.push({ id: user.idUsuario, nome: user.NomeCompleto, email: user.email });
+            } catch (emailErr) {
+                console.error(`[SMTP] Erro ao enviar credenciais para ${user.email}:`, emailErr.message);
+                results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: emailErr.message });
+            }
+        }
+
+        res.json({
+            message: `Envio concluído: ${results.success.length} enviado(s), ${results.failed.length} falha(s).`,
+            results
+        });
+    } catch (error) {
+        console.error('Erro ao enviar credenciais:', error);
+        res.status(500).json({ error: 'Erro ao enviar credenciais: ' + error.message });
     }
 });
 

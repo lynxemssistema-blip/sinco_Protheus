@@ -44,6 +44,7 @@ const SGQDocuments = React.lazy(() => import('./pages/SGQDocuments'));
 const MapeamentoProcessos = React.lazy(() => import('./pages/sgq/MapeamentoProcessos'));
 const CargosFuncoes = React.lazy(() => import('./pages/sgq/CargosFuncoes'));
 const CurriculosAnalyzer = React.lazy(() => import('./pages/rh/CurriculosAnalyzer'));
+const VagasManager = React.lazy(() => import('./pages/rh/VagasManager'));
 const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const MaterialManagementPage = React.lazy(() => import('./pages/MaterialManagementPage'));
 const WhereUsedPage = React.lazy(() => import('./pages/WhereUsedPage'));
@@ -54,6 +55,7 @@ const ServiceOrderMaterialsPage = React.lazy(() => import('./pages/sinco/Service
 const SINCOActiveDrawing = React.lazy(() => import('./pages/SINCO/SINCOActiveDrawing'));
 const TrackingEvolution = React.lazy(() => import('./pages/production/TrackingEvolution'));
 const SINCOFormularioPrincipal = React.lazy(() => import('./pages/sinco/SINCOFormularioPrincipal'));
+const DashboardFinanceiro = React.lazy(() => import('./pages/financeiro/DashboardFinanceiro'));
 const ProductionEvolution = React.lazy(() => import('./pages/ProductionEvolution'));
 const InternalRequestsPage = React.lazy(() => import('./pages/InternalRequestsPage'));
 const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/SincoApontamentoPorUsuarioPage'));
@@ -72,6 +74,7 @@ const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
 const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
 const FaturamentoPainel = React.lazy(() => import('./pages/FaturamentoPainel'));
 const ControleFaturamento = React.lazy(() => import('./pages/ControleFaturamento'));
+const FluxoCaixa = React.lazy(() => import('./pages/financeiro/FluxoCaixa'));
 const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverview'));
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -233,6 +236,11 @@ function App() {
                                         <Route path="/bom-generator" element={
                                             <Layout>
                                                 <BOMGenerator />
+                                            </Layout>
+                                        } />
+                                        <Route path="/rh/vagas" element={
+                                            <Layout fullWidth={true}>
+                                                <VagasManager />
                                             </Layout>
                                         } />
                                         <Route path="/rh/curriculos" element={
@@ -416,6 +424,20 @@ function App() {
                                         } />
 
                                         {/* Financeiro / Faturamento */}
+                                        <Route path="/financeiro/dashboard" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 flex-col items-center justify-center min-h-screen text-center flex"><div className="h-8 w-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /><div className="mt-4 text-slate-500">Carregando Módulo Financeiro...</div></div>}>
+                                                    <DashboardFinanceiro />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+                                        <Route path="/financeiro/fluxo-caixa" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando fluxo de caixa...</div>}>
+                                                    <FluxoCaixa />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
                                         <Route path="/financeiro/faturamento" element={
                                             <Layout fullWidth={true}>
                                                 <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando painel financeiro...</div>}>

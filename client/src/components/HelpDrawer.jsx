@@ -2,10 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     X, HelpCircle, ChevronRight, ArrowRight, Lightbulb,
-    BookOpen, ExternalLink, List, Zap
+    BookOpen, ExternalLink, List, Zap, Pin, PinOff
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
-import { getHelpByPath, getAllHelpModules } from '../config/helpContent';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_BG = {
@@ -30,14 +29,13 @@ function getCategoryStyle(category) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function HelpDrawer() {
-    const { isOpen, forcedPath, closeHelp } = useHelp();
+    const { isOpen, forcedPath, closeHelp, isPinned, togglePin, allModules, getHelpByPath, loadingHelp } = useHelp();
     const location = useLocation();
     const navigate = useNavigate();
     const drawerRef = useRef(null);
 
     const currentPath = forcedPath || location.pathname;
     const helpData = getHelpByPath(currentPath);
-    const allModules = getAllHelpModules();
 
     // Close on Escape
     useEffect(() => {
@@ -51,12 +49,12 @@ export default function HelpDrawer() {
         const onClickOutside = (e) => {
             if (drawerRef.current && !drawerRef.current.contains(e.target)) closeHelp();
         };
-        if (isOpen) {
+        if (isOpen && !isPinned) {
             // slight delay so the open-click itself doesn't immediately close
             const t = setTimeout(() => document.addEventListener('mousedown', onClickOutside), 100);
             return () => { clearTimeout(t); document.removeEventListener('mousedown', onClickOutside); };
         }
-    }, [isOpen, closeHelp]);
+    }, [isOpen, isPinned, closeHelp]);
 
     const handleNavigate = (path) => {
         navigate(path);
@@ -69,7 +67,7 @@ export default function HelpDrawer() {
         <>
             {/* Backdrop */}
             <div
-                className={`fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[998] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[998] transition-opacity duration-300 ${(isOpen && !isPinned) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 aria-hidden="true"
             />
 
@@ -81,7 +79,6 @@ export default function HelpDrawer() {
                 aria-label="Central de Ajuda"
                 className={`fixed right-0 top-0 h-full w-full max-w-[420px] bg-white shadow-2xl z-[999] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
             >
-                {/* ── Header ── */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-900 text-white flex-shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -94,13 +91,23 @@ export default function HelpDrawer() {
                             </h2>
                         </div>
                     </div>
-                    <button
-                        onClick={closeHelp}
-                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-                        aria-label="Fechar ajuda"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={togglePin}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isPinned ? 'bg-indigo-500/30 text-indigo-200' : 'bg-white/10 hover:bg-white/20'}`}
+                            title={isPinned ? "Desafixar menu" : "Fixar menu lateral"}
+                            aria-label="Fixar ajuda"
+                        >
+                            {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                        </button>
+                        <button
+                            onClick={closeHelp}
+                            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                            aria-label="Fechar ajuda"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* ── Body ── */}
@@ -221,8 +228,8 @@ export default function HelpDrawer() {
                                         const style = getCategoryStyle(mod.category);
                                         return (
                                             <button
-                                                key={mod.path}
-                                                onClick={() => handleNavigate(mod.path)}
+                                                key={mod.route_path}
+                                                onClick={() => handleNavigate(mod.route_path)}
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-100 bg-white hover:border-slate-300 hover:bg-slate-50 transition-all text-left group"
                                             >
                                                 <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${style.bg} ${style.text} flex-shrink-0`}>

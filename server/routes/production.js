@@ -96,12 +96,25 @@ router.get('/analytics/evolution', async (req, res) => {
         const [sectorsData] = await mysqlPool.query(`SELECT DISTINCT Setor FROM usuario WHERE Setor IS NOT NULL AND Setor != '' ORDER BY Setor`);
         const [usersData] = await mysqlPool.query(`SELECT DISTINCT Login FROM usuario ORDER BY Login`);
 
+        const formattedChartData = chartData.map(d => {
+            const dateStr = d.date.toISOString().split('T')[0];
+            return {
+                date: dateStr,
+                total: d.total,
+                details: gridData.filter(g => {
+                    const gDate = g.date instanceof Date ? g.date.toISOString().split('T')[0] : g.date;
+                    return gDate === dateStr;
+                }).map(g => ({
+                    usuario: g.usuario,
+                    setor: g.setor,
+                    qtd: g.qtd,
+                    count: g.count
+                }))
+            };
+        });
+
         res.json({
-            chartData: chartData.map(d => ({
-                date: d.date.toISOString().split('T')[0], // Format YYYY-MM-DD
-                total: d.total
-            })),
-            details: gridData,
+            chartData: formattedChartData,
             sectors: sectorsData.map(s => s.Setor),
             users: usersData.map(u => u.Login)
         });

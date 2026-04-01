@@ -600,7 +600,7 @@ router.get(['/users/excel', '/users/xlsx'], async (req, res) => {
             sheet.addRow({
                 NomeCompleto: u.NomeCompleto,
                 Login: u.Login,
-                TipoUsuario: u.TipoUsuario === 'A' ? 'Administrador' : 'Usuário',
+                TipoUsuario: u.TipoUsuario === 'A' ? 'Administrador' : u.TipoUsuario === 'C' ? 'Conferente' : u.TipoUsuario === 'AP' ? 'Apontador' : u.TipoUsuario === 'CLI' ? 'Cliente Externo' : 'Usuário',
                 Setor: u.Setor || '-',
                 Funcao: u.Funcao || '-',
                 TemPC: u.TemPC === 1 ? 'Sim' : 'Não',

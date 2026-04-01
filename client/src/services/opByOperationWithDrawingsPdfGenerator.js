@@ -29,8 +29,17 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
         mirrorData.itens.forEach(itemGroup => {
             const processComponent = (component, parentCode = 'PRODUTO FINAL') => {
                 if (component.operacoes && Array.isArray(component.operacoes) && component.operacoes.length > 0) {
-                    component.operacoes.forEach(op => {
+                    component.operacoes.forEach((op, index) => {
                         const recurso = op.recurso ? op.recurso.trim().toUpperCase() : 'INDEFINIDO';
+                        
+                        // Calculate Next Operation
+                        let proxOp = 'FINALIZADA';
+                        if (index + 1 < component.operacoes.length) {
+                             const nOp = component.operacoes[index + 1];
+                             const rec = nOp.recurso ? nOp.recurso.trim().toUpperCase() : 'INDEFINIDO';
+                             const desc = nOp.desc_operacao ? nOp.desc_operacao.trim().toUpperCase() : '';
+                             proxOp = desc ? `${rec} - ${desc}` : rec;
+                        }
 
                         if (!operationsMap.has(recurso)) {
                             operationsMap.set(recurso, {
@@ -54,6 +63,7 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                             produtoPai: parentCode,
                             codigo: component.codigo,
                             descricao: component.descricao,
+                            proxOp: proxOp,
                             qtdTotal: rawQtd,
                             um: component.unidade || component.um || 'UN',
                             nivel: isLevel0 ? 'PAI' : component.nivel,
@@ -158,6 +168,7 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                 "OP",
                 "Componente",
                 "Descrição",
+                "Próx. Operação",
                 "Qtd. Req.",
                 "UM"
             ];
@@ -170,6 +181,7 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                 c.op_num,
                 c.codigo,
                 c.descricao,
+                c.proxOp,
                 Number(c.qtdTotal).toFixed(2),
                 c.um
             ]);
@@ -191,15 +203,16 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                     cellPadding: 2
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 15 }, // PV
-                    1: { halign: 'center', cellWidth: 12 }, // Item
-                    2: { halign: 'center', cellWidth: 10 }, // Nível
-                    3: { cellWidth: 35 }, // Prod Pai
-                    4: { halign: 'center', cellWidth: 25 }, // OP
-                    5: { cellWidth: 40 }, // Componente
+                    0: { halign: 'center', cellWidth: 13 }, // PV
+                    1: { halign: 'center', cellWidth: 8 }, // Item
+                    2: { halign: 'center', cellWidth: 8 }, // Nível
+                    3: { cellWidth: 28 }, // Prod Pai
+                    4: { halign: 'center', cellWidth: 20 }, // OP
+                    5: { cellWidth: 30 }, // Componente
                     6: { cellWidth: 'auto' }, // Descricao
-                    7: { halign: 'right', cellWidth: 20 }, // Qtd
-                    8: { halign: 'center', cellWidth: 10 }  // UM
+                    7: { halign: 'center', cellWidth: 45, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
+                    8: { halign: 'right', cellWidth: 14 }, // Qtd
+                    9: { halign: 'center', cellWidth: 8 }  // UM
                 },
                 margin: { top: 53, bottom: 20 },
                 didDrawPage: drawPageHeader
@@ -251,15 +264,23 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                     ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
                     : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
 
+                const sourceData = {
+                    pedido: mirrorData.pedido.pedido,
+                    itemPedido: itemGroup.item_pedido,
+                    op_num: component.op_num || itemGroup.produto_principal?.op_num || '-'
+                };
+
                 if (partsSummaryMap.has(code)) {
                     partsSummaryMap.get(code).qtdTotal += rawQtd;
+                    partsSummaryMap.get(code).sources.push(sourceData);
                 } else {
                     partsSummaryMap.set(code, {
                         codigo: code,
                         descricao: component.descricao || '',
                         um: component.unidade || component.um || 'UN',
                         tipo: component.tipoProduto || component.tipo_produto || component.tipo || '',
-                        qtdTotal: rawQtd
+                        qtdTotal: rawQtd,
+                        sources: [sourceData]
                     });
                 }
             };
@@ -419,8 +440,14 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                     // (fonte e páginas no mesmo contexto = referências válidas)
                     const copiedPages = await finalPdf.copyPages(drawingDoc, drawingDoc.getPageIndices());
 
+                    const uniquePedidos = [...new Set(part.sources.map(s => s.pedido))].join(', ');
+                    const uniqueOps = [...new Set(part.sources.map(s => s.op_num))].join(', ');
+                    const uniqueItens = [...new Set(part.sources.map(s => s.itemPedido))].join(', ');
+
                     const qtyText = Number(part.qtdTotal).toFixed(4).replace(/\.?0+$/, '');
-                    const textData = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | QTD NECESSÁRIA: ${qtyText} ${part.um}`;
+                    
+                    const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                    const textLine2 = `PEDIDO: ${uniquePedidos} | ITEM: ${uniqueItens} | OP: ${uniqueOps} | QTD NECESSÁRIA: ${qtyText} ${part.um}`;
 
                     for (const page of copiedPages) {
                         finalPdf.addPage(page);
@@ -428,10 +455,10 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                         const { width, height } = page.getSize();
                         const minSide = Math.min(width, height);
                         const scale = Math.max(1, minSide / 595);
-                        const rectWidth = 450 * scale;
-                        const rectHeight = 20 * scale;
-                        const fontSize = 6 * scale;
-                        const offsetY = 30 * scale;
+                        const rectWidth = 470 * scale;
+                        const rectHeight = 35 * scale;
+                        const fontSize = 8 * scale;
+                        const offsetY = 45 * scale;
 
                         page.drawRectangle({
                             x: 10 * scale,
@@ -443,9 +470,17 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                             borderWidth: 1 * scale,
                         });
 
-                        page.drawText(textData, {
+                        page.drawText(textLine1, {
                             x: 15 * scale,
-                            y: height - offsetY + (5 * scale),
+                            y: height - offsetY + (19 * scale),
+                            size: fontSize,
+                            font: helveticaFont,
+                            color: rgb(0.8, 0.1, 0.1),
+                        });
+                        
+                        page.drawText(textLine2, {
+                            x: 15 * scale,
+                            y: height - offsetY + (6 * scale),
                             size: fontSize,
                             font: helveticaFont,
                             color: rgb(0.8, 0.1, 0.1),

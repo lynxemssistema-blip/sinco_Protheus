@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
     UploadCloud, FileSpreadsheet, RefreshCw, Layers, Trash2,
-    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, XCircle, FileDown
+    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, XCircle, FileDown, ClipboardList, FileText
 } from 'lucide-react';
 import { api, getFileUrl } from '../../services/api';
 import * as XLSX from 'xlsx';
 import ConfirmModal from '../../components/ConfirmModal';
+import VMIBomModal from './VMIBomModal';
+import VMIOpMirrorModal from './VMIOpMirrorModal';
 
 const fmtDate = (d) => d
     ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -52,6 +54,10 @@ export default function DemandaVMIPage({ isTab = false }) {
     const [groupBy, setGroupBy] = useState('flat'); // 'flat' | 'produto_pai' | 'pedido'
     const [expandedGroups, setExpandedGroups] = useState(new Set());
     const [confirm, setConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+    const [bomModal, setBomModal] = useState(null); // modo único: { codigo_cliente, descricao_cliente, b1_cod, totalQty }
+    const [bomModalMulti, setBomModalMulti] = useState(null); // modo multi: { produtos: [...], titulo }
+    const [openBomDropdown, setOpenBomDropdown] = useState(null); // key do grupo com dropdown aberto
+    const [opMirrorModal, setOpMirrorModal] = useState(null); // { b1cod, label, defaultQty }
 
     const showToast = (msg, type = 'ok') => {
         setToast({ msg, type });
@@ -108,7 +114,15 @@ export default function DemandaVMIPage({ isTab = false }) {
         setFilterText('');
         setGroupBy('flat');
         fetchData(loteId);
+        fetchMappings();
     };
+
+    // Lote atualmente ativo (para passar nome_arquivo e data ao Espelho OP)
+    const loteAtivo = useMemo(() => {
+        if (!lotes.length) return null;
+        if (selectedLote) return lotes.find(l => l.lote_id === selectedLote) || lotes[0];
+        return lotes[0];
+    }, [lotes, selectedLote]);
 
     // ── Upload handlers ───────────────────────────────────────────────────────
     const handleFileChange = (e) => {
@@ -229,7 +243,16 @@ export default function DemandaVMIPage({ isTab = false }) {
     };
 
     // ── Derived data (memoized) ───────────────────────────────────────────────
-    const meses = useMemo(() => [...new Set(data.map(d => d.mes_referencia))], [data]);
+    const MONTH_ORDER = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const meses = useMemo(() => {
+        const unique = [...new Set(data.map(d => d.mes_referencia))];
+        return unique.sort((a, b) => {
+            const ia = MONTH_ORDER.indexOf(a);
+            const ib = MONTH_ORDER.indexOf(b);
+            if (ia !== -1 && ib !== -1) return ia - ib;
+            return a.localeCompare(b);
+        });
+    }, [data]);
 
     // Pivot: one row per (pedido × produto)
     const rows = useMemo(() => {
@@ -246,8 +269,19 @@ export default function DemandaVMIPage({ isTab = false }) {
                     rev_cliente: d.rev_cliente,
                     status_tipo_item: d.status_tipo_item,
                     status_tipo_detalhe: d.status_tipo_detalhe,
+                    b1_cod: d.b1_cod || null,
+                    b1_desc: d.b1_desc || null,
+                    b1_cod_pai: d.b1_cod_pai || null,
                     meses: {}
                 };
+            }
+            // Atualiza b1_cod / b1_cod_pai se ainda não tiver
+            if (!map[key].b1_cod && d.b1_cod) {
+                map[key].b1_cod = d.b1_cod;
+                map[key].b1_desc = d.b1_desc || null;
+            }
+            if (!map[key].b1_cod_pai && d.b1_cod_pai) {
+                map[key].b1_cod_pai = d.b1_cod_pai;
             }
             map[key].meses[d.mes_referencia] = (map[key].meses[d.mes_referencia] || 0) + Number(d.quantidade);
         });
@@ -276,6 +310,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                 ? (r.produto_pai || '—')
                 : r.ordem_compra_cliente;
             if (!map[key]) {
+                // Para produto_pai: busca cód. Protheus do produto pai via mapeamentos
+                // b1_cod_pai vem direto do backend (enriquecido via app_demanda_vmi_map pelo produto_pai)
+                const b1CodPai = (groupBy === 'produto_pai' && key !== '—')
+                    ? (r.b1_cod_pai || null)
+                    : null;
                 map[key] = {
                     key,
                     label: groupBy === 'produto_pai'
@@ -283,18 +322,41 @@ export default function DemandaVMIPage({ isTab = false }) {
                         : r.ordem_compra_cliente,
                     rows: [],
                     totalMeses: {},
-                    totalQtd: 0
+                    totalQtd: 0,
+                    b1CodPai
                 };
             }
             map[key].rows.push(r);
-            meses.forEach(m => {
-                const q = r.meses[m] || 0;
-                map[key].totalMeses[m] = (map[key].totalMeses[m] || 0) + q;
-                map[key].totalQtd += q;
-            });
+            // Propaga b1_cod_pai caso a primeira row não tivesse ainda
+            if (groupBy === 'produto_pai' && !map[key].b1CodPai && r.b1_cod_pai) {
+                map[key].b1CodPai = r.b1_cod_pai;
+            }
+            if (groupBy === 'produto_pai') {
+                // Lógica de mínimo: o componente com menor quantidade limita o produto pai
+                meses.forEach(m => {
+                    const q = r.meses[m] || 0;
+                    if (q > 0) {
+                        map[key].totalMeses[m] = map[key].totalMeses[m] === undefined
+                            ? q
+                            : Math.min(map[key].totalMeses[m], q);
+                    }
+                });
+            } else {
+                meses.forEach(m => {
+                    const q = r.meses[m] || 0;
+                    map[key].totalMeses[m] = (map[key].totalMeses[m] || 0) + q;
+                    map[key].totalQtd += q;
+                });
+            }
         });
+        // Para produto_pai: finaliza totalQtd a partir dos mínimos calculados
+        if (groupBy === 'produto_pai') {
+            Object.values(map).forEach(g => {
+                g.totalQtd = meses.reduce((s, m) => s + (g.totalMeses[m] || 0), 0);
+            });
+        }
         return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-    }, [filteredRows, groupBy, meses]);
+    }, [filteredRows, groupBy, meses, mapeamentos]);
 
     // Auto-expand all when grouping changes
     useEffect(() => {
@@ -441,6 +503,9 @@ export default function DemandaVMIPage({ isTab = false }) {
     // ── Table row renderers ───────────────────────────────────────────────────
     const renderFlatRows = () => filteredRows.map((r, i) => {
         let rowTotal = 0;
+        // Pre-compute rowTotal for BOM modal
+        meses.forEach(m => { rowTotal += r.meses[m] || 0; });
+        let rowTotalCell = 0;
         return (
             <tr key={i} className="hover:bg-indigo-50/30 transition-colors">
                 <td className="px-4 py-2 font-mono text-xs font-bold text-slate-700">{r.ordem_compra_cliente}</td>
@@ -449,16 +514,36 @@ export default function DemandaVMIPage({ isTab = false }) {
                 <td className="px-4 py-2 text-center">
                     <TypeBadge type={r.status_tipo_item} detail={r.status_tipo_detalhe} />
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.b1_cod || '-'}</td>
+                <td className="px-4 py-2 font-mono text-xs text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                        <span>{r.b1_cod || '-'}</span>
+                        {r.b1_cod && (
+                            <button
+                                title="Gerar Lista de Material"
+                                onClick={() => setBomModal({ codigo_cliente: r.codigo_produto_cliente, descricao_cliente: r.descricao_produto_cliente, b1_cod: r.b1_cod, totalQty: rowTotal })}
+                                className="p-0.5 rounded hover:bg-indigo-100 text-indigo-400 hover:text-indigo-600 transition-colors">
+                                <ClipboardList className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        {r.b1_cod && (
+                            <button
+                                title="Espelho do Produto (PDF)"
+                                onClick={() => setOpMirrorModal({ b1cod: r.b1_cod, label: r.descricao_produto_cliente, defaultQty: rowTotal })}
+                                className="p-0.5 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors">
+                                <FileText className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                </td>
                 <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[140px]" title={r.descricao_equipamento}>{r.descricao_equipamento}</td>
                 <td className="px-4 py-2 text-[11px] font-bold text-slate-600">{r.rev_cliente || '-'}</td>
                 <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]" title={r.produto_pai}>{r.produto_pai}</td>
                 {meses.map(m => {
                     const v = r.meses[m] || 0;
-                    rowTotal += v;
+                    rowTotalCell += v;
                     return <td key={m} className={`px-4 py-2 text-center border-r border-slate-50 font-mono text-xs ${v > 0 ? 'font-bold text-slate-800' : 'text-slate-300'}`}>{v > 0 ? fmtNum(v) : '-'}</td>;
                 })}
-                <td className="px-4 py-2 text-center font-bold text-indigo-700 text-xs font-mono bg-slate-50">{fmtNum(rowTotal)}</td>
+                <td className="px-4 py-2 text-center font-bold text-indigo-700 text-xs font-mono bg-slate-50">{fmtNum(rowTotalCell)}</td>
             </tr>
         );
     });
@@ -467,9 +552,9 @@ export default function DemandaVMIPage({ isTab = false }) {
         const isOpen = expandedGroups.has(g.key);
         const groupTotal = meses.reduce((s, m) => s + (g.totalMeses[m] || 0), 0);
         return (
-            <>
+            <Fragment key={g.key}>
                 {/* Group header */}
-                <tr key={`h-${g.key}`}
+                <tr
                     className="bg-slate-100 hover:bg-slate-200/80 cursor-pointer select-none"
                     onClick={() => toggleGroup(g.key)}>
                     <td className="px-3 py-2.5" colSpan={2}>
@@ -483,10 +568,74 @@ export default function DemandaVMIPage({ isTab = false }) {
                             )}
                         </div>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={4}>
-                        <span className="bg-slate-200 text-slate-600 font-semibold px-2 py-0.5 rounded-full">
-                            {g.rows.length} {g.rows.length === 1 ? 'item' : 'itens'}
-                        </span>
+                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={6}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="bg-slate-200 text-slate-600 font-semibold px-2 py-0.5 rounded-full">
+                                {g.rows.length} {g.rows.length === 1 ? 'item' : 'itens'}
+                            </span>
+                            {groupBy === 'produto_pai' && g.b1CodPai && (
+                                <span className="bg-indigo-100 text-indigo-700 border border-indigo-200 font-mono font-bold px-2 py-0.5 rounded text-[11px]"
+                                      title="Cód. Protheus do produto pai">
+                                    {g.b1CodPai}
+                                </span>
+                            )}
+                            {groupBy === 'produto_pai' && (
+                                <span className="text-[10px] text-slate-400 italic" title="Qtd. = mínimo entre componentes (peça limitante)">
+                                    ⚡ qtd. limitante
+                                </span>
+                            )}
+                            {groupBy === 'produto_pai' && (
+                                <div className="relative" onClick={e => e.stopPropagation()}>
+                                    <button
+                                        onClick={() => setOpenBomDropdown(openBomDropdown === g.key ? null : g.key)}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-semibold hover:bg-indigo-700 transition">
+                                        <ClipboardList className="w-3 h-3" />
+                                        Lista de Material
+                                        <ChevronDown className="w-3 h-3" />
+                                    </button>
+                                    {openBomDropdown === g.key && (
+                                        <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-lg shadow-lg min-w-[220px] overflow-hidden">
+                                            {g.b1CodPai && (
+                                                <button
+                                                    onClick={() => { setOpenBomDropdown(null); setBomModal({ codigo_cliente: g.key, descricao_cliente: g.label, b1_cod: g.b1CodPai, totalQty: groupTotal }); }}
+                                                    className="w-full text-left px-4 py-2.5 text-xs hover:bg-indigo-50 flex flex-col gap-0.5">
+                                                    <span className="font-semibold text-slate-800">BOM do Produto Pai</span>
+                                                    <span className="text-slate-400">Estrutura de <span className="font-mono text-indigo-600">{g.b1CodPai}</span> × {fmtNum(groupTotal)}</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => {
+                                                    setOpenBomDropdown(null);
+                                                    // Consolida todos os componentes do grupo com suas qtds individuais
+                                                    const produtos = g.rows
+                                                        .filter(r => r.b1_cod)
+                                                        .map(r => ({
+                                                            b1_cod: r.b1_cod,
+                                                            label: r.descricao_produto_cliente || r.codigo_produto_cliente,
+                                                            qty: meses.reduce((s, m) => s + (r.meses[m] || 0), 0)
+                                                        }));
+                                                    setBomModalMulti({ produtos, titulo: `BOM Consolidado — ${g.label || g.key}` });
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-xs hover:bg-indigo-50 flex flex-col gap-0.5 border-t border-slate-100">
+                                                <span className="font-semibold text-slate-800">BOM Consolidado dos Componentes</span>
+                                                <span className="text-slate-400">Explode e consolida {g.rows.filter(r => r.b1_cod).length} componentes mapeados</span>
+                                            </button>
+                                            {g.b1CodPai && (
+                                                <button
+                                                    onClick={() => {
+                                                        setOpenBomDropdown(null);
+                                                        setOpMirrorModal({ b1cod: g.b1CodPai, label: g.label || g.key, defaultQty: groupTotal });
+                                                    }}
+                                                    className="w-full text-left px-4 py-2.5 text-xs hover:bg-purple-50 flex flex-col gap-0.5 border-t border-slate-100">
+                                                    <span className="font-semibold text-slate-800">Espelho do Produto</span>
+                                                    <span className="text-slate-400">Roteiro de produção de <span className="font-mono text-purple-600">{g.b1CodPai}</span></span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </td>
                     {meses.map(m => (
                         <td key={m} className="px-4 py-2.5 text-center font-mono text-xs font-bold text-slate-700 border-r border-slate-200">
@@ -509,7 +658,28 @@ export default function DemandaVMIPage({ isTab = false }) {
                             <td className="px-4 py-2 text-center">
                                 <TypeBadge type={r.status_tipo_item} detail={r.status_tipo_detalhe} />
                             </td>
-                            <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.b1_cod || '-'}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-slate-600">
+                                <div className="flex items-center gap-1.5">
+                                    <span>{r.b1_cod || '-'}</span>
+                                    {r.b1_cod && (() => {
+                                        const qty = meses.reduce((s, m) => s + (r.meses[m] || 0), 0);
+                                        return (<>
+                                            <button
+                                                title="Gerar Lista de Material"
+                                                onClick={() => setBomModal({ codigo_cliente: r.codigo_produto_cliente, descricao_cliente: r.descricao_produto_cliente, b1_cod: r.b1_cod, totalQty: qty })}
+                                                className="p-0.5 rounded hover:bg-indigo-100 text-indigo-400 hover:text-indigo-600 transition-colors">
+                                                <ClipboardList className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                title="Espelho do Produto (PDF)"
+                                                onClick={() => setOpMirrorModal({ b1cod: r.b1_cod, label: r.descricao_produto_cliente, defaultQty: qty })}
+                                                className="p-0.5 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors">
+                                                <FileText className="w-3.5 h-3.5" />
+                                            </button>
+                                        </>);
+                                    })()}
+                                </div>
+                            </td>
                             <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[140px]" title={r.descricao_equipamento}>{r.descricao_equipamento}</td>
                             <td className="px-4 py-2 text-[11px] font-bold text-slate-600">{r.rev_cliente || '-'}</td>
                             <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]">
@@ -524,7 +694,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                         </tr>
                     );
                 })}
-            </>
+            </Fragment>
         );
     });
 
@@ -817,6 +987,33 @@ export default function DemandaVMIPage({ isTab = false }) {
                 title={confirm.title}
                 message={confirm.message}
             />
+
+            {bomModal && (
+                <VMIBomModal
+                    produto={bomModal}
+                    onClose={() => setBomModal(null)}
+                />
+            )}
+            {bomModalMulti && (
+                <VMIBomModal
+                    produtos={bomModalMulti.produtos}
+                    titulo={bomModalMulti.titulo}
+                    onClose={() => setBomModalMulti(null)}
+                />
+            )}
+            {openBomDropdown && (
+                <div className="fixed inset-0 z-20" onClick={() => setOpenBomDropdown(null)} />
+            )}
+            {opMirrorModal && (
+                <VMIOpMirrorModal
+                    b1cod={opMirrorModal.b1cod}
+                    label={opMirrorModal.label}
+                    defaultQty={opMirrorModal.defaultQty}
+                    sheetName={loteAtivo?.nome_arquivo || ''}
+                    sheetDate={loteAtivo ? fmtDate(loteAtivo.created_at) : ''}
+                    onClose={() => setOpMirrorModal(null)}
+                />
+            )}
         </div>
     );
 }

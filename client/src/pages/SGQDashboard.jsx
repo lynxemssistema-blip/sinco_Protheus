@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, AlertTriangle, Search, Wrench, GraduationCap, BarChart3, ChevronRight, Building2 } from 'lucide-react';
+import { FileText, AlertTriangle, Search, Wrench, GraduationCap, BarChart3, ChevronRight, Building2, Users } from 'lucide-react';
 
 const SGQDashboard = () => {
     const navigate = useNavigate();
@@ -18,6 +18,20 @@ const SGQDashboard = () => {
                 'Ficha de Processo',
                 'Cliente Interno/Externo',
                 'Organograma do Setor'
+            ]
+        },
+        {
+            id: 'cargos_funcoes',
+            title: 'Cargos e Funções',
+            description: 'Gestão de estrutura de cargos e atividades',
+            icon: Users,
+            color: 'blue',
+            path: '/sgq/cargos-funcoes',
+            submodules: [
+                'Catálogo de Cargos',
+                'Responsabilidades',
+                'CBO',
+                'Impressão (PDF)'
             ]
         },
         {

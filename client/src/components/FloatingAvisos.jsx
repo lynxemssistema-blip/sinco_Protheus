@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageSquare, CheckCircle, Reply } from 'lucide-react';
-import api, { getBaseUrl } from '../services/api';
-import { io } from 'socket.io-client';
+import api from '../services/api';
 import { useLocation } from 'react-router-dom';
 
 const FloatingAvisos = () => {
@@ -31,39 +30,34 @@ const FloatingAvisos = () => {
     };
 
     useEffect(() => {
+        if (!signed || !user?.id) return;
+
         // Busca imediata ao carregar a página
         fetchAvisos();
 
-        // Mantém o Polling leve a cada 30s como segurança/backup
+        // Polling leve a cada 30s como fallback
         const intervalId = setInterval(fetchAvisos, 30000);
 
-        // ==== TEMPO REAL (SOCKET.IO) ====
-        if (signed && user?.id) {
-            const socketUrl = getBaseUrl();
-
-            console.log('🔌 [DEBUG] FloatingAvisos Socket:', socketUrl);
-            const socket = io(socketUrl);
+        // ==== TEMPO REAL (SOCKET.IO) - lazy import para evitar Illegal constructor ====
+        let socket = null;
+        import('socket.io-client').then(({ io }) => {
+            socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
 
             socket.on('connect', () => {
                 socket.emit('join_user', user.id);
             });
 
             socket.on('novo_aviso', (novoData) => {
-                // Se estiver na página de avisos, não adiciona ao pop-up flutuante
-                // pois o histórico já lida com isso.
                 if (window.location.pathname === '/avisos') return;
-
                 setAvisos(prev => [...prev, novoData]);
             });
+        }).catch(err => console.error('Socket.io load error:', err));
 
-            return () => {
-                clearInterval(intervalId);
-                socket.disconnect();
-            };
-        }
-
-        return () => clearInterval(intervalId);
-    }, [user, signed]);
+        return () => {
+            clearInterval(intervalId);
+            if (socket) socket.disconnect();
+        };
+    }, [user?.id, signed]);
 
     // Limpa os avisos flutuantes se o usuário entrar na página de histórico/chat
     useEffect(() => {
@@ -93,16 +87,14 @@ const FloatingAvisos = () => {
             const token = localStorage.getItem('@metalfisa:token');
             await api.post('/avisos', {
                 idRemetente: user.id,
-                idDestinatario: aviso.idRemetente, // Responde para quem enviou
+                idDestinatario: aviso.idRemetente,
                 mensagem: replyText,
                 idRespostaDe: aviso.idAviso
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Opcional: já marcar o atual como concluído ao responder?
             await handleConcluir(aviso.idAviso);
-
             setReplying(false);
             setReplyText('');
         } catch (error) {

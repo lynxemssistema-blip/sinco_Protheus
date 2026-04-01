@@ -34,10 +34,8 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.Authorization = `Bearer ${storedToken}`;
             const parsed = JSON.parse(storedUser);
             setUser(parsed);
-            // Load permissions for non-admin users
-            if (parsed.tipo !== 'A') {
-                loadPermissions();
-            }
+            // Load permissions for all users to check for specific overrides
+            loadPermissions();
         }
 
         setLoading(false);
@@ -54,10 +52,8 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.Authorization = `Bearer ${token}`;
             setUser(user);
 
-            // Load permissions for non-admin users
-            if (user.tipo !== 'A') {
-                loadPermissions();
-            }
+            // Load permissions for all users to check for specific overrides
+            loadPermissions();
 
             return { success: true };
         } catch (error) {
@@ -78,10 +74,14 @@ export const AuthProvider = ({ children }) => {
     };
 
     // hasPermission(pageId, action) — action: 'view' | 'create' | 'edit' | 'delete'
-    // Admin users ALWAYS return true
+    // Admin users ALWAYS return true UNLESS they have specific permissions configured
     const hasPermission = useCallback((pageId, action = 'view') => {
         if (!user) return false;
-        if (user.tipo === 'A') return true; // Admin bypass
+        
+        // Admin bypass logic: grant full access if no custom permissions differ from the default
+        if (user.tipo === 'A' && Object.keys(permissions).length === 0) {
+            return true;
+        }
 
         const perm = permissions[pageId];
         if (!perm) return false; // No entry = no access

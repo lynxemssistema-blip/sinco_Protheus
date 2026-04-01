@@ -1,0 +1,632 @@
+[
+  {
+    "denominacao": "Acabamentista I",
+    "codigo_interno": "R5",
+    "cbo": "8214-40",
+    "atividades": []
+  },
+  {
+    "denominacao": "Acabamentista II",
+    "codigo_interno": "R5",
+    "cbo": "8214-40",
+    "atividades": []
+  },
+  {
+    "denominacao": "Acabamentista III",
+    "codigo_interno": "R5",
+    "cbo": "8214-40",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de  Barramento I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Caldeiraria  I",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Corte e Dobra I",
+    "codigo_interno": "R5",
+    "cbo": "7245-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Corte e Dobra II",
+    "codigo_interno": "R5",
+    "cbo": "7245-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Corte e Dobra III",
+    "codigo_interno": "R5",
+    "cbo": "7245-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Montagem Mecanica I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Pintura  I",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Pintura  II",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Solda I",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Ajudante de Solda II",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Almoxarife I",
+    "codigo_interno": "R5",
+    "cbo": "4141-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Almoxarife II",
+    "codigo_interno": "R5",
+    "cbo": "4141-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Almoxarife III",
+    "codigo_interno": "R5",
+    "cbo": "4141-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista  Administrativo I",
+    "codigo_interno": "R4",
+    "cbo": "4110-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista  Administrativo II",
+    "codigo_interno": "R4",
+    "cbo": "4110-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista da Qualidade I",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista da Qualidade II",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista da Qualidade III",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de PCP I",
+    "codigo_interno": "R5",
+    "cbo": "252705",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de PCP II",
+    "codigo_interno": "R5",
+    "cbo": "252705",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de Planejamento I",
+    "codigo_interno": "R5",
+    "cbo": "1115-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de Planejamento III",
+    "codigo_interno": "R5",
+    "cbo": "1115-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de Planejamento IV",
+    "codigo_interno": "R5",
+    "cbo": "1115-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista de Sistema Eletricos I",
+    "codigo_interno": "R2",
+    "cbo": "2143-20",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista Fiscal I",
+    "codigo_interno": "R5",
+    "cbo": "3511-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Analista Fiscal II",
+    "codigo_interno": "R5",
+    "cbo": "3511-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Aprendiz de Assistente Administrativo",
+    "codigo_interno": "R4",
+    "cbo": "4110-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Aprendiz Instalador e Reparador de Redes de Computadores",
+    "codigo_interno": "R5",
+    "cbo": "2123-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Assessor de proposta III",
+    "codigo_interno": "R2-0503",
+    "cbo": "1423-30",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar Administrativo I Financeiro",
+    "codigo_interno": "R4",
+    "cbo": "4110-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar Administrativo",
+    "codigo_interno": "R4",
+    "cbo": "4110-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar da Qualidade I",
+    "codigo_interno": "R2",
+    "cbo": "4110-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar da Qualidade II",
+    "codigo_interno": "R2",
+    "cbo": "4110-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar de Almoxarifado I",
+    "codigo_interno": "R5",
+    "cbo": "4141-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar de Corte e Dobra II",
+    "codigo_interno": "R5",
+    "cbo": "7245-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar de Corte e Dobra III",
+    "codigo_interno": "R5",
+    "cbo": "7245-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar de limpeza",
+    "codigo_interno": "R4",
+    "cbo": "5143-20",
+    "atividades": []
+  },
+  {
+    "denominacao": "Auxiliar de Solda I",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Barramentista I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Caldeireiro I",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Caldeireiro II",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Caldeireiro IV",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Caldeireiro Montador  I",
+    "codigo_interno": "R5",
+    "cbo": "72444-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Desenhista Projetista Mecanico I",
+    "codigo_interno": "R5",
+    "cbo": "3187-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Desenhista Projetista Mecanico II",
+    "codigo_interno": "R5",
+    "cbo": "3187-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Desenhista Projetista Mecanico III",
+    "codigo_interno": "R5",
+    "cbo": "3187-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Diretor Comercial e Administrativo",
+    "codigo_interno": "R5",
+    "cbo": "1231-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Diretor de Engenharia",
+    "codigo_interno": "R5",
+    "cbo": "214405",
+    "atividades": []
+  },
+  {
+    "denominacao": "Diretor Industrial",
+    "codigo_interno": "R5",
+    "cbo": "1210-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Eletricista de Manutenção I",
+    "codigo_interno": "R5",
+    "cbo": "951105",
+    "atividades": []
+  },
+  {
+    "denominacao": "Estagiario -Comercial",
+    "codigo_interno": "R5",
+    "cbo": "2032-20",
+    "atividades": []
+  },
+  {
+    "denominacao": "Estagiario Administrativo",
+    "codigo_interno": "R4",
+    "cbo": "4110-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Estagiario Financeiro",
+    "codigo_interno": "R5",
+    "cbo": "1421-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Galvanizador I",
+    "codigo_interno": "R5",
+    "cbo": "7232-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Gerente Administrativo",
+    "codigo_interno": "R5",
+    "cbo": "1421-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Gerente de Projeto I",
+    "codigo_interno": "R5",
+    "cbo": "1427-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Inspetor de Qualidade I",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Inspetor de Qualidade II",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Inspetor de Qualidade III",
+    "codigo_interno": "R5",
+    "cbo": "3912-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider  de Pintura III",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider  de Pintura IV",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Barramento I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de caldeiraria IV",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Corte I",
+    "codigo_interno": "R5",
+    "cbo": "7735-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Montagem I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de montagem III",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Montagem IV",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Solda I",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Lider de Solda IV",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Líder de Corte e Dobra I",
+    "codigo_interno": "R5",
+    "cbo": "7735-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Líder de corte e dobra II",
+    "codigo_interno": "",
+    "cbo": "",
+    "atividades": []
+  },
+  {
+    "denominacao": "Meio Oficial de Caldeiraria I",
+    "codigo_interno": "R5",
+    "cbo": "7244-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Meio Oficial de Pintura  I",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Meio Oficial de Soldador I",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Montador Barramento IV",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Montador I",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Montador II",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Montador III",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Montador IV",
+    "codigo_interno": "R5",
+    "cbo": "7242-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Operador de Empilhadeira I",
+    "codigo_interno": "R5",
+    "cbo": "7822-20",
+    "atividades": []
+  },
+  {
+    "denominacao": "Operador de Maquina CNC I",
+    "codigo_interno": "R5",
+    "cbo": "7735-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Operador de Maquina CNC II",
+    "codigo_interno": "R5",
+    "cbo": "7735-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Operador de Maquina CNC III",
+    "codigo_interno": "R5",
+    "cbo": "7735-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Pintor I",
+    "codigo_interno": "7233-15",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Pintor II",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Pintor III",
+    "codigo_interno": "R5",
+    "cbo": "7233-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Prateador I",
+    "codigo_interno": "R5",
+    "cbo": "7232-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Prateador II",
+    "codigo_interno": "",
+    "cbo": "",
+    "atividades": []
+  },
+  {
+    "denominacao": "Prateador III",
+    "codigo_interno": "R5",
+    "cbo": "7232-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Projetista  de sistema eletrico I",
+    "codigo_interno": "R3",
+    "cbo": "3131-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Recepcionista",
+    "codigo_interno": "R4",
+    "cbo": "4221-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Serviços Gerais",
+    "codigo_interno": "R4",
+    "cbo": "5142-20",
+    "atividades": []
+  },
+  {
+    "denominacao": "SGI-GRH-DC-000 (1) (2)",
+    "codigo_interno": "",
+    "cbo": "",
+    "atividades": []
+  },
+  {
+    "denominacao": "Soldador I",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Soldador II",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Soldador III",
+    "codigo_interno": "R5",
+    "cbo": "7243-15",
+    "atividades": []
+  },
+  {
+    "denominacao": "Supervisor  de Desenvolvimento",
+    "codigo_interno": "R5",
+    "cbo": "9101-30",
+    "atividades": []
+  },
+  {
+    "denominacao": "Supervisor  de Fabrica II",
+    "codigo_interno": "R5",
+    "cbo": "9101-30",
+    "atividades": []
+  },
+  {
+    "denominacao": "Supervisor  de Fabrica III",
+    "codigo_interno": "R5",
+    "cbo": "9101-30",
+    "atividades": []
+  },
+  {
+    "denominacao": "Supervisor da Qualidade I",
+    "codigo_interno": "",
+    "cbo": "2149-10",
+    "atividades": []
+  },
+  {
+    "denominacao": "Supervisor de Montagem I",
+    "codigo_interno": "R5",
+    "cbo": "7301-05",
+    "atividades": []
+  },
+  {
+    "denominacao": "Técnico em Segurança do Trabalho",
+    "codigo_interno": "R5",
+    "cbo": "3516-05",
+    "atividades": []
+  }
+]

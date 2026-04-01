@@ -1,993 +1,1226 @@
-/**
- * helpContent.js
- * Central help database for MetalFisa PCP.
- * Maps route paths to rich help documentation objects.
- */
-
+// ─────────────────────────────────────────────────────────────────────────────
+// helpContent.js  –  Conteúdo de Ajuda Contextual por rota
+// Fonte para o script de migração: server/scripts/migrateHelpToDb.js
+// ─────────────────────────────────────────────────────────────────────────────
 export const HELP_CONTENT = {
-    // =============================================================
-    // COMERCIAL
-    // =============================================================
-    '/': {
-        id: 'pedidos-venda',
-        category: 'Comercial',
-        categoryColor: '#2563eb',
-        title: 'Pedidos de Venda',
-        icon: 'ShoppingCart',
-        description: 'Monitor em tempo real dos pedidos do ERP Protheus. Sincroniza automaticamente a cada intervalo configurado.',
-        steps: [
-            'Use a barra de busca para filtrar por Nº do Pedido (PV), cliente ou produto.',
-            'Pedidos com fundo VERDE estão abertos sem OP. AMARELO indica OP lançada. VERMELHO = faturado.',
-            'Clique na seta (▶) para expandir os itens do pedido com detalhes de produção.',
-            'Use o ícone de "post-it" (📝) para registrar observações na Ata Viva.',
-            'Clique no ícone de Engenharia (⚙️) para visualizar o histórico de liberações de engenharia.',
-            'Filtre por status, período de entrega ou responsável usando os filtros no topo da tela.',
-            'Use o botão "Espelho OP" para exportar uma visão agrupada em PDF ou Excel.',
-        ],
-        tips: [
-            'Atalho: Pressione ESC para limpar filtros rapidamente.',
-            'A visão "Faturados" é ocultada por padrão para focar nos pedidos em aberto.',
-            'O agrupamento de "Código do Cliente" consolida múltiplos códigos na mesma linha automaticamente.',
-        ],
-        links: [
-            { label: 'Ordens de Produção', path: '/producao' },
-            { label: 'Pedidos de Engenharia', path: '/engenharia/pedidos' },
-        ],
-    },
 
-    // =============================================================
-    // PRODUÇÃO / PCP
-    // =============================================================
-    '/producao': {
-        id: 'ordens-producao',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Ordens de Produção (OP)',
-        icon: 'Factory',
-        description: 'Visão consolidada de todas as Ordens de Produção abertas, agrupadas por pedido de venda.',
-        steps: [
-            'Filtre OPs pelo número do pedido, produto ou centro de trabalho.',
-            'OPs com status "Firmadas" ainda podem ser editadas. "Liberadas" estão em produção.',
-            'Clique no ícone de Sequência para visualizar o roteiro de processo da OP.',
-            'Use o filtro de período (data de entrega) para priorizar o planejamento semanal.',
-        ],
-        tips: [
-            'A coluna "Atraso" calcula automaticamente os dias em relação à data de entrega do pedido.',
-            'Para ver OPs agrupadas por Operação, acesse "OPs por Operação" no menu lateral.',
-        ],
-        links: [
-            { label: 'OPs por Operação', path: '/producao/op' },
-            { label: 'Controle de Produção', path: '/controle-producao' },
-            { label: 'Matriz de Produção', path: '/producao-matrix' },
-        ],
-    },
+  // ── Dashboard / Home ────────────────────────────────────────────────────────
+  '/': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Dashboard Principal',
+    icon: 'LayoutDashboard',
+    description: 'Visão geral de todas as operações do sistema MetalFisa PCP. Acompanhe indicadores de produção, pedidos em aberto e alertas em tempo real.',
+    steps: [
+      'Consulte os cards de resumo no topo para ver ordens abertas, itens a faturar e alertas.',
+      'Clique em qualquer card para navegar diretamente ao módulo correspondente.',
+      'Use o menu lateral para acessar qualquer módulo do sistema.',
+      'O painel atualiza automaticamente a cada poucos minutos.',
+    ],
+    tips: [
+      'Fixe a barra de ajuda para ter acesso rápido sem fechar o painel.',
+      'Use os atalhos de teclado para navegar entre módulos rapidamente.',
+    ],
+    links: [
+      { path: '/producao', label: 'Produção' },
+      { path: '/relatorios', label: 'Relatórios' },
+    ],
+  },
 
-    '/producao/op': {
-        id: 'ops-por-operacao',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'OPs por Operação (Espelho)',
-        icon: 'Layers',
-        description: 'Visão do Espelho da OP: agrupa as operações por centro de trabalho, mostrando carga de cada posto.',
-        steps: [
-            'Selecione o período desejado para filtrar as OPs.',
-            'As OPs são agrupadas por Operação (corte, dobra, solda, etc.).',
-            'Clique em "Exportar PDF" para gerar o relatório imprimível do Espelho da OP.',
-            'Clique em "Exportar Excel" para baixar a planilha com todos os dados agrupados.',
-        ],
-        tips: [
-            'O Espelho da OP é o principal documento de chão-de-fábrica para priorização.',
-            'Cada operação exibe a quantidade total planejada e o tempo estimado de processo.',
-        ],
-        links: [
-            { label: 'Ordens de Produção', path: '/producao' },
-            { label: 'Planejamento Gantt', path: '/planejamento-gantt' },
-        ],
-    },
+  // ── Catálogo de Produtos ─────────────────────────────────────────────────────
+  '/produtos': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Catálogo de Produtos',
+    icon: 'Package',
+    description: 'Gerencie todos os produtos e matérias-primas cadastrados. Visualize estruturas, associe documentos e referências de clientes.',
+    steps: [
+      'Use a barra de pesquisa para filtrar por descrição ou código do produto.',
+      'Selecione o tipo (MP, PI, PA) e a unidade de medida nos filtros de topo.',
+      'Clique no ícone de estrutura (camadas) para visualizar a BOM do produto.',
+      'Clique no ícone de documento para abrir os documentos associados.',
+      'Use o botão EXCEL para exportar a lista filtrada para planilha.',
+      'O botão XLSX importa produtos em lote a partir de uma planilha.',
+      'O botão IA auxilia na geração de descrições e classificações automáticas.',
+    ],
+    tips: [
+      'Produtos com a badge laranja no ícone de documento possuem arquivos não visualizados.',
+      'A coluna REF. CLIENTE exibe a referência do cliente associada ao produto — passe o mouse para ver detalhes.',
+      'Use o filtro "Todos (Estoque)" para ver apenas itens com saldo disponível.',
+    ],
+    links: [
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto (BOM)' },
+      { path: '/bom-generator', label: 'Gerador de BOM' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+    ],
+  },
 
-    '/controle-producao': {
-        id: 'controle-producao',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Controle de Produção',
-        icon: 'ClipboardList',
-        description: 'Painel central de acompanhamento de produção com apontamento de horas por OP e operação.',
-        steps: [
-            'Filtre pelo número da OP ou produto para localizar o item desejado.',
-            'Clique no ícone de Apontamento (▶) para registrar início de operação.',
-            'O timer global inicia e permanece visível na tela mesmo ao navegar para outra página.',
-            'Ao finalizar, clique Stop (⏹) e confirme as horas apontadas.',
-            'O sistema impede apontamentos em OPs já finalizadas ou com quantidade excedida.',
-        ],
-        tips: [
-            'O widget flutuante de timer garante que você não perca o apontamento ao trocar de tela.',
-            'Você pode pausar e retomar o timer. O tempo acumulado é preservado.',
-        ],
-        links: [
-            { label: 'Ordens de Produção', path: '/producao' },
-            { label: 'Matriz de Produção', path: '/producao-matrix' },
-        ],
-    },
+  // ── Estrutura do Produto ─────────────────────────────────────────────────────
+  '/estrutura/:codigo': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Estrutura do Produto (BOM)',
+    icon: 'GitBranch',
+    description: 'Visualize e edite a lista de materiais (BOM) de um produto. Navegue pelos níveis da estrutura e acesse os componentes.',
+    steps: [
+      'A árvore exibe todos os componentes e subconjuntos do produto selecionado.',
+      'Clique em uma linha para expandir os filhos do componente.',
+      'Use o botão "+ Adicionar" para incluir um novo componente na estrutura.',
+      'Clique no ícone de edição para alterar quantidade ou operação de um item.',
+      'O botão "Explosão" exibe todos os componentes até o nível mais baixo (folha).',
+      'Exporte a estrutura para Excel pelo botão no canto superior direito.',
+    ],
+    tips: [
+      'Componentes em vermelho indicam que não possuem saldo em estoque.',
+      'Passe o mouse sobre o código do componente para ver a descrição completa.',
+    ],
+    links: [
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+      { path: '/bom-generator', label: 'Gerador de BOM' },
+    ],
+  },
 
-    '/producao-matrix': {
-        id: 'matriz-producao',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Matriz de Produção',
-        icon: 'Grid',
-        description: 'Visão matricial cruzando OPs x Operações para controle simultâneo de múltiplos postos de trabalho.',
-        steps: [
-            'Cada linha representa uma OP; cada coluna, uma operação do roteiro.',
-            'Clique em uma célula para registrar ou consultar o apontamento daquela operação.',
-            'Células em verde = concluído. Azul = em andamento. Cinza = não iniciado.',
-            'Use o filtro de data para ver a carga do dia ou semana.',
-        ],
-        tips: [
-            'A Matriz é ideal para supervisores que precisam visão geral de múltiplas OPs simultâneas.',
-            'Cores de célula são atualizadas em tempo real via WebSocket — sem necessidade de recarregar.',
-        ],
-        links: [
-            { label: 'Controle de Produção', path: '/controle-producao' },
-            { label: 'Evolução do Apontamento', path: '/pcp/evolucao-apontamento' },
-        ],
-    },
+  // ── Gerador de BOM ───────────────────────────────────────────────────────────
+  '/bom-generator': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Gerador de BOM',
+    icon: 'FileSpreadsheet',
+    description: 'Gere listas de materiais (BOM) a partir de modelos ou estruturas existentes. Exporte para Excel ou envie direto ao ERP.',
+    steps: [
+      'Selecione o produto base pelo campo de busca no topo.',
+      'Defina a quantidade desejada e o tipo de explosão (1 nível ou completa).',
+      'Clique em "Gerar BOM" para calcular os materiais necessários.',
+      'Revise a lista gerada e ajuste quantidades se necessário.',
+      'Exporte para Excel ou confirme o envio ao ERP.',
+    ],
+    tips: [
+      'A explosão completa calcula o saldo líquido considerando o estoque atual.',
+    ],
+    links: [
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+    ],
+  },
 
-    '/planejamento-gantt': {
-        id: 'gantt',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Planejamento Gantt',
-        icon: 'Calendar',
-        description: 'Visualização gráfica de OPs em linha do tempo. Arraste e solte para replanejar.',
-        steps: [
-            'Selecione o período e o centro de trabalho para filtrar o gráfico.',
-            'Cada barra representa uma OP. A cor indica o status (aberta, em produção, atrasada).',
-            'Arraste uma barra para reprogramar a data de início da OP.',
-            'Passe o mouse sobre uma barra para ver detalhes do item e prazo de entrega.',
-        ],
-        tips: [
-            'O Gantt integra automaticamente com as OPs do Protheus — sem necessidade de entrada manual.',
-            'Barras vermelhas indicam OPs com data de entrega já ultrapassada.',
-        ],
-        links: [
-            { label: 'Ordens de Produção', path: '/producao' },
-            { label: 'Controle de Produção', path: '/controle-producao' },
-        ],
-    },
+  // ── Produção ─────────────────────────────────────────────────────────────────
+  '/producao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Ordens de Produção',
+    icon: 'Factory',
+    description: 'Gerencie todas as ordens de produção abertas e em andamento. Acompanhe status, datas e apontamentos.',
+    steps: [
+      'Filtre as ordens por status (Abertas, Em andamento, Encerradas) nos filtros de topo.',
+      'Clique no número da OP para ver detalhes e componentes da ordem.',
+      'Use o botão "Apontar" para registrar produção parcial ou total.',
+      'Altere a data de entrega prevista clicando no campo de data.',
+      'Exporte a lista de OPs para Excel pelo ícone no canto superior.',
+    ],
+    tips: [
+      'OPs em vermelho estão atrasadas em relação à data prevista.',
+      'Use o filtro por cliente para visualizar apenas ordens de um determinado cliente.',
+    ],
+    links: [
+      { path: '/producao/op', label: 'Detalhes da OP' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+    ],
+  },
 
-    '/visao-producao': {
-        id: 'analytics-producao',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Visão Analítica de Produção',
-        icon: 'BarChart',
-        description: 'Gráficos e indicadores de desempenho de produção: eficiência, atrasos, carga por CT.',
-        steps: [
-            'Selecione o período desejado (dia, semana, mês).',
-            'Os gráficos são atualizados automaticamente com os dados do banco.',
-            'Clique em uma barra do gráfico para filtrar os dados correspondentes.',
-        ],
-        tips: [
-            'Combine os filtros de período + centro de trabalho para análises mais precisas.',
-        ],
-        links: [
-            { label: 'Evolução do Apontamento', path: '/pcp/evolucao-apontamento' },
-            { label: 'Ordens de Produção', path: '/producao' },
-        ],
-    },
+  // ── OP Detalhes ──────────────────────────────────────────────────────────────
+  '/producao/op': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Detalhes da Ordem de Produção',
+    icon: 'ClipboardList',
+    description: 'Visualize os detalhes completos de uma ordem de produção, incluindo operações, componentes e histórico de apontamentos.',
+    steps: [
+      'Pesquise pelo número da OP no campo de busca.',
+      'Consulte as operações e o status de cada etapa produtiva.',
+      'Verifique os componentes necessários e o saldo disponível.',
+      'Registre apontamentos parciais ou finais diretamente nesta tela.',
+    ],
+    tips: [
+      'O histórico de apontamentos fica disponível na aba "Histórico".',
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+    ],
+  },
 
-    '/pcp/evolucao-apontamento': {
-        id: 'evolucao-apontamento',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Evolução do Apontamento',
-        icon: 'TrendingUp',
-        description: 'Histórico e evolução dos apontamentos por usuário, OP e operação ao longo do tempo.',
-        steps: [
-            'Selecione o intervalo de datas para visualizar o histórico.',
-            'Filtre por usuário para analisar produtividade individual.',
-            'A linha do gráfico mostra a evolução diária de horas apontadas vs. planejadas.',
-        ],
-        tips: [
-            'Ideal para reuniões diárias de PCP para analisar desvios de programação.',
-        ],
-        links: [
-            { label: 'Controle de Produção', path: '/controle-producao' },
-            { label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario' },
-        ],
-    },
+  // ── Pedidos de Engenharia ────────────────────────────────────────────────────
+  '/engenharia/pedidos': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Pedidos de Engenharia',
+    icon: 'Ruler',
+    description: 'Acompanhe os pedidos de desenvolvimento e revisão de engenharia. Controle prazos e entregas de documentação técnica.',
+    steps: [
+      'Visualize todos os pedidos abertos e seu status atual.',
+      'Clique em um pedido para ver os detalhes e responsáveis.',
+      'Atualize o status conforme o avanço do desenvolvimento.',
+      'Anexe documentos e desenhos diretamente ao pedido.',
+    ],
+    tips: [
+      'Pedidos com prazo vencido aparecem destacados em vermelho.',
+    ],
+    links: [
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+    ],
+  },
 
-    '/pcp/apontamento-por-usuario': {
-        id: 'apontamento-usuario',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Apontamento por Usuário',
-        icon: 'User',
-        description: 'Painel de apontamentos filtrados por colaborador.',
-        steps: [
-            'Selecione o usuário/colaborador no filtro superior.',
-            'A lista mostra todas as OPs apontadas no período.',
-            'Cada registro mostra: OP, operação, tempo total e data.',
-        ],
-        links: [
-            { label: 'Evolução do Apontamento', path: '/pcp/evolucao-apontamento' },
-        ],
-    },
+  // ── Romaneios ────────────────────────────────────────────────────────────────
+  '/romaneios': {
+    category: 'Logística',
+    categoryColor: '#ef4444',
+    title: 'Romaneios de Expedição',
+    icon: 'Truck',
+    description: 'Crie e gerencie romaneios de expedição de produtos acabados. Controle o que foi enviado, para qual cliente e quando.',
+    steps: [
+      'Clique em "+ Novo Romaneio" para iniciar uma expedição.',
+      'Selecione o cliente e o endereço de entrega.',
+      'Adicione os itens a expedir, informando quantidade e lote.',
+      'Confirme e imprima o romaneio para acompanhar a carga.',
+      'Após expedição, altere o status para "Enviado".',
+    ],
+    tips: [
+      'Romaneios podem ser exportados em PDF para envio por e-mail ao cliente.',
+    ],
+    links: [
+      { path: '/recebimentos', label: 'Recebimentos' },
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
 
-    '/pcp/apontamento-vertical': {
-        id: 'apontamento-vertical',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Apontamento Vertical (Fila Mestre)',
-        icon: 'List',
-        description: 'Fila vertical contínua para apontamentos massivos e rastreabilidade visual.',
-        steps: [
-            'Filtre pelas OPs, Pedidos, Clientes ou Produtos desejados.',
-            'A lista apresenta em coluna o progresso exato de cada peça.',
-            'Clique em APONTAR para lançar quantidades usando o Autofocus do formulário.',
-            'Visualize o último operador e a data de apontamento abaixo da meta de Planejamento.',
-            'Ícones vermelhos de PDF permitem abrir os desenhos diretamente da engenharia.'
-        ],
-        tips: [
-            'A Fila Vertical possui filtro rigoroso para prevenir tráfego excessivo de rede, use barras de busca.',
-        ],
-        links: [
-            { label: 'Matriz de Produção', path: '/producao-matrix' },
-            { label: 'Controle de Produção', path: '/controle-producao' },
-        ],
-    },
+  // ── Recebimentos ────────────────────────────────────────────────────────────
+  '/recebimentos': {
+    category: 'Materiais',
+    categoryColor: '#10b981',
+    title: 'Recebimentos de Materiais',
+    icon: 'PackageCheck',
+    description: 'Registre e acompanhe o recebimento de materiais e componentes. Faça a conferência física e libere para o estoque.',
+    steps: [
+      'Consulte os pedidos de compra pendentes de recebimento.',
+      'Selecione o pedido e informe as quantidades recebidas.',
+      'Confira os dados da nota fiscal com o que foi pedido.',
+      'Confirme o recebimento para dar entrada no estoque.',
+    ],
+    tips: [
+      'Recebimentos parciais são permitidos — o saldo restante continua em aberto.',
+    ],
+    links: [
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+      { path: '/pedidos-compras-pv', label: 'Pedidos de Compra' },
+    ],
+  },
 
-    // =============================================================
-    // ENGENHARIA
-    // =============================================================
-    '/engenharia/pedidos': {
-        id: 'pedidos-engenharia',
-        category: 'Engenharia',
-        categoryColor: '#7c3aed',
-        title: 'Pedidos de Engenharia',
-        icon: 'Settings',
-        description: 'Controle das liberações de engenharia para os itens dos pedidos de venda.',
-        steps: [
-            'Aqui você controla a data de Liberação Planejada e Realizada de Engenharia para cada item.',
-            'Use o ícone de Engenharia (⚙️) para abrir o modal de controle de datas.',
-            'A coluna "Lib. Engenharia" exibe as duas datas: planejada (cinza) e realizada (verde).',
-            'Use o filtro de status para ver apenas itens "Pendentes", "Liberados" ou "Em Atraso".',
-            'O ícone de Planejamento (📆) abre o modal para definir a data planejada de engenharia.',
-        ],
-        tips: [
-            'Itens em vermelho estão com a data de liberação planejada já ultrapassada.',
-            'O histórico de alterações de datas é auditado automaticamente pelo sistema.',
-            'Você pode exportar a lista de pedidos para Excel clicando no botão "Exportar".',
-        ],
-        links: [
-            { label: 'Pedidos de Venda', path: '/' },
-            { label: 'SINCO: Estrutura de Produto', path: '/engenharia/sinco/estrutura' },
-        ],
-    },
+  // ── Saldo de Materiais ───────────────────────────────────────────────────────
+  '/saldo-materiais': {
+    category: 'Materiais',
+    categoryColor: '#10b981',
+    title: 'Saldo de Materiais',
+    icon: 'BarChart3',
+    description: 'Consulte o saldo de estoque de todos os materiais e componentes. Visualize posição atual, reservas e disponibilidade.',
+    steps: [
+      'Pesquise pelo código ou descrição do material.',
+      'Veja o saldo atual, quantidade reservada e saldo disponível.',
+      'Filtre por tipo de material (MP, PI, PA) para facilitar a análise.',
+      'Exporte o saldo para Excel para análise externa.',
+    ],
+    tips: [
+      'Saldo disponível = Saldo atual − Reservas em OPs abertas.',
+      'Itens com saldo negativo indicam necessidade urgente de compra ou recebimento.',
+    ],
+    links: [
+      { path: '/recebimentos', label: 'Recebimentos' },
+      { path: '/solicitacoes-compras', label: 'Solicitações de Compra' },
+    ],
+  },
 
-    // =============================================================
-    // SINCO
-    // =============================================================
-    '/engenharia/sinco/estrutura': {
-        id: 'sinco-estrutura',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'SINCO: Estrutura de Produto',
-        icon: 'Package',
-        description: 'Árvore hierárquica do produto com BOM, roteiros e materiais de consumo.',
-        steps: [
-            'Pesquise pelo código ou nome do produto para carregar sua estrutura.',
-            'Itens com fundo AZUL são Conjuntos (possuem sub-níveis). Fundo BRANCO = Componente simples.',
-            'Expanda o "+" ao lado de cada conjunto para ver os sub-componentes.',
-            'O ícone de PDF (vermelho) indica que o desenho existe no servidor. Cinza = não encontrado.',
-            'Use o ícone de balão (💬) para ver/criar revisões pendentes de engenharia.',
-            'Acesse "Exportar Estrutura" para gerar um PDF da BOM completa.',
-            'O botão "Ficha Técnica PDF" gera o documento técnico para a Ordem de Fabricação.',
-        ],
-        tips: [
-            'O vínculo de materiais é feito via nome de arquivo (case-insensitive), conectando o .asm aos consumíveis da viewmontapeca.',
-            'Materiais de tinta, eletrodos e chapas são puxados automaticamente da tabela de consumíveis.',
-        ],
-        links: [
-            { label: 'Ordens de Serviço SINCO', path: '/engenharia/sinco/os' },
-            { label: 'Onde é Usado?', path: '/pcp/onde-usado' },
-            { label: 'BOM Generator', path: '/bom-generator' },
-        ],
-    },
+  // ── Solicitações de Compra ───────────────────────────────────────────────────
+  '/solicitacoes-compras': {
+    category: 'Compras',
+    categoryColor: '#f97316',
+    title: 'Solicitações de Compra',
+    icon: 'ShoppingCart',
+    description: 'Crie e gerencie solicitações de compra de materiais. Controle o fluxo de aprovação até a emissão do pedido de compra.',
+    steps: [
+      'Clique em "+ Nova Solicitação" para criar uma SC.',
+      'Informe o material, quantidade e justificativa.',
+      'Submeta para aprovação do responsável.',
+      'Acompanhe o status até a conversão em Pedido de Compra.',
+    ],
+    tips: [
+      'Solicitações aprovadas são automaticamente vinculadas ao pedido de compra.',
+    ],
+    links: [
+      { path: '/pedidos-compras-pv', label: 'Pedidos de Compra' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+    ],
+  },
 
-    '/engenharia/sinco/os': {
-        id: 'sinco-os',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'Ordens de Serviço (SINCO)',
-        icon: 'ClipboardList',
-        description: 'Gestão das OS do SINCO: abertura, apontamento e finalização.',
-        steps: [
-            'Filtre as OS por status (abertas, em andamento, concluídas).',
-            'Clique em uma OS para ver seus itens e roteiro de fabricação.',
-            'Use "Apontamento" para registrar o progresso de produção na OS.',
-            'O status é atualizado automaticamente conforme os apontamentos.',
-        ],
-        links: [
-            { label: 'Apontamento SINCO', path: '/engenharia/sinco/apontamento' },
-            { label: 'Materiais da OS', path: '/engenharia/sinco/materiais' },
-        ],
-    },
+  // ── Pedidos de Compra ────────────────────────────────────────────────────────
+  '/pedidos-compras-pv': {
+    category: 'Compras',
+    categoryColor: '#f97316',
+    title: 'Pedidos de Compra',
+    icon: 'FileText',
+    description: 'Gerencie pedidos de compra emitidos para fornecedores. Acompanhe status de entrega e confirme recebimentos.',
+    steps: [
+      'Pesquise pedidos por número, fornecedor ou material.',
+      'Clique no pedido para ver todos os itens e condições.',
+      'Atualize o status conforme recebimento parcial ou total.',
+      'Emita o PDF do pedido para enviar ao fornecedor.',
+    ],
+    tips: [
+      'Pedidos vencidos são destacados em vermelho — entre em contato com o fornecedor.',
+    ],
+    links: [
+      { path: '/solicitacoes-compras', label: 'Solicitações de Compra' },
+      { path: '/recebimentos', label: 'Recebimentos' },
+      { path: '/fluxo-compras-nf', label: 'Fluxo Compras / NF' },
+    ],
+  },
 
-    '/engenharia/sinco/apontamento': {
-        id: 'sinco-apontamento',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'Apontamento SINCO (Lista)',
-        icon: 'CheckSquare',
-        description: 'Registro de produção por item das OS do SINCO em formato de lista.',
-        steps: [
-            'Selecione a OS para ver os itens disponíveis para apontamento.',
-            'Informe a quantidade produzida e confirme o apontamento.',
-            'Apontamentos parciais são permitidos; o sistema acumula o total.',
-        ],
-        links: [
-            { label: 'Matriz de Apontamento SINCO', path: '/engenharia/sinco/apontamento-matrix' },
-            { label: 'Ordens de Serviço', path: '/engenharia/sinco/os' },
-        ],
-    },
+  // ── Fluxo Compras / NF ───────────────────────────────────────────────────────
+  '/fluxo-compras-nf': {
+    category: 'Compras',
+    categoryColor: '#f97316',
+    title: 'Fluxo Compras / Nota Fiscal',
+    icon: 'Receipt',
+    description: 'Visualize o fluxo completo de compras desde a solicitação até a entrada da nota fiscal e recebimento físico.',
+    steps: [
+      'Acompanhe o status de cada etapa: SC → PC → NF → Recebimento.',
+      'Filtre por período para análise mensal.',
+      'Clique em qualquer etapa para abrir os detalhes.',
+    ],
+    tips: [
+      'Use este módulo para identificar gargalos no processo de compras.',
+    ],
+    links: [
+      { path: '/pedidos-compras-pv', label: 'Pedidos de Compra' },
+      { path: '/recebimentos', label: 'Recebimentos' },
+    ],
+  },
 
-    '/engenharia/sinco/apontamento-matrix': {
-        id: 'sinco-matrix',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'Matriz de Apontamento SINCO',
-        icon: 'Grid',
-        description: 'Visão matricial para apontamento simultâneo de múltiplas OS do SINCO.',
-        steps: [
-            'Cada linha = uma OS; cada coluna = uma operação ou item.',
-            'Clique na célula para registrar o apontamento daquele item/operação.',
-            'Filtre por período ou usuário para personalizar a visualização.',
-        ],
-        links: [
-            { label: 'Apontamento por Lista', path: '/engenharia/sinco/apontamento' },
-            { label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario' },
-        ],
-    },
+  // ── Suprimentos / Requisições ────────────────────────────────────────────────
+  '/suprimentos/requisicoes': {
+    category: 'Compras',
+    categoryColor: '#f97316',
+    title: 'Requisições de Suprimentos',
+    icon: 'ClipboardCheck',
+    description: 'Gerencie as requisições internas de materiais e suprimentos para o chão de fábrica.',
+    steps: [
+      'Crie requisições informando o material, quantidade e destino.',
+      'Acompanhe o status de atendimento pela equipe de almoxarifado.',
+      'Confirme a entrega física após recebimento.',
+    ],
+    tips: [
+      'Requisições urgentes podem ser marcadas com prioridade alta.',
+    ],
+    links: [
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+      { path: '/solicitacoes-compras', label: 'Solicitações de Compra' },
+    ],
+  },
 
-    '/engenharia/sinco/materiais': {
-        id: 'sinco-materiais',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'Materiais da OS (SINCO)',
-        icon: 'Layers',
-        description: 'Controle de entrega e consumo de materiais vinculados às OS do SINCO.',
-        steps: [
-            'Selecione a OS para ver os materiais necessários.',
-            'Registre a quantidade entregue ao chão de fábrica.',
-            'O sistema compara entregue vs. necessário e exibe a diferença.',
-        ],
-        links: [
-            { label: 'Ordens de Serviço', path: '/engenharia/sinco/os' },
-            { label: 'Gestão de Materiais PCP', path: '/pcp/gestao-materiais' },
-        ],
-    },
+  // ── Controle de Produção ─────────────────────────────────────────────────────
+  '/controle-producao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Controle de Produção',
+    icon: 'Gauge',
+    description: 'Painel centralizado de controle do chão de fábrica. Visualize o avanço das OPs, eficiência e gargalos em tempo real.',
+    steps: [
+      'Selecione o período de análise no filtro de datas.',
+      'Visualize o painel Kanban com as OPs por etapa produtiva.',
+      'Clique em uma OP para ver detalhes e registrar apontamentos.',
+      'Use os gráficos para identificar gargalos e ineficiências.',
+    ],
+    tips: [
+      'O painel é atualizado automaticamente a cada 5 minutos.',
+      'Arraste OPs entre colunas para atualizar o status diretamente.',
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/producao-matrix', label: 'Matriz de Produção' },
+    ],
+  },
 
-    '/sinco/desenho-ativo': {
-        id: 'sinco-desenho-ativo',
-        category: 'SINCO / Engenharia',
-        categoryColor: '#0891b2',
-        title: 'Desenho Ativo (SINCO)',
-        icon: 'FileText',
-        description: 'Consulta ao desenho técnico ativo vinculado a um código de produto SINCO.',
-        steps: [
-            'Pesquise pelo código do produto para localizar o desenho técnico ativo.',
-            'Clique no botão de PDF para abrir o desenho diretamente do servidor de engenharia.',
-            'O ícone vermelho confirma que o arquivo físico existe no servidor mapeado.',
-        ],
-        links: [
-            { label: 'Estrutura SINCO', path: '/engenharia/sinco/estrutura' },
-        ],
-    },
+  // ── Matriz de Produção ───────────────────────────────────────────────────────
+  '/producao-matrix': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Matriz de Produção',
+    icon: 'Grid',
+    description: 'Visualize a carga de trabalho por máquina/centro de custo em formato de matriz. Identifique sobrecarga e capacidade ociosa.',
+    steps: [
+      'Selecione o período desejado.',
+      'Analise as células da matriz: cores indicam % de ocupação.',
+      'Clique numa célula para ver as OPs alocadas naquele centro/período.',
+      'Redistribua cargas arrastando OPs entre períodos, se necessário.',
+    ],
+    tips: [
+      'Células vermelhas indicam sobrecarga — revise o planejamento.',
+    ],
+    links: [
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/planejamento-gantt', label: 'Planejamento Gantt' },
+    ],
+  },
 
-    // =============================================================
-    // MATERIAIS / COMPRAS
-    // =============================================================
-    '/saldo-materiais': {
-        id: 'saldo-materiais',
-        category: 'Materiais',
-        categoryColor: '#059669',
-        title: 'Saldo de Materiais (Estoque)',
-        icon: 'Database',
-        description: 'Consulta de saldos de estoque em tempo real via integração com banco Protheus.',
-        steps: [
-            'Pesquise pelo código ou descrição do material.',
-            'O saldo exibido é reflexo direto do banco de dados do ERP Protheus.',
-            'Use o filtro de armazém para diferenciar estoques por depósito.',
-        ],
-        tips: [
-            'Para saldos negativos (reserva), o sistema exibirá o valor destacado em vermelho.',
-        ],
-        links: [
-            { label: 'Gestão de Materiais PCP', path: '/pcp/gestao-materiais' },
-            { label: 'Onde é Usado?', path: '/pcp/onde-usado' },
-        ],
-    },
+  // ── Apontamento Vertical ─────────────────────────────────────────────────────
+  '/pcp/apontamento-vertical': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Apontamento Vertical',
+    icon: 'ListChecks',
+    description: 'Registre apontamentos de produção de forma ágil por operação e operador. Ideal para uso no chão de fábrica.',
+    steps: [
+      'Selecione a OP e a operação a apontar.',
+      'Informe o operador, quantidade produzida e tempo gasto.',
+      'Confirme o apontamento — ele será refletido imediatamente no controle.',
+      'Para apontamentos de refugo, marque a opção "Refugo" e informe a causa.',
+    ],
+    tips: [
+      'Apontamentos podem ser feitos diretamente pelo tablet no chão de fábrica.',
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/pcp/conferencia', label: 'Conferência de Apontamentos' },
+    ],
+  },
 
-    '/pcp/gestao-materiais': {
-        id: 'gestao-materiais',
-        category: 'Materiais',
-        categoryColor: '#059669',
-        title: 'Gestão de Materiais (PCP)',
-        icon: 'Layers',
-        description: 'Controle de demanda de materiais gerada pelas OPs abertas vs. estoque disponível.',
-        steps: [
-            'A tela cruza as necessidades de materiais das OPs com o saldo atual de estoque.',
-            'Itens em vermelho estão com saldo insuficiente para atender a demanda.',
-            'Use o botão "Exportar" para enviar a necessidade de compras ao setor de Suprimentos.',
-        ],
-        links: [
-            { label: 'Saldo de Materiais', path: '/saldo-materiais' },
-            { label: 'Solicitações de Compras', path: '/solicitacoes-compras' },
-        ],
-    },
+  // ── Conferência de Apontamentos ──────────────────────────────────────────────
+  '/pcp/conferencia': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Conferência de Apontamentos',
+    icon: 'CheckSquare',
+    description: 'Revise e valide os apontamentos de produção registrados. Corrija inconsistências antes do fechamento do período.',
+    steps: [
+      'Filtre os apontamentos por data e operador.',
+      'Revise cada linha e clique em "Aprovar" ou "Rejeitar".',
+      'Apontamentos rejeitados retornam para correção pelo operador.',
+      'Exporte o relatório consolidado ao final do período.',
+    ],
+    tips: [
+      'Apontamentos com tempo muito acima da média são destacados para revisão.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/pcp/evolucao-apontamento', label: 'Evolução dos Apontamentos' },
+    ],
+  },
 
-    '/pcp/onde-usado': {
-        id: 'onde-usado',
-        category: 'Materiais',
-        categoryColor: '#059669',
-        title: 'Onde é Usado? (BOM Invertida)',
-        icon: 'Search',
-        description: 'Consulta reversa: informe um componente e veja em quais produtos ele é utilizado.',
-        steps: [
-            'Digite o código do componente (matéria-prima, sub-conjunto) na busca.',
-            'O sistema lista todos os produtos pai que utilizam esse componente.',
-            'Exibe a quantidade e o nível da estrutura onde o componente aparece.',
-        ],
-        links: [
-            { label: 'Estrutura SINCO', path: '/engenharia/sinco/estrutura' },
-            { label: 'BOM Generator', path: '/bom-generator' },
-        ],
-    },
+  // ── Evolução de Apontamentos ─────────────────────────────────────────────────
+  '/pcp/evolucao-apontamento': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Evolução dos Apontamentos',
+    icon: 'TrendingUp',
+    description: 'Gráficos e tabelas de evolução histórica dos apontamentos de produção por período, operador e operação.',
+    steps: [
+      'Selecione o período para análise (semana, mês, trimestre).',
+      'Filtre por operador ou operação para análises específicas.',
+      'Analise os gráficos de tendência e volume de produção.',
+      'Exporte os dados para Excel.',
+    ],
+    tips: [
+      'Compare períodos diferentes usando o filtro de comparação.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/analytics/evolucao', label: 'Analytics' },
+    ],
+  },
 
-    '/solicitacoes-compras': {
-        id: 'solicitacoes-compras',
-        category: 'Compras',
-        categoryColor: '#b45309',
-        title: 'Solicitações de Compras',
-        icon: 'ShoppingBag',
-        description: 'Gestão de solicitações de compra geradas pelo PCP ou por outros departamentos.',
-        steps: [
-            'Filtre as solicitações por status (pendente, aprovada, cancelada).',
-            'Cada solicitação mostra o material, quantidade, urgência e solicitante.',
-            'Aprove ou reprove solicitações diretamente nesta tela.',
-        ],
-        links: [
-            { label: 'Pedidos de Compras (por PV)', path: '/pedidos-compras-pv' },
-            { label: 'Fluxo Compras → NF', path: '/fluxo-compras-nf' },
-        ],
-    },
+  // ── Visão de Produção ────────────────────────────────────────────────────────
+  '/visao-producao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Visão Geral de Produção',
+    icon: 'Eye',
+    description: 'Dashboard executivo de produção com KPIs, OEE e indicadores de desempenho do chão de fábrica.',
+    steps: [
+      'Visualize os KPIs principais: eficiência, disponibilidade e qualidade.',
+      'Clique em qualquer indicador para ver o detalhamento.',
+      'Selecione o período de análise no filtro superior.',
+    ],
+    tips: [
+      'Configure metas para cada KPI nas configurações do módulo.',
+    ],
+    links: [
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/analytics/evolucao', label: 'Analytics' },
+    ],
+  },
 
-    '/pedidos-compras-pv': {
-        id: 'pedidos-compras-pv',
-        category: 'Compras',
-        categoryColor: '#b45309',
-        title: 'Pedidos de Compras (por PV)',
-        icon: 'FileText',
-        description: 'Rastreabilidade de pedidos de compra vinculados a Pedidos de Venda.',
-        steps: [
-            'Associa cada pedido de compra ao PV que gerou a necessidade.',
-            'Filtre por PV ou Fornecedor para localizar o pedido de compra.',
-            'O status de entrega do fornecedor é atualizado via integração.',
-        ],
-        links: [
-            { label: 'Solicitações de Compras', path: '/solicitacoes-compras' },
-            { label: 'Fluxo Compras → NF', path: '/fluxo-compras-nf' },
-        ],
-    },
+  // ── Analytics ────────────────────────────────────────────────────────────────
+  '/analytics/evolucao': {
+    category: 'Analytics',
+    categoryColor: '#0ea5e9',
+    title: 'Analytics – Evolução',
+    icon: 'LineChart',
+    description: 'Análises avançadas e gráficos de evolução de produção, compras, estoque e faturamento.',
+    steps: [
+      'Selecione o módulo de análise desejado (Produção, Compras, Estoque).',
+      'Defina o período e a granularidade (diário, semanal, mensal).',
+      'Use os filtros para segmentar por produto, cliente ou centro de custo.',
+      'Exporte gráficos em PNG ou dados em Excel.',
+    ],
+    tips: [
+      'Combine múltiplas séries para análise comparativa.',
+    ],
+    links: [
+      { path: '/visao-producao', label: 'Visão de Produção' },
+      { path: '/relatorios', label: 'Relatórios' },
+    ],
+  },
 
-    '/fluxo-compras-nf': {
-        id: 'fluxo-compras-nf',
-        category: 'Compras',
-        categoryColor: '#b45309',
-        title: 'Fluxo Compras → NF',
-        icon: 'Truck',
-        description: 'Rastreabilidade do ciclo de compra completo: da solicitação à entrada da NF.',
-        steps: [
-            'Visualize o status de cada pedido de compra: Emitido, Parcialmente Entregue, Concluído.',
-            'Verifique a NF de entrada vinculada ao pedido quando já recebida.',
-            'Identifique atrasos de fornecedores comparando data prevista vs. recebimento.',
-        ],
-        links: [
-            { label: 'Pedidos de Compras', path: '/pedidos-compras-pv' },
-            { label: 'Saldo de Materiais', path: '/saldo-materiais' },
-        ],
-    },
+  // ── Planejamento Gantt ───────────────────────────────────────────────────────
+  '/planejamento-gantt': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Planejamento Gantt',
+    icon: 'GanttChart',
+    description: 'Visualize e planeje a sequência de produção em formato Gantt. Ajuste datas e prioridades de forma visual e interativa.',
+    steps: [
+      'As barras representam cada OP com início e fim planejados.',
+      'Arraste as barras para reprogramar datas.',
+      'Redimensione as barras para ajustar a duração prevista.',
+      'Cores indicam status: azul (planejado), verde (em andamento), vermelho (atrasado).',
+      'Salve o planejamento clicando em "Confirmar Programação".',
+    ],
+    tips: [
+      'Use a visão por semana para planejamento de curto prazo.',
+      'O Gantt respeita as restrições de capacidade configuradas.',
+    ],
+    links: [
+      { path: '/producao-matrix', label: 'Matriz de Produção' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+    ],
+  },
 
-    '/suprimentos/requisicoes': {
-        id: 'requisicoes-internas',
-        category: 'Compras',
-        categoryColor: '#b45309',
-        title: 'Requisições Internas',
-        icon: 'ClipboardList',
-        description: 'Controle de requisições internas de materiais entre departamentos.',
-        steps: [
-            'Crie uma requisição indicando o material, quantidade e destino.',
-            'O responsável pelo almoxarifado atende ou recusa a requisição.',
-            'Histórico completo de todas as movimentações internas.',
-        ],
-        links: [
-            { label: 'Saldo de Materiais', path: '/saldo-materiais' },
-            { label: 'Gestão de Materiais PCP', path: '/pcp/gestao-materiais' },
-        ],
-    },
+  // ── Relatórios ───────────────────────────────────────────────────────────────
+  '/relatorios': {
+    category: 'Relatórios',
+    categoryColor: '#6366f1',
+    title: 'Relatórios',
+    icon: 'FileBarChart',
+    description: 'Acesse todos os relatórios gerenciais e operacionais do sistema. Exporte em PDF ou Excel.',
+    steps: [
+      'Selecione o relatório desejado na lista de categorias.',
+      'Configure os parâmetros (período, filtros, agrupamentos).',
+      'Clique em "Gerar" para visualizar o relatório.',
+      'Exporte para PDF ou Excel conforme necessário.',
+    ],
+    tips: [
+      'Relatórios frequentes podem ser salvos como favoritos.',
+      'Agende relatórios para envio automático por e-mail.',
+    ],
+    links: [
+      { path: '/analytics/evolucao', label: 'Analytics' },
+      { path: '/visao-producao', label: 'Visão de Produção' },
+    ],
+  },
 
-    // =============================================================
-    // PRODUTOS / CATÁLOGO
-    // =============================================================
-    '/produtos': {
-        id: 'catalogo-produtos',
-        category: 'Produtos',
-        categoryColor: '#6d28d9',
-        title: 'Catálogo de Produtos',
-        icon: 'Package',
-        description: 'Repositório central de produtos com documentos, imagens e estrutura técnica.',
-        steps: [
-            'Pesquise por código, descrição ou família do produto.',
-            'Clique no ícone de Documento (📄) para gerenciar os PDFs técnicos vinculados.',
-            'Use "Importação em Massa" para vincular PDFs de uma pasta de rede inteira.',
-            'O caminho pode ser um drive mapeado (Q:\\...) ou caminho UNC (\\\\servidor\\...).',
-            'Clique na miniatura para expandir a imagem do produto.',
-        ],
-        tips: [
-            'O sistema converte drives mapeados (Q:) para caminhos UNC automaticamente.',
-            'O vínculo PDF→Produto é feito pelo nome do arquivo (case-insensitive).',
-        ],
-        links: [
-            { label: 'BOM Generator', path: '/bom-generator' },
-            { label: 'Estrutura SINCO', path: '/engenharia/sinco/estrutura' },
-        ],
-    },
+  // ── Configurações ─────────────────────────────────────────────────────────────
+  '/configuracoes': {
+    category: 'Administração',
+    categoryColor: '#64748b',
+    title: 'Configurações do Sistema',
+    icon: 'Settings',
+    description: 'Gerencie usuários, permissões, parâmetros do sistema e integrações com outros sistemas.',
+    steps: [
+      'Acesse a aba "Usuários" para criar e gerenciar contas de acesso.',
+      'Configure permissões por perfil em "Perfis de Acesso".',
+      'Defina parâmetros globais do sistema em "Parâmetros".',
+      'Configure integrações com ERP em "Integrações".',
+    ],
+    tips: [
+      'Apenas administradores têm acesso a esta tela.',
+      'Alterações em parâmetros críticos requerem confirmação dupla.',
+    ],
+    links: [
+      { path: '/ajuda', label: 'Central de Ajuda' },
+    ],
+  },
 
-    '/bom-generator': {
-        id: 'bom-generator',
-        category: 'Produtos',
-        categoryColor: '#6d28d9',
-        title: 'Gerador de BOM',
-        icon: 'Layers',
-        description: 'Criação e edição de Listas de Materiais (BOM) manualmente ou via importação.',
-        steps: [
-            'Selecione o produto pai para criar/editar sua BOM.',
-            'Adicione componentes manualmente pelo código ou importe via planilha.',
-            'Defina quantidade e unidade de medida para cada componente.',
-            'A BOM é salva automaticamente e disponibilizada em toda a estrutura do produto.',
-        ],
-        links: [
-            { label: 'Estrutura SINCO', path: '/engenharia/sinco/estrutura' },
-            { label: 'Catálogo de Produtos', path: '/produtos' },
-        ],
-    },
+  // ── SGQ ──────────────────────────────────────────────────────────────────────
+  '/sgq': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Sistema de Gestão da Qualidade',
+    icon: 'Award',
+    description: 'Central do SGQ com acesso a todos os módulos de qualidade: processos, documentos, não conformidades, treinamentos e auditorias.',
+    steps: [
+      'Navegue pelos módulos de qualidade no menu lateral.',
+      'Acesse "Mapeamento de Processos" para visualizar os fluxos.',
+      'Registre não conformidades em "Não Conformidades".',
+      'Gerencie documentos do sistema em "Documentos".',
+    ],
+    tips: [
+      'Indicadores de qualidade são atualizados diariamente.',
+    ],
+    links: [
+      { path: '/sgq/mapeamento-processos', label: 'Mapeamento de Processos' },
+      { path: '/sgq/documentos', label: 'Documentos SGQ' },
+      { path: '/sgq/nao-conformidades', label: 'Não Conformidades' },
+    ],
+  },
 
-    '/estrutura/:codigo': {
-        id: 'estrutura-produto',
-        category: 'Produtos',
-        categoryColor: '#6d28d9',
-        title: 'Estrutura do Produto',
-        icon: 'Package',
-        description: 'Visão da BOM de um produto específico com links para sub-níveis.',
-        steps: [
-            'Acesse diretamente via Catálogo de Produtos clicando no código do produto.',
-            'A estrutura é exibida em formato de árvore expansível.',
-            'Clique em qualquer sub-componente para navegar para sua própria estrutura.',
-        ],
-        links: [
-            { label: 'Catálogo de Produtos', path: '/produtos' },
-            { label: 'Onde é Usado?', path: '/pcp/onde-usado' },
-        ],
-    },
+  // ── SGQ Mapeamento ───────────────────────────────────────────────────────────
+  '/sgq/mapeamento-processos': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Mapeamento de Processos SGQ',
+    icon: 'Map',
+    description: 'Visualize e edite os processos do sistema de qualidade. Configure a ajuda contextual de cada tela do sistema.',
+    steps: [
+      'Selecione uma tela do sistema na lista de processos.',
+      'Edite o conteúdo de ajuda contextual: descrição, passos e dicas.',
+      'Salve as alterações para que fiquem disponíveis na ajuda das telas.',
+      'Use "Recarregar Ajuda" para ver as mudanças sem reiniciar o sistema.',
+    ],
+    tips: [
+      'As alterações feitas aqui aparecem instantaneamente na Central de Ajuda.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+      { path: '/ajuda', label: 'Central de Ajuda' },
+    ],
+  },
 
-    // =============================================================
-    // LOGÍSTICA
-    // =============================================================
-    '/romaneios': {
-        id: 'romaneios',
-        category: 'Logística',
-        categoryColor: '#dc2626',
-        title: 'Expedição — Romaneios de Entrega',
-        icon: 'Truck',
-        description: 'Criação, gestão e impressão de romaneios de carga para expedição. Permite registrar volumes, foto do caminhão carregado, rastreamento de entrega e geração de PDF.',
-        steps: [
-            'Clique em "Novo Romaneio" para abrir o formulário de criação. Informe o cliente, transportadora, placa do veículo e data prevista de entrega.',
-            'Adicione os itens ao romaneio buscando pelo número do pedido de venda (PV) ou pelo código do produto.',
-            'Cada item pode ter quantidade de volumes, peso e número de nota fiscal preenchidos.',
-            'Foto do caminhão: no formulário, use o campo de upload de foto para registrar a imagem do veículo carregado antes da saída. A foto fica vinculada ao romaneio.',
-            'Clique em "Gerar PDF" para imprimir o romaneio com todos os itens, volumes e dados do transporte.',
-            'O status do romaneio avança automaticamente: Rascunho → Emitido → Em Trânsito → Entregue.',
-            'Use o filtro de datas e status no topo da listagem para localizar romaneios de períodos anteriores.',
-            'Clique em um romaneio existente para visualizar, editar ou cancelar.',
-        ],
-        tips: [
-            'Um único romaneio pode conter itens de múltiplos pedidos de venda diferentes.',
-            'A foto do caminhão é armazenada no servidor e pode ser consultada a qualquer momento no histórico do romaneio.',
-            'Para romaneios de retorno (devolução), use a página "Recebimento de Retornos".',
-        ],
-        links: [
-            { label: 'Pedidos de Venda', path: '/' },
-            { label: 'Recebimento de Retornos', path: '/recebimentos' },
-        ],
-    },
+  // ── SGQ Documentos ───────────────────────────────────────────────────────────
+  '/sgq/documentos': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Documentos SGQ',
+    icon: 'FolderOpen',
+    description: 'Repositório de documentos do sistema de gestão da qualidade: procedimentos, instruções de trabalho, formulários e registros.',
+    steps: [
+      'Navegue pelas categorias de documentos no painel esquerdo.',
+      'Use a busca para encontrar documentos por nome ou código.',
+      'Clique em um documento para visualizar ou baixar.',
+      'Faça upload de novos documentos pelo botão "+ Novo Documento".',
+      'Controle revisões e histórico de versões na aba "Revisões".',
+    ],
+    tips: [
+      'Documentos obsoletos são arquivados automaticamente ao aprovar nova versão.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+      { path: '/sgq/mapeamento-processos', label: 'Mapeamento de Processos' },
+    ],
+  },
 
-    '/recebimentos': {
-        id: 'recebimento-retornos',
-        category: 'Logística',
-        categoryColor: '#dc2626',
-        title: 'Recebimento de Retornos',
-        icon: 'Inbox',
-        description: 'Registro e controle de materiais devolvidos por clientes ou retornados de campo.',
-        steps: [
-            'Clique em "Novo Recebimento" para registrar um retorno de material.',
-            'Informe o cliente de origem, motivo do retorno e os itens/quantidades devolvidos.',
-            'Vincule o recebimento a um pedido ou romaneio de saída, se aplicável.',
-            'Registre as condições do material recebido (OK, danificado, retrabalho necessário).',
-            'O sistema gera um registro auditável para rastreabilidade do retorno.',
-        ],
-        tips: [
-            'Use o campo "Observações" para registrar eventuais avarias ou divergências encontradas no recebimento.',
-        ],
-        links: [
-            { label: 'Expedição (Romaneios)', path: '/romaneios' },
-            { label: 'Pedidos de Venda', path: '/' },
-        ],
-    },
+  // ── SGQ Não Conformidades ────────────────────────────────────────────────────
+  '/sgq/nao-conformidades': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Não Conformidades',
+    icon: 'AlertTriangle',
+    description: 'Registre, acompanhe e trate não conformidades internas e externas. Defina ações corretivas e preventivas.',
+    steps: [
+      'Clique em "+ Registrar NC" para abrir uma nova não conformidade.',
+      'Descreva o problema, origem e impacto.',
+      'Defina as ações corretivas e os responsáveis.',
+      'Acompanhe o status até o fechamento da NC.',
+      'Registre a eficácia da ação após implementação.',
+    ],
+    tips: [
+      'NCs abertas há mais de 30 dias sem tratativa são destacadas.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+      { path: '/sgq/indicadores', label: 'Indicadores SGQ' },
+    ],
+  },
 
-    '/pcp/conferencia': {
-        id: 'conferencia-apontamentos',
-        category: 'PCP',
-        categoryColor: '#d97706',
-        title: 'Conferência de Apontamentos',
-        icon: 'ShieldCheck',
-        description: 'Painel de verificação e auditoria de apontamentos de produção, permitindo identificar inconsistências, apontamentos duplicados ou faltantes por OP e operação.',
-        steps: [
-            'Selecione o período de análise (data inicial e final) para carregar os apontamentos.',
-            'A listagem exibe todos os apontamentos registrados com: OP, produto, operação, operador, horas e data.',
-            'Itens destacados indicam inconsistências: tempo negativo, quantidade acima do planejado ou operação fora da sequência.',
-            'Use o filtro de operador para auditar apontamentos de um colaborador específico.',
-            'Clique em um apontamento para ver o detalhe completo e, se necessário, corrigi-lo ou cancelá-lo.',
-            'O botão "Exportar" gera um Excel com todos os apontamentos do período filtrado.',
-        ],
-        tips: [
-            'Use esta tela diariamente para verificar se todos os operadores realizaram seus apontamentos do turno anterior.',
-            'Apontamentos com tempo zerado ou muito baixo podem indicar erro de registro — investigue antes de aprovar.',
-        ],
-        links: [
-            { label: 'Controle de Produção', path: '/controle-producao' },
-            { label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario' },
-            { label: 'Evolução do Apontamento', path: '/pcp/evolucao-apontamento' },
-        ],
-    },
+  // ── SGQ Treinamento ──────────────────────────────────────────────────────────
+  '/sgq/treinamento': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Treinamentos',
+    icon: 'GraduationCap',
+    description: 'Gerencie o programa de treinamento e desenvolvimento de colaboradores. Controle matrizes de competências e certificações.',
+    steps: [
+      'Visualize a matriz de treinamentos por colaborador e função.',
+      'Registre a realização de treinamentos com data e participantes.',
+      'Gere relatórios de conformidade de treinamentos.',
+      'Configure alertas para treinamentos com prazo de revalidade.',
+    ],
+    tips: [
+      'Treinamentos vencidos são destacados em vermelho na matriz.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+    ],
+  },
 
-    // =============================================================
-    // VMI (VENDOR MANAGED INVENTORY)
-    // =============================================================
-    '/vmi/forecast': {
-        id: 'vmi-demanda',
-        category: 'VMI',
-        categoryColor: '#a21caf',
-        title: 'VMI Forecast (Demanda)',
-        icon: 'Layers',
-        description: 'Importação e gestão de demandas de clientes (previsão de consumo) com mapeamento automático de códigos para o Protheus. Dividida em duas abas: Importação e Mapeamento.',
-        steps: [
-            'ABA 1 — Importação e Base: clique em "Importar Planilha" e selecione o arquivo Excel do cliente (formato esperado: colunas de código do produto, descrição, quantidade e datas de previsão).',
-            'Pré-visualização: antes de salvar, o sistema exibe uma prévia dos dados lidos. Revise e clique em "Confirmar e Gravar Lote" para persistir, ou "Cancelar" para descartar.',
-            'Lotes de Importação: cada arquivo importado gera um card com nome e data. Clique no card para filtrar e ver apenas os dados daquele lote. Clique no "X" do card para excluir o lote inteiro.',
-            'Duplicidade bloqueada: se você tentar importar um arquivo com o mesmo nome já existente na base, o sistema bloqueia e exibe alerta — sem duplicar dados.',
-            'Agrupamento de visão: use o seletor no topo da tabela para alternar entre "Lista Plana", "Por Produto Pai / Equipamento" e "Por Pedido de Venda".',
-            'Coluna "Tipo": indica a classificação do item no Protheus (PCP = padrão, Novo = cadastro recente, Revisão = revisão pendente, Restrição = item bloqueado). Passe o mouse para ver o detalhe completo.',
-            'Coluna "Cód. Protheus": exibe o B1_COD vinculado ao item após o mapeamento ser realizado na Aba 2.',
-            'ABA 2 — Mapeamento Protheus: associa os códigos de cliente aos códigos do ERP Protheus (B1_COD). Clique em "Recarregar" para carregar os produtos e mapeamentos existentes.',
-            'Sugestão automática: clique em "Sugerir Vínculos Protheus" para que o sistema processe todos os itens pendentes em lotes de 25, buscando os melhores matches por similaridade.',
-            'Score de sugestão: cada sugestão exibe seu nível de confiança — ★ Base+Revisão (score 5, match perfeito), ● Base Exata (score 4), ◑ Rev. Match (score 3), ○ Contém / Parcial (scores 2-1).',
-            'Seleção manual: se houver múltiplas sugestões com score baixo (< 4), o sistema não auto-seleciona — clique no card da sugestão desejada para selecioná-la (ficará destacada em azul).',
-            'Salvar vínculo individual: após selecionar a sugestão, clique em "Salvar" na coluna Ação para confirmar o vínculo daquele item.',
-            'Salvar em lote: o botão "Salvar Todos (N)" grava de uma vez todos os itens que já possuem uma sugestão selecionada.',
-            'Desvincular individual: itens já mapeados exibem "✓ Vinculado" + botão "Desvincular" em vermelho na coluna Ação. Ao clicar, o sistema pede confirmação e, após remover, busca automaticamente uma nova sugestão.',
-            'Desvincular em lote: o botão "Desvincular Todos (N)" remove todos os vínculos existentes de uma só vez, mediante confirmação.',
-            'Filtros da tabela de mapeamento: filtre por texto livre (código, descrição, B1_COD) ou use os botões "Todos / Mapeados / Pendentes" para focar nos itens que precisam de atenção.',
-            'Exportar Excel: gera planilha com status de cada item (Mapeado, Com Sugestão ou Pendente), código Protheus vinculado e melhor sugestão disponível.',
-        ],
-        tips: [
-            'Itens com score ≥ 4 são selecionados automaticamente pela sugestão; itens com score < 4 e múltiplas opções ficam aguardando sua escolha manual — verifique o filtro "Pendentes".',
-            'A revisão do desenho do cliente é extraída automaticamente do código (caracteres após os 9 dígitos numéricos) e exibida em destaque laranja — use isso para confirmar se a sugestão do Protheus tem a revisão correta.',
-            'O mapeamento é compartilhado entre VMI Forecast e VMI Pedido: um código já vinculado em um módulo aparece vinculado no outro.',
-            'Passe o mouse sobre o badge "Tipo" para ver a descrição detalhada e o histórico de status da peça na engenharia.',
-        ],
-        links: [
-            { label: 'VMI Pedido', path: '/vmi/pedido' },
-            { label: 'VMI Dashboard', path: '/vmi' },
-            { label: 'VMI Estratégia', path: '/vmi/estrategia' },
-        ],
-    },
+  // ── SGQ Auditorias ───────────────────────────────────────────────────────────
+  '/sgq/auditorias': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Auditorias',
+    icon: 'Search',
+    description: 'Planeje e gerencie auditorias internas e externas do sistema de qualidade. Registre achados e acompanhe o tratamento.',
+    steps: [
+      'Crie um plano de auditoria com datas, escopo e auditores.',
+      'Registre os achados durante a auditoria.',
+      'Classifique: Conformidade, Observação ou Não Conformidade.',
+      'Defina ações de tratamento para cada achado.',
+      'Acompanhe o fechamento de todas as pendências.',
+    ],
+    tips: [
+      'Use o histórico de auditorias para identificar tendências de problemas.',
+    ],
+    links: [
+      { path: '/sgq/nao-conformidades', label: 'Não Conformidades' },
+      { path: '/sgq', label: 'SGQ Principal' },
+    ],
+  },
 
-    '/vmi/pedido': {
-        id: 'vmi-pedido',
-        category: 'VMI',
-        categoryColor: '#4338ca',
-        title: 'VMI Pedido (Ordens de Compra)',
-        icon: 'ListOrdered',
-        description: 'Importação e gestão de pedidos de compra (ordens de compra) enviados por clientes VMI, com mapeamento de códigos para o Protheus. Estrutura idêntica ao VMI Forecast, porém orientada a datas de entrega e itens exatos de OC.',
-        steps: [
-            'ABA 1 — Importação e Base: clique em "Importar Planilha" e selecione o arquivo Excel do cliente com as ordens de compra. O sistema espera colunas de: Nº do Pedido OC, Item, Cód. do Produto, Descrição, Quantidade e Data de Entrega.',
-            'Pré-visualização: antes de salvar, o sistema exibe as linhas lidas. Revise e clique em "Confirmar e Salvar Lote" para persistir, ou "Cancelar" para descartar.',
-            'Lotes de Importação: cada arquivo importado gera um card com nome e data de criação. Clique no card para filtrar pelos dados daquele lote. O "X" no canto do card exclui o lote.',
-            'Duplicidade bloqueada: o sistema normaliza o nome do arquivo (remove caracteres especiais) e bloqueia a reimportação de um arquivo com o mesmo nome já existente, evitando dados duplicados.',
-            'Regra dos 9 dígitos: o código do produto do cliente é automaticamente normalizado removendo todos os caracteres não alfanuméricos (pontos, traços, espaços). Os primeiros 9 caracteres resultantes formam o "Código Base" e o restante é tratado como "Revisão do Cliente".',
-            'Exemplo da regra: "21.23.01762A" → Cód. Base = "212301762", Revisão = "A". Isso garante correspondência com os códigos do Protheus, que seguem o mesmo padrão.',
-            'Coluna "Rev": exibe a revisão extraída do código do cliente em destaque laranja. Use para conferir se a revisão do Protheus no mapeamento corresponde.',
-            'Coluna "Cód. Protheus": exibe o B1_COD vinculado após o mapeamento ser realizado na Aba 2.',
-            'Exportar planilha: o botão "Exportar Planilha" na barra superior gera um Excel com todos os dados exibidos, incluindo o mapeamento Protheus já associado.',
-            'Limpar Base: o botão "Limpar Base" remove TODAS as linhas de todos os lotes. Ação requer confirmação.',
-            'ABA 2 — Mapeamento Protheus: funciona de forma idêntica ao VMI Forecast. Clique em "Recarregar" para carregar os códigos base únicos extraídos dos pedidos e os vínculos existentes.',
-            'Sugestão automática: clique em "Sugerir Vínculos Protheus" para processar todos os itens pendentes. O sistema busca por código base (9 dígitos) e revisão no Protheus.',
-            'Score de sugestão: ★ Base+Revisão (perfeito), ● Base Exata, ◑ Rev. Match, ○ Contém / Parcial. Sugestões com score ≥ 4 são auto-selecionadas; abaixo disso, você escolhe manualmente.',
-            'Seleção manual: quando há múltiplas sugestões com score < 4, clique no card desejado para selecioná-lo (destaque azul). A revisão do Protheus é exibida no card para facilitar a escolha.',
-            'Salvar vínculo individual: clique em "Salvar" na coluna Ação após selecionar a sugestão do item.',
-            'Salvar em lote: "Salvar Todos (N)" grava todos os itens com sugestão selecionada de uma vez.',
-            'Desvincular individual: itens mapeados exibem "✓ Vinculado" e um botão "Desvincular" em vermelho. Ao confirmar, o vínculo é removido e o sistema busca automaticamente uma nova sugestão.',
-            'Desvincular em lote: "Desvincular Todos (N)" remove todos os vínculos existentes, mediante confirmação.',
-            'Filtros: pesquise por código base, código original, descrição ou B1_COD. Use "Todos / Mapeados / Pendentes" para focar nos itens que necessitam atenção.',
-            'Exportar Excel de mapeamento: gera relatório com status de cada código base (Mapeado, Com Sugestão, Pendente), B1_COD vinculado, revisão do cliente e melhor sugestão disponível.',
-        ],
-        tips: [
-            'O mapeamento usa o "Código Base" (9 dígitos) como chave, não o código original do cliente. Isso permite que múltiplos pedidos com formatos diferentes de código apontem para o mesmo item no Protheus.',
-            'O mapeamento é compartilhado entre VMI Forecast e VMI Pedido: se um código base já foi mapeado no Forecast, ele aparecerá automaticamente como "Vinculado" no Pedido também.',
-            'Confira sempre a coluna "Rev." ao selecionar sugestões — o Protheus pode ter múltiplas revisões de um mesmo código base, e a revisão correta garante a ficha técnica atualizada.',
-            'Use o filtro "Pendentes" após "Sugerir Vínculos" para focar apenas nos itens que ainda precisam de revisão manual.',
-        ],
-        links: [
-            { label: 'VMI Forecast', path: '/vmi/forecast' },
-            { label: 'VMI Dashboard', path: '/vmi' },
-        ],
-    },
+  // ── SGQ Calibrações ──────────────────────────────────────────────────────────
+  '/sgq/calibracoes': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Calibrações de Instrumentos',
+    icon: 'Wrench',
+    description: 'Controle o plano de calibração de instrumentos de medição. Gerencie certificados e alertas de vencimento.',
+    steps: [
+      'Cadastre os instrumentos com código, descrição e periodicidade.',
+      'Registre calibrações realizadas com data e resultado.',
+      'Anexe os certificados de calibração.',
+      'Receba alertas automáticos antes do vencimento.',
+    ],
+    tips: [
+      'Instrumentos fora do prazo são bloqueados automaticamente para uso em medições críticas.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+    ],
+  },
 
-    '/vmi': {
-        id: 'vmi-dashboard',
-        category: 'Comercial',
-        categoryColor: '#2563eb',
-        title: 'VMI Dashboard',
-        icon: 'BarChart',
-        description: 'Painel Central do VMI (Estoque Gerenciado pelo Fornecedor).',
-        steps: [
-            'Acesse o Dashboard para verificar a saúde dos níveis de estoque dos clientes.',
-            'Verifique alertas de ruptura (estoque baixo) ou excesso.',
-            'Acompanhe o consumo médio diário e a cobertura de dias restantes.',
-        ],
-        links: [
-            { label: 'VMI Estratégia', path: '/vmi/estrategia' },
-            { label: 'VMI Upload', path: '/vmi/upload' },
-        ],
-    },
+  // ── SGQ Indicadores ──────────────────────────────────────────────────────────
+  '/sgq/indicadores': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Indicadores SGQ',
+    icon: 'BarChart2',
+    description: 'Dashboard de indicadores do sistema de gestão da qualidade. Acompanhe metas e tendências dos principais KPIs de qualidade.',
+    steps: [
+      'Visualize os indicadores com metas e resultados atuais.',
+      'Filtre por período para análise histórica.',
+      'Clique em um indicador para ver o detalhamento.',
+      'Configure metas e limites de alerta em "Editar Indicador".',
+    ],
+    tips: [
+      'Indicadores abaixo da meta aparecem em vermelho com alerta.',
+    ],
+    links: [
+      { path: '/sgq', label: 'SGQ Principal' },
+      { path: '/sgq/nao-conformidades', label: 'Não Conformidades' },
+    ],
+  },
 
-    '/vmi/estrategia': {
-        id: 'vmi-estrategia',
-        category: 'Comercial',
-        categoryColor: '#2563eb',
-        title: 'VMI Estratégia',
-        icon: 'TrendingUp',
-        description: 'Análise aprofundada da estratégia de abastecimento via Kanban VMI.',
-        steps: [
-            'Revise os parâmetros Min, Max e de Segurança acordados com o cliente.',
-            'Acompanhe simulações visuais da queima em tempo real frente aos Lead Times VMI.'
-        ],
-        links: [
-            { label: 'VMI Dashboard', path: '/vmi' },
-        ],
-    },
+  // ── Avisos ───────────────────────────────────────────────────────────────────
+  '/avisos': {
+    category: 'Comunicação',
+    categoryColor: '#fbbf24',
+    title: 'Avisos e Comunicados',
+    icon: 'Bell',
+    description: 'Central de comunicados internos da empresa. Publique e visualize avisos importantes para a equipe.',
+    steps: [
+      'Clique em "+ Novo Aviso" para criar um comunicado.',
+      'Defina o título, conteúdo e destinatários (todos ou por setor).',
+      'Publique imediatamente ou agende para uma data futura.',
+      'Acompanhe quem visualizou o aviso na lista de leituras.',
+    ],
+    tips: [
+      'Avisos urgentes podem ser marcados como "Prioritário" e aparecem em destaque.',
+    ],
+    links: [],
+  },
 
-    '/vmi/historico': {
-        id: 'vmi-historico',
-        category: 'Comercial',
-        categoryColor: '#2563eb',
-        title: 'VMI Histórico',
-        icon: 'History',
-        description: 'Histórico cronológico de movimentações e envios programados VMI.',
-        steps: [
-            'Consulte um log auditável das leituras do cliente.',
-            'Analise a progressão exata antes das reposições de produtos.',
-        ],
-        links: [
-            { label: 'VMI Dashboard', path: '/vmi' },
-        ],
-    },
+  // ── Vendas / Itens a Faturar ─────────────────────────────────────────────────
+  '/vendas/itens-faturar': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Itens a Faturar',
+    icon: 'DollarSign',
+    description: 'Lista de itens prontos para faturamento. Selecione os itens, gere a nota fiscal e registre o faturamento.',
+    steps: [
+      'Visualize todos os itens liberados para faturamento.',
+      'Filtre por cliente ou pedido de venda.',
+      'Selecione os itens desejados e clique em "Faturar Selecionados".',
+      'Confirme os dados fiscais e gere a NF.',
+    ],
+    tips: [
+      'Itens com restrição fiscal ficam destacados — consulte o departamento fiscal.',
+    ],
+    links: [
+      { path: '/comercial/faturamento', label: 'Faturamento' },
+      { path: '/romaneios', label: 'Romaneios' },
+    ],
+  },
 
-    '/vmi/upload': {
-        id: 'vmi-upload',
-        category: 'Comercial',
-        categoryColor: '#2563eb',
-        title: 'VMI Upload de Dados',
-        icon: 'UploadCloud',
-        description: 'Envio em lote (planilha/csv) de contagens periódicas do estoque do cliente.',
-        steps: [
-            'Gere e faça upload do relatório padronizado do cliente.',
-            'O sistema processa colunas SKU e Quantidade para gerar alertas na matriz VMI.'
-        ],
-        links: [
-            { label: 'VMI Dashboard', path: '/vmi' },
-        ],
-    },
+  // ── Faturamento ──────────────────────────────────────────────────────────────
+  '/comercial/faturamento': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Faturamento',
+    icon: 'FileInvoice',
+    description: 'Gestão de notas fiscais emitidas. Acompanhe o status de transmissão à SEFAZ, cancelamentos e reimpressões.',
+    steps: [
+      'Consulte as NFs emitidas pelo período, cliente ou número.',
+      'Verifique o status: Aguardando, Autorizada, Cancelada.',
+      'Reimprima o DANFE clicando no ícone de impressão.',
+      'Solicite cancelamento quando necessário (respeitando o prazo legal).',
+    ],
+    tips: [
+      'NFs rejeitadas pela SEFAZ exibem o motivo da rejeição em destaque.',
+    ],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+      { path: '/financeiro/faturamento', label: 'Financeiro / Faturamento' },
+    ],
+  },
 
-    // =============================================================
-    // QUALIDADE (SGQ)
-    // =============================================================
-    '/sgq': {
-        id: 'sgq-dashboard',
-        category: 'SGQ',
-        categoryColor: '#0f766e',
-        title: 'SGQ: Painel de Qualidade',
-        icon: 'ShieldCheck',
-        description: 'Painel central do Sistema de Gestão de Qualidade com indicadores e acesso rápido.',
-        steps: [
-            'Visualize o resumo de todos os módulos do SGQ: NC, Treinamentos, Auditorias, Calibrações.',
-            'Clique em cada card para acessar o módulo específico.',
-            'Os indicadores são atualizados em tempo real.',
-        ],
-        links: [
-            { label: 'Documentos SGQ', path: '/sgq/documentos' },
-            { label: 'Treinamentos', path: '/sgq/treinamento' },
-        ],
-    },
+  // ── Histórico de Faturamento ─────────────────────────────────────────────────
+  '/vendas/faturamento-historico': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Histórico de Faturamento',
+    icon: 'History',
+    description: 'Consulte o histórico completo de faturamento por período, cliente e produto.',
+    steps: [
+      'Defina o período de análise nos filtros de data.',
+      'Filtre por cliente, produto ou representante.',
+      'Analise os gráficos de evolução de faturamento.',
+      'Exporte para Excel para análise detalhada.',
+    ],
+    tips: [
+      'Compare o faturamento de diferentes períodos usando a opção de comparação.',
+    ],
+    links: [
+      { path: '/comercial/faturamento', label: 'Faturamento' },
+      { path: '/analytics/evolucao', label: 'Analytics' },
+    ],
+  },
 
-    '/sgq/documentos': {
-        id: 'sgq-documentos',
-        category: 'SGQ',
-        categoryColor: '#0f766e',
-        title: 'Documentos SGQ',
-        icon: 'FileText',
-        description: 'Repositório de documentos normativos: procedimentos, instruções de trabalho e formulários.',
-        steps: [
-            'Navegue pelas pastas de documentos ou use a busca por título/código.',
-            'Clique no documento para visualizar o PDF diretamente no navegador.',
-            'A versão e data de revisão são exibidas para cada documento.',
-            'Documentos vencidos ou próximos ao vencimento são destacados automaticamente.',
-        ],
-        links: [
-            { label: 'Painel SGQ', path: '/sgq' },
-            { label: 'Treinamentos', path: '/sgq/treinamento' },
-        ],
-    },
+  // ── Financeiro / Faturamento ─────────────────────────────────────────────────
+  '/financeiro/faturamento': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Financeiro – Faturamento',
+    icon: 'Wallet',
+    description: 'Controle financeiro do faturamento: contas a receber, títulos em aberto e fluxo de caixa das vendas.',
+    steps: [
+      'Visualize os títulos em aberto por cliente e vencimento.',
+      'Registre baixas de pagamentos recebidos.',
+      'Acompanhe o fluxo de caixa previsto e realizado.',
+      'Gere relatórios de inadimplência e aging.',
+    ],
+    tips: [
+      'Títulos vencidos há mais de 30 dias são destacados em vermelho.',
+    ],
+    links: [
+      { path: '/comercial/faturamento', label: 'Faturamento' },
+      { path: '/relatorios', label: 'Relatórios' },
+    ],
+  },
 
-    '/sgq/treinamento': {
-        id: 'sgq-treinamento',
-        category: 'SGQ',
-        categoryColor: '#0f766e',
-        title: 'Treinamentos SGQ',
-        icon: 'BookOpen',
-        description: 'Gestão de registro e controle de treinamentos de qualidade dos colaboradores.',
-        steps: [
-            'Registre novos treinamentos com nome, data, instrutor e participantes.',
-            'Cada colaborador possui um histórico de treinamentos realizados.',
-            'Alertas automáticos para treinamentos próximos ao vencimento.',
-        ],
-        links: [
-            { label: 'Painel SGQ', path: '/sgq' },
-            { label: 'Documentos SGQ', path: '/sgq/documentos' },
-        ],
-    },
+  // ── Gestão de Materiais ──────────────────────────────────────────────────────
+  '/pcp/gestao-materiais': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Gestão de Materiais',
+    icon: 'Boxes',
+    description: 'Planejamento e controle de necessidades de materiais (MRP simplificado). Identifique faltas e excesso de estoque.',
+    steps: [
+      'Execute o cálculo de necessidades para o período selecionado.',
+      'Analise os materiais críticos (saldo abaixo do mínimo).',
+      'Gere solicitações de compra automaticamente para os itens em falta.',
+      'Ajuste os parâmetros de estoques mínimo e máximo.',
+    ],
+    tips: [
+      'Execute o cálculo semanalmente para manter o planejamento atualizado.',
+    ],
+    links: [
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+      { path: '/solicitacoes-compras', label: 'Solicitações de Compra' },
+    ],
+  },
 
-    // =============================================================
-    // RELATÓRIOS
-    // =============================================================
-    '/relatorios': {
-        id: 'relatorios',
-        category: 'Relatórios',
-        categoryColor: '#1e40af',
-        title: 'Relatórios',
-        icon: 'FileText',
-        description: 'Central de geração de relatórios gerenciais e operacionais.',
-        steps: [
-            'Selecione o tipo de relatório na lista à esquerda.',
-            'Configure os filtros de período, produto, pedido ou responsável.',
-            'Clique em "Gerar PDF" para baixar o relatório formatado.',
-            'Use "Exportar Excel" para análise posterior em planilhas.',
-        ],
-        links: [
-            { label: 'Pedidos de Venda', path: '/' },
-            { label: 'Ordens de Produção', path: '/producao' },
-        ],
-    },
+  // ── Onde Usado ───────────────────────────────────────────────────────────────
+  '/pcp/onde-usado': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Onde Usado',
+    icon: 'Search',
+    description: 'Pesquise em quais produtos e estruturas um componente ou material é utilizado.',
+    steps: [
+      'Informe o código ou descrição do componente.',
+      'O sistema lista todos os produtos que utilizam este componente.',
+      'Clique em um produto para abrir a estrutura correspondente.',
+      'Exporte a lista para análise de impacto de mudanças.',
+    ],
+    tips: [
+      'Útil para avaliar o impacto de alterações em componentes compartilhados.',
+    ],
+    links: [
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+    ],
+  },
 
-    // =============================================================
-    // CONFIGURAÇÕES
-    // =============================================================
-    '/configuracoes': {
-        id: 'configuracoes',
-        category: 'Administração',
-        categoryColor: '#374151',
-        title: 'Configurações do Sistema',
-        icon: 'Settings',
-        description: 'Gestão de usuários, permissões, parâmetros do sistema e integrações.',
-        steps: [
-            'Acesse "Usuários" para criar, editar ou desativar colaboradores.',
-            'Em "Permissões", defina quais módulos cada usuário (ou grupo) pode acessar.',
-            'Configure as integrações com o ERP Protheus na aba "Integração".',
-            'Use "Parâmetros" para ajustar configurações globais como sincronização e prefixos.',
-        ],
-        tips: [
-            'Apenas administradores têm acesso a esta tela.',
-            'Alterações de permissão entram em vigor no próximo login do usuário.',
-        ],
-        links: [],
-    },
+  // ── SINCO OS ─────────────────────────────────────────────────────────────────
+  '/engenharia/sinco/os': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'SINCO – Ordens de Serviço',
+    icon: 'FileText',
+    description: 'Gerencie as ordens de serviço de engenharia integradas ao SINCO SolidEdge. Acompanhe desenhos, revisões e aprovações.',
+    steps: [
+      'Visualize todas as OS abertas e seus status.',
+      'Clique em uma OS para ver detalhes e arquivos vinculados.',
+      'Aprove ou rejeite desenhos diretamente nesta tela.',
+      'Acompanhe o histórico de revisões de cada documento.',
+    ],
+    tips: [
+      'OS aprovadas são automaticamente enviadas para o ERP Protheus.',
+    ],
+    links: [
+      { path: '/engenharia/sinco/estrutura', label: 'SINCO – Estrutura' },
+      { path: '/sinco/desenho-ativo', label: 'Desenho Ativo' },
+    ],
+  },
 
-    // =============================================================
-    // AVISOS
-    // =============================================================
-    '/avisos': {
-        id: 'avisos',
-        category: 'Comunicação',
-        categoryColor: '#f59e0b',
-        title: 'Avisos e Comunicados',
-        icon: 'Bell',
-        description: 'Central de avisos, comunicados e notificações do sistema.',
-        steps: [
-            'Visualize todos os avisos publicados para o seu grupo de acesso.',
-            'Marque avisos como "Lido" para limpar da lista de pendentes.',
-            'Administradores podem criar novos avisos com texto rico, imagens e áudio.',
-            'Avisos com prazo de validade expiram automaticamente.',
-        ],
-        tips: [
-            'O ícone de sino 🔔 na sidebar mostra o número de avisos não lidos.',
-            'Avisos importantes podem ser configurados com alerta sonoro.',
-        ],
-        links: [],
-    },
+  // ── SINCO Estrutura ──────────────────────────────────────────────────────────
+  '/engenharia/sinco/estrutura': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'SINCO – Estrutura de Produtos',
+    icon: 'GitBranch',
+    description: 'Visualize e sincronize a estrutura de produtos originada do SolidEdge SINCO com o ERP.',
+    steps: [
+      'Selecione o produto para visualizar a estrutura sincronizada do SINCO.',
+      'Compare com a estrutura atual do ERP para identificar divergências.',
+      'Aprove a sincronização para atualizar o ERP.',
+      'Registre os motivos de alterações para rastreabilidade.',
+    ],
+    tips: [
+      'Sincronize após cada revisão de projeto para manter o ERP atualizado.',
+    ],
+    links: [
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+    ],
+  },
 
-    // =============================================================
-    // ANALYTICS
-    // =============================================================
-    '/analytics/evolucao': {
-        id: 'evolucao-producao',
-        category: 'Analytics',
-        categoryColor: '#0284c7',
-        title: 'Evolução da Produção',
-        icon: 'TrendingUp',
-        description: 'Gráficos de evolução comparando programado vs. realizado ao longo do tempo.',
-        steps: [
-            'Selecione o intervalo de análise (semana, mês, trimestre).',
-            'O gráfico compara a produção planejada com a efetivamente apontada.',
-            'Identifique padrões de eficiência ou gargalos recorrentes por período.',
-        ],
-        links: [
-            { label: 'Evolução do Apontamento', path: '/pcp/evolucao-apontamento' },
-            { label: 'Controle de Produção', path: '/controle-producao' },
-        ],
-    },
+  // ── SINCO Apontamento ────────────────────────────────────────────────────────
+  '/engenharia/sinco/apontamento': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'SINCO – Apontamento de Engenharia',
+    icon: 'PenTool',
+    description: 'Registre apontamentos de horas de engenharia por projeto e OS.',
+    steps: [
+      'Selecione a OS e a atividade de engenharia.',
+      'Informe o engenheiro responsável e as horas trabalhadas.',
+      'Confirme o apontamento para atualizar o custo da OS.',
+    ],
+    tips: [
+      'Apontamentos são a base para o cálculo de custo de desenvolvimento.',
+    ],
+    links: [
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+      { path: '/engenharia/sinco/apontamento-matrix', label: 'SINCO – Matrix' },
+    ],
+  },
+
+  // ── SINCO Apontamento Matrix ─────────────────────────────────────────────────
+  '/engenharia/sinco/apontamento-matrix': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'SINCO – Matriz de Apontamentos',
+    icon: 'Grid',
+    description: 'Visualize a carga de trabalho da equipe de engenharia em formato de matriz.',
+    steps: [
+      'Selecione o período de análise.',
+      'Visualize as horas apontadas por engenheiro e projeto.',
+      'Identifique sobrecarga e capacidade disponível.',
+    ],
+    tips: [
+      'Use para planejar a alocação de recursos de engenharia.',
+    ],
+    links: [
+      { path: '/engenharia/sinco/apontamento', label: 'SINCO – Apontamento' },
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+    ],
+  },
+
+  // ── SINCO Materiais ──────────────────────────────────────────────────────────
+  '/engenharia/sinco/materiais': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'SINCO – Materiais de Engenharia',
+    icon: 'Package',
+    description: 'Gerencie os materiais e componentes utilizados nos projetos de engenharia.',
+    steps: [
+      'Consulte o consumo de materiais por projeto/OS.',
+      'Registre requisições de materiais especiais para projetos.',
+      'Acompanhe o status de compra de materiais especificados.',
+    ],
+    tips: [
+      'Materiais especificados em projeto têm prioridade no processo de compras.',
+    ],
+    links: [
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+      { path: '/solicitacoes-compras', label: 'Solicitações de Compra' },
+    ],
+  },
+
+  // ── Desenho Ativo ────────────────────────────────────────────────────────────
+  '/sinco/desenho-ativo': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'Desenho Ativo',
+    icon: 'Layers',
+    description: 'Consulte e gerencie os desenhos técnicos ativos do sistema SINCO SolidEdge.',
+    steps: [
+      'Pesquise o desenho por código ou descrição.',
+      'Visualize a revisão atual e o histórico de alterações.',
+      'Faça download do arquivo do desenho.',
+      'Solicite revisão clicando em "Nova Revisão".',
+    ],
+    tips: [
+      'Apenas a revisão mais recente aprovada é considerada "ativa".',
+    ],
+    links: [
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+      { path: '/engenharia/sinco/estrutura', label: 'SINCO – Estrutura' },
+    ],
+  },
+
+  // ── Apontamento por Usuário ──────────────────────────────────────────────────
+  '/pcp/apontamento-por-usuario': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Apontamento por Usuário',
+    icon: 'User',
+    description: 'Visualize e gerencie os apontamentos de produção consolidados por operador/usuário.',
+    steps: [
+      'Selecione o operador e o período de análise.',
+      'Visualize todos os apontamentos do operador no período.',
+      'Identifique inconsistências e corrija quando necessário.',
+      'Exporte o relatório para folha de ponto ou RH.',
+    ],
+    tips: [
+      'Compare a produtividade entre operadores do mesmo turno.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/pcp/conferencia', label: 'Conferência de Apontamentos' },
+    ],
+  },
+
+  // ── Apontamento por Usuário OP ───────────────────────────────────────────────
+  '/pcp/apontamento-por-usuario-op': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Apontamento por Usuário / OP',
+    icon: 'UserCheck',
+    description: 'Visualize os apontamentos cruzados por usuário e ordem de produção.',
+    steps: [
+      'Selecione o período e os filtros desejados.',
+      'Analise a contribuição de cada operador por OP.',
+      'Exporte para análise de custo de mão de obra.',
+    ],
+    tips: [
+      'Use para calcular o custo real de mão de obra por ordem.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-por-usuario', label: 'Apontamento por Usuário' },
+      { path: '/producao', label: 'Ordens de Produção' },
+    ],
+  },
+
+  // ── SWorks ───────────────────────────────────────────────────────────────────
+  '/sworks': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'SWorks – Shop Floor',
+    icon: 'Monitor',
+    description: 'Interface de chão de fábrica para operadores. Visualize e registre operações de forma simplificada.',
+    steps: [
+      'O operador faz login com seu código.',
+      'Selecione a OP e a operação a executar.',
+      'Inicie o timer ao começar a operação.',
+      'Finalize registrando a quantidade produzida.',
+    ],
+    tips: [
+      'Interface otimizada para touchscreen e tablets industriais.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+    ],
+  },
+
+  // ── VMI Forecast ─────────────────────────────────────────────────────────────
+  '/vmi/forecast': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Forecast',
+    icon: 'TrendingUp',
+    description: 'Previsão de demanda e forecast de vendas para planejamento de produção e compras.',
+    steps: [
+      'Visualize o forecast atual por produto e período.',
+      'Ajuste as previsões manualmente quando necessário.',
+      'Compare forecast com consumo real.',
+      'Exporte para uso no planejamento de produção.',
+    ],
+    tips: [
+      'Forecasts são atualizados automaticamente com base no histórico de pedidos.',
+    ],
+    links: [
+      { path: '/vmi/pedido', label: 'VMI – Pedido' },
+      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+    ],
+  },
+
+  // ── VMI Pedido ───────────────────────────────────────────────────────────────
+  '/vmi/pedido': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Pedido',
+    icon: 'ShoppingBag',
+    description: 'Gestão de pedidos no modelo VMI (Vendor Managed Inventory).',
+    steps: [
+      'Visualize os pedidos VMI recebidos dos clientes.',
+      'Confirme disponibilidade e datas de entrega.',
+      'Gere ordens de produção a partir dos pedidos VMI.',
+    ],
+    tips: [
+      'No modelo VMI, o fornecedor gerencia o estoque do cliente automaticamente.',
+    ],
+    links: [
+      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+    ],
+  },
+
+  // ── VMI Leitura ──────────────────────────────────────────────────────────────
+  '/vmi/leitura': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Leitura de Estoque',
+    icon: 'BarcodeScan',
+    description: 'Leitura e atualização do estoque VMI no cliente via coleta de dados.',
+    steps: [
+      'Importe o arquivo de inventário recebido do cliente.',
+      'Confira as divergências entre o esperado e o informado.',
+      'Confirme a leitura para atualizar o sistema.',
+    ],
+    tips: [
+      'A leitura periódica garante a acuracidade do VMI.',
+    ],
+    links: [
+      { path: '/vmi/pedido', label: 'VMI – Pedido' },
+      { path: '/vmi/estrategia', label: 'VMI – Estratégia' },
+    ],
+  },
+
+  // ── VMI Dashboard ────────────────────────────────────────────────────────────
+  '/vmi/dashboard': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Dashboard',
+    icon: 'LayoutDashboard',
+    description: 'Dashboard executivo do programa VMI com KPIs de nível de serviço, cobertura e giro.',
+    steps: [
+      'Visualize o nível de serviço atual vs. meta.',
+      'Analise a cobertura de estoque por produto.',
+      'Identifique itens críticos (abaixo do ponto de reposição).',
+    ],
+    tips: [
+      'Um nível de serviço abaixo de 95% requer atenção imediata.',
+    ],
+    links: [
+      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+      { path: '/vmi/historico', label: 'VMI – Histórico' },
+    ],
+  },
+
+  // ── VMI Estratégia ───────────────────────────────────────────────────────────
+  '/vmi/estrategia': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Estratégia',
+    icon: 'Target',
+    description: 'Defina os parâmetros estratégicos do VMI: pontos de reposição, lotes mínimos e metas de cobertura.',
+    steps: [
+      'Configure o ponto de reposição para cada produto VMI.',
+      'Defina o lote mínimo de abastecimento.',
+      'Estabeleça as metas de cobertura de estoque.',
+      'Salve as configurações para ativar o cálculo automático.',
+    ],
+    tips: [
+      'Revise os parâmetros trimestralmente conforme mudanças de demanda.',
+    ],
+    links: [
+      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+    ],
+  },
+
+  // ── VMI Histórico ────────────────────────────────────────────────────────────
+  '/vmi/historico': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'VMI – Histórico',
+    icon: 'History',
+    description: 'Consulte o histórico de movimentações e reposições VMI por período e produto.',
+    steps: [
+      'Selecione o período e o cliente VMI.',
+      'Analise o histórico de pedidos e reposições.',
+      'Compare consumo real vs. forecast.',
+      'Exporte para relatórios de gestão.',
+    ],
+    tips: [
+      'Use para análise de sazonalidade e ajuste do forecast.',
+    ],
+    links: [
+      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+    ],
+  },
+
+  // ── Admin Protheus ───────────────────────────────────────────────────────────
+  '/admin/protheus-estudo': {
+    category: 'Administração',
+    categoryColor: '#64748b',
+    title: 'Admin – Protheus (Estudo)',
+    icon: 'Database',
+    description: 'Área administrativa para análise e estudo de integração com o ERP Protheus.',
+    steps: [
+      'Acesso restrito a administradores do sistema.',
+      'Use para testar e analisar a integração com o Protheus.',
+      'Consulte logs de sincronização e erros de integração.',
+    ],
+    tips: [
+      'Área técnica — não utilize em produção sem aprovação.',
+    ],
+    links: [
+      { path: '/configuracoes', label: 'Configurações' },
+    ],
+  },
+
 };
-
-/**
- * Returns the help content for a given path.
- * Supports dynamic routes like /estrutura/:codigo and /bom/:codigo
- */
-export function getHelpByPath(pathname) {
-    if (!pathname) return null;
-
-    // Direct match
-    if (HELP_CONTENT[pathname]) return HELP_CONTENT[pathname];
-
-    // Dynamic route match (e.g. /estrutura/XA100 → /estrutura/:codigo)
-    const dynamicPatterns = [
-        { regex: /^\/estrutura\/.+$/, key: '/estrutura/:codigo' },
-        { regex: /^\/bom\/.+$/, key: '/bom-generator' },
-    ];
-
-    for (const pattern of dynamicPatterns) {
-        if (pattern.regex.test(pathname)) {
-            return HELP_CONTENT[pattern.key] || null;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Returns all help modules as a flat array for search/listing.
- */
-export function getAllHelpModules() {
-    return Object.entries(HELP_CONTENT)
-        .filter(([key]) => !key.includes(':')) // exclude dynamic patterns
-        .map(([path, content]) => ({ path, ...content }));
-}

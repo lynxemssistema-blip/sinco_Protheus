@@ -6,7 +6,7 @@ import {
     ShieldCheck, Lightbulb, Zap, ArrowRight, Home, List, Grid,
     CheckSquare, TrendingUp, Bell, User, Layers
 } from 'lucide-react';
-import { getAllHelpModules } from '../config/helpContent';
+import { useHelp } from '../contexts/HelpContext';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_MAP = {
@@ -46,13 +46,15 @@ export default function HelpCenter() {
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedId, setSelectedId] = useState(null);
+    const [activeCategory, setActiveCategory] = useState('Todos');
+    const { allModules, openHelp, loadingHelp } = useHelp();
 
-    const allModules = useMemo(() => getAllHelpModules(), []);
+    const modules = allModules || [];
 
     // Build categories list
     const categories = useMemo(() => {
         const cats = {};
-        allModules.forEach(mod => {
+        modules.forEach(mod => {
             if (!cats[mod.category]) cats[mod.category] = [];
             cats[mod.category].push(mod);
         });

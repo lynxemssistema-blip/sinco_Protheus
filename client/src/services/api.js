@@ -284,6 +284,7 @@ export const saveUserPreference = (key, value) => api.put(`/users/preferences/${
 export const getMyPermissions = () => api.get('/users/my-permissions').then(res => res.data);
 export const getUserPermissions = (userId) => api.get(`/users/permissions/${userId}`).then(res => res.data);
 export const saveUserPermissions = (userId, permissions) => api.put(`/users/permissions/${userId}`, { permissions }).then(res => res.data);
+export const sendUserCredentials = (userIds) => api.post('/users/send-credentials', { userIds }).then(res => res.data);
 
 // PRODUCT EXTRAS
 // PRODUCT EXTRAS
@@ -372,8 +373,12 @@ export const resolveSalesNote = (id, user) => api.put(`/sales/notes/${id}/resolv
 // NOVO SINCO (SolidEdge Integration)
 export const getSincoStatus = () => api.get('/sinco/status').then(res => res.data);
 export const getSincoActiveDocument = () => api.get('/sinco/active-document').then(res => res.data);
+export const getSincoProduto = (codigo) => api.get(`/sinco/produto/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoProductStructure = (codigo) => api.get(`/sinco/estrutura/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoProdutosRaizes = () => api.get('/sinco/produtos-raizes').then(res => res.data);
+export const getSincoArvore = (codigo) => api.get(`/sinco/arvore/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getSincoRestricoes = (codigo) => api.get(`/sinco/restricoes/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getSincoOperacoes = (codigo) => api.get(`/sinco/operacoes/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const sincoExportDxf = (outputPath) => api.post('/sinco/export-dxf', { outputPath }).then(res => res.data);
 export const sincoExportPdf = (outputPath) => api.post('/sinco/export-pdf', { outputPath }).then(res => res.data);
 export const getSincoComentariosEngenharia = (codigo) => api.get(`/sinco/comentarios/${encodeURIComponent(codigo)}`).then(res => res.data);
@@ -422,6 +427,57 @@ export const getReportDownloadUrl = (type, params, category = 'production') => {
     return `${base}/api/reports/${category}/${type}?${query}`;
 };
 
+// FATURAMENTO SOLICITAÇÕES
+export const createFaturamentoSolicitacao = async (data) => {
+    const response = await api.post('/faturamento/solicitacoes', data);
+    return response.data;
+};
+
+export const getFaturamentoSolicitacoes = async (params) => {
+    const response = await api.get('/faturamento/solicitacoes', { params });
+    return response.data;
+};
+
+export const updateFaturamentoSolicitacaoStatus = async (id, status) => {
+    const response = await api.put(`/faturamento/solicitacoes/${id}/status`, { status });
+    return response.data;
+};
+
+// --- Novas rotas para edição de Solicitação e Auditoria --- //
+export const updateFaturamentoSolicitacaoItem = async (id, itemId, payload) => {
+    const response = await api.put(`/faturamento/solicitacoes/${id}/itens/${itemId}`, payload);
+    return response.data;
+};
+
+export const deleteFaturamentoSolicitacaoItem = async (id, itemId, payloadObj) => {
+    const response = await api.delete(`/faturamento/solicitacoes/${id}/itens/${itemId}`, { data: payloadObj });
+    return response.data;
+};
+
+export const insertFaturamentoSolicitacaoItem = async (id, payload) => {
+    const response = await api.post(`/faturamento/solicitacoes/${id}/itens`, payload);
+    return response.data;
+};
+
+export const updateFaturamentoSolicitacaoNotaFiscal = async (id, payload) => {
+    const response = await api.put(`/faturamento/solicitacoes/${id}/notafiscal`, payload);
+    return response.data;
+};
+
+export const getFaturamentoAuditoria = async (id) => {
+    const response = await api.get(`/faturamento/solicitacoes/${id}/auditoria`);
+    return response.data;
+};
+
+export const enviarFaturamentoEmailLote = async (data) => {
+    const response = await api.post('/faturamento/enviar-email-lote', data);
+    return response.data;
+};
+
+export const getFluxoCaixa = async (params) => {
+    const response = await api.get('/financeiro/fluxo-caixa', { params });
+    return response.data;
+};
+
 export { api };
 export default api;
-

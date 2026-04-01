@@ -41,6 +41,8 @@ const ALL_COLUMNS = [
     { key: 'status', label: 'Status', required: false },
     { key: 'qtd_entregue', label: 'Entreg.', required: false },
     { key: 'saldo', label: 'Saldo Fat.', required: false },
+    { key: 'valor_unitario', label: 'V. Unit (R$)', required: false },
+    { key: 'valor_total', label: 'V. Total (R$)', required: false },
     { key: 'quantidade', label: 'Qtd.', required: false },
     { key: 'lib_producao', label: 'Lib. Eng.', required: false },
     { key: 'entrega', label: 'Entrega', required: false },
@@ -89,6 +91,12 @@ function formatProtheusDate(value) {
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
     if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
     return raw;
+}
+
+function formatCurrency(value) {
+    const num = parseFloat(value);
+    if (isNaN(num)) return '-';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 }
 
 // ─── ColumnSettingsPanel ───────────────────────────────────────────────────────
@@ -213,6 +221,8 @@ const EngineeringOrdersPage = () => {
     const location = useLocation();
     const { user } = useAuth();
     const { orderFilters, updateOrderFilters } = useFilters();
+    
+    const canViewFinancials = user?.permissoes?.some(p => p.page_id === 'valores_financeiros' && p.can_view);
 
     const viewMode = 'flat';
     const [orders, setOrders] = useState([]);
@@ -454,6 +464,10 @@ const EngineeringOrdersPage = () => {
                         {parseFloat(item.qtd_faturar || 0).toLocaleString('pt-BR')}
                     </span>
                 );
+            case 'valor_unitario':
+                return <span className="font-mono text-gray-700 whitespace-nowrap">{formatCurrency(item.valor_unitario)}</span>;
+            case 'valor_total':
+                return <span className="font-mono font-bold text-gray-900 whitespace-nowrap">{formatCurrency(item.valor_total)}</span>;
             case 'quantidade':
                 return (
                     <span className="font-medium">
@@ -530,7 +544,7 @@ const EngineeringOrdersPage = () => {
         }
     };
 
-    const visibleCols = colConfig.filter(c => c.visible !== false);
+    const visibleCols = colConfig.filter(c => c.visible !== false && (canViewFinancials || !['valor_unitario', 'valor_total'].includes(c.key)));
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none">
@@ -772,7 +786,7 @@ const EngineeringOrdersPage = () => {
                             {visibleCols.map(col => (
                                 <th
                                     key={col.key}
-                                    className={`px-4 py-3 font-semibold whitespace-nowrap ${col.key === 'acoes' ? 'print:hidden text-center' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
+                                    className={`px-4 py-3 font-semibold whitespace-nowrap ${col.key === 'acoes' ? 'print:hidden text-center' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp', 'valor_unitario', 'valor_total'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
                                 >
                                     {col.label}
                                 </th>

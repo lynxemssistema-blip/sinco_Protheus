@@ -7,11 +7,14 @@ import {
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
+
     {
         id: 'comercial',
         label: 'Comercial',
         items: [
-            { id: 'vendas', label: 'Pedidos de Venda', path: '/', icon: ShoppingCart }
+            { id: 'vendas', label: 'Pedidos de Venda', path: '/', icon: ShoppingCart },
+            { id: 'itens_faturar', label: 'Itens a Faturar', path: '/vendas/itens-faturar', icon: ListOrdered },
+            { id: 'controle_faturamento', label: 'Controle de Faturamento', path: '/comercial/faturamento', icon: FileText }
         ]
     },
     {
@@ -21,7 +24,8 @@ export const MENU_GROUPS = [
             { id: 'eng_pedidos', label: 'Painel de Itens (Engenharia)', path: '/engenharia/pedidos', icon: Layers },
             { id: 'produtos', label: 'Catálogo de Produtos', path: '/produtos', icon: Package },
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
-            { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network }
+            { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network },
+            { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box }
         ]
     },
     {
@@ -72,6 +76,14 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'financeiro',
+        label: 'Financeiro',
+        items: [
+            { id: 'fluxo_caixa', label: 'Fluxo de Caixa', path: '/financeiro/fluxo-caixa', icon: TrendingUp },
+            { id: 'dashboard_financeiro', label: 'Dashboard Gerencial', path: '/financeiro/dashboard', icon: Database }
+        ]
+    },
+    {
         id: 'suprimentos',
         label: 'Suprimentos',
         items: [
@@ -82,12 +94,29 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'protheus',
+        label: 'Proteus (ERP)',
+        items: [
+            { id: 'protheus_dashboard', label: 'Visão Geral / Formulários', path: '/protheus', icon: Database }
+        ]
+    },
+    {
         id: 'qualidade',
         label: 'Qualidade',
         items: [
             { id: 'sgq', label: 'Gestão SGQ', path: '/sgq', icon: Building2 },
+            { id: 'sgq_mapeamento', label: 'Mapeamento de Processos', path: '/sgq/mapeamento-processos', icon: Network },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
             { id: 'relatorios', label: 'Relatórios Gerais', path: '/relatorios', icon: FileText }
+        ]
+    },
+    {
+        id: 'rh',
+        label: 'Recursos Humanos',
+        items: [
+            { id: 'rh_vagas', label: 'Gestão de Vagas', path: '/rh/vagas', icon: ClipboardList },
+            { id: 'rh_curriculos', label: 'Análise de Currículos (IA)', path: '/rh/curriculos', icon: FileText },
+            { id: 'sgq_cargos_funcoes', label: 'Cargos e Funções', path: '/sgq/cargos-funcoes', icon: Users }
         ]
     },
     {
@@ -108,7 +137,15 @@ export const MENU_GROUPS = [
         items: [
             { id: 'avisos', label: 'Avisos e Mensagens', path: '/avisos', icon: MessageSquare },
             { id: 'config', label: 'Configurações', path: '/configuracoes', icon: SettingsIcon },
+            { id: 'protheus-estudo', label: 'Estudo SQL Protheus', path: '/admin/protheus-estudo', icon: Database },
             { id: 'ajuda', label: 'Central de Ajuda', path: '/ajuda', icon: HelpCircle }
+        ]
+    },
+    {
+        id: 'financeiro_sensivel',
+        label: 'Acessos Sensíveis (RH/Financeiro)',
+        items: [
+            { id: 'valores_financeiros', label: 'Visualizar Valores Financeiros (R$)', path: '#', icon: BarChart, hidden: true }
         ]
     }
 ];

@@ -1,0 +1,754 @@
+const express = require('express');
+const router = express.Router();
+const mysqlPool = require('../services/mysqlService');
+
+// Inicialização automática do banco de dados (Tabelas de Faturamento)
+const initDB = async () => {
+    try {
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_faturamento_solicitacoes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                numero_solicitacao VARCHAR(50) NOT NULL UNIQUE,
+                usuario VARCHAR(100) NOT NULL,
+                status VARCHAR(50) DEFAULT 'Pendente',
+                observacao TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_faturamento_solicitacao_itens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                solicitacao_id INT NOT NULL,
+                pedido VARCHAR(50) NOT NULL,
+                item VARCHAR(50) NOT NULL,
+                codigo_produto VARCHAR(100) NOT NULL,
+                quantidade_solicitada DECIMAL(18,6) NOT NULL,
+                saldo_faturar_momentaneo DECIMAL(18,6) NOT NULL,
+                valor_unitario DECIMAL(18,2) NULL,
+                valor_total DECIMAL(18,2) NULL,
+                FOREIGN KEY (solicitacao_id) REFERENCES app_faturamento_solicitacoes(id) ON DELETE CASCADE
+            )
+        `);
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_faturamento_auditoria (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                solicitacao_id INT NOT NULL,
+                item_id INT NULL,
+                usuario VARCHAR(100) NOT NULL,
+                acao VARCHAR(100) NOT NULL,
+                detalhes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (solicitacao_id) REFERENCES app_faturamento_solicitacoes(id) ON DELETE CASCADE
+            )
+        `);
+
+        // Migration step: Add nota_fiscal, pedido_cliente and desenho_cliente
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacoes ADD COLUMN nota_fiscal VARCHAR(100) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN nota_fiscal VARCHAR(100) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pedido_cliente VARCHAR(100) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN desenho_cliente VARCHAR(100) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN nome_cliente VARCHAR(255) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN valor_unitario DECIMAL(18,2) NULL");
+        } catch (e) {}
+
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN valor_total DECIMAL(18,2) NULL");
+        } catch (e) {}
+
+        // Migrations para campos do PCP Forecasting (Rastreabilidade)
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_forecast_id INT NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_data_entrega DATE NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_serie_cliente VARCHAR(100) NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_serie_metalfisa VARCHAR(100) NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_numero_serie VARCHAR(150) NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_lote VARCHAR(100) NULL"); } catch (e) {}
+        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_numero_lote VARCHAR(150) NULL"); } catch (e) {}
+
+        console.log('✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.');
+    } catch (err) {
+        console.error('❌ [INIT] Erro ao criar tabelas de faturamento:', err.message);
+    }
+};
+
+// --- HELPER FUNCTION: Gravar Auditoria ---
+const registrarAuditoria = async (connection, solicitacao_id, item_id, usuario, acao, detalhes) => {
+    await connection.query(
+        `INSERT INTO app_faturamento_auditoria (solicitacao_id, item_id, usuario, acao, detalhes) VALUES (?, ?, ?, ?, ?)`,
+        [solicitacao_id, item_id || null, usuario, acao, detalhes ? JSON.stringify(detalhes) : null]
+    );
+};
+
+// Executar init logo na montagem da rota
+initDB();
+
+// Gerar número de solicitação único (ex: FAT-20260323-001)
+const gerarNumeroSolicitacao = async () => {
+    const dataAtual = new Date();
+    const prefix = `FAT-${dataAtual.getFullYear()}${String(dataAtual.getMonth() + 1).padStart(2, '0')}${String(dataAtual.getDate()).padStart(2, '0')}`;
+    
+    // Busca a ultima solicitação do dia
+    const [rows] = await mysqlPool.query(
+        "SELECT numero_solicitacao FROM app_faturamento_solicitacoes WHERE numero_solicitacao LIKE ? ORDER BY id DESC LIMIT 1",
+        [`${prefix}-%`]
+    );
+
+    let nextNumber = 1;
+    if (rows.length > 0) {
+        const lastNum = rows[0].numero_solicitacao;
+        const parts = lastNum.split('-');
+        nextNumber = parseInt(parts[2], 10) + 1;
+    }
+
+    return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+};
+
+// ROTA TEMPORÁRIA PARA MIGRAÇÃO DE DADOS ANTIGOS
+router.get('/migrate-pedidos', async (req, res) => {
+    try {
+        const pgPool = require('../services/postgresService');
+        const [rows] = await mysqlPool.query("SELECT id, pedido, item, codigo_produto FROM app_faturamento_solicitacao_itens WHERE pedido_cliente IS NULL OR desenho_cliente IS NULL OR nome_cliente IS NULL");
+        
+        let updatedCount = 0;
+        for (const r of rows) {
+            const { rows: pgRow } = await pgPool.query("SELECT TRIM(c6.c6_pedcli) as ped_cliente FROM public.sc6010 c6 WHERE TRIM(c6.c6_num) = $1 AND TRIM(c6.c6_item) = $2", [String(r.pedido).trim(), String(r.item).padStart(2, '0')]);
+            const { rows: zgRow } = await pgPool.query("SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') as ref_cliente FROM public.sz1010 z1 WHERE TRIM(z1.z1_produto) = $1 AND COALESCE(z1.d_e_l_e_t_, '') = ''", [String(r.codigo_produto).trim()]);
+            
+            const { rows: cliRow } = await pgPool.query(`
+                SELECT TRIM(sa1.a1_nome) as nome_cliente 
+                FROM public.sc5010 c5
+                JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                WHERE TRIM(c5.c5_num) = $1 AND COALESCE(c5.d_e_l_e_t_, '') = ''
+            `, [String(r.pedido).trim()]);
+
+            const pCli = pgRow.length > 0 && pgRow[0].ped_cliente ? pgRow[0].ped_cliente.trim() : '';
+            const rCli = zgRow.length > 0 && zgRow[0].ref_cliente ? zgRow[0].ref_cliente.trim() : '';
+            const nCli = cliRow.length > 0 && cliRow[0].nome_cliente ? cliRow[0].nome_cliente.trim() : '';
+            
+            await mysqlPool.query("UPDATE app_faturamento_solicitacao_itens SET pedido_cliente = ?, desenho_cliente = ?, nome_cliente = ? WHERE id = ?", [pCli, rCli, nCli, r.id]);
+            updatedCount++;
+        }
+        res.json({ success: true, message: `Migração concluída. Atualizados ${updatedCount} registros.` });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/faturamento/solicitacoes - Cria uma nova solicitação
+router.post('/solicitacoes', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { usuario, observacao, items } = req.body;
+
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item válido informado.' });
+        }
+        console.log("====== DEBUG ITEMS[0] ======", items[0]);
+
+        await connection.beginTransaction();
+
+        const numero_solicitacao = await gerarNumeroSolicitacao();
+
+        // 1. Inserir cabeçalho
+        const [resultHeader] = await connection.query(
+            `INSERT INTO app_faturamento_solicitacoes (numero_solicitacao, usuario, observacao, status) 
+             VALUES (?, ?, ?, 'Pendente')`,
+            [numero_solicitacao, usuario || 'Sistema', observacao || '']
+        );
+
+        const solicitacaoId = resultHeader.insertId;
+
+        // 2. Inserir itens
+        for (const it of items) {
+            if (!it.quantidade_solicitada || it.quantidade_solicitada <= 0) continue;
+
+            await connection.query(
+                `INSERT INTO app_faturamento_solicitacao_itens
+                 (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, pedido_cliente, desenho_cliente, nome_cliente, valor_unitario, valor_total,
+                  pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_numero_serie, pcp_lote, pcp_numero_lote)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    solicitacaoId,
+                    String(it.pedido).trim(),
+                    String(it.item).trim(),
+                    String(it.codigo).trim(),
+                    parseFloat(it.quantidade_solicitada),
+                    parseFloat(it.qtd_faturar || 0),
+                    it.ped_cliente ? String(it.ped_cliente).trim() : null,
+                    it.ref_cliente ? String(it.ref_cliente).trim() : null,
+                    it.nome_cliente ? String(it.nome_cliente).trim() : null,
+                    it.valor_unitario || null,
+                    it.valor_total || null,
+                    it.pcp_forecast_id || null,
+                    it.pcp_data_entrega || null,
+                    it.pcp_serie_cliente || null,
+                    it.pcp_serie_metalfisa || null,
+                    it.pcp_numero_serie || null,
+                    it.pcp_lote || null,
+                    it.pcp_numero_lote || null
+                ]
+            );
+        }
+
+        await connection.commit();
+        
+        // Log Assíncrono fora da transação principal para não bloquear
+        registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }).catch(console.error);
+
+        // Disparo de e-mail assíncrono para os usuários configurados
+        (async () => {
+            try {
+                const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+                if (configRows.length > 0 && configRows[0].general_config) {
+                    const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+                    const emailsConfig = configObj.faturamento_emails;
+                    
+                    if (emailsConfig && Array.isArray(emailsConfig) && emailsConfig.length > 0) {
+                        // Obter e-mails dos usuários
+                        const [userRows] = await mysqlPool.query(
+                            `SELECT email FROM usuario WHERE idUsuario IN (?) AND email IS NOT NULL AND email != ''`, 
+                            [emailsConfig]
+                        );
+                        const recipientList = userRows.map(u => u.email).filter(Boolean);
+                        
+                        if (recipientList.length > 0) {
+                            const nodemailer = require('nodemailer');
+                            let getCorpEmailType = (html) => html; // Default fallback
+                            try {
+                                const utils = require('../utils/emailTemplate');
+                                if (utils && utils.getCorporateEmailTemplate) getCorpEmailType = utils.getCorporateEmailTemplate;
+                            } catch (e) { console.warn("Could not load email template wrapper."); }
+                            
+                            const transporter = nodemailer.createTransport({
+                                host: 'smtp.task.com.br',
+                                port: 587,
+                                secure: false,
+                                auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+                                tls: { rejectUnauthorized: false }
+                            });
+
+                            let itemsHtml = items.map(it => `
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">${it.pedido}-${it.item}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: #334155;">${it.nome_cliente || '-'}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">${it.ped_cliente || '-'}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: #1e40af;">${it.ref_cliente || '-'}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">${it.codigo}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${it.quantidade_solicitada}</td>
+                                </tr>
+                            `).join('');
+
+                            const htmlBody = `
+                                <h2 style="color: #1e3a8a;">Nova Solicitação de Faturamento</h2>
+                                <p>Uma nova solicitação foi gerada pela equipe de Expedição.</p>
+                                <ul style="list-style-type: none; padding-left: 0; background-color: #f8fafc; padding: 15px; border-radius: 5px;">
+                                    <li><strong>Nº da Solicitação:</strong> <span style="font-size: 16px; font-weight: bold;">${numero_solicitacao}</span></li>
+                                    <li><strong>Solicitante:</strong> ${usuario || 'Sistema'}</li>
+                                    <li><strong>Data e Hora:</strong> ${new Date().toLocaleString('pt-BR')}</li>
+                                    <li><strong>Observações:</strong> ${observacao || 'Nenhuma observação adicional.'}</li>
+                                </ul>
+                                <h3 style="color: #334155; margin-top: 20px;">Itens da Solicitação</h3>
+                                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                                    <thead style="background-color: #f1f5f9; text-align: left;">
+                                        <tr>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1;">Pedido-Item</th>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1;">Cliente</th>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1;">Ped. Cliente</th>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1;">Desenho Cli.</th>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1;">Cód. Produto</th>
+                                            <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: right;">Qtd. Solicitada</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${itemsHtml}
+                                    </tbody>
+                                </table>
+                                <br/>
+                                <p style="font-size: 12px; color: #64748b;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
+                            `;
+
+                            await transporter.sendMail({
+                                from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                                to: recipientList.join(','),
+                                subject: `Nova Solicitacao de Faturamento: ${numero_solicitacao}`,
+                                html: getCorpEmailType(htmlBody)
+                            });
+
+                            console.log(`✅ E-mail de faturamento gerado para: ${recipientList.join(',')}`);
+                        }
+                    }
+                }
+            } catch (emailErr) {
+                console.error('❌ Erro no envio assíncrono de e-mail de faturamento:', emailErr);
+            }
+        })();
+
+        res.status(201).json({ 
+            success: true, 
+            message: 'Solicitação gerada com sucesso!',
+            numero_solicitacao,
+            id: solicitacaoId 
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao salvar solicitação de faturamento:', error);
+        res.status(500).json({ error: 'Erro interno ao processar a solicitação.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// GET /api/faturamento/solicitacoes - Lista solicitações (com busca e paginação)
+router.get('/solicitacoes', async (req, res) => {
+    try {
+        const { limit = 50, page = 1, status = '' } = req.query;
+        const limitParsed = parseInt(limit, 10) || 50;
+        const pageParsed = parseInt(page, 10) || 1;
+        const offset = (pageParsed - 1) * limitParsed;
+
+        let queryParams = [];
+        let whereClause = "WHERE 1=1";
+
+        if (status) {
+            whereClause += " AND s.status = ?";
+            queryParams.push(status);
+        }
+
+        // Busca Cabeçalhos
+        const [rows] = await mysqlPool.query(`
+            SELECT s.*, 
+            (SELECT COUNT(*) FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = s.id) as qtd_itens_diferentes
+            FROM app_faturamento_solicitacoes s
+            ${whereClause}
+            ORDER BY s.id DESC
+            LIMIT ? OFFSET ?
+        `, [...queryParams, limitParsed, offset]);
+
+        // Contagem Total
+        const [countResult] = await mysqlPool.query(`
+            SELECT COUNT(*) as total FROM app_faturamento_solicitacoes s ${whereClause}
+        `, queryParams);
+
+        // Se houver registros, busca os itens de cada solicitação para enriquecer o front-end na mesma requisição
+        if (rows.length > 0) {
+            const solicitacaoIds = rows.map(r => r.id);
+            const placeholders = solicitacaoIds.map(() => '?').join(',');
+            
+            const [itensRows] = await mysqlPool.query(`
+                SELECT * FROM app_faturamento_solicitacao_itens 
+                WHERE solicitacao_id IN (${placeholders})
+                ORDER BY pedido ASC, item ASC
+            `, solicitacaoIds);
+
+            // Agrupa os itens
+            rows.forEach(solicitacao => {
+                solicitacao.itens = itensRows.filter(i => i.solicitacao_id === solicitacao.id);
+            });
+        }
+
+        res.json({
+            data: rows,
+            meta: {
+                total: countResult[0].total,
+                page: pageParsed,
+                limit: limitParsed
+            }
+        });
+
+    } catch (error) {
+        console.error('Erro ao buscar solicitações:', error);
+        res.status(500).json({ error: 'Erro ao buscar solicitações' });
+    }
+});
+
+// GET /api/faturamento/solicitacoes/:id
+router.get('/solicitacoes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacoes WHERE id = ?", [id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Solicitação não encontrada' });
+        }
+
+        const solicitacao = rows[0];
+
+        const [itensRows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = ? ORDER BY pedido ASC, item ASC", [id]);
+        solicitacao.itens = itensRows;
+
+        res.json(solicitacao);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar solicitação' });
+    }
+});
+
+// PUT /api/faturamento/solicitacoes/:id/status
+router.put('/solicitacoes/:id/status', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id } = req.params;
+        const { status, usuario } = req.body;
+
+        await connection.beginTransaction();
+
+        const [oldItem] = await connection.query("SELECT status FROM app_faturamento_solicitacoes WHERE id = ?", [id]);
+        if (oldItem.length === 0) throw new Error("Solicitação não encontrada.");
+
+        const oldStatus = oldItem[0].status;
+
+        await connection.query("UPDATE app_faturamento_solicitacoes SET status = ? WHERE id = ?", [status, id]);
+
+        if (oldStatus !== status) {
+            await registrarAuditoria(connection, id, null, usuario || 'Sistema', 'ALTERACAO_STATUS', { 
+                de: oldStatus, 
+                para: status 
+            });
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: 'Status atualizado com sucesso!' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro atualizar status:', error);
+        res.status(500).json({ error: error.message || 'Erro ao atualizar status' });
+    } finally {
+        connection.release();
+    }
+});
+
+// GET /api/faturamento/solicitacoes/:id/auditoria - Resgata linha do tempo
+router.get('/solicitacoes/:id/auditoria', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_auditoria WHERE solicitacao_id = ? ORDER BY id DESC", [id]);
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar auditoria' });
+    }
+});
+
+// PUT /api/faturamento/solicitacoes/:id/notafiscal - Associa NF Global
+router.put('/solicitacoes/:id/notafiscal', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id } = req.params;
+        const { nota_fiscal, usuario } = req.body;
+
+        await connection.beginTransaction();
+
+        await connection.query("UPDATE app_faturamento_solicitacoes SET nota_fiscal = ? WHERE id = ?", [nota_fiscal, id]);
+
+        await registrarAuditoria(connection, id, null, usuario, 'VINCULO_NF', { nota_fiscal });
+
+        await connection.commit();
+        res.json({ success: true, message: 'Nota fiscal vinculada com sucesso!' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: 'Erro ao vincular nota fiscal' });
+    } finally {
+        connection.release();
+    }
+});
+
+// PUT /api/faturamento/solicitacoes/:id/itens/:itemId - Atualiza Quantidade ou NF de um item
+router.put('/solicitacoes/:id/itens/:itemId', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id, itemId } = req.params;
+        const { quantidade_solicitada, nota_fiscal, usuario } = req.body;
+
+        await connection.beginTransaction();
+
+        // Pega item antigo para o LOG
+        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ?", [itemId, id]);
+        if (oldItem.length === 0) throw new Error("Item não encontrado.");
+
+        await connection.query(
+            "UPDATE app_faturamento_solicitacao_itens SET quantidade_solicitada = ?, nota_fiscal = ? WHERE id = ?",
+            [quantidade_solicitada, nota_fiscal, itemId]
+        );
+
+        let detalhes = {};
+        let acao = 'ALTERACAO_ITEM';
+        if (oldItem[0].quantidade_solicitada != quantidade_solicitada) {
+            detalhes.qtd_de = parseFloat(oldItem[0].quantidade_solicitada);
+            detalhes.qtd_para = parseFloat(quantidade_solicitada);
+        }
+        if (oldItem[0].nota_fiscal != nota_fiscal) {
+            detalhes.nf_de = oldItem[0].nota_fiscal;
+            detalhes.nf_para = nota_fiscal;
+            acao = 'VINCULO_NF_ITEM';
+        }
+
+        await registrarAuditoria(connection, id, itemId, usuario, acao, detalhes);
+
+        await connection.commit();
+        res.json({ success: true, message: 'Item atualizado com sucesso!' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message || 'Erro ao atualizar item' });
+    } finally {
+        connection.release();
+    }
+});
+
+// DELETE /api/faturamento/solicitacoes/:id/itens/:itemId - Exclui um material
+router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id, itemId } = req.params;
+        const { usuario } = req.body; // Vem via json ou query no axios data
+
+        await connection.beginTransaction();
+
+        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ?", [itemId, id]);
+        if (oldItem.length === 0) throw new Error("Item não encontrado.");
+
+        await connection.query("DELETE FROM app_faturamento_solicitacao_itens WHERE id = ?", [itemId]);
+
+        await registrarAuditoria(connection, id, itemId, usuario, 'EXCLUSAO_ITEM', { 
+            codigo: oldItem[0].codigo_produto, 
+            pedido: oldItem[0].pedido, 
+            item: oldItem[0].item 
+        });
+
+        // Se deletou todos os itens, podemos cancelar a solicitacao (opcional)? Fica a critério do negócio.
+
+        await connection.commit();
+        res.json({ success: true, message: 'Item removido da solicitação.' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message || 'Erro ao excluir item' });
+    } finally {
+        connection.release();
+    }
+});
+
+// POST /api/faturamento/solicitacoes/:id/itens - Inserir material novo na solicitação
+router.post('/solicitacoes/:id/itens', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id } = req.params;
+        const { pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, nota_fiscal, ped_cliente, ref_cliente, usuario } = req.body;
+
+        await connection.beginTransaction();
+
+        const [resultItem] = await connection.query(
+            `INSERT INTO app_faturamento_solicitacao_itens 
+             (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, nota_fiscal, pedido_cliente, desenho_cliente)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                String(pedido).trim(),
+                String(item).trim(),
+                String(codigo_produto).trim(),
+                parseFloat(quantidade_solicitada),
+                parseFloat(saldo_faturar_momentaneo || 0),
+                nota_fiscal || null,
+                ped_cliente ? String(ped_cliente).trim() : null,
+                ref_cliente ? String(ref_cliente).trim() : null
+            ]
+        );
+
+        await registrarAuditoria(connection, id, resultItem.insertId, usuario, 'INCLUSAO_ITEM', { 
+            codigo: codigo_produto, 
+            qtd: quantidade_solicitada 
+        });
+
+        await connection.commit();
+        res.json({ success: true, message: 'Novo item inserido na solicitação!', id: resultItem.insertId });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message || 'Erro ao inserir novo item' });
+    } finally {
+        connection.release();
+    }
+});
+
+// POST /api/faturamento/enviar-email-lote - Envia faturamentos selecionados por email na forma de tabela HTML pura
+router.post('/enviar-email-lote', async (req, res) => {
+    try {
+        const { ids, usuario } = req.body;
+        
+        if (!ids || ids.length === 0) {
+            return res.status(400).json({ error: 'Nenhuma solicitação selecionada.' });
+        }
+
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (!configRows.length || !configRows[0].general_config) {
+            return res.status(400).json({ error: 'Configuração de e-mail não encontrada.' });
+        }
+
+        const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+        const emailsConfig = configObj.faturamento_emails;
+
+        if (!emailsConfig || !Array.isArray(emailsConfig) || emailsConfig.length === 0) {
+            return res.status(400).json({ error: 'Nenhum usuário configurado para receber e-mails de faturamento.' });
+        }
+
+        const [userRows] = await mysqlPool.query(
+            `SELECT email FROM usuario WHERE idUsuario IN (?) AND email IS NOT NULL AND email != ''`, 
+            [emailsConfig]
+        );
+        const recipientList = userRows.map(u => u.email).filter(Boolean);
+
+        if (recipientList.length === 0) {
+            return res.status(400).json({ error: 'Nenhum e-mail válido encontrado para os usuários configurados.' });
+        }
+
+        // Sanitiza IDs
+        const escapedIds = ids.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+        if (escapedIds.length === 0) return res.status(400).json({ error: 'IDs inválidos.' });
+
+        // Busca dados
+        const [sols] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacoes WHERE id IN (${escapedIds.join(',')})`);
+        const [items] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id IN (${escapedIds.join(',')})`);
+
+        let conteudosHtml = '';
+        for (const sol of sols) {
+            const solItems = items.filter(it => it.solicitacao_id === sol.id);
+            let itemsHtml = solItems.map(it => `
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px;">${it.pedido}-${it.item}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px; font-weight: bold; color: #334155;">${it.nome_cliente || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px;">${it.codigo_produto}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px; text-align: right;">${it.quantidade_solicitada}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px;">${it.pedido_cliente || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px; font-weight: bold; color: #1e40af;">${it.desenho_cliente || '-'}</td>
+                </tr>
+            `).join('');
+
+            conteudosHtml += `
+                <div style="margin-bottom: 30px; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; background-color: #fafbfc;">
+                    <h3 style="color: #0f172a; margin-top: 0; margin-bottom: 5px;">Solicitação: ${sol.numero_solicitacao}</h3>
+                    <p style="margin: 0; font-size: 13px; color: #475569;"><strong>Solicitante:</strong> ${sol.usuario}</p>
+                    <p style="margin: 0 0 15px 0; font-size: 13px; color: #475569;"><strong>Data:</strong> ${new Date(sol.created_at).toLocaleString('pt-BR')}</p>
+                    
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background-color: #f1f5f9; text-align: left;">
+                            <tr>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px;">Pedido/Item</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px;">Cliente</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px;">Cód. Produto</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px; text-align: right;">Qtd</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px;">Ped. Cliente</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1; font-size: 13px;">Desenho Cli.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        const nodemailer = require('nodemailer');
+        let getCorpEmailType = (html) => html;
+        try {
+            const utils = require('../utils/emailTemplate');
+            if (utils && utils.getCorporateEmailTemplate) getCorpEmailType = utils.getCorporateEmailTemplate;
+        } catch (e) { console.warn("Could not load email template wrapper."); }
+
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.task.com.br',
+            port: 587,
+            secure: false,
+            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+            tls: { rejectUnauthorized: false }
+        });
+
+        const htmlBody = `
+            <h2 style="color: #1e3a8a;">Resumo de Faturamentos Diários</h2>
+            <p style="font-size: 15px;"><strong>${usuario || 'Sistema'}</strong> disparou um resumo contendo <strong>${escapedIds.length}</strong> solicitação(ões) de expedição.</p>
+            <br/>
+            ${conteudosHtml}
+            <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
+        `;
+
+        await transporter.sendMail({
+            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            to: recipientList.join(','),
+            subject: `Lote de Faturamentos - ${escapedIds.length} Pedido(s) Selecionados`,
+            html: getCorpEmailType(htmlBody)
+        });
+
+        res.json({ success: true, message: 'E-mail HTML consolidado enviado com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao enviar e-mail Lote HTML:', error);
+        res.status(500).json({ error: 'Erro interno ao processar listagens.' });
+    }
+});
+
+// GET /api/faturamento/solicitacoes/:id/auditoria - Busca timeline de eventos de uma solicitação
+router.get('/solicitacoes/:id/auditoria', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(
+            'SELECT * FROM app_faturamento_auditoria WHERE solicitacao_id = ? ORDER BY created_at DESC',
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro GET /auditoria:', err);
+        res.status(500).json({ error: 'Erro ao buscar auditoria da solicitação.' });
+    }
+});
+
+// DELETE /api/faturamento/solicitacoes/:id/itens/:itemId - Remove um item da solicitação
+router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        const { id, itemId } = req.params;
+        const { usuario } = req.body;
+
+        await connection.beginTransaction();
+
+        // Obtem dados do item antes de excluir para o log
+        const [itemRows] = await connection.query('SELECT codigo_produto, quantidade_solicitada FROM app_faturamento_solicitacao_itens WHERE id = ?', [itemId]);
+        if (itemRows.length === 0) {
+            throw new Error('Item não encontrado ou já deletado.');
+        }
+
+        const deletedItem = itemRows[0];
+
+        // Processa exclusão
+        await connection.query('DELETE FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ?', [itemId, id]);
+
+        // Registra Auditoria
+        await registrarAuditoria(connection, id, itemId, usuario || 'Sistema', 'EXCLUSAO_ITEM', {
+            codigo: deletedItem.codigo_produto,
+            qtd: deletedItem.quantidade_solicitada,
+            motivo: 'Exclusão unitária via painel'
+        });
+
+        await connection.commit();
+        res.json({ success: true, message: 'Item removido com sucesso!' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro DELETE /item:', error);
+        res.status(500).json({ error: error.message || 'Erro ao deletar item da solicitação.' });
+    } finally {
+        connection.release();
+    }
+});
+
+module.exports = router;

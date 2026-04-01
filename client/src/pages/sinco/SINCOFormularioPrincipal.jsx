@@ -1,178 +1,412 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
+import { getSincoArvore, getSincoRestricoes, getSincoOperacoes, getSincoProduto } from '../../services/api';
+
+const estadoVazio = {
+    arquivo:     'Nenhum arquivo carregado',
+    caminho:     'Nenhum arquivo carregado',
+    titulo:      '',
+    grupo:       '',
+    unidade:     '',
+    tipo:        '',
+    rev:         '',
+    peso:        '',
+    espessura:   '',
+    largura:     '',
+    comprimento: '',
+    area:        '',
+    acabamento:  '' // Mantido da imagem, mas sem Autor/Data
+};
 
 export default function SINCOFormularioPrincipal() {
-    // Parâmetros de URL, passados pelo Desktop Solid Edge
     const [searchParams] = useSearchParams();
-    const arquivoCorrente = searchParams.get('arquivo') || 'Nenhum arquivo carregado';
-    const tituloCorrente = searchParams.get('titulo') || '';
-    const grupoCorrente = searchParams.get('grupo') || '';
-    const unidadeCorrente = searchParams.get('unidade') || '';
-    const tipoCorrente = searchParams.get('tipo') || '';
-    const revCorrente = searchParams.get('rev') || '';
 
-    const [loading, setLoading] = useState(false);
+    const [dados, setDados] = useState({
+        arquivo:     searchParams.get('arquivo')     || estadoVazio.arquivo,
+        caminho:     searchParams.get('caminho')     || searchParams.get('arquivo') || estadoVazio.caminho,
+        titulo:      searchParams.get('titulo')      || '',
+        grupo:       searchParams.get('grupo')       || '',
+        unidade:     searchParams.get('unidade')     || '',
+        tipo:        searchParams.get('tipo')        || '',
+        rev:         searchParams.get('rev')         || '',
+        peso:        searchParams.get('peso')        || '',
+        espessura:   searchParams.get('espessura')   || '',
+        largura:     searchParams.get('largura')     || '',
+        comprimento: searchParams.get('comprimento') || '',
+        area:        searchParams.get('area')        || '',
+        acabamento:  searchParams.get('acabamento')  || '',
+    });
+    const [busca, setBusca]           = useState('');
+    const [arvore, setArvore]         = useState([]);
+    const [restricoes, setRestricoes] = useState([]);
+    const [operacoes, setOperacoes]   = useState([]);
+    const [erroProtheus, setErroProtheus] = useState(null);
+
+    const [loadingArvore, setLoadingArvore] = useState(false);
+    const [loadingRest, setLoadingRest]     = useState(false);
+    const [loadingOpe, setLoadingOpe]       = useState(false);
+
+    const carregarProtheus = useCallback(async (codigo) => {
+        if (!codigo || codigo === estadoVazio.arquivo) {
+            setArvore([]);
+            setRestricoes([]);
+            setOperacoes([]);
+            setErroProtheus(null);
+            return;
+        }
+
+        // Remover a extensão do arquivo (.psm, .asm, .par, etc.)
+        const codigoSemExtensao = codigo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+        setErroProtheus(null);
+        setLoadingArvore(true);
+        setLoadingRest(true);
+        setLoadingOpe(true);
+        try {
+            const [rA, rR, rO] = await Promise.all([
+                getSincoArvore(codigoSemExtensao),
+                getSincoRestricoes(codigoSemExtensao),
+                getSincoOperacoes(codigoSemExtensao),
+            ]);
+            setArvore(Array.isArray(rA) ? rA : []);
+            setRestricoes(Array.isArray(rR) ? rR : []);
+            setOperacoes(Array.isArray(rO) ? rO : []);
+        } catch (error) {
+            console.error("Erro ao carregar dados do Protheus:", error);
+            setErroProtheus(error.response?.data?.error || error.message || 'Erro desconhecido ao consultar');
+            setArvore([]);
+            setRestricoes([]);
+            setOperacoes([]);
+        } finally {
+            setLoadingArvore(false);
+            setLoadingRest(false);
+            setLoadingOpe(false);
+        }
+    }, []);
+
+    // Carrega na primeira abertura (via URL)
+    useEffect(() => {
+        const cod = searchParams.get('arquivo');
+        if (cod) carregarProtheus(cod);
+    }, [searchParams, carregarProtheus]);
+
+    // Socket.io — recebe atualização em tempo real do Solid Edge Desktop
+    useEffect(() => {
+        let socket = null;
+        import('socket.io-client').then(({ io }) => {
+            socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+            socket.on('connect', () => { socket.emit('join_sinco_formulario'); });
+            socket.on('sinco:desenho_atualizado', (novos) => {
+                setDados(prev => {
+                    const arquivoMudou = novos.arquivo && novos.arquivo !== prev.arquivo;
+                    if (arquivoMudou) carregarProtheus(novos.arquivo);
+                    return arquivoMudou ? { ...estadoVazio, ...novos } : { ...prev, ...novos };
+                });
+            });
+        });
+        return () => { if (socket) socket.disconnect(); };
+    }, [carregarProtheus]);
+
+    const buscarProdutoManual = async (codigo) => {
+        if (!codigo) return;
+        const codigoSemExtensao = codigo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+        
+        setErroProtheus(null);
+        setDados({
+            ...estadoVazio,
+            arquivo: codigoSemExtensao,
+            caminho: 'Busca via ERP',
+        });
+        
+        try {
+            const p = await getSincoProduto(codigoSemExtensao);
+            if (p) {
+                setDados(prev => ({
+                    ...prev,
+                    titulo: p.titulo || '',
+                    tipo: p.tipo || '',
+                    unidade: p.unidade || '',
+                    grupo: p.grupo || '',
+                    peso: p.peso || prev.peso,
+                    rev: p.rev || prev.rev,
+                    espessura: p.espessura || prev.espessura,
+                    largura: p.largura || prev.largura,
+                    comprimento: p.comprimento || prev.comprimento,
+                    area: p.area || prev.area
+                }));
+            }
+        } catch (e) {
+            setErroProtheus(`Produto ${codigoSemExtensao} não encontrado no Protheus (SB1/SB5). As tabelas ainda podem retornar dados se existirem.`);
+        }
+        
+        carregarProtheus(codigoSemExtensao);
+    };
+
+    const temArquivo = dados.arquivo !== estadoVazio.arquivo;
+    const materiais  = arvore; // mostra todos os componentes do BOM, sem filtrar por tipo
+
+    const inputCls = "w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder-slate-400";
+    const readCls  = "w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-sm font-mono text-slate-600";
+    const lblCls   = "block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1";
+    const boxTitleCls = "text-xs font-semibold uppercase tracking-wider px-3 py-2 border-b";
+    const thCls    = "px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider bg-white sticky top-0 border-b border-slate-100";
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col h-screen space-y-4 max-w-[1800px] mx-auto p-4 overflow-hidden">
             {/* Cabeçalho */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                        SINCO - Solid Edge - Lynx
-                    </h1>
-                    <div className="flex items-center gap-2 mt-1">
-                        <span className="text-sm font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                    <h1 className="text-xl font-bold tracking-tight text-slate-900">SINCO - Solid Edge - Lynx</h1>
+                    <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                             Web Version (MetalFisa 5 UI)
                         </span>
-                        <p className="text-slate-500 text-sm">
-                            Arquivo Corrente: <strong className="text-slate-700">{arquivoCorrente}</strong>
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Barra de Ferramentas (Top Buttons) */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2 flex flex-wrap gap-2 overflow-x-auto">
-                <button className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
-                    <Save className="h-4 w-4" />
-                    Salvar - SINCO
-                </button>
-                <div className="w-px h-8 bg-slate-200 self-center mx-1"></div>
-                <button className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <Search className="h-4 w-4 text-slate-500" />
-                    Buscar Cod. - Protheus
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <FileText className="h-4 w-4 text-emerald-500" />
-                    Abrir DFT
-                </button>
-                <div className="w-px h-8 bg-slate-200 self-center mx-1"></div>
-                <button className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-medium rounded-lg transition-colors">
-                    <FileDigit className="h-4 w-4" />
-                    Gerar PDF
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <Download className="h-4 w-4" />
-                    Gerar dxf
-                </button>
-                <div className="w-px h-8 bg-slate-200 self-center mx-1"></div>
-                <button className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <Upload className="h-4 w-4 text-blue-500" />
-                    Ativar/Criar Propriedades
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-sm font-medium rounded-lg transition-colors">
-                    <FileSignature className="h-4 w-4" />
-                    Projeto Protheus
-                </button>
-                <div className="w-px h-8 bg-slate-200 self-center mx-1"></div>
-                <button className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-medium rounded-lg transition-colors">
-                    <FileDigit className="h-4 w-4" />
-                    Gerar PDF Lote
-                </button>
-                <div className="w-px h-8 bg-slate-200 self-center mx-1"></div>
-                <button className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <RefreshCw className="h-4 w-4 text-slate-500" />
-                    Atualizações de dados
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    <Settings className="h-4 w-4 text-slate-500" />
-                    Configurações
-                </button>
-            </div>
-
-            {/* Painel Principal de Dados */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
-                
-                {/* Linha 1: Filtros/Campos */}
-                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    <div className="col-span-1 border-r border-slate-100 pr-4">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Tipo</label>
-                        <input type="text" defaultValue={tipoCorrente} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" />
-                    </div>
-                    <div className="col-span-1 border-r border-slate-100 pr-4">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Unidade</label>
-                        <input type="text" defaultValue={unidadeCorrente} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" />
-                    </div>
-                    <div className="col-span-1 lg:col-span-2 border-r border-slate-100 pr-4">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Grupo</label>
-                        <input type="text" defaultValue={grupoCorrente} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" />
-                    </div>
-                    <div className="col-span-1 lg:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Título</label>
-                        <input type="text" defaultValue={tituloCorrente} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Ex: PORCA SEXT A6 INOX" />
+                        <span className="text-slate-400 text-xs">|</span>
+                        <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                            Arquivo Corrente:
+                            {temArquivo && dados.caminho && dados.caminho !== estadoVazio.caminho ? (
+                                <button
+                                    title="Abrir no Solid Edge"
+                                    onClick={() => {
+                                        fetch('http://localhost:8080/api/solidedge/open-file', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ caminho: dados.caminho })
+                                        }).catch(() => alert('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.'));
+                                    }}
+                                    className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs">
+                                    {dados.caminho}
+                                </button>
+                            ) : (
+                                <strong className="text-slate-400 font-mono">{dados.caminho}</strong>
+                            )}
+                        </span>
                     </div>
                 </div>
 
-                {/* Linha 2 de Detalhes e Operação Protheus */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-4 border-t border-slate-100">
+                {/* Filtro de Busca Manual */}
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <Search className="h-4 w-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input 
+                            type="text" 
+                            value={busca} 
+                            onChange={(e) => setBusca(e.target.value)} 
+                            onKeyDown={(e) => e.key === 'Enter' && buscarProdutoManual(busca)}
+                            placeholder="Consultar Produto..."
+                            className="w-56 pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        />
+                    </div>
+                    <button 
+                        onClick={() => buscarProdutoManual(busca)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-sm border border-blue-700 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
+                    >
+                        Buscar ERP
+                    </button>
+                </div>
+            </div>
+
+            {/* Barra de Ferramentas */}
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 flex flex-wrap gap-1.5 items-center">
+                <button
+                    onClick={() => carregarProtheus(dados.arquivo)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm border border-indigo-700 text-xs font-medium rounded-md transition-colors">
+                    <RefreshCw className="h-3.5 w-3.5" /> Atualizar Protheus (BOM/Roteiro)
+                </button>
+            </div>
+
+            {/* Erro de comunicação com Protheus */}
+            {erroProtheus && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+                    <span className="font-semibold whitespace-nowrap">Erro Protheus:</span>
+                    <span className="font-mono break-all">{erroProtheus}</span>
+                </div>
+            )}
+
+            {/* Layout do Formulário Principal - Limpo e Compacto */}
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+                <div className="grid grid-cols-12 gap-x-4 gap-y-3">
                     
-                    {/* Campos Diversos */}
-                    <div className="lg:col-span-4 space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Num. Documento</label>
-                                <input type="text" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-600" defaultValue="MTA-0350 PAR" readOnly />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Rev. Metalfisa</label>
-                                <input type="text" defaultValue={revCorrente} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Comentários-Acabamento</label>
-                            <input type="text" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm" defaultValue="CINZA N6,5 TEXTURIZADO - 80 MICRAS" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Autor</label>
-                                <input type="text" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm" defaultValue="ADM" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Data</label>
-                                <input type="text" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm" />
-                            </div>
-                        </div>
+                    {/* Linha 1 */}
+                    <div className="col-span-2">
+                        <label className={lblCls}>Tipo</label>
+                        <input type="text" value={dados.tipo} onChange={e => setDados(p => ({...p, tipo: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-2">
+                        <label className={lblCls}>Unidade</label>
+                        <input type="text" value={dados.unidade} onChange={e => setDados(p => ({...p, unidade: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-3">
+                        <label className={lblCls}>Grupo</label>
+                        <input type="text" value={dados.grupo} onChange={e => setDados(p => ({...p, grupo: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-5">
+                        <label className={lblCls}>Título</label>
+                        <input type="text" value={dados.titulo} onChange={e => setDados(p => ({...p, titulo: e.target.value}))} placeholder="Ex: PORCA SEXT A6 INOX" className={inputCls} />
                     </div>
 
-                    {/* Operação do Protheus / Processos */}
-                    <div className="lg:col-span-4 border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-                        <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 font-semibold text-sm text-slate-700 flex justify-between items-center">
-                            <span>Operação do Protheus</span>
-                        </div>
-                        <div className="flex-1 overflow-auto bg-white p-2 text-sm text-slate-500 flex items-center justify-center">
-                            <span className="italic">Nenhuma operação carregada.</span>
-                        </div>
+                    {/* Linha 2 */}
+                    <div className="col-span-3">
+                        <label className={lblCls}>Num. Documento</label>
+                        <input type="text" value={dados.arquivo} readOnly className={readCls} />
+                    </div>
+                    <div className="col-span-2">
+                        <label className={lblCls}>Rev. Metalfisa</label>
+                        <input type="text" value={dados.rev} onChange={e => setDados(p => ({...p, rev: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-2">
+                        <label className={lblCls}>Peso (kg)</label>
+                        <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({...p, peso: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-2">
+                        <label className={lblCls}>Área Pintura (m²)</label>
+                        <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({...p, area: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-1">
+                        <label className={lblCls}>Espess. (mm)</label>
+                        <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({...p, espessura: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-1">
+                        <label className={lblCls}>Larg. (mm)</label>
+                        <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({...p, largura: e.target.value}))} className={inputCls} />
+                    </div>
+                    <div className="col-span-1">
+                        <label className={lblCls}>Compr. (mm)</label>
+                        <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({...p, comprimento: e.target.value}))} className={inputCls} />
                     </div>
 
-                    {/* Gabaritos Cliente */}
-                    <div className="lg:col-span-4 border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-                        <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 font-semibold text-sm text-slate-700 flex justify-between items-center">
-                            <span>Gabaritos / Desenho do Cliente</span>
-                        </div>
-                        <div className="flex-1 p-0 overflow-auto">
-                            <table className="w-full text-left text-sm whitespace-nowrap">
-                                <thead className="bg-white sticky top-0 border-b border-slate-100">
-                                    <tr className="text-xs text-slate-500 uppercase tracking-wider">
-                                        <th className="px-3 py-2">Gabarito</th>
-                                        <th className="px-3 py-2">DescDetalha</th>
-                                        <th className="px-3 py-2">Endereço</th>
-                                        <th className="px-3 py-2">Descrição</th>
+                    {/* Linha 3 */}
+                    <div className="col-span-12">
+                        <label className={lblCls}>Comentários - Acabamento</label>
+                        <input type="text" value={dados.acabamento} onChange={e => setDados(p => ({...p, acabamento: e.target.value}))} placeholder="Ex: CINZA N6,5 TEXTURIZADO - 80 MICRAS" className={inputCls} />
+                    </div>
+                </div>
+            </div>
+
+            {/* Sub-tabelas: Árvore do Produto + Operações + Restrições SZ1 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0 pb-2">
+                {/* 1. Árvore */}
+                <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden h-full">
+                    <div className={`${boxTitleCls} bg-emerald-50 text-emerald-700 border-emerald-100 flex justify-between items-center`}>
+                        <span>Árvore do Produto (Materiais)</span>
+                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-emerald-200 text-emerald-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-slate-50/50">
+                         {loadingArvore ? (
+                            <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando componentes...</div>
+                        ) : (
+                            <table className="w-full text-left text-xs bg-white">
+                                <thead>
+                                    <tr>
+                                        <th className={thCls}>Nív.</th>
+                                        <th className={thCls}>Código</th>
+                                        <th className={thCls}>Descrição</th>
+                                        <th className={thCls + " text-right"}>Qtde</th>
+                                        <th className={thCls}>UN</th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    <tr>
-                                        <td colSpan="4" className="text-center py-8 text-slate-400 italic">Lista vazia</td>
-                                    </tr>
+                                <tbody className="divide-y divide-slate-100">
+                                    {materiais.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="5" className="text-center py-12 text-slate-400 italic">
+                                                Nenhum material carregado para a estrutura
+                                            </td>
+                                        </tr>
+                                    ) : materiais.map((r, i) => (
+                                        <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
+                                            <td className="px-3 py-2 text-slate-400 font-medium">{r.nivel}</td>
+                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.componente}</td>
+                                            <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.descricao}>{r.descricao || '—'}</td>
+                                            <td className="px-3 py-2 text-right text-slate-700 font-mono tabular-nums">{Number(r.quantidade).toFixed(4)}</td>
+                                            <td className="px-3 py-2 text-slate-500">{r.unidade || '—'}</td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
-                        </div>
+                        )}
                     </div>
                 </div>
 
-                {/* As listas de Materiais inferiores foram removidas a pedido do usuário, que irá recriá-las/alterá-las futuramente. */}
-
+                {/* 2. Restrições */}
+                <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden h-full">
+                    <div className={`${boxTitleCls} bg-amber-50 text-amber-700 border-amber-100 flex justify-between items-center`}>
+                        <span>Restrições Produto × Cliente (SZ1)</span>
+                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-slate-50/50">
+                        {loadingRest ? (
+                            <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando restrições...</div>
+                        ) : (
+                            <table className="w-full text-left text-xs bg-white">
+                                <thead>
+                                    <tr>
+                                        <th className={thCls}>Cliente</th>
+                                        <th className={thCls}>Nome</th>
+                                        <th className={thCls}>Cód CL.</th>
+                                        <th className={thCls}>Rev</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {restricoes.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="4" className="text-center py-12 text-slate-400 italic">
+                                                Nenhuma restrição encontrada no Protheus
+                                            </td>
+                                        </tr>
+                                    ) : restricoes.map((r, i) => (
+                                        <tr key={i} className="hover:bg-amber-50/30 transition-colors">
+                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.cliente}</td>
+                                            <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.nome_cliente}>{r.nome_cliente}</td>
+                                            <td className="px-3 py-2 font-mono text-slate-500">{r.cod_cliente || '—'}</td>
+                                            <td className="px-3 py-2 font-semibold text-amber-700 bg-amber-50/50 text-center">{r.revisao}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+                
+                {/* 3. Operações */}
+                <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden h-full">
+                    <div className={`${boxTitleCls} bg-blue-50 text-blue-700 border-blue-100 flex justify-between items-center`}>
+                        <span>Operações (Roteiro)</span>
+                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-blue-200 text-blue-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-slate-50/50">
+                        {loadingOpe ? (
+                            <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando operações...</div>
+                        ) : (
+                            <table className="w-full text-left text-xs bg-white">
+                                <thead>
+                                    <tr>
+                                        <th className={thCls}>Operação</th>
+                                        <th className={thCls}>Descrição</th>
+                                        <th className={thCls}>Recurso</th>
+                                        <th className={thCls + " text-right"}>Tempo Padrão</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {operacoes.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="4" className="text-center py-12 text-slate-400 italic">
+                                                Nenhuma operação encontrada no Protheus
+                                            </td>
+                                        </tr>
+                                    ) : operacoes.map((r, i) => (
+                                        <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.operacao}</td>
+                                            <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.descricao || r.recurso_descricao}>{r.descricao || r.recurso_descricao || r.recurso}</td>
+                                            <td className="px-3 py-2 font-mono text-slate-500">{r.recurso_descricao ? `${r.recurso} - ${r.recurso_descricao}` : (r.recurso || '—')}</td>
+                                            <td className="px-3 py-2 font-mono text-blue-600 font-medium text-right bg-blue-50/50">{Number(r.tempo || 0).toFixed(2)} min</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );

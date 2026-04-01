@@ -661,4 +661,157 @@ router.get('/integrated-product-view', async (req, res) => {
     }
 });
 
+// =========================================================================
+// SINCO Formulário Web — integração Solid Edge Desktop → Página Web
+// =========================================================================
+
+const { Client } = require('pg');
+
+const pgProtheus = {
+    host: '192.168.1.61', port: 5432,
+    user: 'sinco2', password: 'sinco25', database: 'p12prd'
+};
+
+async function queryProtheus(sql, params) {
+    const client = new Client(pgProtheus);
+    await client.connect();
+    try {
+        const res = await client.query(sql, params);
+        return res.rows;
+    } finally {
+        await client.end();
+    }
+}
+
+// GET /api/sinco/arvore/:codigo — estrutura do produto (BOM) via Protheus (SG1010)
+router.get('/arvore/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(g.g1_niv)    AS nivel,
+                TRIM(g.g1_comp)   AS componente,
+                g.g1_quant        AS quantidade,
+                TRIM(b.b1_desc)   AS descricao,
+                TRIM(b.b1_um)     AS unidade,
+                TRIM(b.b1_tipo)   AS tipo
+            FROM public.sg1010 g
+            LEFT JOIN public.sb1010 b
+                ON TRIM(b.b1_cod) = TRIM(g.g1_comp)
+                AND COALESCE(b.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            WHERE TRIM(g.g1_cod) = $1
+              AND COALESCE(g.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY g.g1_niv, g.g1_comp
+        `, [codigo]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro arvore produto (Protheus):', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/sinco/produto/:codigo — dados básicos + complementares do produto (SB1 + SB5)
+router.get('/produto/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(sb1.b1_cod)     AS codigo,
+                TRIM(sb1.b1_desc)    AS titulo,
+                TRIM(sb1.b1_tipo)    AS tipo,
+                TRIM(sb1.b1_um)      AS unidade,
+                TRIM(sb1.b1_grupo)   AS grupo,
+                sb1.b1_peso          AS peso,
+                TRIM(sb1.b1_rev)     AS rev,
+                sb5.b5_compr         AS comprimento,
+                sb5.b5_larg          AS largura,
+                sb5.b5_espess        AS espessura,
+                sb5.b5_volume        AS area
+            FROM public.sb1010 sb1
+            LEFT JOIN public.sb5010 sb5 
+                ON TRIM(sb1.b1_cod) = TRIM(sb5.b5_cod) 
+                AND COALESCE(sb5.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            WHERE TRIM(sb1.b1_cod) = $1
+              AND COALESCE(sb1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+        `, [codigo]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Produto não encontrado no Protheus (SB1010).' });
+        }
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Erro ao buscar produto (Protheus):', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/sinco/restricoes/:codigo — SZ1 Produto X Cliente
+router.get('/restricoes/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(z1_cliente)  AS cliente,
+                TRIM(z1_loja)     AS loja,
+                TRIM(z1_nomecli)  AS nome_cliente,
+                TRIM(z1_codcli)   AS cod_cliente,
+                TRIM(z1_desccli)  AS desc_cliente,
+                TRIM(z1_revisao)  AS revisao
+            FROM public.sz1010
+            WHERE TRIM(z1_produto) = $1
+              AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
+            ORDER BY z1_nomecli
+        `, [codigo]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro restricoes SZ1:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/sinco/operacoes/:codigo — roteiro de operações via Protheus (SG2010 + SH1010)
+router.get('/operacoes/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(g2.g2_operac)                                          AS operacao,
+                COALESCE(NULLIF(TRIM(g2.g2_descri), ''), TRIM(h1.h1_descri), '') AS descricao,
+                TRIM(g2.g2_recurso)                                         AS recurso,
+                TRIM(h1.h1_descri)                                          AS recurso_descricao,
+                g2.g2_tempad                                                AS tempo
+            FROM public.sg2010 g2
+            LEFT JOIN public.sh1010 h1
+                ON h1.h1_codigo = g2.g2_recurso
+                AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE TRIM(g2.g2_produto) = $1
+              AND COALESCE(g2.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY g2.g2_operac
+        `, [codigo]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro operacoes (Protheus):', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Último estado recebido do Solid Edge (memória volátil, limpa ao reiniciar servidor)
+let dadosCorrenteSE = null;
+
+// POST /api/sinco/dados-correntes — recebe dados do desktop e transmite via socket
+router.post('/dados-correntes', (req, res) => {
+    const io = req.app.get('io');
+    dadosCorrenteSE = req.body;
+    io.to('sinco_formulario').emit('sinco:desenho_atualizado', dadosCorrenteSE);
+    res.json({ ok: true });
+});
+
+// GET /api/sinco/dados-correntes/conectados — retorna quantos clientes estão com a página aberta
+router.get('/dados-correntes/conectados', (req, res) => {
+    const io = req.app.get('io');
+    const room = io.sockets.adapter.rooms.get('sinco_formulario');
+    const conectados = room ? room.size : 0;
+    res.json({ conectados });
+});
+
 module.exports = router;

@@ -42,6 +42,12 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Sala do formulário SINCO (Solid Edge Desktop → Web)
+    socket.on('join_sinco_formulario', () => {
+        socket.join('sinco_formulario');
+        console.log(`🟢 [SINCO] Cliente ${socket.id} entrou na sala sinco_formulario`);
+    });
+
     socket.on('disconnect', () => {
         console.log(`🔴 [Socket.io] Cliente desconectado: ${socket.id}`);
     });
@@ -86,6 +92,34 @@ app.use(express.urlencoded({ limit: '5mb', extended: true }));
 // Auth — public routes (no token required)
 app.use('/api/auth', require('./routes/auth'));
 
+// SINCO Formulário Web — público (chamado pelo desktop Solid Edge sem autenticação)
+let _dadosCorrenteSE = null;
+app.post('/api/sinco/dados-correntes', (req, res) => {
+    _dadosCorrenteSE = req.body;
+    io.to('sinco_formulario').emit('sinco:desenho_atualizado', _dadosCorrenteSE);
+    res.json({ ok: true });
+});
+app.get('/api/sinco/dados-correntes/conectados', (_req, res) => {
+    const room = io.sockets.adapter.rooms.get('sinco_formulario');
+    res.json({ conectados: room ? room.size : 0 });
+});
+
+// Public: RH Curriculo PDF downloads (opened via window.open, no token available)
+const rhUploadDir = path.join(__dirname, 'uploads/rh_curriculos');
+app.get('/api/rh/curriculos/download/:filename', (req, res) => {
+    const filename = req.params.filename;
+    // Security: prevent path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return res.status(400).json({ error: 'Nome de arquivo inválido.' });
+    }
+    const filePath = path.join(rhUploadDir, filename);
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Arquivo não encontrado.' });
+    }
+    res.download(filePath);
+});
+
 // Protected API routes — require valid JWT token
 app.use('/api', authenticateToken);
 
@@ -95,6 +129,9 @@ app.use('/api/clients', require('./routes/clients'));
 app.use('/api/produtos', require('./routes/produtos'));
 app.use('/api/docs', require('./routes/docs'));
 app.use('/api/users', require('./routes/users'));
+const sgqRoutes = require('./routes/sgq');
+app.use('/api/sgq', sgqRoutes);
+app.use('/api/protheus', require('./routes/protheus'));
 
 // PCPMetal AI Agent Routes
 app.use('/api/pcpmetal', require('./routes/pcpmetal'));
@@ -149,12 +186,24 @@ app.use('/api/sinco-apontamento', require('./routes/sinco_apontamento'));
 // SGQ Documents
 app.use('/api/sgq-documents', require('./routes/sgq_documents'));
 
+// RH (Recursos Humanos) module
+app.use('/api/rh', require('./routes/rh'));
+
 // AI Document Assistant & Import/Export
 app.use('/api/ai', require('./routes/ai'));
+
+// Protheus AI Study Catalog
+app.use('/api/protheus-study', require('./routes/protheusStudy'));
 
 // VMI — Vendor Managed Inventory
 app.use('/api/vmi', require('./routes/vmi'));
 app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
+
+// Expedição e Faturamento
+app.use('/api/faturamento', require('./routes/faturamento'));
+
+// Financeiro Dashboard
+app.use('/api/financeiro', require('./routes/financeiro'));
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));

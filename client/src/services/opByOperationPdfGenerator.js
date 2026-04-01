@@ -27,8 +27,16 @@ export const generateOPByOperationPdf = (mirrorData) => {
         mirrorData.itens.forEach(itemGroup => {
             const processComponent = (component, parentCode = 'PRODUTO FINAL') => {
                 if (component.operacoes && Array.isArray(component.operacoes) && component.operacoes.length > 0) {
-                    component.operacoes.forEach(op => {
+                    component.operacoes.forEach((op, index) => {
                         const recurso = op.recurso ? op.recurso.trim().toUpperCase() : 'INDEFINIDO';
+
+                        let proxOp = 'FINALIZADA';
+                        if (index + 1 < component.operacoes.length) {
+                             const nOp = component.operacoes[index + 1];
+                             const rec = nOp.recurso ? nOp.recurso.trim().toUpperCase() : 'INDEFINIDO';
+                             const desc = nOp.desc_operacao ? nOp.desc_operacao.trim().toUpperCase() : '';
+                             proxOp = desc ? `${rec} - ${desc}` : rec;
+                        }
 
                         if (!operationsMap.has(recurso)) {
                             operationsMap.set(recurso, {
@@ -52,6 +60,7 @@ export const generateOPByOperationPdf = (mirrorData) => {
                             produtoPai: parentCode,
                             codigo: component.codigo,
                             descricao: component.descricao,
+                            proxOp: proxOp,
                             qtdTotal: rawQtd,
                             um: component.unidade || component.um || 'UN',
                             nivel: isLevel0 ? 'PAI' : component.nivel,
@@ -156,6 +165,7 @@ export const generateOPByOperationPdf = (mirrorData) => {
                 "OP",
                 "Componente",
                 "Descrição",
+                "Próx. Operação",
                 "Qtd. Req.",
                 "UM"
             ];
@@ -168,6 +178,7 @@ export const generateOPByOperationPdf = (mirrorData) => {
                 c.op_num,
                 c.codigo,
                 c.descricao,
+                c.proxOp,
                 Number(c.qtdTotal).toFixed(2),
                 c.um
             ]);
@@ -189,15 +200,16 @@ export const generateOPByOperationPdf = (mirrorData) => {
                     cellPadding: 2
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 15 }, // PV
-                    1: { halign: 'center', cellWidth: 12 }, // Item
-                    2: { halign: 'center', cellWidth: 10 }, // Nível
-                    3: { cellWidth: 35 }, // Prod Pai
-                    4: { halign: 'center', cellWidth: 25 }, // OP
-                    5: { cellWidth: 40 }, // Componente
+                    0: { halign: 'center', cellWidth: 13 }, // PV
+                    1: { halign: 'center', cellWidth: 8 }, // Item
+                    2: { halign: 'center', cellWidth: 8 }, // Nível
+                    3: { cellWidth: 28 }, // Prod Pai
+                    4: { halign: 'center', cellWidth: 20 }, // OP
+                    5: { cellWidth: 30 }, // Componente
                     6: { cellWidth: 'auto' }, // Descricao
-                    7: { halign: 'right', cellWidth: 20 }, // Qtd
-                    8: { halign: 'center', cellWidth: 10 }  // UM
+                    7: { halign: 'center', cellWidth: 45, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
+                    8: { halign: 'right', cellWidth: 14 }, // Qtd
+                    9: { halign: 'center', cellWidth: 8 }  // UM
                 },
                 margin: { top: 53, bottom: 20 },
                 didDrawPage: drawPageHeader

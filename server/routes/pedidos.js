@@ -186,7 +186,7 @@ router.get('/flat', async (req, res) => {
     let paramsCount = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -348,6 +348,8 @@ router.get('/flat', async (req, res) => {
                 COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
                 COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
+                c6.c6_prcven::numeric(18,2) as valor_unitario,
+                c6.c6_valor::numeric(18,2) as valor_total,
                 TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
                 (
                     SELECT json_agg(
@@ -480,19 +482,19 @@ router.get('/flat', async (req, res) => {
 
             const productCodes = [...new Set(result.rows.map(i => i.codigo).filter(c => c))];
 
-            // Execute all 3 enrichments in parallel
-            const [forecastResult, notesResult, docsResult] = await Promise.allSettled([
-                // 1. PCP Forecasts
+            // Unique pedidos para queries simples
+            const uniquePedidos = [...new Set(pairs.map(p => p[0]))];
+            const pedidoPlaceholders = uniquePedidos.map(() => '?').join(',');
+
+            // Execute all 4 enrichments in parallel
+            const [forecastResult, notesResult, docsResult, faturasResult] = await Promise.allSettled([
+                // 1. PCP Forecasts — todas as programações (1:N), busca por pedidos únicos e filtra no JS
                 mysqlPool.query(`
-                    SELECT f1.*, TRIM(f1.pedido) as p_trim, TRIM(f1.item) as i_trim
-                    FROM app_pcp_delivery_forecasts f1
-                    INNER JOIN (
-                        SELECT pedido, item, MAX(id) as max_id
-                        FROM app_pcp_delivery_forecasts
-                        WHERE (TRIM(pedido), TRIM(item)) IN (${pairPlaceholders})
-                        GROUP BY pedido, item
-                    ) f2 ON f1.id = f2.max_id
-                `, pairParams),
+                    SELECT *, TRIM(pedido) as p_trim, TRIM(item) as i_trim
+                    FROM app_pcp_delivery_forecasts
+                    WHERE TRIM(pedido) IN (${pedidoPlaceholders})
+                    ORDER BY id ASC
+                `, uniquePedidos),
 
                 // 2. Notes (engineering dates)
                 mysqlPool.query(`
@@ -500,8 +502,8 @@ router.get('/flat', async (req, res) => {
                            pcp_planned_eng_date, pcp_planned_eng_obs,
                            designer_production_release_date, engineering_start_date
                     FROM app_sales_order_item_notes
-                    WHERE (TRIM(pedido), TRIM(item)) IN (${pairPlaceholders})
-                `, pairParams),
+                    WHERE TRIM(pedido) IN (${pedidoPlaceholders})
+                `, uniquePedidos),
 
                 // 3. Docs
                 (async () => {
@@ -520,22 +522,41 @@ router.get('/flat', async (req, res) => {
                         });
                     }
                     return docsMap;
-                })()
+                })(),
+
+                // 4. Faturamentos Solicitados
+                mysqlPool.query(`
+                    SELECT
+                        TRIM(i.pedido) as pedido,
+                        TRIM(i.item) as item,
+                        s.numero_solicitacao,
+                        i.quantidade_solicitada,
+                        s.created_at
+                    FROM app_faturamento_solicitacao_itens i
+                    JOIN app_faturamento_solicitacoes s ON i.solicitacao_id = s.id
+                    WHERE TRIM(i.pedido) IN (${pedidoPlaceholders})
+                    ORDER BY s.created_at DESC
+                `, uniquePedidos)
             ]);
 
-            // Merge Forecasts
+            // Merge Forecasts — array de programações por item
             if (forecastResult.status === 'fulfilled') {
                 const forecastMap = {};
                 forecastResult.value[0].forEach(f => {
-                    forecastMap[`${f.p_trim}-${f.i_trim}`] = f;
+                    const key = `${f.p_trim}-${f.i_trim}`;
+                    if (!forecastMap[key]) forecastMap[key] = [];
+                    forecastMap[key].push(f);
                 });
                 result.rows.forEach(row => {
-                    const forecast = forecastMap[`${String(row.pedido).trim()}-${String(row.item).trim()}`];
-                    if (forecast) {
-                        row.pcp_delivery_forecast_date = forecast.data_entrega_pcp;
-                        row.pcp_delivery_forecast_qtd = forecast.quantidade_pcp;
-                        row.pcp_delivery_forecast_user = forecast.usuario;
-                        row.pcp_delivery_forecast_at = forecast.created_at;
+                    const forecasts = forecastMap[`${String(row.pedido).trim()}-${String(row.item).trim()}`] || [];
+                    row.pcp_programacoes = forecasts;
+                    // Manter compat com campos antigos (última programação)
+                    if (forecasts.length > 0) {
+                        const last = forecasts[forecasts.length - 1];
+                        row.pcp_delivery_forecast_date = last.data_entrega_pcp;
+                        row.pcp_delivery_forecast_qtd = last.quantidade_pcp;
+                        row.pcp_delivery_forecast_user = last.usuario;
+                        row.pcp_delivery_forecast_at = last.created_at;
                     }
                 });
             } else {
@@ -575,6 +596,39 @@ router.get('/flat', async (req, res) => {
                 });
             } else {
                 console.error('Error merging docs:', docsResult.reason?.message);
+            }
+
+            // Filtro por Data PCP (pós-enriquecimento)
+            if (pcpDataInicial || pcpDataFinal) {
+                const dInicio = pcpDataInicial ? new Date(pcpDataInicial) : null;
+                const dFim = pcpDataFinal ? new Date(pcpDataFinal + 'T23:59:59') : null;
+                const antes = result.rows.length;
+                result.rows = result.rows.filter(row => {
+                    const progs = row.pcp_programacoes || [];
+                    return progs.some(p => {
+                        const d = new Date(p.data_entrega_pcp);
+                        if (dInicio && d < dInicio) return false;
+                        if (dFim && d > dFim) return false;
+                        return true;
+                    });
+                });
+                console.log(`🔍 Filtro Data PCP: ${antes} → ${result.rows.length} linhas`);
+            }
+
+            // Merge Faturamentos Solicitados
+            if (faturasResult.status === 'fulfilled') {
+                const faturasMap = {};
+                faturasResult.value[0].forEach(f => {
+                    const key = `${String(f.pedido).trim()}-${String(f.item).trim()}`;
+                    if (!faturasMap[key]) faturasMap[key] = [];
+                    faturasMap[key].push(f);
+                });
+                result.rows.forEach(item => {
+                    const key = `${String(item.pedido).trim()}-${String(item.item).trim()}`;
+                    item.faturamentos_solicitados = faturasMap[key] || [];
+                });
+            } else {
+                console.error('Error merging faturas:', faturasResult.reason?.message);
             }
         }
 
@@ -1248,30 +1302,83 @@ router.get('/:pedido/items/:item/history', async (req, res) => {
 // PCP Delivery Forecast Endpoints
 router.post('/pcp-forecasts', async (req, res) => {
     try {
-        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario } = req.body;
+        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item } = req.body;
 
         if (!pedido || !item || !data_entrega_pcp || quantidade_pcp === undefined || !usuario) {
-            console.warn('Dados incompletos PCP:', { pedido, item, data_entrega_pcp, quantidade_pcp, usuario });
-            return res.status(400).json({
-                error: 'Dados incompletos para o planejamento PCP.',
-                missing: {
-                    pedido: !pedido,
-                    item: !item,
-                    data: !data_entrega_pcp,
-                    quantidade: quantidade_pcp === undefined,
-                    usuario: !usuario
-                }
-            });
+            return res.status(400).json({ error: 'Dados incompletos para o planejamento PCP.' });
+        }
+
+        // Validação: soma das programações não pode ultrapassar qtd_total_item
+        if (qtd_total_item !== undefined) {
+            const [existing] = await mysqlPool.query(
+                'SELECT COALESCE(SUM(quantidade_pcp), 0) as total FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+                [String(pedido).trim(), String(item).trim()]
+            );
+            const totalAtual = parseFloat(existing[0].total) || 0;
+            const novaQtd = parseFloat(quantidade_pcp);
+            const limite = parseFloat(qtd_total_item);
+            if (totalAtual + novaQtd > limite) {
+                return res.status(400).json({
+                    error: `Quantidade excede o total do item. Já programado: ${totalAtual}, disponível: ${(limite - totalAtual).toFixed(2)}.`
+                });
+            }
+        }
+
+        const [result] = await mysqlPool.query(
+            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null]
+        );
+
+        res.json({ success: true, id: result.insertId });
+    } catch (err) {
+        console.error('Error saving PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/pcp-forecasts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, usuario, qtd_total_item } = req.body;
+
+        if (!data_entrega_pcp || quantidade_pcp === undefined) {
+            return res.status(400).json({ error: 'Data e quantidade são obrigatórios.' });
+        }
+
+        // Validação: soma das outras programações + nova qtd não pode ultrapassar total
+        if (qtd_total_item !== undefined) {
+            const [existing] = await mysqlPool.query(
+                'SELECT COALESCE(SUM(quantidade_pcp), 0) as total FROM app_pcp_delivery_forecasts WHERE id != ? AND TRIM(pedido) = (SELECT TRIM(pedido) FROM app_pcp_delivery_forecasts WHERE id = ?) AND TRIM(item) = (SELECT TRIM(item) FROM app_pcp_delivery_forecasts WHERE id = ?)',
+                [id, id, id]
+            );
+            const totalOutros = parseFloat(existing[0].total) || 0;
+            const novaQtd = parseFloat(quantidade_pcp);
+            const limite = parseFloat(qtd_total_item);
+            if (totalOutros + novaQtd > limite) {
+                return res.status(400).json({
+                    error: `Quantidade excede o total do item. Já programado (outros): ${totalOutros}, disponível: ${(limite - totalOutros).toFixed(2)}.`
+                });
+            }
         }
 
         await mysqlPool.query(
-            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario) VALUES (?, ?, ?, ?, ?)',
-            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario]
+            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, lote = ?, numero_lote = ? WHERE id = ?',
+            [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, id]
         );
 
         res.json({ success: true });
     } catch (err) {
-        console.error('Error saving PCP forecast:', err);
+        console.error('Error updating PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/pcp-forecasts/:id', async (req, res) => {
+    try {
+        await mysqlPool.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error deleting PCP forecast:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1280,8 +1387,8 @@ router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
     try {
         const { pedido, item } = req.params;
         const [rows] = await mysqlPool.query(
-            'SELECT * FROM app_pcp_delivery_forecasts WHERE pedido = ? AND item = ? ORDER BY created_at DESC',
-            [pedido, item]
+            'SELECT * FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? ORDER BY id ASC',
+            [String(pedido).trim(), String(item).trim()]
         );
         res.json(rows);
     } catch (err) {

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download } from 'lucide-react';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp } from 'lucide-react';
 import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
+import EngineeringReleaseModal from '../components/EngineeringReleaseModal';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
 import { generateMergedDrawingsPdf } from '../services/pdfMergerService';
 
@@ -15,10 +16,12 @@ const ProductStructure = () => {
     const [balances, setBalances] = useState({});
     const [loading, setLoading] = useState(true);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [isGeneratingPdfN1, setIsGeneratingPdfN1] = useState(false);
     const [error, setError] = useState(null);
     const [selectedProductForStock, setSelectedProductForStock] = useState(null);
     const [expandedRoutes, setExpandedRoutes] = useState({}); // Track which items have route expanded
     const [routes, setRoutes] = useState({}); // Store routes for each product
+    const [showReleaseModal, setShowReleaseModal] = useState(false);
 
     const fetchStructure = async () => {
         try {
@@ -126,6 +129,41 @@ const ProductStructure = () => {
         }
     };
 
+    const handleGenerateNivel1PDF = async () => {
+        setIsGeneratingPdfN1(true);
+        try {
+            // Somente nível 0 e nivel 1
+            const filteredStructure = structure.filter(item => item.nivel === 0 || item.nivel === 1);
+
+            const allRoutesMap = { ...routes };
+            const missing = filteredStructure.filter(item => !allRoutesMap[item.codigo?.trim()]);
+
+            await Promise.all(missing.map(async (item) => {
+                const key = item.codigo?.trim();
+                try {
+                    const data = await getProductRoute(item.codigo);
+                    allRoutesMap[key] = Array.isArray(data) ? data : [];
+                } catch {
+                    allRoutesMap[key] = [];
+                }
+            }));
+
+            setRoutes(allRoutesMap);
+
+            await generateEstruturaReport(filteredStructure, allRoutesMap, { 
+                title: 'ESTRUTURA COMPACTA (NÍVEL 1) — MATR225Cus', 
+                footerTitle: 'Estrutura Compacta (Nível 1)',
+                isNivel1: true
+            });
+
+        } catch (err) {
+            console.error('Erro ao gerar relatório N1:', err);
+            alert('Falha ao gerar o relatório. Consulte o console para mais detalhes.');
+        } finally {
+            setIsGeneratingPdfN1(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-6 md:p-10">
             <div className="max-w-6xl mx-auto">
@@ -151,6 +189,18 @@ const ProductStructure = () => {
 
                         <div className="flex items-center gap-3">
                             <button
+                                onClick={handleGenerateNivel1PDF}
+                                disabled={isGeneratingPdfN1}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${isGeneratingPdfN1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200'}`}
+                            >
+                                {isGeneratingPdfN1 ? (
+                                    <div className="w-4 h-4 border-2 border-gray-300 border-t-amber-600 rounded-full animate-spin" />
+                                ) : (
+                                    <Layers className="h-4 w-4" />
+                                )}
+                                {isGeneratingPdfN1 ? 'Gerando...' : 'Nível 1'}
+                            </button>
+                            <button
                                 onClick={handleGeneratePDF}
                                 disabled={isGeneratingPdf}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${isGeneratingPdf ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200'}`}
@@ -161,6 +211,28 @@ const ProductStructure = () => {
                                     <Printer className="h-4 w-4" />
                                 )}
                                 {isGeneratingPdf ? 'Gerando PDF...' : 'Emitir Relatório'}
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    // Pre-fetch all routes before opening modal
+                                    const allRoutesMap = { ...routes };
+                                    const missing = structure.filter(item => !allRoutesMap[item.codigo?.trim()]);
+                                    await Promise.all(missing.map(async (it) => {
+                                        const key = it.codigo?.trim();
+                                        try {
+                                            const data = await getProductRoute(it.codigo);
+                                            allRoutesMap[key] = Array.isArray(data) ? data : [];
+                                        } catch {
+                                            allRoutesMap[key] = [];
+                                        }
+                                    }));
+                                    setRoutes(allRoutesMap);
+                                    setShowReleaseModal(true);
+                                }}
+                                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                            >
+                                <Stamp className="h-4 w-4" />
+                                Liberação
                             </button>
                             <button
                                 onClick={handleDownloadDrawings}
@@ -373,6 +445,15 @@ const ProductStructure = () => {
                     }}
                     productCode={selectedProductForStock?.codigo}
                     productName={selectedProductForStock?.descricao}
+                />
+
+                {/* Modal de Liberação de Engenharia */}
+                <EngineeringReleaseModal
+                    isOpen={showReleaseModal}
+                    onClose={() => setShowReleaseModal(false)}
+                    structure={structure}
+                    routesMap={routes}
+                    codigo={codigo}
                 />
             </div>
         </div>

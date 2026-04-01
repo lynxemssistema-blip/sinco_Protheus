@@ -791,11 +791,11 @@ router.get('/demandas', async (req, res) => {
                                 const s = statusMap[b1Cod];
                                 row.b1_cod = b1Cod;
                                 row.b1_desc = s.b1_desc;
-                                
+
                                 // Lógica de Revisão: Compara rev_cliente da planilha com rev_protheus (SZ1)
                                 const revsProtheus = (s.rev_protheus || '').split(' / ').map(v => v.trim());
                                 const revVmi = (row.rev_cliente || '').trim();
-                                
+
                                 if (revVmi && revsProtheus.length > 0 && !revsProtheus.includes(revVmi)) {
                                     row.status_tipo_item = 'Revisão';
                                     row.status_tipo_detalhe = `Diferença de revisão. VMI: ${revVmi} / Protheus: ${s.rev_protheus}`;
@@ -807,6 +807,52 @@ router.get('/demandas', async (req, res) => {
                                 row.status_tipo_item = 'Restrição';
                                 row.status_tipo_detalhe = 'Produto mapeado não encontrado no Protheus (SB1).';
                             }
+                        });
+                    }
+
+                    // 4. Busca b1_cod dos produtos PAI:
+                    //    Primeiro tenta via mapeamento MySQL, depois confirma/complementa via SB1 Protheus
+                    const codigosPai = [...new Set(rows.map(r => r.produto_pai).filter(Boolean))];
+                    if (codigosPai.length > 0) {
+                        // 4a. Lookup no mapeamento MySQL
+                        const [paiMapRows] = await mysqlPool.execute(
+                            `SELECT codigo_produto_cliente, b1_cod FROM app_demanda_vmi_map
+                             WHERE codigo_produto_cliente IN (${codigosPai.map(() => '?').join(',')})`,
+                            codigosPai
+                        );
+                        const paiMapMySQL = {};
+                        paiMapRows.forEach(m => { paiMapMySQL[m.codigo_produto_cliente] = m.b1_cod; });
+
+                        // 4b. Para os que não encontraram no MySQL, tenta buscar no Protheus SB1
+                        //     usando o código normalizado (sem caracteres especiais)
+                        const semMapeamento = codigosPai.filter(c => !paiMapMySQL[c]);
+                        const paiMapSB1 = {};
+                        if (semMapeamento.length > 0) {
+                            const codigosNorm = semMapeamento.map(c => c.replace(/[^a-zA-Z0-9]/g, '').toUpperCase());
+                            const uniqueNorm = [...new Set(codigosNorm)].filter(Boolean);
+                            if (uniqueNorm.length > 0) {
+                                try {
+                                    const placeholders = uniqueNorm.map((_, i) => `$${i + 1}`).join(',');
+                                    const sb1Result = await db.query(
+                                        `SELECT TRIM(b1_cod) as b1_cod FROM sb1010
+                                         WHERE TRIM(b1_cod) = ANY(ARRAY[${placeholders}])
+                                           AND COALESCE(d_e_l_e_t_, '') = ''`,
+                                        uniqueNorm
+                                    );
+                                    const found = new Set(sb1Result.rows.map(r => r.b1_cod.trim()));
+                                    semMapeamento.forEach((orig, i) => {
+                                        const norm = codigosNorm[i];
+                                        if (norm && found.has(norm)) paiMapSB1[orig] = norm;
+                                    });
+                                } catch (sb1Err) {
+                                    console.error('[VMI] Erro ao buscar pai no SB1:', sb1Err.message);
+                                }
+                            }
+                        }
+
+                        rows.forEach(row => {
+                            if (!row.produto_pai) return;
+                            row.b1_cod_pai = paiMapMySQL[row.produto_pai] || paiMapSB1[row.produto_pai] || null;
                         });
                     }
                 }
@@ -1151,6 +1197,157 @@ router.post('/mapeamento/desvincular-lote', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Erro ao remover vínculos.' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vmi/op-mirror/:b1cod?qty=1&sheet=NomePlanilha&data=DD/MM/AAAA
+// Espelho de OP por código de produto (b1_cod). Mesmo formato que /api/pedidos/op-mirror/:id.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/op-mirror/:b1cod', async (req, res) => {
+    try {
+        const { b1cod } = req.params;
+        const qty   = parseFloat(req.query.qty)   || 1;
+        const sheet = req.query.sheet || '';
+        const data  = req.query.data  || new Date().toLocaleDateString('pt-BR');
+
+        // Busca info do produto no SB1 (sem filtro de delete para não bloquear produtos inativos)
+        const prodResult = await db.query(
+            `SELECT TRIM(b1_cod) AS codigo, TRIM(b1_desc) AS descricao, TRIM(b1_um) AS unidade, TRIM(b1_urev) AS revisao
+             FROM sb1010
+             WHERE TRIM(b1_cod) = $1
+             ORDER BY COALESCE(d_e_l_e_t_, '') ASC
+             LIMIT 1`,
+            [b1cod.trim()]
+        );
+
+        // Se não encontrou no SB1, usa o próprio b1cod como fallback e tenta explodir a BOM mesmo assim
+        const prod = prodResult.rows.length > 0
+            ? prodResult.rows[0]
+            : { codigo: b1cod.trim(), descricao: b1cod.trim(), unidade: 'UN', revisao: '' };
+
+        const explosionQuery = `
+            WITH RECURSIVE estrutura AS (
+                SELECT
+                    '01'::varchar        AS item_pedido,
+                    0                    AS nivel,
+                    $1::varchar          AS produto_pai,
+                    $1::varchar          AS componente,
+                    $3::varchar          AS descricao,
+                    $4::varchar          AS unidade,
+                    $5::varchar          AS revisao,
+                    1::numeric           AS qtd_base,
+                    $2::numeric          AS qtd_necessaria,
+                    ''::varchar          AS op_relacionada
+                UNION ALL
+                SELECT
+                    e.item_pedido,
+                    e.nivel + 1,
+                    CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)   AS VARCHAR(30)) AS componente,
+                    CAST(TRIM(sb1.b1_desc)  AS VARCHAR(100)) AS descricao,
+                    CAST(TRIM(sb1.b1_um)    AS VARCHAR(10))  AS unidade,
+                    CAST(TRIM(sb1.b1_urev)  AS VARCHAR(10))  AS revisao,
+                    g1.g1_quant::numeric AS qtd_base,
+                    (e.qtd_necessaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria,
+                    ''::varchar AS op_relacionada
+                FROM estrutura e
+                JOIN sg1010 g1
+                    ON TRIM(g1.g1_cod) = TRIM(e.componente)
+                   AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1
+                    ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp)
+                   AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 15
+            )
+            SELECT
+                e.item_pedido,
+                e.nivel,
+                e.produto_pai,
+                e.componente,
+                e.descricao,
+                e.unidade,
+                e.revisao,
+                e.qtd_necessaria,
+                e.op_relacionada,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'seq',          TRIM(g2.g2_operac),
+                                'recurso',      TRIM(g2.g2_recurso),
+                                'desc_operacao', CASE
+                                    WHEN TRIM(g2.g2_recurso) = 'MO0013' THEN 'LASE'
+                                    ELSE COALESCE(TRIM(h1.h1_descri), TRIM(g2.g2_descri))
+                                END,
+                                'setup',          g2.g2_setup,
+                                'tempo_padrao',   g2.g2_tempad,
+                                'ferramenta',     TRIM(g2.g2_ferram)
+                            ) ORDER BY TRIM(g2.g2_operac)
+                        )
+                        FROM sg2010 g2
+                        LEFT JOIN sh1010 h1
+                            ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                           AND COALESCE(h1.d_e_l_e_t_, '') = ''
+                        WHERE TRIM(g2.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
+                          AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                    ), '[]'::json
+                ) AS operacoes
+            FROM estrutura e
+            ORDER BY e.nivel ASC, e.produto_pai ASC, e.componente ASC
+        `;
+
+        const explosionResult = await db.query(explosionQuery, [
+            prod.codigo, qty, prod.descricao, prod.unidade, prod.revisao
+        ]);
+
+        // Monta estrutura idêntica ao /op-mirror/:id
+        const itemGroup = {
+            item_pedido: '01',
+            produto_principal: null,
+            estrutura_linear: []
+        };
+
+        explosionResult.rows.forEach(row => {
+            if (row.nivel === 0) {
+                itemGroup.produto_principal = {
+                    codigo:           row.componente,
+                    descricao:        row.descricao,
+                    revisao:          row.revisao,
+                    unidade:          row.unidade,
+                    quantidade_venda: parseFloat(row.qtd_necessaria),
+                    op_num:           row.op_relacionada || '-',
+                    operacoes:        row.operacoes
+                };
+            } else {
+                itemGroup.estrutura_linear.push({
+                    nivel:                parseInt(row.nivel),
+                    pai:                  row.produto_pai,
+                    codigo:               row.componente,
+                    descricao:            row.descricao,
+                    unidade:              row.unidade,
+                    quantidade_calculada: parseFloat(row.qtd_necessaria),
+                    op_num:               row.op_relacionada || '-',
+                    operacoes:            row.operacoes
+                });
+            }
+        });
+
+        res.json({
+            pedido: {
+                pedido:      prod.codigo,
+                emissao:     data,
+                nome_cliente: sheet || prod.descricao,
+                cgc_cliente:  '',
+                municipio:    '',
+                estado:       ''
+            },
+            itens: [itemGroup]
+        });
+
+    } catch (err) {
+        console.error('[VMI OP Mirror Error]', err);
+        res.status(500).json({ error: 'Erro ao gerar espelho de OP', details: err.message });
     }
 });
 

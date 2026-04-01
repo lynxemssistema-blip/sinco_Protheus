@@ -84,6 +84,8 @@ class SolidEdgeHandler(BaseHTTPRequestHandler):
                 self.handle_export_dxf(data)
             elif self.path == '/api/solidedge/export-pdf':
                 self.handle_export_pdf(data)
+            elif self.path == '/api/solidedge/open-file':
+                self.handle_open_file(data)
             else:
                 self.send_json({'error': 'Not Found'}, 404)
         finally:
@@ -523,6 +525,22 @@ class SolidEdgeHandler(BaseHTTPRequestHandler):
             }, 500)
     
     
+    def handle_open_file(self, data):
+        """Abre um arquivo no Solid Edge pelo caminho completo (UNC ou local)"""
+        try:
+            file_path = data.get('caminho', '').strip()
+            if not file_path:
+                self.send_json({'error': 'Campo "caminho" obrigatório'}, 400)
+                return
+            if not os.path.exists(file_path):
+                self.send_json({'error': f'Arquivo não encontrado: {file_path}'}, 404)
+                return
+            app = self.get_solidedge()
+            app.Documents.Open(file_path)
+            self.send_json({'ok': True, 'caminho': file_path})
+        except Exception as ex:
+            self.send_json({'error': str(ex), 'traceback': traceback.format_exc()}, 500)
+
     def handle_export_dxf(self, data):
         """Export DXF endpoint"""
         try:
