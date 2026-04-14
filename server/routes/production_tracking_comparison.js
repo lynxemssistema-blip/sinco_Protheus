@@ -75,7 +75,7 @@ router.get('/tracking-comparison', async (req, res) => {
         const plannedQuery = `
             SELECT 
                 RTRIM(g2.g2_operac) as operacao_codigo,
-                RTRIM(g2.g2_descri) as operacao_desc,
+                RTRIM(h1.h1_descri) as operacao_desc,
                 SUM(CAST(g2.g2_quant AS FLOAT)) as qtd_planejada
             FROM ${process.env.PROTHEUS_DB_NAME}.dbo.sc2010 c2
             INNER JOIN ${process.env.PROTHEUS_DB_NAME}.dbo.sg2010 g2 
@@ -84,7 +84,7 @@ router.get('/tracking-comparison', async (req, res) => {
                 AND g2.d_e_l_e_t_ = ''
                 AND g2.g2_operac != ''
                 ${protheusWhere}
-            GROUP BY g2.g2_operac, g2.g2_descri
+            GROUP BY g2.g2_operac, h1.h1_descri
         `;
 
         const plannedData = await protheusPool.query(plannedQuery, protheusParams);

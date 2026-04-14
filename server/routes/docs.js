@@ -27,6 +27,10 @@ function normalizeFilePath(filePath) {
         normalized = normalized.replace(/\\/g, '/');
         // Depois mapeia a raiz do UNC pra /mnt/engenharia/
         normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+    } else {
+        // Se estiver rodando no Windows (Local), mapeia /mnt/ de volta para UNC
+        normalized = normalized.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\');
+        normalized = normalized.replace(/\//g, '\\');
     }
 
     return normalized;

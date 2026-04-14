@@ -33,6 +33,10 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
     const [searchFilters, setSearchFilters] = useState({ type: '', client: '', pdf_status: '', group: '' });
     const [editingItem, setEditingItem] = useState(null); // {id, quantidade}
 
+    // Timesheet states
+    const [timesheets, setTimesheets] = useState([]);
+    const [manualEntry, setManualEntry] = useState({ date: new Date().toISOString().split('T')[0], hours: '', obs: '' });
+
     useEffect(() => {
         // Load designers
         getUsers({ setor: 'ENGENHARIA' }).then(users => {
@@ -114,6 +118,52 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
             setSearching(false);
         }
     };
+
+    const loadTimesheets = async () => {
+        try {
+            const res = await api.get(`/engineering-timesheets/${orderId}/${item.item}`);
+            setTimesheets(res.data);
+        } catch (error) {
+            console.error('Error loading timesheets', error);
+        }
+    };
+
+    const handleManualEntry = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post('/engineering-timesheets/manual', {
+                pedido: orderId,
+                item: item.item,
+                date: manualEntry.date,
+                hours: manualEntry.hours,
+                obs: manualEntry.obs
+            });
+            setManualEntry({ date: new Date().toISOString().split('T')[0], hours: '', obs: '' });
+            loadTimesheets();
+        } catch (error) {
+            alert('Erro ao incluir apontamento manual: ' + (error.response?.data?.error || error.message));
+        }
+    };
+
+    const handleDeleteTimesheet = async (id) => {
+        if (!window.confirm('Excluir este apontamento?')) return;
+        try {
+            await api.delete(`/engineering-timesheets/${id}`);
+            loadTimesheets();
+        } catch (error) {
+            alert('Erro ao excluir apontamento.');
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'bom') {
+            loadBom();
+            loadBomHistory();
+        } else if (activeTab === 'timesheet') {
+            loadTimesheets();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     const addMaterialToBom = async (product) => {
         const qty = window.prompt(`Adicionar ${product.descricao}. Qual a quantidade?`, "1");
@@ -289,12 +339,12 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-100">
-                    {['general', 'bom', 'designer', 'pcp'].map((tab) => (
+                <div className="flex border-b border-gray-100 overflow-x-auto whitespace-nowrap">
+                    {['general', 'bom', 'designer', 'pcp', 'timesheet'].map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab
+                            className={`flex-1 min-w-[120px] py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab
                                 ? 'border-blue-500 text-blue-600 bg-blue-50/50'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                                 }`}
@@ -303,6 +353,7 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                             {tab === 'bom' && 'Lista de material'}
                             {tab === 'designer' && 'Projetista'}
                             {tab === 'pcp' && 'PCP (Corte)'}
+                            {tab === 'timesheet' && 'Apontamentos ⏱️'}
                         </button>
                     ))}
                 </div>

@@ -37,6 +37,7 @@ export const FilterProvider = ({ children }) => {
             dataFinal: '',
             only_active: 'true',
             dateType: 'pedido',
+            tipo_item: '',
             viewMode: 'tree',
             activeTab: 'evolucao',
             page: 1,

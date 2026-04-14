@@ -540,11 +540,13 @@ router.get('/vertical-pendencias', async (req, res) => {
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
         TRIM(g2.g2_operac) AS operacao_codigo,
-        TRIM(g2.g2_descri) AS operacao_desc,
+        TRIM(h1.h1_descri) AS operacao_desc,
         TRIM(g2.g2_recurso) AS recurso_codigo
       FROM public.sc2010 c2
       INNER JOIN public.sg2010 g2
         ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sh1010 h1
+        ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
       LEFT JOIN public.sc6010 c6
         ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sa1010 a1
@@ -744,11 +746,13 @@ router.get('/vertical/:operacao', async (req, res) => {
           ELSE NULL
         END AS data_entrega,
         TRIM(g2.g2_operac) AS operacao_codigo,
-        TRIM(g2.g2_descri) AS operacao_desc,
+        TRIM(h1.h1_descri) AS operacao_desc,
         TRIM(g2.g2_recurso) AS recurso_codigo
       FROM public.sc2010 c2
       INNER JOIN public.sg2010 g2
         ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sh1010 h1
+        ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
       LEFT JOIN public.sc6010 c6
         ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sa1010 a1
@@ -886,6 +890,234 @@ router.get('/vertical/:operacao', async (req, res) => {
 
   } catch (err) {
     console.error('❌ [VERTICAL ROUTE ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// GET /api/producao/search-ops
+// Busca lista de OPs com filtros dinâmicos para o seletor
+// ============================================================
+router.get('/search-ops', async (req, res) => {
+  try {
+    const { op, cliente, produto, prazo_de, prazo_ate, limit: lim = 50 } = req.query;
+
+    if (!op && !cliente && !produto && !prazo_de && !prazo_ate) {
+      return res.status(400).json({ error: 'Informe ao menos um filtro.' });
+    }
+
+    const params = [];
+    let pCount = 1;
+    let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''"];
+
+    if (op) {
+      conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
+      params.push(`%${op.trim()}%`);
+    }
+    if (produto) {
+      conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
+      params.push(`%${produto.trim()}%`);
+      pCount++;
+    }
+    if (cliente) {
+      conditions.push(`TRIM(a1.a1_nome) ILIKE $${pCount++}`);
+      params.push(`%${cliente.trim()}%`);
+    }
+    if (prazo_de) {
+      conditions.push(`TRIM(c2.c2_datprf) >= $${pCount++}`);
+      params.push(prazo_de.replace(/-/g, ''));
+    }
+    if (prazo_ate) {
+      conditions.push(`TRIM(c2.c2_datprf) <= $${pCount++}`);
+      params.push(prazo_ate.replace(/-/g, ''));
+    }
+
+    const whereSQL = `WHERE ${conditions.join(' AND ')}`;
+
+    const sql = `
+      SELECT
+        TRIM(c2.c2_num)                                      AS op,
+        TRIM(c2.c2_produto)                                  AS produto,
+        TRIM(COALESCE(b1.b1_desc, ''))                       AS descricao,
+        c2.c2_quant::numeric                                 AS qtd_op,
+        TRIM(c2.c2_datprf)                                   AS prazo_raw,
+        TRIM(COALESCE(c2.c2_pedido, ''))                     AS pedido_venda,
+        TRIM(COALESCE(a1.a1_nome, ''))                       AS cliente
+      FROM public.sc2010 c2
+      LEFT JOIN public.sb1010 b1
+        ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto)
+       AND COALESCE(b1.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sc5010 c5
+        ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+       AND COALESCE(c5.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sa1010 a1
+        ON a1.a1_cod  = c5.c5_cliente
+       AND a1.a1_loja = c5.c5_lojacli
+       AND COALESCE(a1.d_e_l_e_t_, '') = ''
+      ${whereSQL}
+      ORDER BY c2.c2_datprf DESC, c2.c2_num ASC
+      LIMIT $${pCount}
+    `;
+    params.push(parseInt(lim, 10) || 50);
+
+    const result = await db.query(sql, params);
+
+    // Converter prazo_raw (YYYYMMDD) → ISO date
+    const rows = result.rows.map(r => {
+      const raw = (r.prazo_raw || '').replace(/\s/g, '');
+      let prazo = null;
+      if (raw.length === 8) {
+        prazo = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+      }
+      return { ...r, prazo };
+    });
+
+    res.json(rows);
+  } catch (err) {
+    console.error('❌ [SEARCH-OPS]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// GET /api/producao/estrutura-routing
+// Retorna estrutura BOM + Roteiro de uma OP em JSON aninhado
+// ============================================================
+router.get('/estrutura-routing', async (req, res) => {
+  try {
+    const { op } = req.query;
+    if (!op) return res.status(400).json({ error: 'Parâmetro "op" é obrigatório.' });
+
+    const opTrim = op.trim();
+
+    // 1. Cabeçalho da OP + produtos (conjuntos pai)
+    const headerSQL = `
+      SELECT
+        TRIM(c2.c2_num)                          AS op,
+        TRIM(c2.c2_item)                         AS item_op,
+        TRIM(c2.c2_sequen)                       AS sequen_op,
+        TRIM(c2.c2_produto)                      AS produto,
+        TRIM(COALESCE(b1.b1_desc, ''))           AS descricao,
+        c2.c2_quant::numeric                     AS qtd_produzir,
+        TRIM(c2.c2_datprf)                       AS prazo_raw,
+        TRIM(COALESCE(c2.c2_pedido, ''))         AS pedido_venda,
+        TRIM(COALESCE(a1.a1_nome, ''))           AS cliente
+      FROM public.sc2010 c2
+      LEFT JOIN public.sb1010 b1
+        ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto)
+       AND COALESCE(b1.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sc5010 c5
+        ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+       AND COALESCE(c5.d_e_l_e_t_, '') = ''
+      LEFT JOIN public.sa1010 a1
+        ON a1.a1_cod  = c5.c5_cliente
+       AND a1.a1_loja = c5.c5_lojacli
+       AND COALESCE(a1.d_e_l_e_t_, '') = ''
+      WHERE COALESCE(c2.d_e_l_e_t_, '') = ''
+        AND TRIM(c2.c2_num) = $1
+      ORDER BY c2.c2_item, c2.c2_sequen
+    `;
+    const headerResult = await db.query(headerSQL, [opTrim]);
+    if (headerResult.rows.length === 0) {
+      return res.status(404).json({ error: `OP "${opTrim}" não encontrada.` });
+    }
+
+    const firstRow = headerResult.rows[0];
+    const paiCodes = [...new Set(headerResult.rows.map(r => r.produto).filter(Boolean))];
+
+    // Converter prazo
+    const prazoRaw = (firstRow.prazo_raw || '').replace(/\s/g, '');
+    const prazo = prazoRaw.length === 8
+      ? `${prazoRaw.slice(0, 4)}-${prazoRaw.slice(4, 6)}-${prazoRaw.slice(6, 8)}`
+      : null;
+
+    // 2. BOM (1 nível: filhos diretos dos pais)
+    const bomSQL = `
+      SELECT
+        TRIM(g1.g1_cod)               AS produto_pai,
+        TRIM(g1.g1_comp)              AS componente,
+        TRIM(COALESCE(b1.b1_desc, '')) AS desc_componente,
+        TRIM(COALESCE(b1.b1_tipo, '')) AS tipo_componente,
+        g1.g1_quant::numeric          AS qtd_por_pai
+      FROM public.sg1010 g1
+      LEFT JOIN public.sb1010 b1
+        ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp)
+       AND COALESCE(b1.d_e_l_e_t_, '') = ''
+      WHERE COALESCE(g1.d_e_l_e_t_, '') = ''
+        AND TRIM(g1.g1_cod) = ANY($1)
+      ORDER BY g1.g1_cod, g1.g1_comp
+    `;
+    const bomResult = await db.query(bomSQL, [paiCodes]);
+    const filhoCodes = [...new Set(bomResult.rows.map(r => r.componente).filter(Boolean))];
+
+    // 3. Roteiro (SG2 + SH1) para todos os produtos: pai + filhos
+    const allCodes = [...new Set([...paiCodes, ...filhoCodes])];
+    let roteiroPorProduto = {};
+    if (allCodes.length > 0) {
+      const roteiroSQL = `
+        SELECT
+          TRIM(g2.g2_produto)                          AS produto,
+          TRIM(g2.g2_codigo)                           AS seq_codigo,
+          TRIM(COALESCE(h1.h1_descri, g2.g2_recurso)) AS recurso,
+          TRIM(COALESCE(g2.g2_operac, ''))             AS operacao_cod,
+          0            AS tempo,
+          0            AS setup
+        FROM public.sg2010 g2
+        LEFT JOIN public.sh1010 h1
+          ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+         AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+        WHERE COALESCE(g2.d_e_l_e_t_, '') = ''
+          AND TRIM(g2.g2_produto) = ANY($1)
+        ORDER BY g2.g2_produto, g2.g2_codigo
+      `;
+      const roteiroResult = await db.query(roteiroSQL, [allCodes]);
+      for (const r of roteiroResult.rows) {
+        if (!roteiroPorProduto[r.produto]) roteiroPorProduto[r.produto] = [];
+        roteiroPorProduto[r.produto].push({
+          seq: parseInt(r.seq_codigo, 10) || 0,
+          recurso: r.recurso || r.operacao_cod || 'N/D',
+          desc: r.operacao_cod || ''
+        });
+      }
+    }
+
+    // 4. Montar BOM por pai
+    const bomPorPai = {};
+    for (const b of bomResult.rows) {
+      if (!bomPorPai[b.produto_pai]) bomPorPai[b.produto_pai] = [];
+      bomPorPai[b.produto_pai].push(b);
+    }
+
+    // 5. Construir JSON aninhado
+    const conjuntos = headerResult.rows.map((p, idx) => ({
+      id: `PAI-${idx}-${p.item_op}-${p.sequen_op}`,
+      codigo: p.produto,
+      descricao: p.descricao,
+      tipo: 'PAI',
+      qtd_produzir: parseFloat(p.qtd_produzir) || 0,
+      item_op: p.item_op,
+      sequen_op: p.sequen_op,
+      operacoes: (roteiroPorProduto[p.produto] || []),
+      filhos: (bomPorPai[p.produto] || []).map((filho, fidx) => ({
+        id: `FILHO-${idx}-${fidx}-${filho.componente}`,
+        codigo: filho.componente,
+        descricao: filho.desc_componente,
+        tipo: 'FILHO',
+        tipo_componente: filho.tipo_componente,
+        qtd_por_pai: parseFloat(filho.qtd_por_pai) || 0,
+        operacoes: (roteiroPorProduto[filho.componente] || [])
+      }))
+    }));
+
+    res.json({
+      op: opTrim,
+      cliente: firstRow.cliente,
+      prazo,
+      pedido_venda: firstRow.pedido_venda,
+      conjuntos
+    });
+  } catch (err) {
+    console.error('❌ [ESTRUTURA-ROUTING]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

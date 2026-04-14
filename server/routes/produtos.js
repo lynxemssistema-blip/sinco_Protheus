@@ -538,35 +538,27 @@ router.get('/:codigo/roteiro', async (req, res) => {
         const codClean = decodeURIComponent(codigo).trim();
 
         const query = `
-            WITH descricoes_padrao AS (
-                SELECT g2_recurso, g2_descri
-                FROM (
-                    SELECT
-                        g2_recurso,
-                        g2_descri,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY g2_recurso
-                            ORDER BY COUNT(*) DESC, g2_descri
-                        ) AS rn
-                    FROM sg2010
-                    WHERE d_e_l_e_t_ = ''
-                    GROUP BY g2_recurso, g2_descri
-                ) x
-                WHERE rn = 1
+            SELECT
+                g2.g2_operac                    AS operacao,
+                TRIM(h1.h1_descri)              AS descricao,
+                TRIM(g2.g2_recurso)             AS recurso,
+                g2.g2_setup                     AS tempo_setup,
+                g2.g2_tempad                    AS tempo_padrao,
+                g2.g2_ferram                    AS ferramentas,
+                g2.g2_depto                     AS departamento
+            FROM public.sg2010 g2
+            LEFT JOIN public.sh1010 h1
+                ON h1.h1_codigo = g2.g2_recurso
+                AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE TRIM(g2.g2_produto) = $1
+            AND (g2.d_e_l_e_t_ = '' OR g2.d_e_l_e_t_ = ' ')
+            AND g2.g2_codigo = (
+                SELECT MAX(g2_sub.g2_codigo)
+                FROM public.sg2010 g2_sub
+                WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
+                AND (g2_sub.d_e_l_e_t_ = '' OR g2_sub.d_e_l_e_t_ = ' ')
             )
-            SELECT 
-                sg2.g2_operac AS operacao,
-                COALESCE(NULLIF(TRIM(sg2.g2_descri), ''), dp.g2_descri) AS descricao,
-                sg2.g2_recurso AS recurso,
-                sg2.g2_setup AS tempo_setup,
-                sg2.g2_tempad AS tempo_padrao,
-                sg2.g2_ferram AS ferramentas,
-                sg2.g2_depto AS departamento
-            FROM sg2010 sg2
-            LEFT JOIN descricoes_padrao dp ON dp.g2_recurso = sg2.g2_recurso
-            WHERE TRIM(sg2.g2_produto) = $1
-            AND (sg2.d_e_l_e_t_ = '' OR sg2.d_e_l_e_t_ = ' ')
-            ORDER BY sg2.g2_operac
+            ORDER BY g2.g2_operac
         `;
 
         const result = await pool.query(query, [codClean]);

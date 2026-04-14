@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
  * Prioritizes traceability including PV, Item, and Parent Product for every line.
  * @param {Object} mirrorData - Data returned by /api/pedidos/op-mirror/:id
  */
-export const generateOPByOperationPdf = (mirrorData) => {
+export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batchContext = null) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error("Invalid data provided to PDF generator");
@@ -50,9 +50,15 @@ export const generateOPByOperationPdf = (mirrorData) => {
                         // Calculate total quantity: (Quantity of this component in BOM) * (Sales Order quantity)
                         // Note: Backend might already provide rawQtd as quantidade_calculada.
                         const isLevel0 = component.nivel === 0 || component.nivel === undefined;
-                        const rawQtd = isLevel0
-                            ? (component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
-                            : (component.quantidade_calculada || component.qtd_total || 0);
+                        let rawQtd = isLevel0
+                            ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
+                            : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
+                        
+                        if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
+                            const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
+                            const fractionQty = parseFloat(batchContext.visual_qtd);
+                            rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                        }
 
                         operationsMap.get(recurso).components.push({
                             pedido: mirrorData.pedido.pedido,
@@ -60,11 +66,12 @@ export const generateOPByOperationPdf = (mirrorData) => {
                             produtoPai: parentCode,
                             codigo: component.codigo,
                             descricao: component.descricao,
+                            tipo: component.tipo,
                             proxOp: proxOp,
                             qtdTotal: rawQtd,
                             um: component.unidade || component.um || 'UN',
                             nivel: isLevel0 ? 'PAI' : component.nivel,
-                            op_num: component.op_num || itemGroup.produto_principal?.op_num || '-'
+                            op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-')
                         });
                     });
                 }
@@ -163,6 +170,7 @@ export const generateOPByOperationPdf = (mirrorData) => {
                 "Nível",
                 "Prod. Pai (BOM)",
                 "OP",
+                "Seq. OP (MP)",
                 "Componente",
                 "Descrição",
                 "Próx. Operação",
@@ -170,18 +178,28 @@ export const generateOPByOperationPdf = (mirrorData) => {
                 "UM"
             ];
 
-            const tableRows = groupData.components.map(c => [
-                c.pedido,
-                c.itemPedido,
-                c.nivel !== undefined ? c.nivel : '-',
-                c.produtoPai,
-                c.op_num,
-                c.codigo,
-                c.descricao,
-                c.proxOp,
-                Number(c.qtdTotal).toFixed(2),
-                c.um
-            ]);
+            const tableRows = groupData.components.map(c => {
+                const isMaterial = c.tipo === 'MP' || c.tipo === 'MC' || ['MTC-', 'MTA-', 'MTT-', 'MTD-', 'MTU-', 'MTE-'].includes((c.codigo || '').substring(0, 4).toUpperCase());
+                let seqOpMp = '-';
+                if (isMaterial && c.op_num && c.op_num.length > 3) {
+                    const sequencial = c.op_num.slice(-3);
+                    seqOpMp = `${c.pedido}-${c.itemPedido}-${sequencial}`;
+                }
+
+                return [
+                    c.pedido,
+                    c.itemPedido,
+                    c.nivel !== undefined ? c.nivel : '-',
+                    c.produtoPai,
+                    c.op_num,
+                    seqOpMp,
+                    c.codigo,
+                    c.descricao,
+                    c.proxOp,
+                    Number(c.qtdTotal).toFixed(2),
+                    c.um
+                ];
+            });
 
             autoTable(doc, {
                 startY: 53,
@@ -200,16 +218,17 @@ export const generateOPByOperationPdf = (mirrorData) => {
                     cellPadding: 2
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 13 }, // PV
+                    0: { halign: 'center', cellWidth: 12 }, // PV
                     1: { halign: 'center', cellWidth: 8 }, // Item
                     2: { halign: 'center', cellWidth: 8 }, // Nível
-                    3: { cellWidth: 28 }, // Prod Pai
-                    4: { halign: 'center', cellWidth: 20 }, // OP
-                    5: { cellWidth: 30 }, // Componente
-                    6: { cellWidth: 'auto' }, // Descricao
-                    7: { halign: 'center', cellWidth: 45, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
-                    8: { halign: 'right', cellWidth: 14 }, // Qtd
-                    9: { halign: 'center', cellWidth: 8 }  // UM
+                    3: { cellWidth: 26 }, // Prod Pai
+                    4: { halign: 'center', cellWidth: 18 }, // OP
+                    5: { halign: 'center', cellWidth: 23, fontStyle: 'bold' }, // Seq. OP (MP)
+                    6: { cellWidth: 30 }, // Componente
+                    7: { cellWidth: 'auto' }, // Descricao
+                    8: { halign: 'center', cellWidth: 42, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
+                    9: { halign: 'right', cellWidth: 12 }, // Qtd
+                    10: { halign: 'center', cellWidth: 8 }  // UM
                 },
                 margin: { top: 53, bottom: 20 },
                 didDrawPage: drawPageHeader
@@ -257,15 +276,33 @@ export const generateOPByOperationPdf = (mirrorData) => {
 
                 // Pega a quantidade bruta/total do componente
                 const isLevel0 = component.nivel === 0 || component.nivel === undefined;
-                const rawQtd = isLevel0
+                let rawQtd = isLevel0
                     ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
                     : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
+                
+                if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
+                    const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
+                    const fractionQty = parseFloat(batchContext.visual_qtd);
+                    rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                }
 
-                if (partsSummaryMap.has(code)) {
-                    partsSummaryMap.get(code).qtdTotal += rawQtd;
+                const isMaterial = component.tipo === 'MP' || component.tipo === 'MC' || ['MTC-', 'MTA-', 'MTT-', 'MTD-', 'MTU-', 'MTE-'].includes((code || '').substring(0, 4).toUpperCase());
+                let seqOpMp = '-';
+                if (isMaterial && component.op_num && component.op_num.length > 3) {
+                    const sequencial = component.op_num.slice(-3);
+                    const itemPedido = itemGroup.item_pedido || '';
+                    const pedido = mirrorData.pedido?.pedido || '';
+                    seqOpMp = `${pedido}-${itemPedido}-${sequencial}`;
+                }
+
+                const mapKey = isMaterial && seqOpMp !== '-' ? `${code}||${seqOpMp}` : code;
+
+                if (partsSummaryMap.has(mapKey)) {
+                    partsSummaryMap.get(mapKey).qtdTotal += rawQtd;
                 } else {
-                    partsSummaryMap.set(code, {
+                    partsSummaryMap.set(mapKey, {
                         codigo: code,
+                        seqOpMp: seqOpMp,
                         descricao: component.descricao || '',
                         um: component.unidade || component.um || 'UN',
                         qtdTotal: rawQtd
@@ -310,9 +347,10 @@ export const generateOPByOperationPdf = (mirrorData) => {
             doc.text(`ITENS EXCLUSIVOS: ${partsSummaryArray.length}`, pageWidth - 45, 12);
             doc.setTextColor(0, 0, 0);
 
-            const summaryColumns = ["Código", "Descrição do Material / Peça", "UM", "Qtde Total Necessária"];
+            const summaryColumns = ["Código", "Seq. OP (MP)", "Descrição do Material / Peça", "UM", "Qtde Total Necessária"];
             const summaryRows = partsSummaryArray.map(p => [
                 p.codigo,
+                p.seqOpMp || '-',
                 p.descricao,
                 p.um,
                 Number(p.qtdTotal).toFixed(4).replace(/\.?0+$/, '') // Formatação enxuta
@@ -335,10 +373,11 @@ export const generateOPByOperationPdf = (mirrorData) => {
                     cellPadding: 3
                 },
                 columnStyles: {
-                    0: { cellWidth: 40, fontStyle: 'bold' }, // Código
-                    1: { cellWidth: 'auto' }, // Descricao
-                    2: { halign: 'center', cellWidth: 20 }, // UM
-                    3: { halign: 'right', cellWidth: 40, fontStyle: 'bold', textColor: [0, 100, 0] } // Qtde
+                    0: { cellWidth: 35, fontStyle: 'bold' }, // Código
+                    1: { halign: 'center', cellWidth: 22 }, // Seq. OP
+                    2: { cellWidth: 'auto' }, // Descricao
+                    3: { halign: 'center', cellWidth: 15 }, // UM
+                    4: { halign: 'right', cellWidth: 32, fontStyle: 'bold', textColor: [0, 100, 0] } // Qtde
                 },
                 didDrawPage: (data) => {
                     doc.setFontSize(8);
@@ -346,6 +385,9 @@ export const generateOPByOperationPdf = (mirrorData) => {
                     doc.text(`Página Anexo: ${curr} de ${sumPageCount}`, pageWidth - 40, pageHeight - 10);
                 }
             });
+        }
+        if (returnBuffer) {
+            return doc.output('arraybuffer');
         }
 
         const safePedido = mirrorData.pedido.pedido ? String(mirrorData.pedido.pedido).replace(/[^a-zA-Z0-9]/g, '') : 'Desconhecido';

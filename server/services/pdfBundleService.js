@@ -18,7 +18,8 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     // 1. Fetch Romaneio Header
     const [romRows] = await mysqlPool.execute(
         `SELECT id, cliente_nome, status, data_liberacao, data_previsao_retorno,
-        peso_total, area_pintura_total, usuario, created_at, fotos
+        peso_total, area_pintura_total, usuario, created_at, fotos, motorista_nome, 
+        veiculo_placa, veiculo_modelo, motorista_cnh_validade, motorista_cnh
         FROM app_romaneios WHERE id = ?`,
         [romaneioId]
     );
@@ -185,6 +186,13 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     drawT('Peso Un', marginX + 620, tbY + 6, 8, true);
     drawT('Peso Tot', marginX + 690, tbY + 6, 8, true);
     
+    // Romaneio ID on all report pages (top right)
+    const drawPageNum = (page) => {
+        const { width: pW, height: pH } = page.getSize();
+        page.drawText(`Romaneio: #${rom.id}`, { x: pW - 120, y: pH - 25, size: 10, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+    };
+    drawPageNum(cover);
+
     let y = tbY - 20;
 
     // Draw Items Table Lines
@@ -194,6 +202,7 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
         const item = itens[i];
         if (y < 80) {
             cover = pdfDoc.addPage([841.89, 595.28]);
+            drawPageNum(cover);
             y = height - 50;
         }
         cover.drawLine({ start: { x: marginX, y }, end: { x: width - marginX, y }, thickness: 1 });
@@ -240,20 +249,49 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
             
             for (const p of pages) {
                 const { width: pW, height: pH } = p.getSize();
-                p.drawText(`Status: ${rom.status?.toUpperCase() || 'ABERTO'}`, {
-                    x: pW - 150, y: pH - 30, size: 14, color: rgb(1, 0, 0), font: fontBold
-                });
+                const statusStr = rom.status?.toUpperCase() || 'ABERTO';
+                const dtRetorno = rom.data_previsao_retorno ? new Date(rom.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Não estipulada';
                 
-                const dtRetorno = rom.data_previsao_retorno ? new Date(rom.data_previsao_retorno).toLocaleDateString('pt-BR') : '-';
-                const stampText = `Item ${item.item_index || '?'} | Projeto(OP): ${item.op_numero || 'Avulso'} | Romaneio: #${rom.id} | Qtd: ${item.quantidade} | Retorno: ${dtRetorno}`;
+                // --- MULTILINE STAMP (Size 6) ---
+                const lines = [
+                    `Item ${item.item_index || '?'} | Romaneio: #${rom.id} | Status: ${statusStr}`,
+                    `Projeto(OP): ${item.op_numero || 'Avulso'} | Qtd: ${item.quantidade}`,
+                    `Retorno: ${dtRetorno}`
+                ];
                 
-                const textWidth = fontBold.widthOfTextAtSize(stampText, 12);
+                const fontSize = 6;
+                const lineHeight = 8;
+                const boxPadding = 5;
+                
+                // Calculate box width based on longest line
+                const maxLineWidth = Math.max(...lines.map(line => fontBold.widthOfTextAtSize(line, fontSize)));
+                
+                const boxWidth = maxLineWidth + (boxPadding * 2);
+                const boxHeight = (lines.length * lineHeight) + (boxPadding * 2);
+                const startX = 20;
+                const startY = pH - 20 - boxHeight;
+
+                // White Background Box
                 p.drawRectangle({
-                    x: 20, y: pH - 35, width: textWidth + 10, height: 20, color: rgb(1,1,1)
+                    x: startX,
+                    y: startY,
+                    width: boxWidth,
+                    height: boxHeight,
+                    color: rgb(1, 1, 1),
+                    opacity: 0.9
                 });
-                p.drawText(stampText, {
-                    x: 25, y: pH - 30, size: 12, color: rgb(1, 0, 0), font: fontBold
+
+                // Draw Text Lines
+                lines.forEach((line, idx) => {
+                    p.drawText(line, {
+                        x: startX + boxPadding,
+                        y: startY + boxHeight - boxPadding - (idx + 1) * lineHeight + 2,
+                        size: fontSize,
+                        color: rgb(1, 0, 0),
+                        font: fontBold
+                    });
                 });
+
                 pdfDoc.addPage(p);
             }
         } catch (err) {

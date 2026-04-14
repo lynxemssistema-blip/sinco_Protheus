@@ -379,7 +379,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) as qtd_faturar,
                 c6.c6_entreg as entrega,
                 c6.c6_pedcli as ped_cli,
-                c2.c2_num as op
+                COALESCE(TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen), TRIM(c6.c6_numop)) AS op
             FROM sc6010 c6
             LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND sb1.d_e_l_e_t_ = ''
             LEFT JOIN sc2010 c2 ON c2.c2_pedido = c6.c6_num AND c2.c2_itempv = c6.c6_item AND c2.d_e_l_e_t_ = ''

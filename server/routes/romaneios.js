@@ -16,32 +16,74 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// --- Migration: garantir colunas de peso/área nos itens (compatível MySQL 5.7) ---
+// --- Migrations: garantir estrutura do BD (MySQL 5.7+) ---
 (async () => {
     try {
-        const addIfMissing = async (col, type) => {
-            const [rows] = await mysqlPool.execute(
+        const connection = await mysqlPool.getConnection();
+
+        const addColIfMissing = async (table, col, type) => {
+            const [rows] = await connection.query(
                 `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'app_romaneio_items' AND COLUMN_NAME = ?`,
-                [col]
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+                [table, col]
             );
             if (rows[0].cnt === 0) {
-                await mysqlPool.execute(`ALTER TABLE app_romaneio_items ADD COLUMN ${col} ${type}`);
-                console.log(`[Romaneios] Coluna ${col} criada.`);
+                await connection.query(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+                console.log(`[Romaneios] Coluna ${col} criada em ${table}.`);
             }
         };
-        await addIfMissing('peso_unitario', 'DECIMAL(10,3) DEFAULT NULL');
-        await addIfMissing('area_pintura_unitario', 'DECIMAL(10,4) DEFAULT NULL');
-        console.log('[Romaneios] Colunas peso_unitario/area_pintura_unitario verificadas.');
+
+        // app_romaneios
+        await addColIfMissing('app_romaneios', 'current_revision', 'INT DEFAULT 1');
+        await addColIfMissing('app_romaneios', 'usuario', 'VARCHAR(100) DEFAULT \'Sistema\'');
+        await addColIfMissing('app_romaneios', 'data_previsao_retorno', 'DATE DEFAULT NULL');
+
+        // app_romaneio_revisions
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS app_romaneio_revisions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                romaneio_id INT NOT NULL,
+                revision_number INT NOT NULL,
+                snapshot_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reason TEXT,
+                usuario VARCHAR(100) DEFAULT 'Sistema',
+                FOREIGN KEY (romaneio_id) REFERENCES app_romaneios(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB;
+        `);
+        await addColIfMissing('app_romaneio_revisions', 'usuario', 'VARCHAR(100) DEFAULT \'Sistema\'');
+
+        // app_emails (Log de envios)
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS app_emails (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                message_id VARCHAR(255),
+                folder VARCHAR(20),
+                sender_name VARCHAR(255),
+                sender_email VARCHAR(255),
+                recipient_email TEXT,
+                subject VARCHAR(255),
+                body_html LONGTEXT,
+                has_attachments TINYINT DEFAULT 0,
+                date DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB;
+        `);
+
+        // app_romaneio_items
+        await addColIfMissing('app_romaneio_items', 'peso_unitario', 'DECIMAL(10,3) DEFAULT NULL');
+        await addColIfMissing('app_romaneio_items', 'area_pintura_unitario', 'DECIMAL(10,4) DEFAULT NULL');
+
+        connection.release();
+        console.log('[Romaneios] Estrutura do banco de dados verificada/atualizada.');
     } catch (e) {
-        console.warn('[Romaneios] Migration de colunas falhou:', e.message);
+        console.warn('[Romaneios] Erro na verificação da estrutura:', e.message);
     }
 })();
 
 // --- NETWORK SHARE CONFIG (Estrutura Lynx) ---
 function getRomaneioBaseDir() {
     if (process.env.ROMANEIOS_NETWORK_DIR) return process.env.ROMANEIOS_NETWORK_DIR;
-    if (process.platform === 'win32') return '\\\\192.168.1.253\\Estrutura Lynx\\007-ROMANEIO';
+    if (process.platform === 'win32') return '//192.168.1.253/Estrutura Lynx/007-ROMANEIO';
     return '/mnt/lynx/007-ROMANEIO';
 }
 
@@ -81,7 +123,8 @@ router.get('/clientes', async (req, res) => {
                 a2.A2_END as endereco,
                 a2.A2_BAIRRO as bairro,
                 a2.A2_CEP as cep,
-                a2.A2_TEL as telefone
+                a2.A2_TEL as telefone,
+                a2.A2_EMAIL as email
             FROM public.sa2010 a2
             WHERE COALESCE(a2.D_E_L_E_T_, '') IN ('', ' ')
         `;
@@ -97,14 +140,43 @@ router.get('/clientes', async (req, res) => {
         }
 
         query += ` ORDER BY a2.a2_nome ASC LIMIT 2000`;
-
-        const result = await db.query(query, params);
-        res.json(result.rows);
+        
+        const { rows } = await db.query(query, params);
+        res.json(rows);
     } catch (err) {
-        console.error('Erro ao buscar fornecedores:', err);
-        res.status(500).json({ error: 'Erro ao buscar fornecedores' });
+        res.status(500).json({ error: err.message });
     }
 });
+
+// Buscar Todo o Histórico de Status (Para Relatório de Engenharia)
+// MANTIDO NO TOPO para evitar conflito com /:id
+router.get('/revisions/all', requirePermission('romaneios', 'read'), async (req, res) => {
+    try {
+        const { startDate, endDate, search } = req.query;
+        let query = `
+            SELECT rev.id, rev.romaneio_id, rev.revision_number, rev.reason, rev.usuario, rev.created_at,
+                   rom.cliente_nome, rom.status as current_status
+            FROM app_romaneio_revisions rev
+            JOIN app_romaneios rom ON rev.romaneio_id = rom.id
+            WHERE 1=1
+        `;
+        const params = [];
+
+        if (startDate) { query += " AND rev.created_at >= ?"; params.push(startDate); }
+        if (endDate) { query += " AND rev.created_at <= ?"; params.push(endDate); }
+        if (search) {
+            query += " AND (rom.cliente_nome LIKE ? OR rom.id LIKE ?)";
+            params.push(`%${search}%`, `%${search}%`);
+        }
+
+        query += " ORDER BY rev.created_at DESC LIMIT 500";
+        const [rows] = await mysqlPool.execute(query, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// --- VERIFICAÇÃO DE OP ITEM ---
 
 // --- VERIFICAÇÃO DE OP ITEM ---
 router.get('/check-op-item', async (req, res) => {
@@ -210,12 +282,20 @@ router.get('/types', async (req, res) => {
             if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro fotos column:', e.message);
         }
 
-        // Coluna current_revision
+        // Coluna diretorio_rede
         try {
-            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN current_revision INT DEFAULT 1");
-            console.log('✅ [Romaneios] Coluna current_revision criada.');
+            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN diretorio_rede VARCHAR(500) NULL");
+            console.log('✅ [Romaneios] Coluna diretorio_rede criada.');
         } catch (e) {
-            if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro current_revision:', e.message);
+            if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro diretorio_rede:', e.message);
+        }
+
+        // Coluna pdf_path
+        try {
+            await conn.execute("ALTER TABLE app_romaneios ADD COLUMN pdf_path VARCHAR(500) NULL");
+            console.log('✅ [Romaneios] Coluna pdf_path criada.');
+        } catch (e) {
+            if (e.errno !== 1060) console.error('⚠️ [Romaneios] Erro pdf_path:', e.message);
         }
 
         // Tabela de Revisões
@@ -315,15 +395,29 @@ router.get('/:id/generate-bundle', requirePermission('romaneios', 'read'), async
 
         // Tentar salvar cópia na rede — nunca bloqueia a entrega do PDF ao browser
         try {
-            const baseDir = getRomaneioBaseDir();
-            const [rows] = await mysqlPool.execute('SELECT current_revision FROM app_romaneios WHERE id = ?', [id]);
-            const rev = rows.length > 0 ? (rows[0].current_revision || 1) : 1;
-            const folderPath = path.join(baseDir, `RO-${id}`, `REV-${rev}`);
+            // Pegar o diretório salvo no banco se existir
+            const [romRows] = await mysqlPool.execute('SELECT diretorio_rede, current_revision FROM app_romaneios WHERE id = ?', [id]);
+            let folderPath = null;
+            let rev = 1;
+
+            if (romRows.length > 0) {
+                folderPath = romRows[0].diretorio_rede;
+            }
+
+            // Se não tiver diretório salvo, reconstrói o padrão (fallback/retrocompatibilidade)
+            if (!folderPath) {
+                folderPath = path.join(getRomaneioBaseDir(), `RO-${id}`);
+            }
+
             if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
-            fs.writeFileSync(path.join(folderPath, fileName), pdfBuffer);
-            console.log(`[Romaneios] PDF salvo na rede: ${path.join(folderPath, fileName)}`);
-        } catch (networkErr) {
-            console.error(`[Romaneios] Aviso: cópia na rede falhou, entregando ao browser. Erro:`, networkErr.message);
+            const fullPath = path.join(folderPath, fileName);
+            fs.writeFileSync(fullPath, pdfBuffer);
+            console.log(`✅ [Romaneios] Cópia salva na rede: ${fullPath}`);
+            
+            // Gravar caminho do PDF no banco de dados
+            await mysqlPool.execute('UPDATE app_romaneios SET pdf_path = ? WHERE id = ?', [fullPath, id]);
+        } catch (err) {
+            console.error(`❌ [Romaneios] Erro ao salvar cópia na rede: ${err.message}`);
         }
 
         res.setHeader('Content-Type', 'application/pdf');
@@ -334,6 +428,62 @@ router.get('/:id/generate-bundle', requirePermission('romaneios', 'read'), async
         res.status(500).json({ error: 'Erro ao gerar caderno PDF: ' + err.message });
     }
 });
+
+// Enviar Romaneio por E-mail
+router.post('/:id/send-email', requirePermission('romaneios', 'edit'), async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { to, subject, htmlBody, attachments = [] } = req.body;
+        const nodemailer = require('nodemailer');
+        const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+
+        // 1. Generate PDF Bundle
+        const usuarioGerador = req.user?.name || req.user?.username || 'Sistema';
+        const pdfBuffer = await generateRomaneioBundle(id, { usuarioGerador });
+
+        // 2. Fetch Romaneio details for filename
+        const [rows] = await mysqlPool.execute('SELECT current_revision, diretorio_rede FROM app_romaneios WHERE id = ?', [id]);
+        const rev = rows.length > 0 ? (rows[0].current_revision || 1) : 1;
+        const fileName = `Romaneio_${id}_REV${rev}.pdf`;
+
+        // 3. SMTP Config (Using same as email.js)
+        const SMTP_CONFIG = {
+            host: 'smtp.task.com.br',
+            port: 587,
+            secure: false,
+            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+            tls: { rejectUnauthorized: false }
+        };
+
+        const transporter = nodemailer.createTransport(SMTP_CONFIG);
+        const mailOptions = {
+            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            to: Array.isArray(to) ? to.join(', ') : to,
+            subject: subject || `Romaneio MetalFisa #${id} - Atualização de Status`,
+            html: getCorporateEmailTemplate(htmlBody || '<p>Segue em anexo o caderno do romaneio atualizado.</p>'),
+            attachments: [
+                { filename: fileName, content: pdfBuffer },
+                ...attachments
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+
+        // 4. Log Email in History
+        await mysqlPool.execute(
+            `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_html, has_attachments, date)
+             VALUES (?, 'SENT', 'MetalFisa ERP', 'sincometal@metalfisa.com.br', ?, ?, ?, 1, NOW())`,
+            [info.messageId, Array.isArray(to) ? to.join(', ') : to, subject, htmlBody]
+        );
+
+        res.json({ message: 'E-mail enviado com sucesso!', messageId: info.messageId });
+    } catch (err) {
+        console.error('Erro ao enviar e-mail do romaneio:', err);
+        res.status(500).json({ error: 'Erro ao enviar e-mail: ' + err.message });
+    }
+});
+
+
 
 // Criar Romaneio (Cabeçalho)
 router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
@@ -371,10 +521,27 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
 
         // --- INTEGRAÇÃO COM DIRETÓRIO DE REDE ---
         const insertId = result.insertId;
-        const dir = path.join(getRomaneioBaseDir(), `RO-${insertId}`);
-        fs.promises.mkdir(dir, { recursive: true })
-            .then(() => console.log(`✅ Pasta do romaneio criada na rede: ${dir}`))
-            .catch(e => console.error(`⚠️ Erro ao criar pasta de rede do romaneio (${dir}):`, e.message));
+        const baseDir = getRomaneioBaseDir();
+        const dir = path.join(baseDir, `RO-${insertId}`);
+        
+        console.log(`📂 [Romaneios] Tentando criar pasta na rede: ${dir}`);
+        try {
+            if (!fs.existsSync(baseDir)) {
+                console.error(`❌ [Romaneios] ATENÇÃO: Diretório base de rede não acessível: ${baseDir}`);
+            } else {
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                    console.log(`✅ [Romaneios] Pasta criada com sucesso: ${dir}`);
+                } else {
+                    console.log(`ℹ️ [Romaneios] Pasta já existe: ${dir}`);
+                }
+                
+                // Gravar o caminho no banco de dados
+                await mysqlPool.execute('UPDATE app_romaneios SET diretorio_rede = ? WHERE id = ?', [dir, insertId]);
+            }
+        } catch (e) {
+            console.error(`⚠️ [Romaneios] Falha crítica ao criar pasta de rede (${dir}):`, e.message);
+        }
 
         res.json({ id: insertId, message: 'Romaneio criado com sucesso!' });
     } catch (err) {
@@ -441,6 +608,24 @@ router.put('/:id', requirePermission('romaneios', 'edit'), async (req, res) => {
         res.json({ message: 'Romaneio atualizado com sucesso!' });
     } catch (err) {
         console.error('Erro ao atualizar romaneio:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Patch targeted for return forecast date
+router.patch('/:id/forecast-date', requirePermission('romaneios', 'edit'), async (req, res) => {
+    try {
+        const { data_previsao_retorno } = req.body;
+        const romaneioId = req.params.id;
+
+        await mysqlPool.execute(
+            'UPDATE app_romaneios SET data_previsao_retorno = ? WHERE id = ?',
+            [data_previsao_retorno || null, romaneioId]
+        );
+
+        res.json({ message: 'Data de previsão atualizada com sucesso!' });
+    } catch (err) {
+        console.error('Erro ao atualizar data de previsão:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -538,7 +723,25 @@ router.get('/:id', async (req, res) => {
             WHERE i.romaneio_id = ?
         `, [req.params.id]);
 
-        res.json({ ...romaneio[0], itens });
+        // Adicionar e-mail e CNPJ do cliente (busca no Postgres)
+        let clienteEmail = '';
+        let clienteCnpj = '';
+        if (romaneio[0].cliente_cod) {
+            try {
+                const { rows: cliRows } = await db.query(
+                    'SELECT A2_EMAIL as email, A2_CGC as cnpj FROM public.sa2010 WHERE A2_COD = $1 AND A2_LOJA = $2 AND COALESCE(D_E_L_E_T_, \'\') IN (\'\', \' \')',
+                    [romaneio[0].cliente_cod.trim(), romaneio[0].cliente_loja || '01']
+                );
+                if (cliRows.length > 0) {
+                    clienteEmail = (cliRows[0].email || '').trim();
+                    clienteCnpj = (cliRows[0].cnpj || '').trim();
+                }
+            } catch (e) {
+                console.error('Erro ao buscar dados do cliente no Protheus:', e.message);
+            }
+        }
+
+        res.json({ ...romaneio[0], cliente_email: clienteEmail, cliente_cnpj: clienteCnpj, itens });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1274,6 +1477,142 @@ router.delete('/:id/notas-fiscais/:nfId', requirePermission('romaneios', 'update
         res.json({ message: 'Vínculo da NF removido.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Envio de Cobrança em Lote por Fornecedor (Follow-up)
+router.post('/recebimentos/batch-followup', requirePermission('romaneios', 'edit'), async (req, res) => {
+    try {
+        const { supplierCod, supplierLoja, customMessage, items, recipients = [] } = req.body;
+        const nodemailer = require('nodemailer');
+        const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+
+        if (!supplierCod || !items || items.length === 0) {
+            return res.status(400).json({ error: 'Fornecedor e lista de itens são obrigatórios para a cobrança.' });
+        }
+
+        // 1. Buscar Dados do Fornecedor no Protheus (Opcional - apenas para validar/pegar nome oficial)
+        let supplierName = 'Fornecedor';
+        try {
+            const { rows: cliRows } = await db.query(
+                `SELECT A2_EMAIL, A2_NOME FROM public.sa2010 
+                 WHERE (TRIM(A2_COD) = TRIM($1) OR A2_COD = $1)
+                 AND A2_LOJA = $2 
+                 AND COALESCE(D_E_L_E_T_, '') IN ('', ' ')`,
+                [supplierCod.trim(), supplierLoja || '01']
+            );
+            if (cliRows.length > 0) {
+                supplierName = (cliRows[0].a2_nome || 'Fornecedor').trim();
+            }
+        } catch (dbErr) {
+            console.warn('[Cobranca] Erro ao buscar fornecedor no Protheus:', dbErr.message);
+        }
+
+        const finalRecipients = Array.isArray(recipients) ? recipients.filter(e => e && e.includes('@')) : [];
+
+        if (finalRecipients.length === 0) {
+            return res.status(400).json({ error: 'É necessário ao menos um destinatário válido para enviar a cobrança.' });
+        }
+
+        // 2. Montar Tabela HTML dos itens
+        let itemsHtml = `
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-family: sans-serif; font-size: 13px;">
+                <thead>
+                    <tr style="background-color: #f1f5f9; text-align: left;">
+                        <th style="padding: 10px; border: 1px solid #e2e8f0;">Romaneio</th>
+                        <th style="padding: 10px; border: 1px solid #e2e8f0;">Pedido</th>
+                        <th style="padding: 10px; border: 1px solid #e2e8f0;">Produto</th>
+                        <th style="padding: 10px; border: 1px solid #e2e8f0;">Descrição</th>
+                        <th style="padding: 10px; border: 1px solid #e2e8f0; text-align: right;">Pendente</th>
+                        <th style="padding: 10px; border: 1px solid #e2e8f0; text-align: center;">Previsão</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        items.forEach(item => {
+            const dataPrev = item.data_previsao_retorno ? new Date(item.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-';
+            itemsHtml += `
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0;">#${item.romaneio_id}</td>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0;">${item.pedido || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0;"><b>${item.codigo_produto}</b></td>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0;">${item.descricao_produto}</td>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right;">${item.saldo_pendente}</td>
+                    <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">${dataPrev}</td>
+                </tr>
+            `;
+        });
+
+        itemsHtml += `</tbody></table>`;
+
+        // 3. Gerar Corpo do E-mail
+        const bodyContent = `
+            <div style="font-family: Arial, sans-serif; color: #334155; line-height: 1.6;">
+                <h2 style="color: #0f172a;">Cobrança de Retorno - MetalFisa</h2>
+                <p>Prezados, <b>${supplierName}</b>,</p>
+                ${customMessage ? `<p style="background: #f8fafc; padding: 15px; border-left: 4px solid #4f46e5; font-style: italic;">"${customMessage.replace(/\n/g, '<br>')}"</p>` : ''}
+                <p>Identificamos que os itens abaixo, enviados via romaneio, ainda não retornaram ou estão com a data de previsão ultrapassada. Solicitamos uma atualização sobre o status de entrega destes materiais:</p>
+                ${itemsHtml}
+                <p style="margin-top: 25px;">Por favor, nos responda com a previsão atualizada para que possamos alinhar nosso planejamento de produção.</p>
+                <p>Atenciosamente,<br><b>Equipe MetalFisa</b></p>
+            </div>
+        `;
+
+        // 4. Configuração SMTP e Envio
+        const SMTP_CONFIG = {
+            host: 'smtp.task.com.br',
+            port: 587,
+            secure: false,
+            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+            tls: { rejectUnauthorized: false }
+        };
+
+        const transporter = nodemailer.createTransport(SMTP_CONFIG);
+        const mailOptions = {
+            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            to: finalRecipients.join(', '),
+            subject: `[COBRANÇA] Pendências de Retorno - MetalFisa (${supplierName})`,
+            html: getCorporateEmailTemplate(bodyContent)
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+
+        // 5. Registrar Revisão/Histórico em cada Romaneio envolvido
+        const romaneioIds = [...new Set(items.map(i => i.romaneio_id))];
+        const usuarioDesc = req.user?.name || req.user?.login || 'Sistema';
+        const recipientsStr = finalRecipients.join(', ');
+
+        for (const rid of romaneioIds) {
+            // Pegar a revisão atual para incrementar
+            const [romRows] = await mysqlPool.execute('SELECT current_revision FROM app_romaneios WHERE id = ?', [rid]);
+            const rev = romRows.length > 0 ? (romRows[0].current_revision || 1) : 1;
+
+            await mysqlPool.execute(
+                `INSERT INTO app_romaneio_revisions (romaneio_id, revision_number, snapshot_data, reason, usuario)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [rid, rev, '{}', `Cobrança de Follow-up enviada para os destinatários (${recipientsStr})`, usuarioDesc]
+            );
+
+            // Incrementar revisão
+            await mysqlPool.execute('UPDATE app_romaneios SET current_revision = current_revision + 1 WHERE id = ?', [rid]);
+        }
+
+        // 6. Registrar no log de e-mails geral
+        await mysqlPool.execute(
+            `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_html, has_attachments, date)
+             VALUES (?, 'SENT', 'MetalFisa ERP', 'sincometal@metalfisa.com.br', ?, ?, ?, 0, NOW())`,
+            [info.messageId, recipientsStr, mailOptions.subject, bodyContent]
+        );
+
+        res.json({ message: 'Cobrança enviada com sucesso!', messageId: info.messageId, recipients: recipientsStr });
+    } catch (err) {
+        console.error('❌ [EnviaCobrança] Erro:', err);
+        const errorDetail = err.message || 'Erro interno desconhecido';
+        res.status(500).json({ 
+            error: 'Erro ao processar cobrança: ' + errorDetail,
+            details: err.response?.data || err.stack
+        });
     }
 });
 

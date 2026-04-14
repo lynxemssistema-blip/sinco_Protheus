@@ -154,6 +154,10 @@ app.use('/api/company', require('./routes/company'));
 console.log('🔄 [DEBUG] Montando rota /api/materials...');
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/engineering-bom', require('./routes/engineering_bom'));
+app.use('/api/engineering-releases', require('./routes/engineering_releases'));
+app.use('/api/pcp-releases', require('./routes/pcp_releases'));
+app.use('/api/engineering-controls', require('./routes/engineering_controls'));
+app.use('/api/engineering-timesheets', require('./routes/engineering_timesheets'));
 app.use('/api/almoxarifado', require('./routes/almoxarifado'));
 console.log('✅ [DEBUG] Rotas de Materiais montadas.');
 

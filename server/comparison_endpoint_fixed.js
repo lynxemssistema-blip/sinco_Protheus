@@ -88,12 +88,13 @@ router.get('/tracking-comparison', async (req, res) => {
         const plannedQuery = `
             SELECT 
                 TRIM(g2.g2_operac) as operacao_codigo,
-                TRIM(g2.g2_descri) as operacao_desc,
+                TRIM(h1.h1_descri) as operacao_desc,
                 SUM(c2.c2_quant::numeric) as qtd_planejada
             FROM public.sc2010 c2
             LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto)
+            LEFT JOIN public.sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
             ${protheusWhere}
-            GROUP BY g2.g2_operac, g2.g2_descri
+            GROUP BY g2.g2_operac, h1.h1_descri
         `;
 
         console.log('PG Query:', plannedQuery);

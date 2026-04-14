@@ -52,24 +52,41 @@ api.interceptors.response.use(
                 localStorage.removeItem('@MetalFisa:user');
                 window.location.href = '/login';
             }
+            // Suppress further error logging for auth failures — they are expected
+            // when the session expires and in-flight/debounced requests fire without a token.
+            return Promise.reject(error);
         }
 
-        console.error('❌ Erro na API:', {
-            message: error.message,
-            url: error.config?.url,
-            status,
-        });
+        // Don't log canceled requests (AbortController / React StrictMode)
+        if (error.code === 'ERR_CANCELED') return Promise.reject(error);
+
+        console.error(`❌ Erro na API [${status || 'NET'}] ${error.config?.method?.toUpperCase() || '?'} ${error.config?.url} — ${error.message}`);
         return Promise.reject(error);
     }
 );
 
-export const getPedidos = async (params) => {
-    const response = await api.get('/pedidos', { params });
+export const getPedidos = async (params, config = {}) => {
+    const response = await api.get('/pedidos', { params, ...config });
     return response.data;
 };
 
-export const getPedidosFlat = async (params) => {
-    const response = await api.get('/pedidos/flat', { params });
+export const getPedidosFlat = async (params, config = {}) => {
+    const response = await api.get('/pedidos/flat', { params, ...config });
+    return response.data;
+};
+
+export const getVisaoGerencialAtrasos = async (params, config = {}) => {
+    const response = await api.get('/pedidos/visao-gerencial-atrasos', { params, ...config });
+    return response.data;
+};
+
+export const getVisaoGerencialFabrica = async (params, config = {}) => {
+    const response = await api.get('/pedidos/visao-gerencial-fabrica', { params, ...config });
+    return response.data;
+};
+
+export const saveSnapshotFabrica = async (data) => {
+    const response = await api.post('/pedidos/snapshot-fabrica', data);
     return response.data;
 };
 
@@ -115,6 +132,16 @@ export const getProductionOrders = async (params) => {
 
 export const getProductionOrdersByOp = async (op, item, sequencia, client, product) => {
     const response = await api.get('/producao/op', { params: { op, item, sequencia, client, product } });
+    return response.data;
+};
+
+export const searchProductionOps = async (params) => {
+    const response = await api.get('/producao/search-ops', { params });
+    return response.data;
+};
+
+export const getProductionStructureRouting = async (op) => {
+    const response = await api.get('/producao/estrutura-routing', { params: { op } });
     return response.data;
 };
 
@@ -378,6 +405,8 @@ export const getSincoProductStructure = (codigo) => api.get(`/sinco/estrutura/${
 export const getSincoProdutosRaizes = () => api.get('/sinco/produtos-raizes').then(res => res.data);
 export const getSincoArvore = (codigo) => api.get(`/sinco/arvore/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoRestricoes = (codigo) => api.get(`/sinco/restricoes/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getSincoRestricoesSz0 = (codigo) => api.get(`/sinco/restricoes-sz0/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const createSincoRestricaoSz0 = (payload) => api.post('/sinco/restricao/edit', payload).then(res => res.data);
 export const getSincoOperacoes = (codigo) => api.get(`/sinco/operacoes/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const sincoExportDxf = (outputPath) => api.post('/sinco/export-dxf', { outputPath }).then(res => res.data);
 export const sincoExportPdf = (outputPath) => api.post('/sinco/export-pdf', { outputPath }).then(res => res.data);
@@ -471,6 +500,11 @@ export const getFaturamentoAuditoria = async (id) => {
 
 export const enviarFaturamentoEmailLote = async (data) => {
     const response = await api.post('/faturamento/enviar-email-lote', data);
+    return response.data;
+};
+
+export const getFaturamentoDashboard = async (params) => {
+    const response = await api.get('/faturamento/dashboard', { params });
     return response.data;
 };
 

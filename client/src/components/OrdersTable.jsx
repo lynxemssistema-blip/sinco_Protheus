@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
@@ -12,7 +12,7 @@ import NotesDrawer from './NotesDrawer';
 import MeetingReportModal from './MeetingReportModal';
 import ProductImageModal from './ProductImageModal'; // Import Image Modal
 import EngineeringControlModal from './EngineeringControlModal';
-import ProductionComparison from './ProductionComparison';
+
 import PCPForecastModal from './PCPForecastModal';
 import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
@@ -38,7 +38,7 @@ const OrdersTable = () => {
 
     // Mapping context to local names for easier migration
     const viewMode = orderFilters.viewMode;
-    const setViewMode = (val) => updateOrderFilters({ viewMode: val });
+    const setViewMode = (val) => updateOrderFilters({ viewMode: val, page: 1 });
 
     const activeTab = orderFilters.activeTab || 'evolucao';
     const setActiveTab = (val) => updateOrderFilters({ activeTab: val });
@@ -96,6 +96,7 @@ const OrdersTable = () => {
         dataInicial: orderFilters.dataInicial,
         dataFinal: orderFilters.dataFinal,
         dateType: orderFilters.dateType,
+        tipo_item: orderFilters.tipo_item || '',
         only_active: orderFilters.only_active
     };
 
@@ -122,11 +123,18 @@ const OrdersTable = () => {
         return () => console.log('📦 [OrdersTable] Component UNMOUNTED');
     }, []);
 
+    // AbortController ref — cancels stale requests on rapid filter/page changes
+    const abortRef = useRef(null);
+
     const fetchData = async (overrides = {}) => {
+        // Cancel any in-flight request
+        if (abortRef.current) abortRef.current.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+
         setLoading(true);
         setError(null);
         try {
-            // Use overrides or current state/context values
             const searchFilters = {
                 cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
                 pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
@@ -134,6 +142,7 @@ const OrdersTable = () => {
                 dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
                 dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
                 dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
+                tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
                 only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
             };
             const searchPage = overrides.page || page;
@@ -142,27 +151,30 @@ const OrdersTable = () => {
             console.log(`📡 [OrdersTable] Fetching data... Page: ${searchPage}, View: ${searchViewMode}`);
 
             const searchLimit = searchFilters.pedido ? 5000 : limit;
+            const reqOptions = { signal: controller.signal };
 
             let result;
             if (searchViewMode === 'flat') {
-                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit });
+                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
             } else {
-                result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit });
+                result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
             }
 
-            const { data, meta } = result;
-            setOrders(data);
-            setTotalPages(Math.ceil(meta.total / searchLimit));
+            if (!controller.signal.aborted) {
+                const { data, meta } = result;
+                setOrders(data);
+                setTotalPages(Math.ceil(meta.total / searchLimit));
+            }
         } catch (err) {
+            if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
             console.error(err);
             const serverError = err.response?.data;
             const errorMsg = serverError
                 ? typeof serverError === 'object' ? JSON.stringify(serverError, null, 2) : serverError
                 : err.message;
-
             setError(`Erro ao carregar dados: ${errorMsg}`);
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
         }
     };
 
@@ -199,10 +211,11 @@ const OrdersTable = () => {
         }
     };
 
-    // Fetch on filter/page change
+    // Fetch on filter/page change — cleanup aborts stale requests
     useEffect(() => {
         console.log('🚀 [OrdersTable] Component rendered - DateType filter active', filters.dateType);
         fetchData();
+        return () => { if (abortRef.current) abortRef.current.abort(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, viewMode, filters.only_active]);
 
@@ -749,7 +762,7 @@ const OrdersTable = () => {
                                 <input
                                     type="checkbox"
                                     checked={filters.only_active === 'true'}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false' }))}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false', page: 1 }))}
                                     className="sr-only peer"
                                 />
                                 <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
@@ -779,16 +792,7 @@ const OrdersTable = () => {
                     <TrendingUp className="w-4 h-4" />
                     Evolução da Carteira
                 </button>
-                <button
-                    onClick={() => setActiveTab('comparativo')}
-                    className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'comparativo'
-                        ? 'border-blue-600 text-blue-600 bg-blue-50/30'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
-                >
-                    <BarChart3 className="w-4 h-4" />
-                    Comparativo (Planejado vs Realizado)
-                </button>
+
                 <button
                     onClick={() => setActiveTab('pcp-export')}
                     className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pcp-export'
@@ -1287,7 +1291,7 @@ const OrdersTable = () => {
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-center flex items-center justify-center gap-1 font-medium bg-blue-50 text-blue-800 rounded">
                                                                                                         <Calendar className="h-3 w-3 text-blue-400" />
-                                                                                                        {item.entrega ? item.entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '-'}
+                                                                                                        {item.pcp_delivery_forecast_date ? new Date(item.pcp_delivery_forecast_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : (item.entrega ? item.entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '-')}
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-right text-xs font-medium text-teal-700">
                                                                                                         <div
@@ -1564,12 +1568,7 @@ const OrdersTable = () => {
             )
             }
 
-            {/* Comparativo Content */}
-            {
-                activeTab === 'comparativo' && (
-                    <ProductionComparison filters={filters} />
-                )
-            }
+
 
             {/* Exportação Materiais PCP */}
             {

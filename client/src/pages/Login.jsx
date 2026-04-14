@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus } from 'lucide-react';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle } from 'lucide-react';
 import { api } from '../services/api';
+import { useHelp } from '../contexts/HelpContext';
+import HelpDrawer from '../components/HelpDrawer';
 import logo from '../assets/metalfisa-logo.png';
 
 const Login = () => {
@@ -23,6 +25,7 @@ const Login = () => {
     const [view, setView] = useState('login'); // 'login', 'recover', 'register'
 
     const { login } = useAuth();
+    const { toggleHelp } = useHelp();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -294,11 +297,20 @@ const Login = () => {
                         </form>
                     )}
 
-                    <div className="mt-8 pt-4 border-t border-slate-100 text-center text-xs text-gray-400">
-                        &copy; {new Date().getFullYear()} MetalFisa - PCP
-                    </div>
                 </div>
             </div>
+
+            {/* Floating Help Button */}
+            <button
+                onClick={toggleHelp}
+                title="Ajuda desta tela"
+                aria-label="Abrir ajuda contextual"
+                className="fixed bottom-6 right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95"
+            >
+                <HelpCircle className="h-5 w-5" />
+            </button>
+
+            <HelpDrawer />
         </div>
     );
 };

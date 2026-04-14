@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { X, Save, HelpCircle, ArrowRight, User, Box, FileText, CheckSquare, Target } from 'lucide-react';
+import { X, Save, ArrowRight, User, Box, FileText, CheckSquare, Target } from 'lucide-react';
 import './ProcessMappingForm.css'; // We'll create simple styles
 
 const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     const [formData, setFormData] = useState({
         sector: '',
         leader: '',
-        inputsList: [{ supplier: '', input: '' }],
+        inputsList: [{ id: crypto.randomUUID(), supplier: '', input: '' }],
         activity: '',
-        outputsList: [{ output: '', customer: '' }],
+        outputsList: [{ id: crypto.randomUUID(), output: '', customer: '' }],
         mission: '',
         supportActivities: ''
     });
@@ -16,21 +16,24 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     React.useEffect(() => {
         if (initialData) {
             // Migration logic for legacy data
-            let newInputs = initialData.inputsList || [];
+            let newInputs = initialData.inputsList ? [...initialData.inputsList] : [];
             if (newInputs.length === 0 && (initialData.supplier || initialData.inputs)) {
-                newInputs.push({ supplier: initialData.supplier || '', input: initialData.inputs || '' });
+                newInputs.push({ id: crypto.randomUUID(), supplier: initialData.supplier || '', input: initialData.inputs || '' });
             }
-            if (newInputs.length === 0) newInputs.push({ supplier: '', input: '' });
+            if (newInputs.length === 0) newInputs.push({ id: crypto.randomUUID(), supplier: '', input: '' });
+            else newInputs = newInputs.map(item => ({ ...item, id: item.id || crypto.randomUUID() }));
 
-            let newOutputs = initialData.outputsList || [];
+            let newOutputs = initialData.outputsList ? [...initialData.outputsList] : [];
             if (newOutputs.length === 0 && (initialData.outputs || initialData.customer)) {
-                newOutputs.push({ output: initialData.outputs || '', customer: initialData.customer || '' });
+                newOutputs.push({ id: crypto.randomUUID(), output: initialData.outputs || '', customer: initialData.customer || '' });
             }
-            if (newOutputs.length === 0) newOutputs.push({ output: '', customer: '' });
+            if (newOutputs.length === 0) newOutputs.push({ id: crypto.randomUUID(), output: '', customer: '' });
+            else newOutputs = newOutputs.map(item => ({ ...item, id: item.id || crypto.randomUUID() }));
 
             setFormData(prev => ({
                 ...prev,
                 ...initialData,
+                mission: initialData.mission || '',
                 inputsList: newInputs,
                 outputsList: newOutputs
             }));
@@ -54,7 +57,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     const addRow = (listName) => {
         setFormData(prev => ({
             ...prev,
-            [listName]: [...prev[listName], listName === 'inputsList' ? { supplier: '', input: '' } : { output: '', customer: '' }]
+            [listName]: [...prev[listName], listName === 'inputsList' ? { id: crypto.randomUUID(), supplier: '', input: '' } : { id: crypto.randomUUID(), output: '', customer: '' }]
         }));
     };
 
@@ -73,7 +76,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
 
     return (
         <div className="fixed inset-0 bg-black/50 z-[1001] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-slideUp">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-slideUp print:max-h-none print:h-auto print:overflow-visible print:shadow-none">
                 {/* PRINT HEADER - METALFISA STANDARD */}
                 <div className="hidden print:flex flex-col border-b border-black mb-6">
                     <div className="flex border-b border-black">
@@ -174,7 +177,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
 
                                 <div className="space-y-3">
                                     {formData.inputsList.map((item, index) => (
-                                        <div key={index} className="flex gap-2 items-start group">
+                                        <div key={item.id} className="flex gap-2 items-start group">
                                             <div className="flex-1 grid grid-cols-1 gap-2 border-b border-gray-200 pb-3 print:border-gray-400">
                                                 <div>
                                                     <label className="text-[10px] font-semibold text-gray-500 uppercase print:hidden">Fornecedor</label>
@@ -226,7 +229,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                                         value={formData.activity}
                                         onChange={handleChange}
                                         rows={8} // More space
-                                        className="w-full p-2.5 border border-blue-200 rounded-md text-sm resize-none focus:ring-2 focus:ring-blue-500 outline-none print:border-none print:p-0"
+                                        className="w-full p-2.5 border border-blue-200 rounded-md text-sm resize-none focus:ring-2 focus:ring-blue-500 outline-none print:border-none print:p-0 print:h-auto print:overflow-visible print:whitespace-pre-wrap"
                                         placeholder="1. Verificar OP e material&#10;2. Configurar máquina CNC&#10;3. Executar corte..."
                                         required
                                     />
@@ -249,7 +252,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
 
                                 <div className="space-y-3">
                                     {formData.outputsList.map((item, index) => (
-                                        <div key={index} className="flex gap-2 items-start group">
+                                        <div key={item.id} className="flex gap-2 items-start group">
                                             {formData.outputsList.length > 1 && (
                                                 <button type="button" onClick={() => removeRow('outputsList', index)} className="mt-2 text-gray-400 hover:text-red-500 print:hidden">
                                                     <X className="h-4 w-4" />
@@ -313,23 +316,23 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                         </div>
                     </div>
 
+                    <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-6 flex justify-end gap-3 rounded-b-xl mt-8 print:hidden">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-6 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm flex items-center gap-2 transition-colors"
+                        >
+                            <Save className="h-4 w-4" />
+                            {initialData ? 'Atualizar Mapeamento' : 'Salvar Mapeamento'}
+                        </button>
+                    </div>
                 </form>
-
-                <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-6 flex justify-end gap-3 rounded-b-xl">
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm flex items-center gap-2 transition-colors"
-                    >
-                        <Save className="h-4 w-4" />
-                        {initialData ? 'Atualizar Mapeamento' : 'Salvar Mapeamento'}
-                    </button>
-                </div>
             </div>
         </div>
     );

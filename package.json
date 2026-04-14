@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "dev": "npm run dev --prefix client",
+    "start:server": "cd server && node index.js"
+  },
   "dependencies": {
     "@googleworkspace/cli": "^0.11.1",
     "cors": "^2.8.6",

@@ -3,11 +3,11 @@ import { Link, useLocation } from 'react-router-dom';
 import {
     Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight,
     Package, Layers, FileText, FileSpreadsheet, Loader2,
-    GripVertical, Settings, X, Eye, EyeOff, Scissors
+    GripVertical, Settings, X, Eye, EyeOff, Scissors, Play, Square
 } from 'lucide-react';
 import {
     getPedidosFlat, getProdutos, getReportDownloadUrl,
-    getFileUrl, getUserPreference, saveUserPreference
+    getFileUrl, getUserPreference, saveUserPreference, api
 } from '../services/api';
 
 import DocsModal from '../components/DocsModal';
@@ -237,6 +237,36 @@ const EngineeringOrdersPage = () => {
     const [emissaoFilter, setEmissaoFilter] = useStickyState('', '@metalfisa:eng_emissaoFilter');
     const [showSettings, setShowSettings] = useState(false);
     const [colConfig, setColConfig] = useState(() => loadColConfigLocal());
+    
+    // Engineering Timesheet Active Timer
+    const [activeTimer, setActiveTimer] = useState(null);
+
+    const fetchActiveTimer = async () => {
+        try {
+            const res = await api.get('/engineering-timesheets/active');
+            setActiveTimer(res.data.activeTimer);
+        } catch (err) {
+            console.error('Error fetching active timer', err);
+        }
+    };
+
+    const toggleTimer = async (pedido, itemCode) => {
+        try {
+            // Is this item already playing?
+            if (activeTimer && activeTimer.pedido === pedido && activeTimer.item === itemCode) {
+                // Stop it
+                await api.post('/engineering-timesheets/stop', { id: activeTimer.id });
+                setActiveTimer(null);
+            } else {
+                // It will auto-stop the previous one backend-side
+                const res = await api.post('/engineering-timesheets/start', { pedido, item: itemCode });
+                fetchActiveTimer();
+            }
+        } catch (err) {
+            alert('Falha ao iniciar/parar apontamento de engenharia.');
+            console.error(err);
+        }
+    };
 
     // Load column config from server (per-user) on mount
     useEffect(() => {
@@ -325,6 +355,7 @@ const EngineeringOrdersPage = () => {
 
     useEffect(() => {
         fetchData();
+        fetchActiveTimer();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, viewMode, filters.only_active]);
 
@@ -448,6 +479,23 @@ const EngineeringOrdersPage = () => {
                         >
                             <Settings className="h-4 w-4" />
                         </button>
+                        {activeTimer && activeTimer.pedido === item.pedido && activeTimer.item === item.item ? (
+                            <button
+                                onClick={() => toggleTimer(item.pedido, item.item)}
+                                className="p-1.5 text-orange-600 bg-orange-100 hover:bg-orange-200 transition-all rounded ring-1 ring-orange-300 animate-pulse"
+                                title="Parar Apontamento (Salva as horas gastas)"
+                            >
+                                <Square className="h-4 w-4 fill-current" />
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => toggleTimer(item.pedido, item.item)}
+                                className="p-1.5 text-gray-400 hover:text-green-600 transition-all bg-gray-50/50 hover:bg-green-50 rounded"
+                                title="Iniciar Apontamento (Pausa outros automaticamente)"
+                            >
+                                <Play className="h-4 w-4" />
+                            </button>
+                        )}
                     </div>
                 );
             case 'descricao':

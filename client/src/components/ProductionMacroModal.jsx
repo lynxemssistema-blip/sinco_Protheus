@@ -3,45 +3,54 @@ import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, Aler
 
 export default function ProductionMacroModal({ op, operations, onClose, onSaveBatch }) {
 
-    const [operationPlans, setOperationPlans] = useState({}); // { operacao: { start: '', end: '', selected: true, duracao: 0 } }
+    const [operationPlans, setOperationPlans] = useState({}); // Agora guarda por Recurso: { 'MO0013': { start: '', end: '', selected: true, duracao: 0 } }
     const [expandedOps, setExpandedOps] = useState({});
     const [loading, setLoading] = useState(false);
     const [targetEndDate, setTargetEndDate] = useState('');
     const [orderedGroups, setOrderedGroups] = useState([]);
-    const [joinedIndices, setJoinedIndices] = useState(new Set()); // Para o grupo de índice i estar "junto" com o de cima (i-1)
+    const [joinedIndices, setJoinedIndices] = useState(new Set()); 
     const [daysMode, setDaysMode] = useState('calendar'); // 'calendar' ou 'business'
 
-    // Group operations by operation code
-    const groupedByOperation = useMemo(() => {
+    // ✅ MUDANÇA 1: Agrupa pelo RECURSO da máquina em vez do Sequencial
+    const groupedByRecurso = useMemo(() => {
         const groups = {};
         operations.forEach(o => {
-            // Skip operations without a valid operation code
-            if (!o.operacao) return;
+            // Se não tiver recurso definido no banco, usa a operação como fallback para não perder a linha
+            const recursoCode = (o.recurso && o.recurso.trim() !== '') ? o.recurso.trim() : (o.operacao ? `OP-${o.operacao}` : 'S/R');
 
-            if (!groups[o.operacao]) {
-                groups[o.operacao] = {
-                    code: o.operacao,
+            if (!groups[recursoCode]) {
+                groups[recursoCode] = {
+                    code: recursoCode,
                     desc: o.desc_operacao || '',
                     items: [],
                     min_sequen: 999999
                 };
             }
-            groups[o.operacao].items.push(o);
+            groups[recursoCode].items.push(o);
+            
             const seq = Number(o.sequen) || 999999;
-            if (seq < groups[o.operacao].min_sequen) {
-                groups[o.operacao].min_sequen = seq;
+            if (seq < groups[recursoCode].min_sequen) {
+                groups[recursoCode].min_sequen = seq;
             }
         });
+        
+        // Junta descrições caso o mesmo recurso faça tarefas diferentes na mesma OP
+        Object.values(groups).forEach(g => {
+            const descricoes = Array.from(new Set(g.items.map(i => i.desc_operacao).filter(Boolean)));
+            g.desc = descricoes.join(' + ') || 'Sem descrição';
+        });
+
+        // Ordena de acordo com o fluxo cronológico original onde a máquina entra pela 1ª vez
         return Object.values(groups).sort((a, b) => a.min_sequen - b.min_sequen);
     }, [operations]);
 
-    // Initialize state for each operation
+    // Initialize state for each grouped operation
     useEffect(() => {
         const initialPlans = {};
         const initialExpanded = {};
         let maxEndDate = '';
 
-        groupedByOperation.forEach(group => {
+        groupedByRecurso.forEach(group => {
             let existingStart = '';
             let existingEnd = '';
             let dur = 0;
@@ -68,12 +77,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
         setOperationPlans(initialPlans);
         setExpandedOps(initialExpanded);
-        setOrderedGroups(groupedByOperation);
+        setOrderedGroups(groupedByRecurso);
 
         if (maxEndDate) {
             setTargetEndDate(maxEndDate);
         }
-    }, [groupedByOperation]);
+    }, [groupedByRecurso]);
 
     const subtractDays = (date, days, mode) => {
         const result = new Date(date);
@@ -98,7 +107,6 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         const newPlans = { ...currentPlans };
 
         // Processamos de trás para frente.
-        // Se um grupo i está "junto" com o i-1, eles compartilham o mesmo bloco de tempo.
         const reversedIndices = [...Array(orderedGroups.length).keys()].reverse();
         
         let currentDate = new Date(endDate);
@@ -258,7 +266,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         try {
             const plansToSave = [];
 
-            // For each selected operation, create plans for all its items
+            // A lógica aqui continua injetando op_numero, op_item e operacao_codigo originais, 
+            // então a API e o ERP continuarão processando os dados corretamente sem quebrar nada.
             Object.entries(operationPlans).forEach(([code, plan]) => {
                 if (plan.selected && plan.start && plan.end) {
                     const group = orderedGroups.find(g => g.code === code);
@@ -279,7 +288,6 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
             console.log('=========== FRONTEND: SAVING BATCH PLANS ===========');
             console.log('Total plans to save:', plansToSave.length);
-            console.log('First 3 plans:', plansToSave.slice(0, 3));
             console.log('====================================================');
 
             if (plansToSave.length === 0) {
@@ -295,16 +303,11 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 chunks.push(plansToSave.slice(i, i + CHUNK_SIZE));
             }
 
-            console.log(`📦 Splitting into ${chunks.length} chunks of max ${CHUNK_SIZE} records`);
-
             // Send chunks sequentially
             for (let i = 0; i < chunks.length; i++) {
-                console.log(`🚀 Sending chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)...`);
                 await onSaveBatch(chunks[i]);
-                console.log(`✅ Chunk ${i + 1}/${chunks.length} saved successfully`);
             }
 
-            console.log('✅ All chunks completed successfully');
             alert(`✅ ${plansToSave.length} operações salvas com sucesso!`);
             onClose();
         } catch (error) {
@@ -333,7 +336,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         <div>
                             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                                 <Calendar className="w-3.5 h-3.5 text-slate-600" />
-                                Planejamento por Operação
+                                Planejamento Automático por Recurso
                             </h2>
                             <p className="text-[10px] text-slate-500">
                                 OP: <span className="font-mono font-bold text-slate-700">{op.op}</span> - {op.nome_cliente}
@@ -349,13 +352,13 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 <div className="p-2 bg-slate-50 border-b space-y-2">
                     <div className="flex justify-between items-center text-[10px]">
                         <div className="text-slate-600">
-                            <span className="font-bold text-slate-800">{selectedCount}</span> de {groupedByOperation.length} operações selecionadas
+                            <span className="font-bold text-slate-800">{selectedCount}</span> de {orderedGroups.length} recursos selecionados
                         </div>
                         <button
                             onClick={toggleSelectAll}
                             className="font-bold text-slate-500 hover:text-slate-900 hover:underline"
                         >
-                            {Object.values(operationPlans).every(p => p.selected) ? 'Desmarcar Todas' : 'Selecionar Todas'}
+                            {Object.values(operationPlans).every(p => p.selected) ? 'Desmarcar Todos' : 'Selecionar Todos'}
                         </button>
                     </div>
 
@@ -398,7 +401,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     </div>
                 </div>
 
-                {/* Operations List */}
+                {/* Operations List Grouped by Resource */}
                 <div className="flex-1 overflow-y-auto p-3">
                     {orderedGroups.map((group, index) => {
                         const plan = operationPlans[group.code] || { start: '', end: '', selected: false };
@@ -469,20 +472,25 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                     }
                                                 </div>
 
-                                                {/* Info */}
+                                                {/* ✅ MUDANÇA 2: Design da Etiqueta "MO0013" */}
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                                                        <span className="font-mono font-bold text-[12px] text-slate-800 bg-slate-100 px-1 rounded">{group.code}</span>
-                                                        <span className="text-slate-600 text-[10px] font-medium truncate max-w-[200px]">{group.desc}</span>
+                                                        <span className="font-mono font-bold text-[11px] text-blue-900 bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded shadow-sm text-center min-w-[65px]" title={group.code}>
+                                                            {group.code}
+                                                        </span>
+                                                        <span className="text-slate-600 text-[10px] font-medium truncate max-w-[200px]" title={group.desc}>
+                                                            {group.desc}
+                                                        </span>
                                                         <button
                                                             onClick={() => toggleExpand(group.code)}
-                                                            className="ml-auto text-[9px] text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                                                            className="ml-auto text-[9px] text-slate-500 hover:text-slate-800 bg-slate-200/50 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1"
                                                         >
-                                                            {group.items.length} {group.items.length > 1 ? 'itens' : 'item'}
+                                                            {group.items.length} {group.items.length > 1 ? 'operações' : 'operação'}
+                                                            {isExpanded ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
                                                         </button>
                                                     </div>
 
-                                                    <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-3 mt-1.5">
                                                         <div className="flex items-center gap-0.5 bg-slate-100/80 px-1 py-0.5 rounded border border-slate-200 shadow-inner">
                                                             <span className="text-[7px] font-bold text-slate-500 uppercase px-0.5">Dias</span>
                                                             <button 
@@ -536,11 +544,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                             </div>
                                         </div>
 
+                                        {/* ✅ MUDANÇA 3: Adicionado "Op XX" na gaveta de itens agrupados para rastreabilidade */}
                                         {isExpanded && (
-                                            <div className="bg-blue-50/30 p-1.5 border-t border-slate-100 grid grid-cols-4 gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <div className="bg-blue-50/30 p-1.5 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
                                                 {group.items.map((item, idx) => (
-                                                    <div key={idx} className="text-[8px] bg-white border border-blue-100/50 p-1 px-1.5 rounded flex justify-between items-center shadow-xs">
-                                                        <span className="truncate opacity-70 text-slate-600 font-medium">{item.item_op}/{item.sequen}</span>
+                                                    <div key={idx} className="text-[9px] bg-white border border-blue-100/50 p-1 px-1.5 rounded flex justify-between items-center shadow-xs">
+                                                        <span className="truncate text-slate-600 font-medium" title={item.desc_operacao}>
+                                                            <strong className="text-slate-800">Op {item.operacao}</strong> - {item.item_op}/{item.sequen}
+                                                        </span>
                                                         {item.data_planejada_inicio && <span className="text-blue-500 font-bold text-[10px] leading-none">●</span>}
                                                     </div>
                                                 ))}
@@ -558,10 +569,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     <div className="text-[10px]">
                         {totalOpsToSave > 0 ? (
                             <span className="text-green-600 font-bold uppercase tracking-tight">
-                                ✓ {totalOpsToSave} registros prontos
+                                ✓ {totalOpsToSave} registros atrelados
                             </span>
                         ) : (
-                            <span className="text-slate-400 italic">Selecione operações</span>
+                            <span className="text-slate-400 italic">Selecione recursos</span>
                         )}
                     </div>
                     <div className="flex gap-1.5">

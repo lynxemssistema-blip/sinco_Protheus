@@ -1,0 +1,250 @@
+at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}
+Error: Cannot find module '/var/www/metalfisa/server/node_modules/dotenv/lib/main.js'
+    at createEsmNotFoundErr (node:internal/modules/cjs/loader:1244:15)
+    at finalizeEsmResolution (node:internal/modules/cjs/loader:1232:15)
+    at resolveExports (node:internal/modules/cjs/loader:638:14)
+    at Module._findPath (node:internal/modules/cjs/loader:711:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1193:27)
+    at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/var/www/metalfisa/server/index.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/var/www/metalfisa/server/node_modules/dotenv/package.json'
+}

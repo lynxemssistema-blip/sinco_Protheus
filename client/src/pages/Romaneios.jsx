@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer, FolderPlus, FolderOpen, FileText } from 'lucide-react';
-import { getRomaneios, deleteRomaneio, updateRomaneioStatus, createRomaneioFolder, getRomaneioBaseDirConfig, downloadRomaneioBundle } from '../services/api';
+import { getRomaneios, deleteRomaneio, updateRomaneioStatus, createRomaneioFolder, getRomaneioBaseDirConfig, downloadRomaneioBundle, searchRomaneioItems } from '../services/api';
 import RomaneioForm from '../components/RomaneioForm';
+import RomaneioEmailModal from '../components/RomaneioModals/RomaneioEmailModal';
 import useStickyState from '../hooks/useStickyState';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,6 +14,9 @@ export default function Romaneios() {
     const [initialStep, setInitialStep] = useState(1);
     const [formKey, setFormKey] = useState(0);
     const [loading, setLoading] = useState(false);
+    
+    // Email Modal State
+    const [emailModal, setEmailModal] = useState({ isOpen: false, romaneio: null });
 
     // Filters
     const [filters, setFilters] = useStickyState({
@@ -322,6 +326,11 @@ export default function Romaneios() {
                                                         const userName = user?.nome || user?.login || 'Sistema';
                                                         await updateRomaneioStatus(r.id, newStatus, userDate, userName);
                                                         fetchRomaneios();
+                                                        
+                                                        // Trigger Email Modal
+                                                        if (['Finalizado', 'Enviado', 'Cancelado'].includes(newStatus)) {
+                                                            setEmailModal({ isOpen: true, romaneio: r });
+                                                        }
                                                     } catch (err) {
                                                         alert('Erro ao mudar status: ' + (err.response?.data?.error || err.message));
                                                         fetchRomaneios();
@@ -372,13 +381,20 @@ export default function Romaneios() {
                     onSuccess={handleSuccess}
                 />
             ) : null}
+
+            {/* Email Modal */}
+            <RomaneioEmailModal 
+                isOpen={emailModal.isOpen}
+                onClose={() => setEmailModal({ isOpen: false, romaneio: null })}
+                romaneio={emailModal.romaneio}
+            />
         </div>
     );
 }
 
 // Inline Component to keep file count low, or could be separate.
 // Keeping it simple here:
-import { searchRomaneioItems } from '../services/api';
+
 
 function ProductSearch() {
     const [q, setQ] = useState('');

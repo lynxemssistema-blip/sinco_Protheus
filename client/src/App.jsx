@@ -17,6 +17,8 @@ import EmailBlockerModal from './components/EmailBlockerModal';
 
 // Lazy-loaded pages (code splitting — each becomes a separate chunk)
 const OrdersTable = React.lazy(() => import('./components/OrdersTable'));
+const VisaoGerencialAtrasos = React.lazy(() => import('./pages/gerencial/VisaoGerencialAtrasos'));
+const VisaoGerencialProdutos = React.lazy(() => import('./pages/gerencial/VisaoGerencialProdutos'));
 const ProductStructure = React.lazy(() => import('./pages/ProductStructure'));
 const ProductionOrders = React.lazy(() => import('./pages/ProductionOrders'));
 const ProductionOrdersByOp = React.lazy(() => import('./pages/ProductionOrdersByOp'));
@@ -71,11 +73,18 @@ const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosConta
 const SWorks = React.lazy(() => import('./pages/SWorks'));
 const ProtheusStudyChat = React.lazy(() => import('./pages/admin/ProtheusStudyChat'));
 const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
+const GestaoOPsPage = React.lazy(() => import('./pages/GestaoOPsPage'));
 const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
 const FaturamentoPainel = React.lazy(() => import('./pages/FaturamentoPainel'));
 const ControleFaturamento = React.lazy(() => import('./pages/ControleFaturamento'));
+const DashboardFaturamento = React.lazy(() => import('./pages/comercial/DashboardFaturamento'));
 const FluxoCaixa = React.lazy(() => import('./pages/financeiro/FluxoCaixa'));
 const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverview'));
+const EngineeringReleaseReport = React.lazy(() => import('./pages/EngineeringReleaseReport'));
+const PlanejamentoEstruturaRouting = React.lazy(() => import('./pages/pcp/PlanejamentoEstruturaRouting'));
+const EngineeringControlReport = React.lazy(() => import('./pages/EngineeringControlReport'));
+const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
+const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -213,6 +222,22 @@ function App() {
                                                 <OrdersTable />
                                             </Layout>
                                         } />
+                                        <Route path="/comercial/gestao-ops" element={
+                                            <Layout fullWidth={true}>
+                                                <GestaoOPsPage />
+                                            </Layout>
+                                        } />
+                                        {/* Visões Gerenciais */}
+                                        <Route path="/comercial/atrasos" element={
+                                            <Layout fullWidth={true}>
+                                                <VisaoGerencialAtrasos />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/visao-fabrica" element={
+                                            <Layout fullWidth={true}>
+                                                <VisaoGerencialProdutos />
+                                            </Layout>
+                                        } />
                                         <Route path="/produtos" element={
                                             <Layout>
                                                 <ProductCatalog />
@@ -251,6 +276,16 @@ function App() {
                                         <Route path="/engenharia/pedidos" element={
                                             <Layout fullWidth={true}>
                                                 <EngineeringOrdersPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/relatorio-liberacao" element={
+                                            <Layout fullWidth={true}>
+                                                <EngineeringReleaseReport />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/relatorio-controle" element={
+                                            <Layout fullWidth={true}>
+                                                <EngineeringControlReport />
                                             </Layout>
                                         } />
                                         <Route path="/bom/:codigo" element={
@@ -338,6 +373,11 @@ function App() {
                                                 <Settings />
                                             </Layout>
                                         } />
+                                        <Route path="/producao/relatorios" element={
+                                            <Layout>
+                                                <Reports />
+                                            </Layout>
+                                        } />
                                         <Route path="/relatorios" element={
                                             <Layout>
                                                 <Reports />
@@ -406,6 +446,15 @@ function App() {
                                             </Layout>
                                         } />
 
+                                        {/* Dashboard Gerencial de Faturamento */}
+                                        <Route path="/comercial/dashboard-faturamento" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando dashboard...</div>}>
+                                                    <DashboardFaturamento />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+
                                         {/* Controle de Faturamento Comercial */}
                                         <Route path="/comercial/faturamento" element={
                                             <Layout fullWidth={true}>
@@ -442,6 +491,20 @@ function App() {
                                             <Layout fullWidth={true}>
                                                 <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando painel financeiro...</div>}>
                                                     <FaturamentoPainel />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+                                        <Route path="/financeiro/plano-contas" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando plano de contas...</div>}>
+                                                    <PlanoContas />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
+                                        <Route path="/financeiro/balancete" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando balancete dinâmico...</div>}>
+                                                    <Balancete />
                                                 </Suspense>
                                             </Layout>
                                         } />
@@ -494,9 +557,14 @@ function App() {
                                                 <SincoApontamentoPorUsuarioPage />
                                             </Layout>
                                         } />
-                                        <Route path="/pcp/apontamento-por-usuario-op" element={
+                                        <Route path="/pcp/extrato-op" element={
                                             <Layout fullWidth={true}>
                                                 <ApontamentoPorUsuarioOpPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/planejamento-estrutura-routing" element={
+                                            <Layout fullWidth={true}>
+                                                <PlanejamentoEstruturaRouting />
                                             </Layout>
                                         } />
                                         <Route path="/sworks" element={

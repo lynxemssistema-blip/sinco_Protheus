@@ -589,9 +589,9 @@ router.get('/tracking-comparison', async (req, res) => {
 // GET /api/production/analytics-dashboard - Production Analytics Dashboard
 router.get('/analytics-dashboard', async (req, res) => {
     try {
-        const { pedido_venda, cliente: clienteFilter, ped_cliente, data_inicio, processo } = req.query;
+        const { pedido_venda, cliente: clienteFilter, ped_cliente, op, produto, data_inicio, processo } = req.query;
 
-        console.log(`📊 [ANALYTICS] Filters:`, { pedido_venda, cliente: clienteFilter, ped_cliente });
+        console.log(`📊 [ANALYTICS] Filters:`, { pedido_venda, cliente: clienteFilter, ped_cliente, op, produto });
 
         // Build query dynamically based on filters
         let whereClause = `WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`;
@@ -614,6 +614,19 @@ router.get('/analytics-dashboard', async (req, res) => {
         if (ped_cliente) {
             whereClause += ` AND sc6.c6_pedcli ILIKE $${paramCount}`;
             params.push(`%${ped_cliente}%`);
+            paramCount++;
+        }
+
+        if (op) {
+            // Trim leading zeros for flexible matching
+            whereClause += ` AND (TRIM(c2.c2_num) ILIKE $${paramCount} OR LTRIM(TRIM(c2.c2_num), '0') ILIKE $${paramCount})`;
+            params.push(`%${op}%`);
+            paramCount++;
+        }
+
+        if (produto) {
+            whereClause += ` AND (sc6.c6_produto ILIKE $${paramCount} OR sc6.c6_descri ILIKE $${paramCount} OR c2.c2_produto ILIKE $${paramCount})`;
+            params.push(`%${produto}%`);
             paramCount++;
         }
 
@@ -2159,6 +2172,7 @@ router.get('/pendentes', async (req, res) => {
         if (rows.length > 0) {
             try {
                 const opNums = [...new Set(rows.map(r => r.op_numero).filter(Boolean))];
+                console.log('[PENDENTES ENRICH] opNums count:', opNums.length, 'sample:', opNums.slice(0, 3));
 
                 const [scRes, [planRows]] = await Promise.all([
                     opNums.length ? db.query(
@@ -2254,16 +2268,23 @@ router.get('/pendentes', async (req, res) => {
                     // Match by Full Key > Generic Key
                     const sc = scMap[fullKey] || scMap[cleanOp];
                     
+                    // Fallback to parents
+                    const scItemHead = scMap[`${cleanOp}_${r.op_item || ''}_001`];
+                    const scOpHead = scMap[`${cleanOp}_01_001`] || scMap[`${cleanOp}_001`];
+                    
+                    const best_pedido = sc?.pedido_venda || scItemHead?.pedido_venda || scOpHead?.pedido_venda || '';
+                    const best_obs = sc?.obs_venda || scItemHead?.obs_venda || scOpHead?.obs_venda || '';
+                    const best_nome = sc?.nome_cliente || scItemHead?.nome_cliente || scOpHead?.nome_cliente || null;
+                    const best_prod = sc?.produto_codigo || scItemHead?.produto_codigo || scOpHead?.produto_codigo || null;
+                    
+                    r.produto_codigo = best_prod || r.produto_codigo || null;
+                    const raw_ped = best_pedido || '';
+                    const raw_obs = best_obs || '';
+                    r.pedido_venda = raw_ped.trim() || (raw_obs.trim().match(/^\d+/)?.[0] || null);
+                    r.nome_cliente = best_nome || null;
+                    r.pdf_url = r.produto_codigo ? pdfMap[r.produto_codigo] : null;
+
                     if (sc) {
-                        r.produto_codigo = sc.produto_codigo || r.produto_codigo || null;
-                        
-                        // Fallback logic for Pedido
-                        const raw_ped = sc.pedido_venda || '';
-                        const raw_obs = sc.obs_venda || '';
-                        r.pedido_venda = raw_ped.trim() || (raw_obs.trim().match(/^\d+/)?.[0] || null);
-                        
-                        r.nome_cliente = sc.nome_cliente || null;
-                        r.pdf_url = pdfMap[sc.produto_codigo] || null;
                         r.qtd_planejada = sc.qtd_planejada != null ? Number(sc.qtd_planejada) : null;
                     }
 
@@ -2294,7 +2315,8 @@ router.get('/pendentes', async (req, res) => {
                     }
                 });
             } catch (e) {
-                console.warn('[PENDENTES ENRICH]', e.message);
+                console.warn('[PENDENTES ENRICH ERROR]', e.message);
+                console.warn('[PENDENTES ENRICH STACK]', e.stack);
             }
         }
 
@@ -3347,8 +3369,18 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                       AND NOT(TRIM(g1.g1_comp) = ANY(e.path_array))
                     )
                 SELECT e.*,
-                       (SELECT z0_status FROM public.sz0010 z0 WHERE TRIM(z0.z0_produto) = e.codigo AND COALESCE(z0.d_e_l_e_t_, '') <> '*' LIMIT 1) as restri_sz0 
+                       z0.z0_status as restri_sz0,
+                       z0.z0_restrics_hex
                 FROM Estrutura e 
+                LEFT JOIN LATERAL (
+                    SELECT 
+                        'P'::text as z0_status,
+                        string_agg(encode(z0_restric, 'hex'), ',' ORDER BY z0_item ASC) as z0_restrics_hex
+                    FROM public.sz0010 z0 
+                    WHERE TRIM(z0.z0_produto) = e.codigo 
+                      AND COALESCE(z0.d_e_l_e_t_, '') <> '*' 
+                      AND z0.z0_status = 'P'
+                ) z0 ON z0.z0_restrics_hex IS NOT NULL
                 ORDER BY path_array
                 LIMIT 500;
             `;
@@ -3359,21 +3391,46 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                 console.log(`✅[ESTRUTURA] Encontrado no Protheus: ${pgRes.rows.length} itens`);
 
                 // Mapeia para o formato esperado pelo frontend e tenta enriquecer com info de arquivos (da tabela local SE)
+                const safeTrim = (v) => (v && !Buffer.isBuffer(v)) ? String(v).trim() : '';
+                // z0_restric é bytea (Latin-1 com null terminator) — decodificar corretamente
+                const decodeByteaField = (raw) => {
+                    if (!raw) return '';
+                    try {
+                        const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+                        const cleanBuf = buf.filter(b => b !== 0);
+                        const asUtf8 = cleanBuf.toString('utf8');
+                        return (asUtf8.includes('\uFFFD')
+                            ? cleanBuf.toString('latin1')
+                            : asUtf8).trim();
+                    } catch { return ''; }
+                };
                 finalItems = pgRes.rows.map(row => {
-                    const bloqueioSb1 = row.restri_sb1 && ['1', 'S', 'T', 'Y'].includes(row.restri_sb1.trim());
-                    const restricaoSz0 = row.restri_sz0 === 'P';
+                    const sb1 = safeTrim(row.restri_sb1);
+                    const bloqueioSb1 = sb1 && ['1', 'S', 'T', 'Y'].includes(sb1);
+                    const restricaoSz0 = row.restri_sz0 === 'P'; // Note we only return 'P' now
                     const isRestricted = bloqueioSb1 || restricaoSz0;
+
+                    let sz0_desc = '';
+                    if (row.z0_restrics_hex) {
+                        const hexArray = row.z0_restrics_hex.split(',');
+                        sz0_desc = hexArray.map((hex, idx) => {
+                            const text = decodeByteaField(Buffer.from(hex, 'hex'));
+                            return hexArray.length > 1 ? `(${idx + 1}) ${text}` : text;
+                        }).filter(Boolean).join(' | ');
+                    }
+
                     return {
                         nivel: row.nivel,
-                        codigo: row.codigo,
-                        descricao: row.descricao,
-                        unidade: row.unidade,
-                        tipo_produto: row.tipo_produto,
-                        rev_metalfisa: row.rev_metalfisa,
-                        rev_cliente: row.rev_cliente,
-                        is_restricted: isRestricted,
-                        restri_sb1: bloqueioSb1 ? (row.restri_sb1 || '').trim() : '',
+                        codigo: safeTrim(row.codigo),
+                        descricao: safeTrim(row.descricao),
+                        unidade: safeTrim(row.unidade),
+                        tipo_produto: safeTrim(row.tipo_produto),
+                        rev_metalfisa: safeTrim(row.rev_metalfisa),
+                        rev_cliente: safeTrim(row.rev_cliente),
+                        is_restricted: !!isRestricted,
+                        restri_sb1: bloqueioSb1 ? sb1 : '',
                         restri_sz0: restricaoSz0 ? 'P' : '',
+                        restricao_sz0_desc: sz0_desc,
                         qtd_necessaria: Number(row.qtd_necessaria),
                         tem_arquivos: false,
                         primeiro_arquivo: null

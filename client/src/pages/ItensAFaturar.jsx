@@ -255,7 +255,7 @@ const ItensAFaturar = () => {
     }, [selectedItems, cartQuantities]);
 
     return (
-        <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto animate-fadeIn relative">
+        <div className="p-2 md:p-4 lg:p-6 w-full animate-fadeIn relative">
             
             {/* INVOICE MODAL */}
             {selectedInvoice && (
@@ -281,7 +281,7 @@ const ItensAFaturar = () => {
             {/* CART MODAL (REVISÃO DO PEDIDO DE FATURAMENTO) */}
             {isCartModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col mx-4 overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] xl:max-w-7xl max-h-[90vh] flex flex-col mx-4 overflow-hidden">
                         <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-blue-50/50">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
@@ -298,7 +298,7 @@ const ItensAFaturar = () => {
                         </div>
                         
                         <div className="p-4 flex-1 overflow-y-auto bg-gray-50/50">
-                            <div className="bg-white border text-sm border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                            <div className="bg-white border text-sm border-gray-200 rounded-lg overflow-x-auto shadow-sm">
                                 <table className="w-full text-left whitespace-nowrap">
                                     <thead className="bg-gray-50 text-gray-600 text-xs uppercase border-b border-gray-200">
                                         <tr>
@@ -582,6 +582,7 @@ const ItensAFaturar = () => {
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série MF</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
+                                <th className="px-3 py-3 font-semibold text-center">Status</th>
                                 <th className="px-3 py-3 font-semibold text-center text-purple-700">Fat. Solicitados</th>
                                 <th className="px-3 py-3 font-semibold text-center">NFs Anteriores</th>
                             </tr>
@@ -589,7 +590,7 @@ const ItensAFaturar = () => {
                         <tbody className="divide-y divide-gray-50 text-[13px]">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 23 : 21} className="px-6 py-12 text-center">
+                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                                             <span className="text-gray-400 font-medium">Carregando itens...</span>
@@ -598,7 +599,7 @@ const ItensAFaturar = () => {
                                 </tr>
                             ) : error ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 23 : 21} className="px-6 py-12 text-center text-red-500">
+                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center text-red-500">
                                         <div className="flex flex-col items-center gap-2">
                                             <AlertCircle className="h-8 w-8" />
                                             <span className="font-semibold">{error}</span>
@@ -607,7 +608,7 @@ const ItensAFaturar = () => {
                                 </tr>
                             ) : rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 23 : 21} className="px-6 py-12 text-center text-gray-400">
+                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center text-gray-400">
                                         Nenhum item encontrado com os filtros selecionados.
                                     </td>
                                 </tr>
@@ -686,15 +687,33 @@ const ItensAFaturar = () => {
                                                     </div>
                                                 ) : <span className="text-gray-300 text-[10px]">—</span>}
                                             </td>
+                                            <td className="px-2 py-2 text-center text-xs" onClick={(e) => e.stopPropagation()}>
+                                                {parseFloat(order.qtd_faturar) <= 0 ? (
+                                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Faturado 100%</span>
+                                                ) : parseFloat(order.qtd_entreg) > 0 ? (
+                                                    <span className="bg-orange-100 text-orange-800 border border-orange-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Fat. Parcial</span>
+                                                ) : (
+                                                    <span className="bg-gray-100 text-gray-600 border border-gray-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">A Faturar</span>
+                                                )}
+                                            </td>
                                             <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex flex-col gap-1 items-center max-w-[150px]">
-                                                    {Array.isArray(order.faturamentos_solicitados) && order.faturamentos_solicitados.length > 0 ? (
-                                                        order.faturamentos_solicitados.map((fat, fIdx) => (
-                                                            <div key={fIdx} className="text-[9px] bg-purple-50 text-purple-700 border border-purple-200 rounded px-1.5 py-0.5 whitespace-nowrap overflow-hidden" title={`Qtd: ${fat.quantidade_solicitada}`}>
-                                                                <span className="font-bold">{fat.numero_solicitacao}</span> ({parseFloat(fat.quantidade_solicitada).toLocaleString()})
-                                                            </div>
-                                                        ))
-                                                    ) : <span className="text-gray-300 text-[10px] text-center">-</span>}
+                                                    {(() => {
+                                                        const faturamentosValidos = Array.isArray(order.faturamentos_solicitados)
+                                                            ? order.faturamentos_solicitados.filter(fat => {
+                                                                if (fat.pcp_forecast_id) return prog && fat.pcp_forecast_id == prog.id;
+                                                                return true;
+                                                            })
+                                                            : [];
+
+                                                        return faturamentosValidos.length > 0 ? (
+                                                            faturamentosValidos.map((fat, fIdx) => (
+                                                                <div key={fIdx} className="text-[9px] bg-purple-50 text-purple-700 border border-purple-200 rounded px-1.5 py-0.5 whitespace-nowrap overflow-hidden" title={`Qtd: ${fat.quantidade_solicitada}`}>
+                                                                    <span className="font-bold">{fat.numero_solicitacao}</span> ({parseFloat(fat.quantidade_solicitada).toLocaleString()})
+                                                                </div>
+                                                            ))
+                                                        ) : <span className="text-gray-300 text-[10px] text-center">-</span>;
+                                                    })()}
                                                 </div>
                                             </td>
                                             <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>

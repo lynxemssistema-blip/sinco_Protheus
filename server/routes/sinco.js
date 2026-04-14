@@ -604,17 +604,24 @@ router.get('/integrated-product-view', async (req, res) => {
 
         const operationsQuery = `
             SELECT 
-                g2_operac AS operacao,
-                TRIM(g2_descri) AS descricao,
-                g2_recurso AS recurso,
-                g2_setup AS tempo_setup,
-                g2_tempad AS tempo_padrao,
-                g2_ferram AS ferramentas,
-                g2_depto AS departamento
-            FROM sg2010
-            WHERE TRIM(g2_produto) = $1
-            AND (d_e_l_e_t_ = '' OR d_e_l_e_t_ = ' ')
-            ORDER BY g2_operac
+                g2.g2_operac AS operacao,
+                TRIM(h1.h1_descri) AS descricao,
+                g2.g2_recurso AS recurso,
+                g2.g2_setup AS tempo_setup,
+                g2.g2_tempad AS tempo_padrao,
+                g2.g2_ferram AS ferramentas,
+                g2.g2_depto AS departamento
+            FROM public.sg2010 g2
+            LEFT JOIN public.sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE TRIM(g2.g2_produto) = $1
+            AND (g2.d_e_l_e_t_ = '' OR g2.d_e_l_e_t_ = ' ')
+            AND TRIM(g2.g2_codigo) = (
+                SELECT MAX(TRIM(g2_sub.g2_codigo))
+                FROM public.sg2010 g2_sub
+                WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
+                AND (g2_sub.d_e_l_e_t_ = '' OR g2_sub.d_e_l_e_t_ = ' ')
+            )
+            ORDER BY g2.g2_operac
         `;
 
         // Execução Paralela (Promise.all)
@@ -722,11 +729,10 @@ router.get('/produto/:codigo', async (req, res) => {
                 TRIM(sb1.b1_um)      AS unidade,
                 TRIM(sb1.b1_grupo)   AS grupo,
                 sb1.b1_peso          AS peso,
-                TRIM(sb1.b1_rev)     AS rev,
+                TRIM(sb1.b1_revatu)  AS rev,
                 sb5.b5_compr         AS comprimento,
                 sb5.b5_larg          AS largura,
-                sb5.b5_espess        AS espessura,
-                sb5.b5_volume        AS area
+                sb5.b5_espess        AS espessura
             FROM public.sb1010 sb1
             LEFT JOIN public.sb5010 sb5 
                 ON TRIM(sb1.b1_cod) = TRIM(sb5.b5_cod) 
@@ -776,7 +782,7 @@ router.get('/operacoes/:codigo', async (req, res) => {
         const rows = await queryProtheus(`
             SELECT
                 TRIM(g2.g2_operac)                                          AS operacao,
-                COALESCE(NULLIF(TRIM(g2.g2_descri), ''), TRIM(h1.h1_descri), '') AS descricao,
+                TRIM(h1.h1_descri)                                          AS descricao,
                 TRIM(g2.g2_recurso)                                         AS recurso,
                 TRIM(h1.h1_descri)                                          AS recurso_descricao,
                 g2.g2_tempad                                                AS tempo
@@ -786,12 +792,142 @@ router.get('/operacoes/:codigo', async (req, res) => {
                 AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
             WHERE TRIM(g2.g2_produto) = $1
               AND COALESCE(g2.d_e_l_e_t_, '') NOT IN ('*', '  *')
+              AND TRIM(g2.g2_codigo) = (
+                  SELECT MAX(TRIM(g2_sub.g2_codigo))
+                  FROM public.sg2010 g2_sub
+                  WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
+                  AND COALESCE(g2_sub.d_e_l_e_t_, '') NOT IN ('*', '  *')
+              )
             ORDER BY g2.g2_operac
         `, [codigo]);
         res.json(rows);
     } catch (err) {
         console.error('Erro operacoes (Protheus):', err.message);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/sinco/restricoes-sz0/:codigo — Restrições do Produto (SZ0010)
+router.get('/restricoes-sz0/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        // z0_restric é bytea (Latin-1 com null terminator) — não usar TRIM() no SQL
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(Z0.z0_produto)  AS produto,
+                TRIM(Z0.z0_item)     AS item,
+                TRIM(Z0.z0_status)   AS status,
+                TRIM(Z0.z0_resumo)   AS resumo,
+                Z0.z0_restric        AS restricao_raw,
+                TRIM(Z0.z0_respons)  AS responsavel,
+                TRIM(Z0.z0_dtultal)  AS dt_ultima_alt,
+                TRIM(Z0.z0_hrultal)  AS hr_ultima_alt,
+                TRIM(B1.b1_desc)     AS descricao_oficial,
+                TRIM(B1.b1_tipo)     AS tipo,
+                TRIM(B1.b1_um)       AS unidade,
+                TRIM(Z0.z0_xrevm)    AS revisao
+            FROM public.sz0010 Z0
+            INNER JOIN public.sb1010 B1
+                ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
+                AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            WHERE TRIM(Z0.z0_produto) = $1
+              AND COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY Z0.z0_item
+        `, [codigo]);
+
+        // Decodifica bytea (null-terminated) → string JS
+        // Dados novos (via API) são UTF-8; dados antigos são Latin-1.
+        // Detecta automaticamente: tenta UTF-8 (sem replacement chars U+FFFD), senão usa Latin-1.
+        const decoded = rows.map(row => {
+            const raw = row.restricao_raw;
+            let restricao = '';
+            if (raw) {
+                const buf = Buffer.from(raw).filter(b => b !== 0);
+                const asUtf8 = buf.toString('utf8');
+                restricao = asUtf8.includes('\uFFFD')
+                    ? buf.toString('latin1').trim()
+                    : asUtf8.trim();
+            }
+            const { restricao_raw, ...rest } = row;
+            return { ...rest, restricao };
+        });
+
+        res.json(decoded);
+    } catch (err) {
+        console.error('Erro restricoes SZ0:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/sinco/restricao/edit — Proxy para API Protheus de inclusão/alteração de restrições
+router.post('/restricao/edit', async (req, res) => {
+    const https = require('https');
+    const PROTHEUS_BASE = 'https://192.168.1.60:47500';
+
+    // Função auxiliar: faz request HTTPS ignorando cert autoassinado
+    const httpsRequest = (url, options, body) => new Promise((resolve, reject) => {
+        const parsed = new URL(url);
+        const opts = {
+            hostname: parsed.hostname,
+            port: parsed.port || 443,
+            path: parsed.pathname + parsed.search,
+            rejectUnauthorized: false,
+            ...options,
+            headers: {
+                ...(options.headers || {}),
+                ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
+            },
+        };
+        const r = https.request(opts, (resp) => {
+            let raw = '';
+            resp.on('data', chunk => raw += chunk);
+            resp.on('end', () => {
+                try {
+                    const ct = resp.headers['content-type'] || '';
+                    const parsed = ct.includes('application/json') ? JSON.parse(raw) : { message: raw };
+                    resolve({ status: resp.statusCode, data: parsed, raw });
+                } catch (e) {
+                    resolve({ status: resp.statusCode, data: { message: raw }, raw });
+                }
+            });
+        });
+        r.on('error', reject);
+        if (body) r.write(body);
+        r.end();
+    });
+
+    try {
+        // 1. Obter token OAuth2
+        const tokenResp = await httpsRequest(
+            `${PROTHEUS_BASE}/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120`,
+            { method: 'GET' }
+        );
+        if (tokenResp.status >= 400 || !tokenResp.data.access_token) {
+            throw new Error('Falha ao obter token Protheus: ' + (tokenResp.data.message || tokenResp.raw));
+        }
+        const accessToken = tokenResp.data.access_token;
+
+        // 2. Enviar restrição
+        const body = JSON.stringify(req.body);
+        const editResp = await httpsRequest(
+            `${PROTHEUS_BASE}/restricao/edit`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+            },
+            body
+        );
+
+        if (editResp.status >= 400) {
+            return res.status(editResp.status).json(editResp.data);
+        }
+        res.json(editResp.data);
+    } catch (err) {
+        console.error('Erro ao enviar restrição para Protheus:', err.message || err);
+        res.status(500).json({ error: 'Falha de comunicação com API Protheus', details: err.message || String(err) });
     }
 });
 

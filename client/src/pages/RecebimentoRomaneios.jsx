@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Search, Calendar, FileText, ChevronRight, ChevronDown, Filter, DownloadCloud, History, FileDown, RefreshCw, Layers } from 'lucide-react';
+import { Package, Search, Calendar, FileText, ChevronRight, ChevronDown, Filter, DownloadCloud, History, FileDown, RefreshCw, Layers, Mail } from 'lucide-react';
 import api, { getFileUrl } from '../services/api';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 
 import RecebimentoModal from '../components/RecebimentoModal';
 import RecebimentoHistoricoModal from '../components/RecebimentoHistoricoModal';
+import RomaneioCobrancaModal from '../components/RomaneioModals/RomaneioCobrancaModal';
 import useStickyState from '../hooks/useStickyState';
 
 export default function RecebimentoRomaneios() {
@@ -26,7 +27,14 @@ export default function RecebimentoRomaneios() {
     // Modais
     const [modalRecebimentoOpen, setModalRecebimentoOpen] = useState(false);
     const [modalHistoricoOpen, setModalHistoricoOpen] = useState(false);
+    const [modalCobrancaOpen, setModalCobrancaOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
+    const [selectedSupplierForCobranca, setSelectedSupplierForCobranca] = useState(null);
+    const [cobrancaItems, setCobrancaItems] = useState([]);
+
+    // Estados de Edição Inline
+    const [editingDateId, setEditingDateId] = useState(null);
+    const [tempDate, setTempDate] = useState('');
 
     useEffect(() => {
         carregarTipos();
@@ -46,12 +54,8 @@ export default function RecebimentoRomaneios() {
     }, [filters.viewMode]); // Recarrega automaticamente ao mudar a aba de viewMode
 
     const carregarItens = async () => {
-        // Bloqueio de Performance: Exige ao menos 1 filtro principal
-        if (!filters.search && !filters.fornecedor && !filters.romaneioId) {
-            setItens([]);
-            setLoading(false);
-            return;
-        }
+        // Removido bloqueio de performance conforme solicitação do usuário
+        // para permitir visualização da lista completa inicialmente.
 
         try {
             setLoading(true);
@@ -73,7 +77,7 @@ export default function RecebimentoRomaneios() {
     };
 
     const carregarItensSilencioso = async () => {
-        if (!filters.search && !filters.fornecedor && !filters.romaneioId) return;
+        // Removido bloqueio de performance
 
         try {
             const params = new URLSearchParams();
@@ -113,6 +117,31 @@ export default function RecebimentoRomaneios() {
     const openRecebimentoModal = (item) => {
         setSelectedItem(item);
         setModalRecebimentoOpen(true);
+    };
+
+    const openCobrancaModal = (fornecedorNome, items) => {
+        // Encontrar os dados do fornecedor a partir de um dos itens (já temos cod/loja/nome neles)
+        const first = items[0];
+        setSelectedSupplierForCobranca({
+            nome: first.fornecedor_nome,
+            codigo: first.fornecedor_cod,
+            loja: '01', // Padrão
+            email: '' // O backend vai carregar, mas mostraremos que será enviado
+        });
+        setCobrancaItems(items);
+        setModalCobrancaOpen(true);
+    };
+
+    const handleDateUpdate = async (romaneioId, newDate) => {
+        try {
+            await api.patch(`/romaneios/${romaneioId}/forecast-date`, { data_previsao_retorno: newDate });
+            toast.success('Data de previsão atualizada!');
+            carregarItensSilencioso();
+            setEditingDateId(null);
+        } catch (error) {
+            console.error('Erro ao atualizar data:', error);
+            toast.error('Erro ao salvar nova data de previsão.');
+        }
     };
 
     const exportToExcel = () => {
@@ -207,7 +236,31 @@ export default function RecebimentoRomaneios() {
                     {item.data_liberacao ? new Date(item.data_liberacao).toLocaleDateString('pt-BR') : '-'}
                 </td>
                 <td className="px-3 py-2 text-center text-xs text-slate-600 font-medium">
-                    {item.data_previsao_retorno ? new Date(item.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
+                    {editingDateId === item.romaneio_id ? (
+                        <input
+                            type="date"
+                            autoFocus
+                            value={tempDate || ''}
+                            onChange={(e) => setTempDate(e.target.value)}
+                            onBlur={() => handleDateUpdate(item.romaneio_id, tempDate)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleDateUpdate(item.romaneio_id, tempDate);
+                                if (e.key === 'Escape') setEditingDateId(null);
+                            }}
+                            className="w-full px-1 py-0.5 border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-[11px]"
+                        />
+                    ) : (
+                        <div 
+                            className="cursor-pointer hover:text-indigo-600 hover:bg-slate-100 px-2 py-1 rounded transition-colors flex items-center justify-center gap-1 group"
+                            onClick={() => {
+                                setEditingDateId(item.romaneio_id);
+                                setTempDate(item.data_previsao_retorno ? item.data_previsao_retorno : '');
+                            }}
+                        >
+                            {item.data_previsao_retorno ? new Date(item.data_previsao_retorno + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Definir'}
+                            <Calendar className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                    )}
                 </td>
                 <td className="px-3 py-2">
                     <div className="text-slate-800 font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]" title={item.fornecedor_nome}>
@@ -474,8 +527,8 @@ export default function RecebimentoRomaneios() {
                                 <tr>
                                     <td colSpan="11" className="px-4 py-12 text-center text-slate-500">
                                         <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                                        <p className="text-base font-medium">Nenhum item encontrado na tela</p>
-                                        <p className="text-sm mt-1">Por questões de performance, a busca não é automática. <br /><strong>Preencha um Fornecedor, Pedido/Romaneio ou Produto e clique em Buscar.</strong></p>
+                                        <p className="text-base font-medium">Nenhum item pendente encontrado</p>
+                                        <p className="text-sm mt-1">Verifique se há filtros aplicados ou se todos os itens já foram recebidos.</p>
                                     </td>
                                 </tr>
                             ) : groupBy !== 'none' && groupedData ? (
@@ -483,9 +536,29 @@ export default function RecebimentoRomaneios() {
                                     Object.entries(groupedData).map(([fornecedor, romaneios]) => (
                                         <React.Fragment key={fornecedor}>
                                             <tr className="bg-slate-200/70 border-y border-slate-300">
-                                                <td colSpan="11" className="px-4 py-2.5 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                                                    {fornecedor}
+                                                <td colSpan="11" className="px-4 py-2.5 font-bold text-slate-800 uppercase tracking-wide">
+                                                    <div className="flex justify-between items-center w-full">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                                            {fornecedor}
+                                                        </div>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // Coletar todos os itens PENDENTES desse fornecedor
+                                                                const pendingGroupItems = Object.values(romaneios).flatMap(p => Object.values(p).flat()).filter(i => Number(i.saldo_pendente) > 0);
+                                                                if (pendingGroupItems.length === 0) {
+                                                                    toast.info("Não há itens pendentes para este fornecedor.");
+                                                                    return;
+                                                                }
+                                                                openCobrancaModal(fornecedor, pendingGroupItems);
+                                                            }}
+                                                            className="flex items-center gap-2 px-3 py-1 bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+                                                        >
+                                                            <Mail className="w-3.5 h-3.5" />
+                                                            Enviar Cobrança
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             {Object.entries(romaneios).map(([romaneio, pedidos]) => (
@@ -547,6 +620,14 @@ export default function RecebimentoRomaneios() {
                 isOpen={modalHistoricoOpen}
                 onClose={() => setModalHistoricoOpen(false)}
                 selectedItem={selectedItem}
+            />
+
+            <RomaneioCobrancaModal
+                isOpen={modalCobrancaOpen}
+                onClose={() => setModalCobrancaOpen(false)}
+                supplierData={selectedSupplierForCobranca}
+                items={cobrancaItems}
+                onFollowupSuccess={carregarItensSilencioso}
             />
 
         </div>

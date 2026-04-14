@@ -82,7 +82,7 @@ router.post('/explosion', async (req, res) => {
                 
                 -- Dados da operação (SG2)
                 TRIM(g2.g2_operac) as codigo_operacao,
-                TRIM(g2.g2_descri) as descricao_operacao,
+                TRIM(h1.h1_descri) as descricao_operacao,
                 g2.g2_setup::numeric as tempo_setup,
                 g2.g2_tempo::numeric as tempo_processamento,
                 
@@ -104,6 +104,10 @@ router.post('/explosion', async (req, res) => {
                 AND TRIM(g2.g2_codigo) = TRIM(e.operacao)
                 AND COALESCE(g2.d_e_l_e_t_, '') = ''
 
+            LEFT JOIN sh1010 h1
+                ON h1.h1_codigo = g2.g2_recurso
+                AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+
             LEFT JOIN sb2010 b2 
                 ON TRIM(b2.b2_cod) = TRIM(e.componente)
                 AND COALESCE(b2.d_e_l_e_t_, '') = ''
@@ -112,7 +116,7 @@ router.post('/explosion', async (req, res) => {
                 e.nivel, e.produto_pai, e.componente, 
                 b1.b1_desc, b1.b1_tipo, b1.b1_um,
                 e.qtd_unitaria, e.qtd_total, e.operacao, e.revisao,
-                g2.g2_operac, g2.g2_descri, g2.g2_setup, g2.g2_tempo,
+                g2.g2_operac, h1.h1_descri, g2.g2_setup, g2.g2_tempo,
                 b1.b1_custd
 
             ORDER BY 

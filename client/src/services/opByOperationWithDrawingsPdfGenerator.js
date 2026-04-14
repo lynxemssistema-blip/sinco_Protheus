@@ -1,15 +1,15 @@
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
-import autoTable from 'jspdf-autotable';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import api from './api';
+import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
 
 /**
- * Generates an "Espelho da Ordem de Produção" grouped strictly by Operation Code (Recurso).
- * Prioritizes traceability including PV, Item, and Parent Product for every line.
+ * Generates the "Capa OP" using the normal Pedido de Venda format,
+ * then merges all required engineering drawings at the end with dynamic watermarks.
  * @param {Object} mirrorData - Data returned by /api/pedidos/op-mirror/:id
  */
-export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName = 'Usuário') => {
+export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error("Invalid data provided to PDF generator");
@@ -17,252 +17,29 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
             return;
         }
 
-        // Use landscape to accommodate many columns (traceability)
-        const doc = new jsPDF('landscape', 'mm', 'a4');
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-
-        // 1. Flatten and Group by Operation Code (Recurso)
-        // Key: Recurso, Value: { recurso, desc_operacao, components: [] }
-        const operationsMap = new Map();
-
-        mirrorData.itens.forEach(itemGroup => {
-            const processComponent = (component, parentCode = 'PRODUTO FINAL') => {
-                if (component.operacoes && Array.isArray(component.operacoes) && component.operacoes.length > 0) {
-                    component.operacoes.forEach((op, index) => {
-                        const recurso = op.recurso ? op.recurso.trim().toUpperCase() : 'INDEFINIDO';
-                        
-                        // Calculate Next Operation
-                        let proxOp = 'FINALIZADA';
-                        if (index + 1 < component.operacoes.length) {
-                             const nOp = component.operacoes[index + 1];
-                             const rec = nOp.recurso ? nOp.recurso.trim().toUpperCase() : 'INDEFINIDO';
-                             const desc = nOp.desc_operacao ? nOp.desc_operacao.trim().toUpperCase() : '';
-                             proxOp = desc ? `${rec} - ${desc}` : rec;
-                        }
-
-                        if (!operationsMap.has(recurso)) {
-                            operationsMap.set(recurso, {
-                                recurso: recurso,
-                                desc_operacao: op.desc_operacao || '',
-                                components: []
-                            });
-                        }
-
-                        // User request: No consolidation, keep full traceability.
-                        // Calculate total quantity: (Quantity of this component in BOM) * (Sales Order quantity)
-                        // Note: Backend might already provide rawQtd as quantidade_calculada.
-                        const isLevel0 = component.nivel === 0 || component.nivel === undefined;
-                        const rawQtd = isLevel0
-                            ? (component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
-                            : (component.quantidade_calculada || component.qtd_total || 0);
-
-                        operationsMap.get(recurso).components.push({
-                            pedido: mirrorData.pedido.pedido,
-                            itemPedido: itemGroup.item_pedido,
-                            produtoPai: parentCode,
-                            codigo: component.codigo,
-                            descricao: component.descricao,
-                            proxOp: proxOp,
-                            qtdTotal: rawQtd,
-                            um: component.unidade || component.um || 'UN',
-                            nivel: isLevel0 ? 'PAI' : component.nivel,
-                            op_num: component.op_num || itemGroup.produto_principal?.op_num || '-'
-                        });
-                    });
-                }
-
-                // Recursively process children if they exist in a linear structure context
-                // In our current CTE structure, components usually come in a 'estrutura_linear' array.
-            };
-
-            // Process main product
-            if (itemGroup.produto_principal) {
-                // For level 0, the parent is the component itself
-                processComponent(itemGroup.produto_principal, itemGroup.produto_principal.codigo);
-            }
-
-            // Process children
-            if (itemGroup.estrutura_linear && Array.isArray(itemGroup.estrutura_linear)) {
-                // To track immediate parent in a flat structure (itemGroup.estrutura_linear),
-                // we'd ideally need 'pai_codigo' in the data. Assuming components are ordered
-                // such that we can infer or they have a 'pai' reference.
-                // For now, mirroring correctly from itemGroup context.
-                itemGroup.estrutura_linear.forEach(child => {
-                    // In a flat list, we use the parent code provided by the child data
-                    const parentForChild = child.pai || itemGroup.produto_principal?.codigo || child.codigo;
-                    processComponent(child, parentForChild);
-                });
-            }
-        });
-
-        if (operationsMap.size === 0) {
-            alert("Nenhuma operação de manufatura encontrada.");
-            return;
+        // Generate the ArrayBuffer of the front cover (Rastreabilidade Operações Mode)
+        const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);
+        if (!espelhoBuffer) {
+            throw new Error('Falha ao gerar capa de Rastreabilidade.');
         }
 
-        // Sort operation codes
-        const sortedRecursos = Array.from(operationsMap.keys()).sort();
-
-        // Track page ranges per operation for sub-pagination
-        const opPageInfo = [];
-
-        sortedRecursos.forEach((recurso, index) => {
-            const groupData = operationsMap.get(recurso);
-
-            if (index > 0) {
-                doc.addPage();
-            }
-
-            const startPage = doc.internal.getNumberOfPages();
-
-            // Define the header drawing function for didDrawPage
-            const drawPageHeader = (data) => {
-                // Base Header
-                doc.setFillColor(30, 58, 95);
-                doc.rect(10, 5, 40, 15, 'F');
-                doc.setTextColor(255, 255, 255);
-                doc.setFontSize(12);
-                doc.text("METALFISA", 30, 14, { align: 'center' });
-                doc.setTextColor(0, 0, 0);
-
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text("ESPELHO OP - POR OPERAÇÃO (RASTREABILIDADE)", pageWidth / 2, 12, { align: 'center' });
-
-                doc.setFontSize(9);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`EMISSÃO: ${mirrorData.pedido?.emissao || ''}`, pageWidth - 45, 10);
-                doc.setFont('helvetica', 'bold');
-                doc.text(`PEDIDO PV: ${mirrorData.pedido?.pedido || ''}`, pageWidth - 45, 15);
-
-                const yOffset = 25;
-
-                // Traceability context block (Order/Client) - Persistent on every page
-                // Removed "Ped. Cliente" as requested since it varies per line
-                doc.setFillColor(245, 245, 245);
-                doc.setDrawColor(200, 200, 200);
-                doc.rect(10, yOffset, pageWidth - 20, 10, 'FD');
-
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'bold');
-                doc.text(`Cliente:`, 12, yOffset + 6.5);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`${mirrorData.pedido?.nome_cliente || ''}`, 28, yOffset + 6.5);
-
-                // Operation Title Bar
-                doc.setFillColor(60, 141, 188);
-                doc.rect(10, yOffset + 14, pageWidth - 20, 10, 'F');
-                doc.setTextColor(255, 255, 255);
-                doc.setFontSize(11);
-                doc.setFont('helvetica', 'bold');
-                doc.text(`OPERAÇÃO: ${groupData.recurso} - ${groupData.desc_operacao}`, 12, yOffset + 21);
-                doc.setTextColor(0, 0, 0);
-            };
-
-            const tableColumns = [
-                "PV",
-                "Item",
-                "Nível",
-                "Prod. Pai (BOM)",
-                "OP",
-                "Componente",
-                "Descrição",
-                "Próx. Operação",
-                "Qtd. Req.",
-                "UM"
-            ];
-
-            const tableRows = groupData.components.map(c => [
-                c.pedido,
-                c.itemPedido,
-                c.nivel !== undefined ? c.nivel : '-',
-                c.produtoPai,
-                c.op_num,
-                c.codigo,
-                c.descricao,
-                c.proxOp,
-                Number(c.qtdTotal).toFixed(2),
-                c.um
-            ]);
-
-            autoTable(doc, {
-                startY: 53,
-                head: [tableColumns],
-                body: tableRows,
-                theme: 'grid',
-                headStyles: {
-                    fillColor: [240, 240, 240],
-                    textColor: [50, 50, 50],
-                    fontStyle: 'bold',
-                    fontSize: 8,
-                    halign: 'center'
-                },
-                bodyStyles: {
-                    fontSize: 8,
-                    cellPadding: 2
-                },
-                columnStyles: {
-                    0: { halign: 'center', cellWidth: 13 }, // PV
-                    1: { halign: 'center', cellWidth: 8 }, // Item
-                    2: { halign: 'center', cellWidth: 8 }, // Nível
-                    3: { cellWidth: 28 }, // Prod Pai
-                    4: { halign: 'center', cellWidth: 20 }, // OP
-                    5: { cellWidth: 30 }, // Componente
-                    6: { cellWidth: 'auto' }, // Descricao
-                    7: { halign: 'center', cellWidth: 45, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
-                    8: { halign: 'right', cellWidth: 14 }, // Qtd
-                    9: { halign: 'center', cellWidth: 8 }  // UM
-                },
-                margin: { top: 53, bottom: 20 },
-                didDrawPage: drawPageHeader
-            });
-
-            const endPage = doc.internal.getNumberOfPages();
-            opPageInfo.push({
-                recurso: groupData.recurso,
-                start: startPage,
-                end: endPage,
-                total: (endPage - startPage) + 1
-            });
-        });
-
-        // Add page numbers and SUB-PAGINATION
-        const pageCount = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-
-            // Global paging
-            doc.text(`Página Global: ${i} de ${pageCount}`, pageWidth - 40, pageHeight - 10);
-
-            // Sub-paging logic
-            const currentOpInfo = opPageInfo.find(op => i >= op.start && i <= op.end);
-            if (currentOpInfo) {
-                const subPage = (i - currentOpInfo.start) + 1;
-                doc.setFont('helvetica', 'bold');
-                doc.text(`Operação ${currentOpInfo.recurso}: Folha ${subPage} de ${currentOpInfo.total}`, pageWidth - 100, pageHeight - 10);
-                doc.setFont('helvetica', 'normal');
-            }
-
-            const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            doc.text(`MetalFisa - Rastreabilidade de Operações - Gerado em: ${dataGeracao} por ${userName}`, 10, pageHeight - 10);
-        }
-
-        // --- NOVO RECURSO: RESUMO GERAL DE PEÇAS AGLUTINADAS ---
-
-        // 1. Coletar todas as peças exclusivas e somar quantidades
+        // 3. Extract parts summary to fetch drawings
         const partsSummaryMap = new Map();
-
         mirrorData.itens.forEach(itemGroup => {
             const processPart = (component) => {
                 const code = component.codigo || 'S/COD';
 
-                // Pega a quantidade bruta/total do componente
+                // Raw qty of component
                 const isLevel0 = component.nivel === 0 || component.nivel === undefined;
-                const rawQtd = isLevel0
+                let rawQtd = isLevel0
                     ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
                     : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
+
+                if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
+                    const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
+                    const fractionQty = parseFloat(batchContext.visual_qtd);
+                    rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                }
 
                 const sourceData = {
                     pedido: mirrorData.pedido.pedido,
@@ -285,29 +62,20 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                 }
             };
 
-            // Main product
-            if (itemGroup.produto_principal) {
-                processPart(itemGroup.produto_principal);
-            }
-
-            // Children flat structure
+            if (itemGroup.produto_principal) processPart(itemGroup.produto_principal);
             if (itemGroup.estrutura_linear && Array.isArray(itemGroup.estrutura_linear)) {
-                itemGroup.estrutura_linear.forEach(child => {
-                    processPart(child);
-                });
+                itemGroup.estrutura_linear.forEach(child => processPart(child));
             }
         });
 
-        // 2. Extrair mapa para array, remover 0s e ordenar por descrição
         const partsSummaryArray = Array.from(partsSummaryMap.values())
             .filter(part => part.qtdTotal > 0)
             .sort((a, b) => a.descricao.localeCompare(b.descricao));
 
-        // 2.1 Mapear disponibilidade de Desenhos (PDF) antes de gerar o buffer do jsPDF
+        // Mapear disponibilidade de Desenhos (PDF)
         await Promise.all(partsSummaryArray.map(async (part) => {
             const codPrefix = part.codigo.substring(0, 4).toUpperCase();
             const isMaterialFallback = ['MTC-', 'MTA-', 'MTT-', 'MTD-', 'MTU-', 'MTE-'].includes(codPrefix);
-
             if (part.codigo === 'S/COD' || isMaterialFallback || part.tipo === 'MP' || part.tipo === 'MC') {
                 part.hasPdf = false;
                 part.isMaterial = true;
@@ -315,9 +83,7 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
             }
             try {
                 const docsResult = await api.get(`/docs/${encodeURIComponent(part.codigo)}`);
-                const docsObj = docsResult.data;
-                const drawing = docsObj.find(d => (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) && d.url_arquivo.toLowerCase().endsWith('.pdf'));
-                
+                const drawing = docsResult.data.find(d => (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) && d.url_arquivo.toLowerCase().endsWith('.pdf'));
                 if (drawing) {
                     part.hasPdf = true;
                     part.pdfUrl = drawing.url_arquivo;
@@ -325,185 +91,115 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                     part.hasPdf = false;
                 }
             } catch (err) {
-                console.warn(`Erro verificando PDF de ${part.codigo}`, err);
                 part.hasPdf = false;
             }
         }));
 
-        if (partsSummaryArray.length > 0) {
-            // Nova Página para o Resumo
-            doc.addPage();
-            let sumPageCount = doc.internal.getNumberOfPages();
+        // --- Iniciar Merge do PDF ---
+        let finalPdf = await PDFDocument.create();
 
-            // Header do Resumo
-            doc.setFillColor(40, 167, 69); // Verde para diferenciar
-            doc.rect(10, 5, pageWidth - 20, 15, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text("RESUMO GERAL DE PEÇAS E MATERIAIS (AGLUTINADO)", pageWidth / 2, 12, { align: 'center' });
+        // 4. Copiar Capa
+        const jspdfDoc = await PDFDocument.load(espelhoBuffer, { ignoreEncryption: true });
+        const jspdfCopied = await finalPdf.copyPages(jspdfDoc, jspdfDoc.getPageIndices());
+        jspdfCopied.forEach(p => finalPdf.addPage(p));
 
-            doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.text(`PEDIDO PV: ${mirrorData.pedido?.pedido || ''}`, 15, 12);
-            doc.text(`ITENS EXCLUSIVOS: ${partsSummaryArray.length}`, pageWidth - 45, 12);
-            doc.setTextColor(0, 0, 0);
+        const helveticaFont = await finalPdf.embedFont(StandardFonts.HelveticaBold);
+        const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-            const summaryColumns = ["Código", "Descrição do Material / Peça", "Status PDF", "UM", "Qtde Total Necessária"];
-            const summaryRows = partsSummaryArray.map(p => [
-                p.codigo,
-                p.descricao,
-                p.isMaterial ? "NA (Não aplicado)" : (p.hasPdf ? "SIM (Em anexo)" : "NÃO (Faltante)"),
-                p.um,
-                Number(p.qtdTotal).toFixed(4).replace(/\.?0+$/, '')
-            ]);
+        // 5. Copiar Desenhos e Carimbar
+        for (const part of partsSummaryArray) {
+            if (!part.hasPdf || !part.pdfUrl) continue;
+            try {
+                const fileUrl = `/docs/view?path=${encodeURIComponent(part.pdfUrl)}`;
+                const response = await api.get(fileUrl, { responseType: 'arraybuffer' });
+                const drawingDoc = await PDFDocument.load(response.data, { ignoreEncryption: true });
+                const copiedPages = await finalPdf.copyPages(drawingDoc, drawingDoc.getPageIndices());
 
-            autoTable(doc, {
-                startY: 25,
-                head: [summaryColumns],
-                body: summaryRows,
-                theme: 'grid',
-                headStyles: {
-                    fillColor: [240, 240, 240],
-                    textColor: [50, 50, 50],
-                    fontStyle: 'bold',
-                    fontSize: 9,
-                    halign: 'left'
-                },
-                bodyStyles: {
-                    fontSize: 8,
-                    cellPadding: 3
-                },
-                columnStyles: {
-                    0: { cellWidth: 35, fontStyle: 'bold' },
-                    1: { cellWidth: 'auto' },
-                    2: { halign: 'center', cellWidth: 35 },
-                    3: { halign: 'center', cellWidth: 15 },
-                    4: { halign: 'right', cellWidth: 35, fontStyle: 'bold', textColor: [0, 100, 0] }
-                },
-                didParseCell: function(data) {
-                    if (data.section === 'body' && data.column.index === 2) {
-                        if (data.cell.raw === "SIM (Em anexo)") {
-                            data.cell.styles.textColor = [0, 128, 0];
-                            data.cell.styles.fontStyle = 'bold';
-                        } else if (data.cell.raw === "NA (Não aplicado)") {
-                            data.cell.styles.textColor = [120, 120, 120];
-                            data.cell.styles.fontStyle = 'italic';
+                const chunkText = (str, length) => {
+                    const chunks = [];
+                    let currentChunk = '';
+                    str.split(' ').forEach(word => {
+                        if ((currentChunk + word).length > length) {
+                            if (currentChunk) chunks.push(currentChunk.trim());
+                            currentChunk = word + ' ';
                         } else {
-                            data.cell.styles.textColor = [200, 0, 0];
-                            data.cell.styles.fontStyle = 'bold';
+                            currentChunk += word + ' ';
                         }
-                    }
-                },
-                didDrawPage: (data) => {
-                    const curr = doc.internal.getNumberOfPages();
-                    if (curr > sumPageCount) {
-                        sumPageCount = curr;
-                        doc.setFontSize(8);
-                        doc.text(`Página Anexo: ${curr} de ${sumPageCount}`, pageWidth - 40, pageHeight - 10);
-                        const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                        doc.text(`MetalFisa - Rastreabilidade de Operações - Gerado em: ${dataGeracao} por ${userName}`, 10, pageHeight - 10);
-                    }
-                }
-            });
-        }
+                    });
+                    if (currentChunk) chunks.push(currentChunk.trim());
+                    return chunks;
+                };
 
-        // --- Início: Anexar Desenhos ---
-        // Usamos um PDFDocument novo e limpo como destino final para evitar
-        // referências cruzadas inválidas entre documentos distintos (causa do Adobe Error 18).
-        let finalPdf;
-        try {
-            const espelhoBuffer = doc.output('arraybuffer');
+                const uniqueOps = [...new Set(part.sources.map(s => s.op_num))].join(', ');
+                const finalQtdStr = Number(part.qtdTotal).toFixed(4).replace(/\.?0+$/, '');
+                const loteNome = batchContext && batchContext.visual_op ? batchContext.visual_op : '';
+                
+                // Exibe nome do lote e TODAS as OPs para não omitir
+                const visualOpStr = loteNome && loteNome !== uniqueOps ? `${loteNome} (OPs: ${uniqueOps})` : uniqueOps;
+                
+                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                
+                // Junta todas as informações para serem quebradas dinamicamente
+                const baseInfo = `CÓD: ${part.codigo} | ENTREGA LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
+                
+                const chunkedInfo = chunkText(baseInfo, 105); // limite de quebra (~105 caracteres)
+                const allLines = [textLine1, ...chunkedInfo];
 
-            // Documento destino limpo — sem herdar xref do jsPDF
-            finalPdf = await PDFDocument.create();
-
-            // Copiar todas as páginas do relatório jsPDF para o doc limpo
-            const jspdfDoc = await PDFDocument.load(espelhoBuffer, { ignoreEncryption: true });
-            const jspdfCopied = await finalPdf.copyPages(jspdfDoc, jspdfDoc.getPageIndices());
-            jspdfCopied.forEach(p => finalPdf.addPage(p));
-
-            // Fonte embutida no doc destino — todas as páginas de desenho viverão aqui
-            const helveticaFont = await finalPdf.embedFont(StandardFonts.HelveticaBold);
-            const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-            for (const part of partsSummaryArray) {
-                if (!part.hasPdf || !part.pdfUrl) continue;
-                try {
-                    const fileUrl = `/docs/view?path=${encodeURIComponent(part.pdfUrl)}`;
-                    const response = await api.get(fileUrl, { responseType: 'arraybuffer' });
-                    const drawingBuffer = response.data;
-
-                    const drawingDoc = await PDFDocument.load(drawingBuffer, { ignoreEncryption: true });
-
-                    // Copiar páginas para finalPdf e só então desenhar o watermark
-                    // (fonte e páginas no mesmo contexto = referências válidas)
-                    const copiedPages = await finalPdf.copyPages(drawingDoc, drawingDoc.getPageIndices());
-
-                    const uniquePedidos = [...new Set(part.sources.map(s => s.pedido))].join(', ');
-                    const uniqueOps = [...new Set(part.sources.map(s => s.op_num))].join(', ');
-                    const uniqueItens = [...new Set(part.sources.map(s => s.itemPedido))].join(', ');
-
-                    const qtyText = Number(part.qtdTotal).toFixed(4).replace(/\.?0+$/, '');
+                for (const page of copiedPages) {
+                    finalPdf.addPage(page);
+                    const { width, height } = page.getSize();
+                    const minSide = Math.min(width, height);
+                    const scale = Math.max(1, minSide / 595);
+                    const fontSize = 8 * scale;
+                    const lineHeight = 13 * scale;
+                    const padding = 5 * scale;
                     
-                    const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
-                    const textLine2 = `PEDIDO: ${uniquePedidos} | ITEM: ${uniqueItens} | OP: ${uniqueOps} | QTD NECESSÁRIA: ${qtyText} ${part.um}`;
+                    const rectWidth = 470 * scale; // Mesma largura
+                    const rectHeight = (allLines.length * lineHeight) + padding;
+                    
+                    // offsetY mantém a caixa na mesma altitudade proporcional
+                    const offsetY = 10 * scale + rectHeight; 
 
-                    for (const page of copiedPages) {
-                        finalPdf.addPage(page);
-
-                        const { width, height } = page.getSize();
-                        const minSide = Math.min(width, height);
-                        const scale = Math.max(1, minSide / 595);
-                        const rectWidth = 470 * scale;
-                        const rectHeight = 35 * scale;
-                        const fontSize = 8 * scale;
-                        const offsetY = 45 * scale;
-
-                        page.drawRectangle({
-                            x: 10 * scale,
-                            y: height - offsetY,
-                            width: rectWidth,
-                            height: rectHeight,
-                            color: rgb(1, 1, 1),
-                            borderColor: rgb(0.8, 0.1, 0.1),
-                            borderWidth: 1 * scale,
-                        });
-
-                        page.drawText(textLine1, {
+                    page.drawRectangle({
+                        x: 10 * scale,
+                        y: height - offsetY,
+                        width: rectWidth,
+                        height: rectHeight,
+                        // Sem cor de fundo = Transparente
+                        borderColor: rgb(0.8, 0.1, 0.1),
+                        borderWidth: 1 * scale,
+                    });
+                    
+                    let currY = height - offsetY + rectHeight - padding - fontSize + (2 * scale);
+                    for (const textLine of allLines) {
+                        page.drawText(textLine, {
                             x: 15 * scale,
-                            y: height - offsetY + (19 * scale),
+                            y: currY,
                             size: fontSize,
                             font: helveticaFont,
                             color: rgb(0.8, 0.1, 0.1),
                         });
-                        
-                        page.drawText(textLine2, {
-                            x: 15 * scale,
-                            y: height - offsetY + (6 * scale),
-                            size: fontSize,
-                            font: helveticaFont,
-                            color: rgb(0.8, 0.1, 0.1),
-                        });
+                        currY -= lineHeight;
                     }
-                } catch (err) {
-                    console.warn(`Não foi possível carregar ou carimbar o desenho para ${part.codigo}`, err);
                 }
+            } catch (err) {
+                console.warn(`Não foi possível carregar ou carimbar o desenho para ${part.codigo}`, err);
             }
-        } catch (err) {
-            console.error("Erro manipulando pdf-lib:", err);
-            throw err;
         }
 
         const mergedPdfBytes = await finalPdf.save({ useObjectStreams: false });
-        const safePedido = mirrorData.pedido.pedido ? String(mirrorData.pedido.pedido).replace(/[^a-zA-Z0-9]/g, '') : 'Desconhecido';
+        if (returnBuffer) {
+            return mergedPdfBytes;
+        }
+
+        const batchOpSafe = batchContext && batchContext.visual_op ? batchContext.visual_op : mirrorData.pedido.pedido;
+        const safePedido = String(batchOpSafe).replace(/[^a-zA-Z0-9-]/g, '');
         
-        // Disparar download
         const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Espelho_OP_com_Desenhos_${safePedido}.pdf`;
+        link.download = `Pacote_OP_${safePedido}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

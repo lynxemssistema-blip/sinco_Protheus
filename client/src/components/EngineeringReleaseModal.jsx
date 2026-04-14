@@ -9,7 +9,6 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
     const [pedido, setPedido] = useState('');
     const [item, setItem] = useState('');
     const [emails, setEmails] = useState(['']);
-    const [emailInput, setEmailInput] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [result, setResult] = useState(null); // { type: 'success' | 'error', message }
@@ -34,22 +33,21 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
 
     const validEmails = emails.filter(e => e.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim()));
 
-    const carimboData = {
-        ativo: true,
-        data: today,
-        usuario: userName,
-        pedido: pedido.trim() || null,
-        item: item.trim() || null,
-    };
-
-    const generatePdfWithStamp = async () => {
+    const generatePdfWithStamp = async (codigoLiberacao) => {
         const isN1 = mode === 'n1';
         const filteredStructure = isN1
             ? structure.filter(i => i.nivel === 0 || i.nivel === 1)
             : structure;
 
         const options = {
-            carimbo: carimboData,
+            carimbo: {
+                ativo: true,
+                data: today,
+                usuario: userName,
+                pedido: pedido.trim() || null,
+                item: item.trim() || null,
+                codigo_liberacao: codigoLiberacao
+            },
             returnBytes: true,
         };
 
@@ -62,12 +60,65 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
         return await generateEstruturaReport(filteredStructure, routesMap, options);
     };
 
+    const saveToNetworkDrive = async (pdfResult, nextCode) => {
+        try {
+            const formData = new FormData();
+            formData.append('codigo_produto', codigo);
+            formData.append('codigo_liberacao', nextCode);
+            const pdfBlob = new Blob([pdfResult.bytes], { type: 'application/pdf' });
+            formData.append('pdf', pdfBlob, pdfResult.fileName);
+
+            const { data } = await api.post('/engineering-releases/save-network', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return data;
+        } catch (err) {
+            console.error('Falha ao salvar no diretório de rede:', err);
+            return null;
+        }
+    };
+
+    const logReleaseAction = async (tipoAcao, extraData = {}) => {
+        try {
+            const rootDesc = structure[0]?.descricao || codigo;
+            await api.post('/engineering-releases/log', {
+                codigo_produto: codigo,
+                descricao_produto: rootDesc,
+                pedido: pedido.trim() || null,
+                item: item.trim() || null,
+                usuario: userName,
+                tipo_acao: tipoAcao,
+                destinatarios: extraData.destinatarios || null,
+                modo: mode.toUpperCase(),
+                caminho_arquivo: extraData.caminho_arquivo || null,
+                codigo_liberacao: extraData.codigo_liberacao || null
+            });
+        } catch (err) {
+            console.error('Erro ao logar liberação:', err);
+        }
+    };
+
     const handleDownloadOnly = async () => {
         setIsGenerating(true);
         setResult(null);
         try {
-            const pdfResult = await generatePdfWithStamp();
+            // 1. Get code
+            const { data: { nextCode } } = await api.get('/engineering-releases/next-code');
+            
+            // 2. Generate PDF
+            const pdfResult = await generatePdfWithStamp(nextCode);
+            
             if (pdfResult && pdfResult.bytes) {
+                // 3. Save to network
+                const networkResult = await saveToNetworkDrive(pdfResult, nextCode);
+                
+                // 4. Log
+                await logReleaseAction('DOWNLOAD', { 
+                    caminho_arquivo: networkResult?.path, 
+                    codigo_liberacao: nextCode 
+                });
+
+                // 5. Download for user
                 const blob = new Blob([pdfResult.bytes], { type: 'application/pdf' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
@@ -75,11 +126,12 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                setResult({ type: 'success', message: 'PDF com carimbo de liberação gerado com sucesso!' });
+                
+                setResult({ type: 'success', message: `PDF gerado e liberado com código ${nextCode}!` });
             }
         } catch (err) {
-            console.error('Erro ao gerar PDF com carimbo:', err);
-            setResult({ type: 'error', message: 'Falha ao gerar o PDF. Verifique o console.' });
+            console.error('Erro ao gerar PDF:', err);
+            setResult({ type: 'error', message: 'Falha ao realizar a liberação. Verifique o console.' });
         } finally {
             setIsGenerating(false);
         }
@@ -94,13 +146,19 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
         setIsSending(true);
         setResult(null);
         try {
-            // 1. Generate the PDF with stamp
-            const pdfResult = await generatePdfWithStamp();
+            // 1. Get code
+            const { data: { nextCode } } = await api.get('/engineering-releases/next-code');
+
+            // 2. Generate PDF
+            const pdfResult = await generatePdfWithStamp(nextCode);
             if (!pdfResult || !pdfResult.bytes) {
                 throw new Error('Falha ao gerar o PDF');
             }
 
-            // 2. Prepare email
+            // 3. Save to network
+            const networkResult = await saveToNetworkDrive(pdfResult, nextCode);
+
+            // 4. Prepare email
             const toList = validEmails.join(', ');
             const rootDesc = structure[0]?.descricao || codigo;
             const pedidoInfo = pedido.trim()
@@ -111,6 +169,7 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
 
             const htmlBody = `
                 <h2 style="color: #1e3a78; margin-bottom: 5px;">🔧 Liberação de Engenharia para Fabricação</h2>
+                <p>Código de Liberação: <strong style="color: #dc2626; font-size: 1.2em;">${nextCode}</strong></p>
                 <hr style="border: none; border-top: 2px solid #dc2626; margin: 10px 0 20px;" />
                 
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -147,25 +206,27 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                         O PDF com a estrutura completa e carimbo de liberação segue em anexo.
                     </p>
                 </div>
-
-                <p style="font-size: 13px; color: #64748b; margin-top: 20px;">
-                    Em caso de dúvidas técnicas, entre em contato com o setor de Engenharia.
-                </p>
             `;
 
-            // 3. Build FormData with PDF as attachment
             const formData = new FormData();
             formData.append('to', toList);
             formData.append('subject', subject);
             formData.append('html', htmlBody);
-            formData.append('text', `Liberação de Engenharia para Fabricação - Produto: ${codigo.trim()} - ${rootDesc}. Data: ${today}. Responsável: ${userName}. ${pedidoInfo}`);
+            formData.append('text', `Liberação de Engenharia para Fabricação - Produto: ${codigo.trim()} - ${rootDesc}. Código: ${nextCode}`);
 
             const pdfBlob = new Blob([pdfResult.bytes], { type: 'application/pdf' });
             formData.append('attachments', pdfBlob, pdfResult.fileName);
 
-            // 4. Send via existing email route
+            // 5. Send via existing email route
             await api.post('/email/send', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            // 6. Log the action
+            await logReleaseAction('EMAIL', { 
+                destinatarios: toList, 
+                caminho_arquivo: networkResult?.path,
+                codigo_liberacao: nextCode 
             });
 
             setResult({
@@ -227,6 +288,7 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                                         Pedido: {pedido.trim()}{item.trim() ? ` / Item: ${item.trim()}` : ''}
                                     </p>
                                 )}
+                                <p className="text-red-600 text-[10px] italic mt-1">Cód. Lib: LEN-2026-XXXXX</p>
                             </div>
                         </div>
                     </div>

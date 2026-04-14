@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export const generateOrderPDF = async (orderData) => {
+export const generateOrderPDF = async (orderData, returnBuffer = false, batchContext = null) => {
     try {
         const doc = new jsPDF('l', 'mm', 'a4'); // Landscape A4 = 297 × 210 mm
 
@@ -55,21 +55,37 @@ export const generateOrderPDF = async (orderData) => {
         doc.setFont('helvetica', 'normal');
         doc.text(formatDate(orderData.capa?.entrega), col2 + 20, hY + 9.5);
 
-        const totalItems = orderData.itens?.length || 0;
-        const totalQtd   = orderData.itens?.reduce((s, i) => s + (Number(i.qtd) || 0), 0) || 0;
+        const filteredItensForTot = (batchContext && batchContext.item) 
+            ? (orderData.itens || []).filter(i => String(Number(i.item) || i.item) === String(batchContext.item))
+            : (orderData.itens || []);
+        const totalItems = filteredItensForTot.length || 0;
+        const totalQtd   = filteredItensForTot.reduce((s, i) => s + (Number(i.qtd) || 0), 0) || 0;
         doc.setFont('helvetica', 'bold');
         doc.text(`ITENS: ${totalItems}`, col2 + 3, hY + 13.5);
-        doc.text(`QTD TOTAL: ${totalQtd}`, col2 + 20, hY + 13.5);
+        if (batchContext && batchContext.visual_qtd) {
+            doc.text(`QTD LOTE: ${batchContext.visual_qtd}`, col2 + 20, hY + 13.5);
+        } else {
+            doc.text(`QTD TOTAL: ${totalQtd}`, col2 + 20, hY + 13.5);
+        }
 
         // ── Bloco Nº PEDIDO / PED. CLIENTE
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text('PEDIDO DE VENDA', col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
+        doc.text(batchContext ? 'ORDEM DE PRODUÇÃO' : 'PEDIDO DE VENDA', col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
         doc.setFontSize(8);
-        doc.text(`Nº ${orderData.capa?.pedido || ''}`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
+        doc.text(`Nº ${batchContext ? batchContext.visual_op : orderData.capa?.pedido || ''}`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
         doc.setFontSize(6.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(`PED. CLI: ${orderData.capa?.pedido_cliente || '-'}`, col3 + (usableW - (col3 - ML)) / 2, hY + 14.5, { align: 'center' });
+        
+        if (batchContext && batchContext.data_pcp) {
+            doc.setTextColor(200, 0, 0);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`ENTREGA PCP: ${formatDate(batchContext.data_pcp)}`, col3 + (usableW - (col3 - ML)) / 2, hY + 14.5, { align: 'center' });
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'normal');
+        } else {
+            doc.text(`PED. CLI: ${orderData.capa?.pedido_cliente || '-'}`, col3 + (usableW - (col3 - ML)) / 2, hY + 14.5, { align: 'center' });
+        }
 
         // ── 2. CAIXA CLIENTE ──────────────────────────────────────────────────
         const cliY = hY + hH + 2;
@@ -110,22 +126,32 @@ export const generateOrderPDF = async (orderData) => {
             'Rev. Cli.',     // 13
         ];
 
-        const tableRows = (orderData.itens || []).map(item => [
-            Number(item.item) || item.item,
-            item.codigo                           || '',
-            item.rev_codigo || item.revisao       || '',
-            item.descricao                        || '',
-            item.status_tipo_item                 || 'PCP',
-            item.op_num                           || '-',
-            item.qtd                              || '0',
-            item.unidade                          || 'UN',
-            formatDate(item.c6_entreg || item.entrega) || '-',   // ← DATA DE ENTREGA POR ITEM (c6_entreg)
-            item.qtd_entreg                       || '0',
-            item.qtd_faturar                      || '0',
-            item.ped_cliente                      || '',
-            item.ref_cliente || item.desenho      || '',
-            item.c6_rev_cliente || item.rev_cliente || '',
-        ]);
+        const filteredItens = (batchContext && batchContext.item) 
+            ? (orderData.itens || []).filter(i => String(Number(i.item) || i.item) === String(batchContext.item))
+            : (orderData.itens || []);
+
+        const tableRows = filteredItens.map(item => {
+            let displayedQtd = item.qtd || '0';
+            if (batchContext && batchContext.is_fraction && batchContext.visual_qtd && item.item === batchContext.item) {
+                displayedQtd = `${batchContext.visual_qtd}`;
+            }
+            return [
+                Number(item.item) || item.item,
+                item.codigo                           || '',
+                item.rev_codigo || item.revisao       || '',
+                item.descricao                        || '',
+                item.status_tipo_item                 || 'PCP',
+                batchContext && item.item === batchContext.item ? batchContext.visual_op : (item.op_num || '-'),
+                displayedQtd,
+                item.unidade                          || 'UN',
+                batchContext && item.item === batchContext.item ? formatDate(batchContext.data_pcp) : (formatDate(item.c6_entreg || item.entrega) || '-'),
+                item.qtd_entreg                       || '0',
+                item.qtd_faturar                      || '0',
+                item.ped_cliente                      || '',
+                item.ref_cliente || item.desenho      || '',
+                item.c6_rev_cliente || item.rev_cliente || '',
+            ];
+        });
 
         autoTable(doc, {
             startY: tableStartY,

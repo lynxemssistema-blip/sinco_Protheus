@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 
+import { HELP_CONTENT } from '../config/helpContent';
+
 const HelpContext = createContext(null);
 
 export function HelpProvider({ children }) {
@@ -26,6 +28,7 @@ export function HelpProvider({ children }) {
         setLoadingHelp(true);
         try {
             const token = localStorage.getItem('@MetalFisa:token');
+            // If not logged in, we still want to show help from helpContent.js
             if (!token) return;
             const res = await axios.get('/api/sgq/processos', {
                 headers: { Authorization: `Bearer ${token}` }
@@ -59,20 +62,30 @@ export function HelpProvider({ children }) {
     }, [isOpen]);
 
     const getHelpByPath = useCallback((pathname) => {
-        if(!allModules || allModules.length === 0) return null;
-        let exact = allModules.find(m => m.route_path === pathname);
-        if (exact) return exact;
+        // First priority: Local static helpContent.js (Manual overrides)
+        if (HELP_CONTENT[pathname]) {
+            return HELP_CONTENT[pathname];
+        }
 
+        // Secondary priority: Database-driven modules
+        if(allModules && allModules.length > 0) {
+            let exact = allModules.find(m => m.route_path === pathname);
+            if (exact) return exact;
+        }
+
+        // Tertiary priority: Dynamic patterns
         const dynamicPatterns = [
             { regex: /^\/estrutura\/.+$/, key: '/estrutura/:codigo' },
             { regex: /^\/bom\/.+$/, key: '/bom-generator' },
         ];
+
         for (const pattern of dynamicPatterns) {
             if (pattern.regex.test(pathname)) {
-                return allModules.find(m => m.route_path === pattern.key) || null;
+                return HELP_CONTENT[pattern.key] || (allModules ? allModules.find(m => m.route_path === pattern.key) : null);
             }
         }
-        return null;
+        
+        return HELP_CONTENT['/']; // Global fallback
     }, [allModules]);
 
     return (

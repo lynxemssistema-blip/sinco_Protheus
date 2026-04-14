@@ -383,8 +383,8 @@ const ProductCatalog = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    products.map((prod) => (
-                                        <tr key={prod.codigo} className="hover:bg-gray-50 transition-colors group">
+                                    products.map((prod, idx) => (
+                                        <tr key={`${prod.codigo}-${idx}`} className="hover:bg-gray-50 transition-colors group">
                                             {/* Image Column */}
                                             <td className="px-6 py-4 text-center">
                                                 <div

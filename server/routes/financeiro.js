@@ -194,5 +194,159 @@ router.get('/fluxo-caixa', async (req, res) => {
     }
 });
 
-module.exports = router;
+// GET /api/financeiro/plano-contas
+router.get('/plano-contas', async (req, res) => {
+    try {
+        const { filial = '010' } = req.query;
 
+        const baseQuery = `
+            SELECT 
+                encode(TRIM(CT1.CT1_CONTA)::bytea, 'base64') AS codigo,
+                encode(TRIM(CT1.CT1_DESC01)::bytea, 'base64') AS descricao,
+                encode(TRIM(CT1.CT1_CLASSE)::bytea, 'base64') AS classe,
+                encode(TRIM(CT1.CT1_NORMAL)::bytea, 'base64') AS natureza,
+                encode(TRIM(CT1.CT1_NTSPED)::bytea, 'base64') AS grupo_sped,
+                encode(TRIM(CT1.CT1_BLOQ)::bytea, 'base64') AS bloqueio,
+                encode(TRIM(CT1.CT1_CTASUP)::bytea, 'base64') AS resiliencia_ou_superior -- Often contains superior relation
+            FROM 
+                CT1${filial} CT1
+            WHERE 
+                CT1.D_E_L_E_T_ = ' '
+            ORDER BY 
+                CT1.CT1_CONTA ASC
+        `;
+
+        const { rows } = await query(baseQuery);
+
+        const decoded = rows.map(row => ({
+            codigo: decField(row.codigo),
+            descricao: decField(row.descricao),
+            classe: decField(row.classe),
+            natureza: decField(row.natureza),
+            grupo_sped: decField(row.grupo_sped),
+            bloqueio: decField(row.bloqueio),
+            superior: decField(row.resiliencia_ou_superior)
+        }));
+
+        res.json(decoded);
+    } catch (error) {
+        console.error('Erro na rota financeiro/plano-contas:', error);
+        res.status(500).json({ error: 'Erro interno ao consultar plano de contas.' });
+    }
+});
+
+// GET /api/financeiro/balancete
+router.get('/balancete', async (req, res) => {
+    try {
+        const { data_inicio, data_fim, filial = '010' } = req.query;
+
+        let ct2JoinCond = `(CT2.CT2_DEBITO = CT1.CT1_CONTA OR CT2.CT2_CREDIT = CT1.CT1_CONTA) AND CT2.D_E_L_E_T_ = ' '`;
+        const params = [];
+
+        if (data_inicio && data_fim) {
+            const startStr = data_inicio.replace(/-/g, '');
+            const endStr = data_fim.replace(/-/g, '');
+            ct2JoinCond += ` AND CT2.CT2_DATA BETWEEN $1 AND $2`;
+            params.push(startStr, endStr);
+        } else {
+            // Fallback default: Start of year to today
+            ct2JoinCond += ` AND CT2.CT2_DATA BETWEEN TO_CHAR(DATE_TRUNC('year', CURRENT_DATE), 'YYYYMMDD') AND TO_CHAR(CURRENT_DATE, 'YYYYMMDD')`;
+        }
+
+        const baseQuery = `
+            SELECT 
+                encode(TRIM(CT1.CT1_CONTA)::bytea, 'base64') AS codigo,
+                encode(TRIM(CT1.CT1_DESC01)::bytea, 'base64') AS descricao,
+                encode(TRIM(CT1.CT1_CLASSE)::bytea, 'base64') AS classe,
+                encode(TRIM(CT1.CT1_NORMAL)::bytea, 'base64') AS natureza,
+                COALESCE(SUM(CASE WHEN CT2.CT2_DEBITO = CT1.CT1_CONTA THEN CT2.CT2_VALOR ELSE 0 END), 0) AS total_debito,
+                COALESCE(SUM(CASE WHEN CT2.CT2_CREDIT = CT1.CT1_CONTA THEN CT2.CT2_VALOR ELSE 0 END), 0) AS total_credito,
+                COALESCE(SUM(CASE WHEN CT2.CT2_DEBITO = CT1.CT1_CONTA THEN CT2.CT2_VALOR ELSE 0 END), 0) -
+                COALESCE(SUM(CASE WHEN CT2.CT2_CREDIT = CT1.CT1_CONTA THEN CT2.CT2_VALOR ELSE 0 END), 0) AS saldo_atual
+            FROM 
+                CT1${filial} CT1
+            LEFT JOIN 
+                CT2${filial} CT2 ON ${ct2JoinCond} 
+            WHERE 
+                CT1.D_E_L_E_T_ = ' '
+            GROUP BY 
+                CT1.CT1_CONTA, CT1.CT1_DESC01, CT1.CT1_CLASSE, CT1.CT1_NORMAL
+            ORDER BY 
+                CT1.CT1_CONTA ASC
+        `;
+
+        const { rows } = await query(baseQuery, params);
+
+        let decoded = rows.map(row => {
+            return {
+                codigo: decField(row.codigo),
+                descricao: decField(row.descricao),
+                classe: decField(row.classe),
+                natureza: decField(row.natureza),
+                total_debito: Number(row.total_debito) || 0,
+                total_credito: Number(row.total_credito) || 0,
+                saldo_atual: Number(row.saldo_atual) || 0
+            };
+        });
+
+        res.json(decoded);
+    } catch (error) {
+        console.error('Erro na rota financeiro/balancete:', error);
+        res.status(500).json({ error: 'Erro interno ao consultar balancete dinâmico.' });
+    }
+});
+
+// GET /api/financeiro/razonete
+router.get('/razonete', async (req, res) => {
+    try {
+        const { conta, data_inicio, data_fim, filial = '010' } = req.query;
+
+        if (!conta) {
+            return res.status(400).json({ error: 'Conta é obrigatória.' });
+        }
+
+        let baseQuery = `
+            SELECT 
+                encode(TRIM(CT2.CT2_DATA)::bytea, 'base64')  AS data_lancamento,
+                encode(TRIM(CT2.CT2_DOC)::bytea, 'base64')   AS documento,
+                encode(TRIM(CT2.CT2_LOTE)::bytea, 'base64')  AS lote,
+                encode(TRIM(CT2.CT2_HIST)::bytea, 'base64')  AS historico,
+                CT2.CT2_VALOR                                AS valor,
+                CASE WHEN CT2.CT2_DEBITO = $1 THEN 'D' ELSE 'C' END as tipo
+            FROM 
+                CT2${filial} CT2
+            WHERE 
+                CT2.D_E_L_E_T_ = ' ' 
+                AND (CT2.CT2_DEBITO = $1 OR CT2.CT2_CREDIT = $1)
+        `;
+
+        const params = [conta];
+
+        if (data_inicio && data_fim) {
+            const startStr = data_inicio.replace(/-/g, '');
+            const endStr = data_fim.replace(/-/g, '');
+            baseQuery += ` AND CT2.CT2_DATA BETWEEN $2 AND $3 `;
+            params.push(startStr, endStr);
+        }
+
+        baseQuery += ` ORDER BY CT2.CT2_DATA ASC, CT2.CT2_DOC ASC LIMIT 1500 `;
+
+        const { rows } = await query(baseQuery, params);
+
+        const decoded = rows.map(row => ({
+            data_lancamento: decField(row.data_lancamento),
+            documento: decField(row.documento),
+            lote: decField(row.lote),
+            historico: decField(row.historico),
+            valor: Number(row.valor) || 0,
+            tipo: row.tipo,
+        }));
+
+        res.json(decoded);
+    } catch (error) {
+        console.error('Erro na rota financeiro/razonete:', error);
+        res.status(500).json({ error: 'Erro interno ao consultar razonete.' });
+    }
+});
+
+module.exports = router;

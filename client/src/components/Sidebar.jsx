@@ -249,7 +249,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                                     isOpen={isExpanded}
                                     onToggle={toggleGroup}
                                 />
-                                <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                     {visibleGroupItems.map(item => (
                                         <NavItem
                                             key={item.id}

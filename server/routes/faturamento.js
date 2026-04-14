@@ -198,7 +198,7 @@ router.post('/solicitacoes', async (req, res) => {
                     it.valor_unitario || null,
                     it.valor_total || null,
                     it.pcp_forecast_id || null,
-                    it.pcp_data_entrega || null,
+                    it.pcp_data_entrega ? String(it.pcp_data_entrega).split('T')[0] : null,
                     it.pcp_serie_cliente || null,
                     it.pcp_serie_metalfisa || null,
                     it.pcp_numero_serie || null,
@@ -748,6 +748,129 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
         res.status(500).json({ error: error.message || 'Erro ao deletar item da solicitação.' });
     } finally {
         connection.release();
+    }
+});
+
+// GET /api/faturamento/dashboard - Dashboard gerencial de faturamento
+router.get('/dashboard', async (req, res) => {
+    try {
+        const { dataInicial, dataFinal, status, groupBy = 'cliente', cliente, produto } = req.query;
+
+        const params = [];
+        const whereClauses = ['1=1'];
+
+        if (dataInicial) { whereClauses.push('DATE(s.created_at) >= ?'); params.push(dataInicial); }
+        if (dataFinal)   { whereClauses.push('DATE(s.created_at) <= ?'); params.push(dataFinal); }
+        if (status) {
+            const list = status.split(',').map(s => s.trim()).filter(Boolean);
+            if (list.length) { whereClauses.push(`s.status IN (${list.map(() => '?').join(',')})`); params.push(...list); }
+        }
+        if (cliente) { whereClauses.push('i.nome_cliente LIKE ?'); params.push(`%${cliente}%`); }
+        if (produto)  { whereClauses.push('i.codigo_produto LIKE ?'); params.push(`%${produto}%`); }
+
+        const whereSQL = whereClauses.join(' AND ');
+
+        // 1. KPIs por status
+        const [kpis] = await mysqlPool.query(`
+            SELECT
+                s.status,
+                COUNT(DISTINCT s.id)          AS qtd_solicitacoes,
+                COUNT(i.id)                    AS qtd_itens,
+                COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total
+            FROM app_faturamento_solicitacoes s
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            WHERE ${whereSQL}
+            GROUP BY s.status
+            ORDER BY s.status
+        `, params);
+
+        // 2. Tendência mensal (últimos 12 meses se sem filtro de data)
+        const trendParams = [...params];
+        let trendWhere = whereSQL;
+        if (!dataInicial && !dataFinal) {
+            trendWhere = `${whereSQL} AND s.created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)`;
+        }
+        const [tendenciaMensal] = await mysqlPool.query(`
+            SELECT
+                DATE_FORMAT(s.created_at, '%Y-%m') AS mes,
+                s.status,
+                COUNT(DISTINCT s.id)          AS qtd_solicitacoes,
+                COUNT(i.id)                    AS qtd_itens,
+                COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total
+            FROM app_faturamento_solicitacoes s
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            WHERE ${trendWhere}
+            GROUP BY mes, s.status
+            ORDER BY mes, s.status
+        `, trendParams);
+
+        // 3. Agrupamento dinâmico
+        const groupMap = {
+            cliente:        "COALESCE(NULLIF(TRIM(i.nome_cliente), ''), 'Não identificado')",
+            produto:        "COALESCE(NULLIF(TRIM(i.codigo_produto), ''), 'Não identificado')",
+            usuario:        "COALESCE(NULLIF(TRIM(s.usuario), ''), 'Não identificado')",
+            mes:            "DATE_FORMAT(s.created_at, '%Y-%m')",
+            status:         "s.status",
+            pedido_cliente: "COALESCE(NULLIF(TRIM(i.pedido_cliente), ''), 'Sem PC')",
+        };
+        const groupLabels = {
+            cliente: 'Cliente', produto: 'Produto', usuario: 'Usuário',
+            mes: 'Mês', status: 'Status', pedido_cliente: 'Pedido Cliente'
+        };
+        const groupField = groupMap[groupBy] || groupMap.cliente;
+        const groupLabel = groupLabels[groupBy] || 'Cliente';
+
+        const [agrupamento] = await mysqlPool.query(`
+            SELECT
+                ${groupField}              AS label,
+                COUNT(DISTINCT s.id)       AS qtd_solicitacoes,
+                COUNT(i.id)                AS qtd_itens,
+                COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total
+            FROM app_faturamento_solicitacoes s
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            WHERE ${whereSQL}
+            GROUP BY label
+            ORDER BY valor_total DESC
+            LIMIT 20
+        `, params);
+
+        // 4. Top produtos (independente do groupBy)
+        const [topProdutos] = await mysqlPool.query(`
+            SELECT
+                COALESCE(NULLIF(TRIM(i.codigo_produto), ''), 'Não identificado') AS label,
+                COUNT(i.id)                    AS qtd_itens,
+                COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total
+            FROM app_faturamento_solicitacoes s
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            WHERE ${whereSQL}
+            GROUP BY label
+            ORDER BY valor_total DESC
+            LIMIT 10
+        `, params);
+
+        // 5. Evolução diária (últimos 30 dias)
+        const [evolucaoDiaria] = await mysqlPool.query(`
+            SELECT
+                DATE(s.created_at) AS dia,
+                s.status,
+                COUNT(DISTINCT s.id)          AS qtd_solicitacoes,
+                COUNT(i.id)                    AS qtd_itens,
+                COALESCE(SUM(i.valor_total), 0) AS valor_total
+            FROM app_faturamento_solicitacoes s
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            WHERE s.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY dia, s.status
+            ORDER BY dia, s.status
+        `);
+
+        res.json({ kpis, tendenciaMensal, agrupamento, topProdutos, evolucaoDiaria, groupLabel });
+    } catch (err) {
+        console.error('Erro GET /faturamento/dashboard:', err);
+        res.status(500).json({ error: 'Erro ao gerar dashboard de faturamento.' });
     }
 });
 

@@ -1278,7 +1278,7 @@ router.get('/op-mirror/:b1cod', async (req, res) => {
                                 'recurso',      TRIM(g2.g2_recurso),
                                 'desc_operacao', CASE
                                     WHEN TRIM(g2.g2_recurso) = 'MO0013' THEN 'LASE'
-                                    ELSE COALESCE(TRIM(h1.h1_descri), TRIM(g2.g2_descri))
+                                    ELSE TRIM(h1.h1_descri)
                                 END,
                                 'setup',          g2.g2_setup,
                                 'tempo_padrao',   g2.g2_tempad,

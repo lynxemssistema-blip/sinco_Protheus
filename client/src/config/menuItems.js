@@ -3,7 +3,7 @@ import {
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
-    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box
+    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -14,7 +14,10 @@ export const MENU_GROUPS = [
         items: [
             { id: 'vendas', label: 'Pedidos de Venda', path: '/', icon: ShoppingCart },
             { id: 'itens_faturar', label: 'Itens a Faturar', path: '/vendas/itens-faturar', icon: ListOrdered },
-            { id: 'controle_faturamento', label: 'Controle de Faturamento', path: '/comercial/faturamento', icon: FileText }
+            { id: 'dashboard_faturamento', label: 'Dashboard de Faturamento', path: '/comercial/dashboard-faturamento', icon: BarChart2 },
+            { id: 'visao_gerencial', label: 'Visão Gerencial (Atrasos)', path: '/comercial/atrasos', icon: Target },
+            { id: 'controle_faturamento', label: 'Controle de Faturamento', path: '/comercial/faturamento', icon: FileText },
+            { id: 'gestao_ops', label: 'Gestão de OPs', path: '/comercial/gestao-ops', icon: Layers }
         ]
     },
     {
@@ -25,7 +28,9 @@ export const MENU_GROUPS = [
             { id: 'produtos', label: 'Catálogo de Produtos', path: '/produtos', icon: Package },
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
             { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network },
-            { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box }
+            { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box },
+            { id: 'controle_engenharia', label: 'Controle de Engenharia', path: '/engenharia/relatorio-controle', icon: FileText },
+            { id: 'relatorio_liberacao', label: 'Relatório de Liberação', path: '/engenharia/relatorio-liberacao', icon: ClipboardList }
         ]
     },
     {
@@ -43,20 +48,24 @@ export const MENU_GROUPS = [
     },
     {
         id: 'pcp',
-        label: 'PCP & Fábrica',
+        label: 'PCP Geral',
         items: [
-            { id: 'painel', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
-            { id: 'matriz', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
-            { id: 'apontamento_vertical', label: 'Apontamento Vertical/Operação', path: '/pcp/apontamento-vertical', icon: ClipboardList },
-            { id: 'conferencia', label: 'Conferência de Apontamentos', path: '/pcp/conferencia', icon: ShieldCheck },
-            { id: 'gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
-            { id: 'ops', label: 'Ordens de Produção', path: '/producao', icon: Factory },
-            { id: 'ops_detalhe', label: 'Consulta Detalhada OP', path: '/producao/op', icon: ClipboardCheck },
-            { id: 'materiais_pcp', label: 'Gestão de Materiais', path: '/pcp/gestao-materiais', icon: ClipboardList },
+            { id: 'visao_fabrica', label: 'Visão Global (Fábrica)', path: '/pcp/visao-fabrica', icon: Factory },
+            { id: 'producao', label: 'Ordens de Produção', path: '/producao', icon: Factory },
+            { id: 'relatorios_producao', label: 'Relatórios de Produção', path: '/producao/relatorios', icon: BarChart },
+            { id: 'pcp_conferencia', label: 'Conferência de Apont.', path: '/pcp/conferencia', icon: ClipboardCheck },
+            { id: 'evolucao_apontamentos', label: 'Evolução dos Apontamentos', path: '/pcp/evolucao-apontamento', icon: TrendingUp },
+            { id: 'visao_producao', label: 'Visão de Produção', path: '/visao-producao', icon: Target },
+            { id: 'planejamento_gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
+            { id: 'pcp_apontamento_vertical', label: 'Apontamento Vertical', path: '/pcp/apontamento-vertical', icon: ListOrdered },
+            { id: 'extrato_op', label: 'Tempo das OP', path: '/pcp/extrato-op', icon: History },
             { id: 'onde_usado', label: 'Onde é Usado', path: '/pcp/onde-usado', icon: Network },
-            { id: 'analytics', label: 'Analytics da Fábrica', path: '/visao-producao', icon: BarChart },
-            { id: 'tracking_evolution', label: 'Evolução Apontamento', path: '/pcp/evolucao-apontamento', icon: TrendingUp },
-            { id: 'apontamento_usuario_op', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario-op', icon: Users }
+            { id: 'analytics', label: 'Analytics da Fábrica', path: '/pcp/analytics', icon: BarChart },
+            { id: 'apontamento_usuario_op', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario-op', icon: Users },
+            { id: 'planejamento_estrutura_routing', label: 'Explosão BOM + Roteiro (Pull)', path: '/pcp/planejamento-estrutura-routing', icon: GitMerge },
+            { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
+            { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
+            { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText }
         ]
     },
     {
@@ -80,7 +89,8 @@ export const MENU_GROUPS = [
         label: 'Financeiro',
         items: [
             { id: 'fluxo_caixa', label: 'Fluxo de Caixa', path: '/financeiro/fluxo-caixa', icon: TrendingUp },
-            { id: 'dashboard_financeiro', label: 'Dashboard Gerencial', path: '/financeiro/dashboard', icon: Database }
+            { id: 'dashboard_financeiro', label: 'Dashboard Gerencial', path: '/financeiro/dashboard', icon: Database },
+            { id: 'balancete', label: 'Balancete Dinâmico', path: '/financeiro/balancete', icon: Layers }
         ]
     },
     {

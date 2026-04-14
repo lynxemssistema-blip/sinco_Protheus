@@ -511,10 +511,12 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 if (!currRomaneioId) return;
                                 try {
                                     setLoadingBundle(true);
-                                    await downloadRomaneioBundle(currRomaneioId);
-                                    toast.success('Caderno de Engenharia gerado silenciosamente e salvo na rede no local correto!');
+                                    const blob = await downloadRomaneioBundle(currRomaneioId);
+                                    const url = window.URL.createObjectURL(blob);
+                                    window.open(url, '_blank');
+                                    toast.success('Caderno de Engenharia gerado e salvo na rede!');
                                 } catch (err) {
-                                    toast.error('Erro ao gerar Caderno silancioso: ' + (err.response?.data?.error || err.message));
+                                    toast.error('Erro ao gerar Caderno: ' + (err.response?.data?.error || err.message));
                                 } finally {
                                     setLoadingBundle(false);
                                 }

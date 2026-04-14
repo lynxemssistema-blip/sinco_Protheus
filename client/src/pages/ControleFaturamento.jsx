@@ -5,12 +5,15 @@ import {
     enviarFaturamentoEmailLote,
     updateFaturamentoSolicitacaoStatus,
     updateFaturamentoSolicitacaoNotaFiscal,
+    updateFaturamentoSolicitacaoItem,
     deleteFaturamentoSolicitacaoItem,
+    insertFaturamentoSolicitacaoItem,
+    getPedidosFlat,
     getProductDocs,
     getFileUrl
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, History, Clock, CheckCircle, Eye, Download, XCircle, Trash2, CheckCircle2, Save, AlertTriangle } from 'lucide-react';
+import { FileText, History, Clock, CheckCircle, Eye, Download, XCircle, Trash2, CheckCircle2, Save, AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import generateFaturamentoPdf from '../services/faturamentoPdfGenerator';
 import generateFaturamentosExcel from '../services/faturamentoExcelGenerator';
@@ -39,6 +42,14 @@ const ControleFaturamento = () => {
     // Multiselection
     const [selectedItems, setSelectedItems] = useState([]);
     const [loadingEmail, setLoadingEmail] = useState(false);
+
+    // Modal Add Item
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [addSearchText, setAddSearchText] = useState('');
+    const [addSearchResults, setAddSearchResults] = useState([]);
+    const [isAddSearching, setIsAddSearching] = useState(false);
+    const [candidateItem, setCandidateItem] = useState(null);
+    const [addQtdForm, setAddQtdForm] = useState('');
 
     const formatCurrency = (value) => {
         const num = parseFloat(value);
@@ -106,13 +117,58 @@ const ControleFaturamento = () => {
 
     const TranslateAcao = (acao, detalhes) => {
         switch(acao) {
-            case 'CRIACAO': return `Criou a solicitação de faturamento com ${detalhes?.qtd_itens || 0} itens.`;
+            case 'CRIACAO': return `Criou a solicitação com ${detalhes?.qtd_itens || 0} itens.`;
             case 'ALTERACAO_ITEM': return `Alterou a quantidade do item de ${detalhes?.qtd_de} para ${detalhes?.qtd_para}.`;
             case 'EXCLUSAO_ITEM': return `Removeu o produto ${detalhes?.codigo} (Ped: ${detalhes?.pedido}-${detalhes?.item}).`;
             case 'INCLUSAO_ITEM': return `Inseriu produto ${detalhes?.codigo} (Qtd: ${detalhes?.qtd}).`;
             case 'VINCULO_NF': return `Vinculou Nota Fiscal Global: ${detalhes?.nota_fiscal}.`;
             case 'VINCULO_NF_ITEM': return `Alterou a Nota Fiscal do item de ${detalhes?.nf_de || 'N/D'} para ${detalhes?.nf_para}.`;
             default: return acao;
+        }
+    };
+
+    // SEARCH NEW ITEMS
+    const handleSearchAdd = async () => {
+        if(addSearchText.length < 3) {
+            toast.warning("Digite ao menos 3 caracteres (Pedido, Cliente ou Produto)");
+            return;
+        }
+        setIsAddSearching(true);
+        setCandidateItem(null);
+        try {
+            const res = await getPedidosFlat({ pedido: addSearchText, limit: 15, page: 1, only_active: 'true' });
+            setAddSearchResults(res.data || []);
+        } catch(err) {
+            toast.error("Erro ao buscar base do Protheus.");
+        } finally {
+            setIsAddSearching(false);
+        }
+    };
+
+    const handleConfirmAddItem = async () => {
+        if(!candidateItem) return;
+        if(!addQtdForm || addQtdForm <= 0) return toast.warning('Quantidade inválida.');
+        if(addQtdForm > candidateItem.qtd_faturar) return toast.warning('Excede o saldo do Pedido!');
+
+        try {
+            await insertFaturamentoSolicitacaoItem(selectedSolicitacao.id, {
+                pedido: candidateItem.pedido,
+                item: candidateItem.item,
+                codigo_produto: candidateItem.codigo,
+                quantidade_solicitada: parseFloat(addQtdForm),
+                saldo_faturar_momentaneo: parseFloat(candidateItem.qtd_faturar),
+                nota_fiscal: '',
+                ped_cliente: candidateItem.ped_cliente,
+                ref_cliente: candidateItem.ref_cliente,
+                usuario: user?.nome || 'Sistema'
+            });
+            toast.success("Produto incluído à Solicitação!");
+            setIsAddModalOpen(false);
+            setCandidateItem(null);
+            fetchSolicitacoes();
+            loadAuditoria(selectedSolicitacao.id);
+        } catch(err) {
+            toast.error("Erro ao inserir produto na solicitação.");
         }
     };
 
@@ -207,6 +263,30 @@ const ControleFaturamento = () => {
     const toggleItemCheck = (itemId) => {
         setItemChecks(prev => prev.includes(itemId) ? prev.filter(i => i !== itemId) : [...prev, itemId]);
     }
+
+    const [editingItemQty, setEditingItemQty] = useState({ id: null, value: '' });
+
+    const handleSaveItemQty = async (item) => {
+        let valStr = String(editingItemQty.value).replace(',', '.');
+        const novoValor = parseFloat(valStr);
+        if (isNaN(novoValor) || novoValor <= 0) {
+            toast.error("Quantidade inválida.");
+            return;
+        }
+        
+        try {
+            await updateFaturamentoSolicitacaoItem(selectedSolicitacao.id, item.id, {
+                quantidade_solicitada: novoValor,
+                nota_fiscal: item.nota_fiscal || null,
+                usuario: user?.nome || 'Sistema'
+            });
+            toast.success("Quantidade alterada com sucesso!");
+            setEditingItemQty({ id: null, value: '' });
+            fetchSolicitacoes();
+        } catch (e) {
+            toast.error(e?.response?.data?.error || "Erro ao alterar quantidade.");
+        }
+    };
 
     return (
         <div className="p-4 md:p-6 bg-gray-50 min-h-[calc(100vh-64px)] flex flex-col md:flex-row gap-6 animate-fadeIn">
@@ -369,6 +449,19 @@ const ControleFaturamento = () => {
 
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="font-bold text-gray-800 text-lg">Itens Faturados / Solicitados</h3>
+                                {selectedSolicitacao.status === 'Pendente' && (
+                                    <button 
+                                        onClick={() => {
+                                            setAddSearchText('');
+                                            setAddSearchResults([]);
+                                            setCandidateItem(null);
+                                            setIsAddModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Adicionar Produto
+                                    </button>
+                                )}
                             </div>
 
                             <div className="overflow-x-auto border border-gray-200 rounded-lg rounded-t-none">
@@ -437,7 +530,47 @@ const ControleFaturamento = () => {
 
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex flex-col items-end">
-                                                        <span className="font-black text-gray-800">{parseFloat(it.quantidade_solicitada).toLocaleString()}</span>
+                                                        {selectedSolicitacao.status === 'Pendente' && editingItemQty.id === it.id ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="text"
+                                                                    autoFocus
+                                                                    value={editingItemQty.value}
+                                                                    onChange={(e) => setEditingItemQty({ ...editingItemQty, value: e.target.value })}
+                                                                    className="w-16 px-1 py-1 text-right text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') handleSaveItemQty(it);
+                                                                        if (e.key === 'Escape') setEditingItemQty({ id: null, value: '' });
+                                                                    }}
+                                                                />
+                                                                <button
+                                                                    onClick={() => handleSaveItemQty(it)}
+                                                                    className="text-white bg-blue-600 hover:bg-blue-700 p-1 rounded"
+                                                                    title="Salvar Qtd"
+                                                                >
+                                                                    <CheckCircle2 className="w-3 h-3" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingItemQty({ id: null, value: '' })}
+                                                                    className="text-gray-500 hover:bg-gray-100 p-1 rounded"
+                                                                    title="Cancelar"
+                                                                >
+                                                                    <XCircle className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span
+                                                                className={`font-black text-gray-800 ${selectedSolicitacao.status === 'Pendente' ? 'cursor-pointer hover:underline decoration-blue-400 underline-offset-2 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors' : 'px-2 py-0.5'}`}
+                                                                title={selectedSolicitacao.status === 'Pendente' ? "Clique para editar quantidade" : ""}
+                                                                onClick={() => {
+                                                                    if (selectedSolicitacao.status === 'Pendente') {
+                                                                        setEditingItemQty({ id: it.id, value: String(it.quantidade_solicitada).replace('.', ',') });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {parseFloat(it.quantidade_solicitada).toLocaleString('pt-BR')}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-2 py-3 text-center">
@@ -509,6 +642,77 @@ const ControleFaturamento = () => {
                     <button onClick={() => setSelectedItems([])} className="text-blue-200 hover:text-white transition-colors">
                         <XCircle className="w-5 h-5" />
                     </button>
+                </div>
+            )}
+
+            {/* ADD ITEM MODAL */}
+            {isAddModalOpen && (
+                <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-slideUp">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold text-gray-800">Adicionar Produto à Solicitação</h3>
+                            <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-red-500"><X className="w-5 h-5"/></button>
+                        </div>
+                        
+                        <div className="p-4 bg-white border-b border-gray-100 flex gap-2">
+                            <input 
+                                type="text"
+                                placeholder="Busque por Pedido, Cód. Cliente ou Produto..."
+                                className="flex-1 border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                                value={addSearchText}
+                                onChange={e => setAddSearchText(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleSearchAdd()}
+                            />
+                            <button 
+                                onClick={handleSearchAdd}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700 flex items-center gap-2"
+                            >
+                                <Search className="w-4 h-4" /> Procurar
+                            </button>
+                        </div>
+
+                        <div className="h-64 overflow-y-auto bg-gray-50/50 p-2">
+                            {isAddSearching ? <div className="text-center p-6 text-gray-500 text-sm">Buscando no Protheus...</div> : null}
+                            {!isAddSearching && addSearchResults.length === 0 ? <div className="text-center p-6 text-gray-400 text-sm">Use a busca acima.</div> : null}
+                            {!isAddSearching && addSearchResults.map((rst, idx) => (
+                                <div 
+                                    key={idx} 
+                                    onClick={() => setCandidateItem(candidateItem === rst ? null : rst)}
+                                    className={`p-3 bg-white border rounded-lg mb-2 cursor-pointer transition-colors flex justify-between items-center ${candidateItem === rst ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                                >
+                                    <div>
+                                        <div className="font-mono text-sm font-bold text-gray-800">{rst.pedido}-{rst.item} <span className="ml-2 text-blue-700">{rst.codigo}</span></div>
+                                        <div className="text-xs text-gray-500 mt-1">{rst.nome_cliente || rst.ref_cliente}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-[10px] text-gray-400 font-bold uppercase">Saldo a Faturar</div>
+                                        <div className="font-black text-gray-900 text-lg">{parseFloat(rst.qtd_faturar).toLocaleString()} <span className="text-xs font-normal text-gray-500">{rst.unidade}</span></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {candidateItem && (
+                            <div className="p-4 bg-blue-50 border-t border-blue-100 flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-bold text-blue-900 mb-1">Confirmar Quantidade (Máx: {parseFloat(candidateItem.qtd_faturar)})</p>
+                                    <input 
+                                        type="number"
+                                        className="w-32 border-blue-300 rounded text-sm focus:ring-blue-500"
+                                        value={addQtdForm}
+                                        onChange={e => setAddQtdForm(e.target.value)}
+                                        placeholder="Qtd Faturar"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleConfirmAddItem}
+                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm"
+                                >
+                                    Adicionar à Fatura
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

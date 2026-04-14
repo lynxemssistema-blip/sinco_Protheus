@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Save, Trash2, Plus, AlertCircle, Package, Pencil, XCircle } from 'lucide-react';
+import { X, Calendar, Save, Trash2, Plus, AlertCircle, Package, Pencil, XCircle, CheckCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -19,20 +19,28 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Data Entrega *</label>
-            <input type="date" required
+            <input type="date" required autoFocus={!isEdit}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={value.data_entrega_pcp}
                 onChange={e => onChange(p => ({ ...p, data_entrega_pcp: e.target.value }))} />
         </div>
         <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Quantidade *</label>
+            <div className="flex justify-between items-end mb-1">
+                <label className="block text-xs font-medium text-gray-600">Quantidade *</label>
+                {qtdTotal > 0 && qtdDisponivel > 0 && (
+                    <button type="button" tabIndex="-1"
+                        onClick={() => onChange(p => ({ ...p, quantidade_pcp: String(Number(qtdDisponivel.toFixed(2))) }))}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium cursor-pointer transition-colors hover:underline"
+                        title="Preencher com saldo restante"
+                    >
+                        Saldo: {qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                    </button>
+                )}
+            </div>
             <input type="number" step="0.01" min="0.01" required placeholder="0.00"
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={value.quantidade_pcp}
                 onChange={e => onChange(p => ({ ...p, quantidade_pcp: e.target.value }))} />
-            {qtdTotal > 0 && (
-                <p className="text-[10px] text-gray-400 mt-0.5">Disponível: {qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</p>
-            )}
         </div>
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Série Cliente</label>
@@ -118,17 +126,33 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
     useEffect(() => {
         if (isOpen && pedido && itemNum) {
-            loadProgramacoes();
             setFormData(EMPTY_FORM);
             setEditingId(null);
+            loadProgramacoes(true);
         }
     }, [isOpen, pedido, itemNum]);
 
-    const loadProgramacoes = async () => {
+    const loadProgramacoes = async (isInitialLoad = false) => {
         setLoading(true);
         try {
             const res = await api.get(`/pedidos/items/${pedido}/${itemNum}/pcp-forecasts/history`);
-            setProgramacoes(res.data || []);
+            const progs = res.data || [];
+            setProgramacoes(progs);
+            
+            const qtdProg = progs.reduce((s, p) => s + parseFloat(p.quantidade_pcp || 0), 0);
+            const disponivel = qtdTotal - qtdProg;
+            
+            if (!editingId) {
+                setFormData(prev => {
+                    if (isInitialLoad === true || prev.quantidade_pcp === '') {
+                        return {
+                            ...prev,
+                            quantidade_pcp: disponivel > 0 ? Number(disponivel.toFixed(2)).toString() : ''
+                        };
+                    }
+                    return prev;
+                });
+            }
         } catch (err) {
             console.error('Erro ao carregar programações:', err);
         } finally {
@@ -274,31 +298,43 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 shrink-0">
                     <div className="flex items-center justify-between text-xs text-indigo-700 font-medium mb-1">
                         <span>Total programado: <strong>{qtdProgramada.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong> / {qtdTotalStr}</span>
-                        <span className={qtdDisponivel < 0 ? 'text-red-600 font-bold' : ''}>
-                            Disponível: <strong>{qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong>
+                        <span className={qtdDisponivel < 0 ? 'text-red-600 font-bold' : qtdDisponivel === 0 ? 'text-emerald-600 font-bold' : ''}>
+                            {qtdDisponivel === 0 ? 'Totalmente programado' : `Disponível: `}
+                            {qtdDisponivel !== 0 && <strong>{qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong>}
                         </span>
                     </div>
                     <div className="w-full bg-indigo-200 rounded-full h-2">
-                        <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-green-500' : 'bg-indigo-500'}`}
+                        <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
                             style={{ width: `${pctProgramado}%` }} />
                     </div>
                 </div>
 
                 <div className="flex flex-col md:flex-row overflow-hidden flex-1 min-h-0">
                     {/* Painel esquerdo: Adicionar nova */}
-                    <div className="w-full md:w-80 shrink-0 p-5 border-r border-gray-100 overflow-y-auto">
-                        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-3">
-                            <Plus className="h-4 w-4 text-indigo-600" /> Nova Programação
-                        </h3>
-                        <ProgForm
-                            value={formData}
-                            onChange={setFormData}
-                            onSubmit={handleAdd}
-                            saving={saving && !editingId}
-                            qtdDisponivel={qtdDisponivel}
-                            qtdTotal={qtdTotal}
-                            isEdit={false}
-                        />
+                    <div className="w-full md:w-80 shrink-0 border-r border-gray-100 flex flex-col relative overflow-hidden">
+                        <div className="p-5 overflow-y-auto flex-1">
+                            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-3">
+                                <Plus className="h-4 w-4 text-indigo-600" /> Nova Programação
+                            </h3>
+                            <ProgForm
+                                value={formData}
+                                onChange={setFormData}
+                                onSubmit={handleAdd}
+                                saving={saving && !editingId}
+                                qtdDisponivel={qtdDisponivel}
+                                qtdTotal={qtdTotal}
+                                isEdit={false}
+                            />
+                        </div>
+                        {qtdDisponivel <= 0 && programacoes.length > 0 && (
+                            <div className="absolute inset-0 z-10 bg-white/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
+                                <div className="bg-emerald-100 p-3 rounded-full mb-3 shadow-sm border border-emerald-200">
+                                    <CheckCircle className="h-8 w-8 text-emerald-600" />
+                                </div>
+                                <h4 className="font-bold text-gray-800 mb-1">Total Programado!</h4>
+                                <p className="text-xs text-gray-500">A quantidade total deste item já foi parametrizada.</p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Lista de Programações */}

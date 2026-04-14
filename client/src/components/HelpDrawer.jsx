@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     X, HelpCircle, ChevronRight, ArrowRight, Lightbulb,
@@ -29,28 +29,61 @@ function getCategoryStyle(category) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function HelpDrawer() {
-    const { isOpen, forcedPath, closeHelp, isPinned, togglePin, allModules, getHelpByPath, loadingHelp } = useHelp();
+    const { isOpen, forcedPath, closeHelp, isPinned, togglePin, getHelpByPath, allModules = [], loadingHelp } = useHelp();
     const location = useLocation();
     const navigate = useNavigate();
-    const drawerRef = useRef(null);
+    const drawerRef = React.useRef(null);
+
+    const [activeTabId, setActiveTabId] = React.useState(null);
 
     const currentPath = forcedPath || location.pathname;
-    const helpData = getHelpByPath(currentPath);
+    
+    // Memoize helpData to avoid unnecessary re-renders
+    const helpData = React.useMemo(() => {
+        try {
+            return getHelpByPath ? getHelpByPath(currentPath) : null;
+        } catch (err) {
+            console.error('Error in getHelpByPath:', err);
+            return null;
+        }
+    }, [currentPath, getHelpByPath]);
+
+    // Initial tab selection and reset logic
+    React.useEffect(() => {
+        if (helpData?.tabs && Array.isArray(helpData.tabs) && helpData.tabs.length > 0) {
+            if (!activeTabId || !helpData.tabs.some(t => t?.id === activeTabId)) {
+                setActiveTabId(helpData.tabs[0].id);
+            }
+        } else {
+            setActiveTabId(null);
+        }
+    }, [helpData, activeTabId]);
+
+    const activeTab = React.useMemo(() => {
+        return helpData?.tabs?.find(t => t?.id === activeTabId);
+    }, [helpData, activeTabId]);
+    
+    const content = activeTab || helpData;
+    
+    // Safely get category style
+    const categoryName = helpData?.category || 'Central';
+    const categoryStyle = React.useMemo(() => getCategoryStyle(categoryName), [categoryName]);
 
     // Close on Escape
-    useEffect(() => {
+    React.useEffect(() => {
         const onKey = (e) => { if (e.key === 'Escape') closeHelp(); };
         if (isOpen) window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [isOpen, closeHelp]);
 
-    // Click outside to close
-    useEffect(() => {
+    // Handle outside clicks
+    React.useEffect(() => {
         const onClickOutside = (e) => {
-            if (drawerRef.current && !drawerRef.current.contains(e.target)) closeHelp();
+            if (isOpen && !isPinned && drawerRef.current && !drawerRef.current.contains(e.target)) {
+                closeHelp();
+            }
         };
         if (isOpen && !isPinned) {
-            // slight delay so the open-click itself doesn't immediately close
             const t = setTimeout(() => document.addEventListener('mousedown', onClickOutside), 100);
             return () => { clearTimeout(t); document.removeEventListener('mousedown', onClickOutside); };
         }
@@ -61,7 +94,7 @@ export default function HelpDrawer() {
         closeHelp();
     };
 
-    const categoryStyle = helpData ? getCategoryStyle(helpData.category) : null;
+    if (!isOpen && !isPinned) return null;
 
     return (
         <>
@@ -69,6 +102,7 @@ export default function HelpDrawer() {
             <div
                 className={`fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[998] transition-opacity duration-300 ${(isOpen && !isPinned) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 aria-hidden="true"
+                onClick={closeHelp}
             />
 
             {/* Drawer */}
@@ -79,6 +113,7 @@ export default function HelpDrawer() {
                 aria-label="Central de Ajuda"
                 className={`fixed right-0 top-0 h-full w-full max-w-[420px] bg-white shadow-2xl z-[999] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
             >
+                {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-900 text-white flex-shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -86,8 +121,8 @@ export default function HelpDrawer() {
                         </div>
                         <div>
                             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Ajuda Contextual</p>
-                            <h2 className="text-sm font-black tracking-tight leading-tight">
-                                {helpData ? helpData.title : 'Central de Ajuda'}
+                            <h2 className="text-sm font-black tracking-tight leading-tight truncate max-w-[200px]">
+                                {helpData?.title || 'Central de Ajuda'}
                             </h2>
                         </div>
                     </div>
@@ -110,38 +145,57 @@ export default function HelpDrawer() {
                     </div>
                 </div>
 
-                {/* ── Body ── */}
-                <div className="flex-1 overflow-y-auto">
+                {/* ── Tabs Navigation ── */}
+                {helpData?.tabs && helpData.tabs.length > 0 && (
+                    <div className="px-5 pt-3 border-b border-slate-100 bg-slate-50 flex-shrink-0">
+                        <div className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth">
+                            {helpData.tabs.map((tab) => {
+                                if (!tab || !tab.id) return null;
+                                const active = activeTabId === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTabId(tab.id)}
+                                        className={`pb-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap ${active ? 'border-indigo-600 text-indigo-600 font-black' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        {tab.label || 'Aba'}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
+                {/* ── Body ── */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
                     {helpData ? (
-                        // ── PAGE-SPECIFIC HELP ──
-                        <div className="p-5 space-y-5">
+                        <div className="p-5 space-y-6">
                             {/* Category badge + description */}
-                            <div className={`p-4 rounded-xl border ${categoryStyle.bg} ${categoryStyle.border}`}>
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${categoryStyle.text}`}>
-                                    {helpData.category}
+                            <div className={`p-4 rounded-xl border ${categoryStyle?.bg || 'bg-gray-50'} ${categoryStyle?.border || 'border-gray-200'}`}>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${categoryStyle?.text || 'text-gray-600'}`}>
+                                    {helpData.category || 'Geral'}
                                 </span>
-                                <p className="mt-1 text-sm text-slate-700 leading-relaxed">
-                                    {helpData.description}
+                                <p className="mt-1.5 text-sm text-slate-700 font-medium leading-relaxed">
+                                    {content?.description || 'Nenhum detalhe adicional disponível para este item.'}
                                 </p>
                             </div>
 
                             {/* Steps */}
-                            {helpData.steps && helpData.steps.length > 0 && (
-                                <div>
+                            {content?.steps && Array.isArray(content.steps) && content.steps.length > 0 && (
+                                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                                     <div className="flex items-center gap-2 mb-3">
-                                        <List className="h-4 w-4 text-slate-500" />
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">
+                                        <List className="h-4 w-4 text-slate-400" />
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">
                                             Como usar
                                         </h3>
                                     </div>
-                                    <ol className="space-y-2">
-                                        {helpData.steps.map((step, i) => (
+                                    <ol className="space-y-3">
+                                        {content.steps.map((step, i) => (
                                             <li key={i} className="flex gap-3 items-start">
-                                                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-black flex items-center justify-center mt-0.5">
+                                                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-black flex items-center justify-center mt-0.5 shadow-sm">
                                                     {i + 1}
                                                 </span>
-                                                <p className="text-sm text-slate-600 leading-relaxed">{step}</p>
+                                                <p className="text-[13px] text-slate-600 font-medium leading-relaxed">{step}</p>
                                             </li>
                                         ))}
                                     </ol>
@@ -149,19 +203,21 @@ export default function HelpDrawer() {
                             )}
 
                             {/* Tips */}
-                            {helpData.tips && helpData.tips.length > 0 && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                            {content?.tips && Array.isArray(content.tips) && content.tips.length > 0 && (
+                                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 animate-in fade-in zoom-in-95 duration-500">
                                     <div className="flex items-center gap-2 mb-3">
                                         <Lightbulb className="h-4 w-4 text-amber-600" />
                                         <h3 className="text-xs font-black uppercase tracking-widest text-amber-700">
                                             Dicas Pro
                                         </h3>
                                     </div>
-                                    <ul className="space-y-2">
-                                        {helpData.tips.map((tip, i) => (
-                                            <li key={i} className="flex gap-2 items-start">
-                                                <Zap className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                                                <p className="text-xs text-amber-800 leading-relaxed">{tip}</p>
+                                    <ul className="space-y-2.5">
+                                        {content.tips.map((tip, i) => (
+                                            <li key={i} className="flex gap-2.5 items-start">
+                                                <div className="bg-amber-400/20 p-1 rounded-md mt-0.5 shadow-xs">
+                                                    <Zap className="h-3 w-3 text-amber-600 flex-shrink-0" />
+                                                </div>
+                                                <p className="text-xs text-amber-900 font-semibold leading-relaxed">{tip}</p>
                                             </li>
                                         ))}
                                     </ul>
@@ -169,34 +225,34 @@ export default function HelpDrawer() {
                             )}
 
                             {/* Related links */}
-                            {helpData.links && helpData.links.length > 0 && (
-                                <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <ArrowRight className="h-4 w-4 text-slate-500" />
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">
+                            {helpData.links && Array.isArray(helpData.links) && helpData.links.length > 0 && (
+                                <div className="pb-4">
+                                    <div className="flex items-center gap-2 mb-3 pt-2">
+                                        <ArrowRight className="h-4 w-4 text-slate-400" />
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">
                                             Módulos Relacionados
                                         </h3>
                                     </div>
                                     <div className="space-y-2">
-                                        {helpData.links.map((link) => (
+                                        {helpData.links.map((link, idx) => (
                                             <button
-                                                key={link.path}
-                                                onClick={() => handleNavigate(link.path)}
-                                                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white hover:border-slate-900 hover:bg-slate-900 hover:text-white group transition-all duration-200"
+                                                key={link?.path || idx}
+                                                onClick={() => link?.path && handleNavigate(link.path)}
+                                                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white hover:border-slate-900 hover:bg-slate-900 hover:text-white group transition-all duration-200 shadow-sm hover:shadow-md"
                                             >
-                                                <span className="text-sm font-semibold">{link.label}</span>
-                                                <ChevronRight className="h-4 w-4 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-transform" />
+                                                <span className="text-sm font-semibold">{link?.label || 'Link'}</span>
+                                                <ChevronRight className="h-4 w-4 opacity-30 group-hover:opacity-100 group-hover:translate-x-0.5 transition-transform" />
                                             </button>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Divider + link to full help */}
-                            <div className="border-t border-slate-100 pt-4">
+                            {/* Footer Link to help center */}
+                            <div className="border-t border-slate-100 pt-4 pb-4">
                                 <button
                                     onClick={() => handleNavigate('/ajuda')}
-                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-slate-900 hover:text-slate-900 text-sm font-bold transition-all"
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-slate-900 hover:text-slate-900 hover:bg-slate-50 text-sm font-bold transition-all"
                                 >
                                     <BookOpen className="h-4 w-4" />
                                     Ver Central de Ajuda Completa
@@ -205,45 +261,56 @@ export default function HelpDrawer() {
                             </div>
                         </div>
                     ) : (
-                        // ── FALLBACK: No help for this page → show all modules ──
                         <div className="p-5 space-y-4">
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                                <HelpCircle className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                                <p className="text-sm font-bold text-slate-500">Nenhuma ajuda específica para esta tela.</p>
-                                <p className="text-xs text-slate-400 mt-1">Explore outros módulos abaixo ou acesse a Central de Ajuda.</p>
+                                {loadingHelp ? (
+                                    <div className="flex flex-col items-center gap-2 py-4">
+                                        <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-900 rounded-full animate-spin" />
+                                        <p className="text-xs text-slate-400 font-bold">Carregando...</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <HelpCircle className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                                        <p className="text-sm font-bold text-slate-500">Nenhuma ajuda específica para esta tela.</p>
+                                        <p className="text-xs text-slate-400 mt-1">Explore outros módulos abaixo ou acesse a Central de Ajuda.</p>
+                                    </>
+                                )}
                             </div>
 
                             <button
                                 onClick={() => handleNavigate('/ajuda')}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-colors"
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-colors shadow-md"
                             >
                                 <BookOpen className="h-4 w-4" />
                                 Abrir Central de Ajuda
                             </button>
 
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Todos os Módulos</p>
-                                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
-                                    {allModules.map((mod) => {
-                                        const style = getCategoryStyle(mod.category);
-                                        return (
-                                            <button
-                                                key={mod.route_path}
-                                                onClick={() => handleNavigate(mod.route_path)}
-                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-100 bg-white hover:border-slate-300 hover:bg-slate-50 transition-all text-left group"
-                                            >
-                                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${style.bg} ${style.text} flex-shrink-0`}>
-                                                    {mod.category.split('/')[0].trim()}
-                                                </span>
-                                                <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 truncate">
-                                                    {mod.title}
-                                                </span>
-                                                <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-600 flex-shrink-0 ml-auto" />
-                                            </button>
-                                        );
-                                    })}
+                            {allModules && allModules.length > 0 && (
+                                <div className="pt-2">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Todos os Módulos</p>
+                                    <div className="space-y-1.5 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+                                        {allModules.map((mod) => {
+                                            if (!mod) return null;
+                                            const style = getCategoryStyle(mod.category);
+                                            return (
+                                                <button
+                                                    key={mod.route_path}
+                                                    onClick={() => handleNavigate(mod.route_path)}
+                                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-100 bg-white hover:border-slate-300 hover:bg-slate-50 transition-all text-left group"
+                                                >
+                                                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${style?.bg || 'bg-gray-100'} ${style?.text || 'text-gray-700'} flex-shrink-0`}>
+                                                        {mod.category?.split('/')[0]?.trim() || 'Geral'}
+                                                    </span>
+                                                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 truncate flex-1">
+                                                        {mod.title || 'Módulo'}
+                                                    </span>
+                                                    <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-600 flex-shrink-0" />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -251,7 +318,7 @@ export default function HelpDrawer() {
                 {/* ── Footer ── */}
                 <div className="flex-shrink-0 border-t border-slate-100 px-5 py-3 bg-slate-50">
                     <p className="text-[10px] text-slate-400 text-center font-medium">
-                        MetalFisa PCP · Central de Ajuda · Pressione <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">ESC</kbd> para fechar
+                        MetalFisa PCP · Central de Ajuda · Pressione <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono shadow-sm">ESC</kbd> para fechar
                     </p>
                 </div>
             </aside>

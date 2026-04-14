@@ -61,18 +61,19 @@ export const HELP_CONTENT = {
     categoryColor: '#14b8a6',
     title: 'Estrutura do Produto (BOM)',
     icon: 'GitBranch',
-    description: 'Visualize e edite a lista de materiais (BOM) de um produto. Navegue pelos níveis da estrutura e acesse os componentes.',
+    description: 'Visualize a lista de materiais (BOM) exportada do ERP. Exporte relatórios em PDF, consulte desenhos e elabore as liberações da engenharia.',
     steps: [
       'A árvore exibe todos os componentes e subconjuntos do produto selecionado.',
-      'Clique em uma linha para expandir os filhos do componente.',
-      'Use o botão "+ Adicionar" para incluir um novo componente na estrutura.',
-      'Clique no ícone de edição para alterar quantidade ou operação de um item.',
-      'O botão "Explosão" exibe todos os componentes até o nível mais baixo (folha).',
-      'Exporte a estrutura para Excel pelo botão no canto superior direito.',
+      'Clique em uma linha na tabela para expandir o Roteiro de Fabricação (operações, tempos padrão e de setup).',
+      'O bloco "Relatórios" agrupa a exportação em PDF: clique em "Relatório Completo" para imprimir a árvore industrial de todos os níveis organizadamente.',
+      'Use a função "Nível 1" para gerar um relatório de produção compacto focado nas metas primárias da montagem.',
+      'Marque a caixa "Restrições (Nv.01+)" junto ao "Nível 1" para imprimir os alertas e restrições subjacentes vitais de montagem que não estariam visíveis.',
+      'O botão verde "Desenhos" consolida todos os PDFs técnicos cadastrados num único arquivo, permitindo impressão em massa ágil ao chão de fábrica.',
+      'A função "Liberação" permite conferir a revisão aplicável com o PCP.'
     ],
     tips: [
-      'Componentes em vermelho indicam que não possuem saldo em estoque.',
-      'Passe o mouse sobre o código do componente para ver a descrição completa.',
+      'Qualquer produto filho (do nível 1 em diante) que possua arquivo de desenho técnico aparecerá com o ícone em vermelho. Basta clicar para visualizar a planta no navegador.',
+      'A coluna laranja com botões de engrenagem e setas no módulo indica a expansão do processo fabril.',
     ],
     links: [
       { path: '/produtos', label: 'Catálogo de Produtos' },
@@ -156,19 +157,40 @@ export const HELP_CONTENT = {
     categoryColor: '#14b8a6',
     title: 'Pedidos de Engenharia',
     icon: 'Ruler',
-    description: 'Acompanhe os pedidos de desenvolvimento e revisão de engenharia. Controle prazos e entregas de documentação técnica.',
+    description: 'Acompanhe os pedidos de desenvolvimento e revisão de engenharia. Controle apontamento de horas e entregas de documentação.',
     steps: [
-      'Visualize todos os pedidos abertos e seu status atual.',
-      'Clique em um pedido para ver os detalhes e responsáveis.',
-      'Atualize o status conforme o avanço do desenvolvimento.',
-      'Anexe documentos e desenhos diretamente ao pedido.',
+      'Use o botão Play ▶️ na coluna Ações para iniciar o apontamento de horas. O sistema pausará outros projetos ativos.',
+      'Clique na engrenagem de controle para exibir opções avançadas, incluindo a aba "Apontamentos ⏱️".',
+      'Na aba Apontamentos, visualize o extrato do tempo ou lance horas manualmente de forma retroativa.',
+      'Anexe documentos, mude datas de previsão e crie o espelho para a Produção.',
     ],
     tips: [
       'Pedidos com prazo vencido aparecem destacados em vermelho.',
+      'Não se preocupe em pausar: dar Play no Pedido B pausa automaticamente o Pedido A.',
     ],
     links: [
-      { path: '/produtos', label: 'Catálogo de Produtos' },
+      { path: '/engenharia/relatorio-controle', label: 'Relatório Gerencial' },
       { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+    ],
+  },
+
+  // ── Relatório de Controle de Engenharia ──────────────────────────────────────
+  '/engenharia/relatorio-controle': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Controle de Engenharia',
+    icon: 'FileText',
+    description: 'Acompanhamento gerencial consolidado do andamento dos projetos e carga de horas apontadas na engenharia.',
+    steps: [
+      'Acompanhe todas as datas de "Previsto VS Realizado".',
+      'Visualize o total de "Horas" consumidas pelo projeto (soma de apontamentos automáticos e manuais).',
+      'Exporte os resultados em Excel para controle financeiro da Engenharia.',
+    ],
+    tips: [
+      'A coluna de Horas já converte os segundos de apontamento em frações fracionárias (Ex: 0.5h = 30min).',
+    ],
+    links: [
+      { path: '/engenharia/pedidos', label: 'Painel de Engenharia' }
     ],
   },
 
@@ -754,19 +776,89 @@ export const HELP_CONTENT = {
     categoryColor: '#3b82f6',
     title: 'Itens a Faturar',
     icon: 'DollarSign',
-    description: 'Lista de itens prontos para faturamento. Selecione os itens, gere a nota fiscal e registre o faturamento.',
+    description: 'Lista consolidada de itens para acompanhamento e solicitação de faturamento.',
     steps: [
-      'Visualize todos os itens liberados para faturamento.',
-      'Filtre por cliente ou pedido de venda.',
-      'Selecione os itens desejados e clique em "Faturar Selecionados".',
-      'Confirme os dados fiscais e gere a NF.',
+      'A coluna Status indicará visualmente: 🟢 FATURADO 100%, 🟠 FAT. PARCIAL (se houver entrega parcial e saldo restante) ou ⚪ A FATURAR.',
+      'Acompanhe as quantidades Totais, Entregues e o respectivo Saldo Pendente na mesma visão.',
+      'Na coluna "Fat. Solicitados", visualize requisições exatas e empenhadas à programação (PCP) adequada, sem duplicações.',
+      'Selecione as NFs diretamente pelos botões na coluna de NFs Anteriores.',
     ],
     tips: [
-      'Itens com restrição fiscal ficam destacados — consulte o departamento fiscal.',
+      'Pedidos divididos em várias datas de entrega no PCP terão suas Solicitações de Faturamento encaixadas precisamente em suas linhas (ID de programação).',
+      'Filtrar por "Apenas Pendentes" remove rapidamente os que já possuem status 🟢 FATURADO 100%.',
     ],
     links: [
       { path: '/comercial/faturamento', label: 'Faturamento' },
       { path: '/romaneios', label: 'Romaneios' },
+      { path: '/comercial/dashboard-faturamento', label: 'Dashboard Gerencial' },
+    ],
+  },
+
+  // ── Comercial / Dashboard Gerencial de Faturamento ───────────────────────────
+  '/comercial/dashboard-faturamento': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Dashboard de Faturamento',
+    icon: 'PieChart',
+    description: 'Painel gerencial consolidado para análise de desempenho financeiro e acompanhamento do status das solicitações de faturamento em tempo real.',
+    steps: [
+      'Visão Geral: Monitore KPls críticos como Valor Total Faturado, Notas Fiscais emitidas, e proporção do que ainda está em processo de faturamento.',
+      'Filtros Globais: Utilize os filtros de data, status das solicitações, clientes ou produtos para refinar os indicadores de toda a tela simultaneamente.',
+      'Análise por Categoria: Alterne o agrupamento principal entre "Por Cliente" ou "Por Produto" para identificar as maiores fontes de faturamento e engarrafamentos operativos.',
+      'Acompanhamento de Status: Navegue pelos gráficos (barras e donuts) para visualizar de forma rápida a distribuição financeira e quantitativa dos status pendentes e finalizados.',
+    ],
+    tips: [
+      'O gráfico de Top 10 rankeia imediatamente as maiores concentrações de valores, sendo ideal para focar o acompanhamento comercial ou priorização de liberações de faturamento.',
+    ],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Ir para Itens a Faturar' },
+      { path: '/comercial/faturamento', label: 'Gestão de Faturamento (NFs)' },
+    ],
+  },
+
+
+  // ── Comercial / Visão Gerencial Atrasos ──────────────────────────────────────
+  '/comercial/atrasos': {
+    category: 'Comercial',
+    categoryColor: '#ef4444',
+    title: 'Visão Gerencial (Atrasos)',
+    icon: 'Target',
+    description: 'Espelho da fábrica com foco em itens pendentes de produção e entrega, cuja data de faturamento já encontra-se atrasada em relação à data atual.',
+    steps: [
+      'Acompanhe o valor de Risco Financeiro pendente (requer permissão de visualização financeira).',
+      'Use os gráficos de Top Clientes e Atrasos por Mês para identificar os maiores gargalos.',
+      'Acesse a tabela interativa para navegar na hierarquia Cliente > Mês > Lista de Itens individuais.',
+      'Analise a Data de Entrada versus Data de Entrega para entender o lead time atrasado.',
+    ],
+    tips: [
+      'Use a barra de pesquisa na tabela de espelho dinâmico para encontrar um produto ou cliente específico rapidamente.',
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
+
+  // ── PCP Geral / Visão Global (Fábrica Inteira) ──────────────────────────────
+  '/pcp/visao-fabrica': {
+    category: 'PCP Geral',
+    categoryColor: '#4f46e5', // indigo-600
+    title: 'Visão Global (Fábrica Inteira)',
+    icon: 'Factory',
+    description: 'Painel completo de Business Intelligence reunindo toda a carga fabril agrupada por Quinzenas contendo o futuro (dentro do prazo) e os atrasos (fora do prazo) de produção.',
+    steps: [
+      'Utilize as abas para separar a visão entre "Entregas Futuras" ou carregamento de "Atrasados".',
+      'Abra a aba "Dashboard Financeiro" (se autorizado) para verificar o risco/valor bloqueado na fábrica.',
+      'Clique gradualmente nas Quinzenas para expandí-las, exibindo todos os Produtos, e para cada Produto expanda os Pedidos e Clientes respectivos.',
+      'Utilize o botão "Gerar PDF" para exportar a posição com o KPI do horário que antecede sua reunião tática de produção.',
+      'Use o Snapshot BD para manter o registro perpétuo que construirá sua curva de evolução dos atrasos.',
+    ],
+    tips: [
+      'Na aba de listagem (Tabela), a última coluna possui badges dinâmicos (Heatmap de prazo) exibindo exatamente as colorações críticas e os dias exatos remanescentes para entrega.',
+      'Mesmo na barra expandida existe um filtro Rápido para você procurar um Part Number (Código) ou Cliente rapidamente.',
+    ],
+    links: [
+      { path: '/comercial/atrasos', label: 'Visão Comercial de Atrasos' },
     ],
   },
 
@@ -1220,6 +1312,308 @@ export const HELP_CONTENT = {
     ],
     links: [
       { path: '/configuracoes', label: 'Configurações' },
+    ],
+  },
+
+  // ── Financeiro / Dashboard ───────────────────────────────────────────────────
+  '/financeiro/dashboard': {
+    category: 'Financeiro',
+    categoryColor: '#84cc16',
+    title: 'Dashboard Financeiro',
+    icon: 'PieChart',
+    description: 'Visão consolidada da saúde financeira da empresa. Indicadores de faturamento, recebimentos, inadimplência e projeções.',
+    steps: [
+      'Selecione o limite de datas ou período (ex: Este Ano).',
+      'Verifique os cards superiores com total faturado, saldo a receber e inadimplentes.',
+      'Analise o fluxo de caixa consolidado SE1/SE2 nos gráficos.',
+      'O dashboard possui filtros de competência que refletem imediatamente em todos os gráficos.'
+    ],
+    tips: [
+      'Compare automaticamente o realizado com a previsão no gráfico de barras empilhadas.',
+    ],
+    links: [
+      { path: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa' },
+      { path: '/financeiro/faturamento', label: 'Financeiro / Faturamento' },
+    ],
+  },
+
+  // ── Fluxo de Caixa ───────────────────────────────────────────────────────────
+  '/financeiro/fluxo-caixa': {
+    category: 'Financeiro',
+    categoryColor: '#84cc16',
+    title: 'Fluxo de Caixa',
+    icon: 'ArrowRightLeft',
+    description: 'Gestão detalhada do fluxo de caixa e integração com contas a pagar e a receber (SE1/SE2).',
+    steps: [
+      'Filtre o fluxo pelo horizonte de planejamento desejado.',
+      'Verifique as previsões de entrada baseadas em pedidos aprovados e faturamento.',
+      'Identifique "furos" de caixa (saldo negativo) nas projeções diárias.',
+      'Exportação da malha do fluxo para análises extras no Excel.'
+    ],
+    tips: [
+      'Projeções são atualizadas em tempo real com base no faturamento do ERP.',
+    ],
+    links: [
+      { path: '/financeiro/dashboard', label: 'Dashboard Financeiro' },
+    ],
+  },
+
+  // ── Relatório de Liberações (Engenharia) ─────────────────────────────────────
+  '/engenharia/relatorio-liberacao': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Relatório de Liberações',
+    icon: 'FileCheck',
+    tabs: [
+      {
+        id: 'engenharia',
+        label: 'Engenharia (ZEN)',
+        description: 'Histórico técnico detalhado de todas as liberações de engenharia realizadas pelo módulo Pedidos de Engenharia.',
+        steps: [
+          'Códigos LEN (Ex: LEN-2024-00001) identificam unicamente cada pacote técnico liberado.',
+          'Analise a coluna "Modo": "FULL" indica que toda a estrutura e desenhos foram anexados; "NÍVEL 1" indica que apenas o nível superior foi liberado.',
+          'Rastreabilidade de Destino: Veja para quais e-mails automáticos a notificação foi enviada na coluna Detalhes.',
+          'Acesso Direto: Clique no ícone de documento à direita para abrir o PDF original salvo automaticamente na rede.'
+        ],
+        tips: [
+          'O modo "Nível 1" é ideal para revisões rápidas onde a estrutura interna não sofreu alterações.',
+          'Todo registro nesta aba possui um "Audit Trail" imutável, garantindo conformidade com a ISO 9001.'
+        ]
+      },
+      {
+        id: 'pcp',
+        label: 'PCP / Lotes (LPF)',
+        description: 'Relatório de agrupamento de Ordens de Produção (Aglutinação) para fabricação seriada ou por lotes.',
+        steps: [
+          'Códigos LPF identificam Liberações PCP de Fabricação (Pacotes Aglutinados).',
+          'Expansão de Lote: Clique na seta lateral (chevron) para ver todas as OPs contidas naquele lote específico.',
+          'Documentação Consolidada: O ícone de arquivo verde abre o PDF que contém o espelho de todas as OPs do lote com seus respectivos desenhos.',
+          'Verificação de Datas: A coluna "Data PCP" mostra a data de entrega programada que foi definida no momento da aglutinação.'
+        ],
+        tips: [
+          'Liberações LPF são salvas automaticamente na pasta de rede da Engenharia para facilitar o acesso do PCP.',
+          'Se uma OP foi aglutinada por erro, o registro histórico permanecerá aqui para auditoria, mesmo que a OP seja cancelada.'
+        ]
+      },
+      {
+        id: 'romaneio',
+        label: 'Controle Romaneio',
+        description: 'Gestão e rastreabilidade de embarques (Packing Lists) vinculados às liberações de engenharia e PCP.',
+        steps: [
+          'Status em Tempo Real: Acompanhe se o romaneio está em "Aberto", "Conferido" ou "Enviado".',
+          'Rastreabilidade (Audit Trail): Visualize o histórico de quem alterou o status e a data exata da mudança.',
+          'Busca por Cliente: Utilize o campo de busca geral para localizar romaneios por ID (#) ou nome do cliente.',
+          'Acesso ao PDF: Clique no ícone de documento azul na coluna PDF para abrir o romaneio oficial salvo na rede.'
+        ],
+        tips: [
+          'Cada alteração de status gera uma nova revisão (Rev) automática para auditoria.',
+          'O romaneio é o elo final entre a produção (PCP) e a entrega ao cliente.'
+        ]
+      },
+      {
+        id: 'auditoria',
+        label: 'Auditoria & Filtros',
+        description: 'Ferramentas avançadas para busca de registros históricos e conformidade técnica.',
+        steps: [
+          'Filtro por Produto: Digite o código de um componente para ver todas as vezes que ele foi liberado ao longo do ano.',
+          'Busca por Usuário: Identifique quem foi o responsável técnico pela liberação de um determinado projeto.',
+          'Limpeza de Filtros: Use o botão "Limpar" para resetar a visão e ver as liberações mais recentes no topo.',
+          'Exportação: Utilize as ferramentas de sistema para gerar relatórios em Excel para reuniões de análise crítica.'
+        ],
+        tips: [
+          'Use o filtro de "Data de" e "Data Até" para auditorias mensais de produtividade do departamento.',
+          'O sistema mantém logs de quem visualizou ou baixou os arquivos através deste relatório.'
+        ]
+      }
+    ],
+    links: [
+      { path: '/engenharia/pedidos', label: 'Pedidos de Engenharia' },
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto (BOM)' },
+    ],
+  },
+
+  // ── Vagas de RH ──────────────────────────────────────────────────────────────
+  '/rh/vagas': {
+    category: 'Recursos Humanos',
+    categoryColor: '#f43f5e',
+    title: 'Gestão de Vagas',
+    icon: 'Briefcase',
+    description: 'Portal para abertura, divulgação e fechamento de vagas de emprego do setor de RH.',
+    steps: [
+      'Clique em "+ Nova Vaga" para criar o descritivo de abertura.',
+      'Descreva os requisitos técnicos, salário e área de atuação.',
+      'Gerencie o status da vaga (Aberta, Em Andamento, Fechada).',
+      'Vincule requisições de currículos diretamente.'
+    ],
+    tips: [
+      'Mantenha os status da vaga atualizados para facilitar o pipeline dos recrutadores.',
+    ],
+    links: [
+      { path: '/rh/curriculos', label: 'Análise de Currículos' },
+      { path: '/sgq/cargos-funcoes', label: 'Cargos e Funções' },
+    ],
+  },
+
+  // ── Currículos ───────────────────────────────────────────────────────────────
+  '/rh/curriculos': {
+    category: 'Recursos Humanos',
+    categoryColor: '#f43f5e',
+    title: 'Análise de Currículos',
+    icon: 'Users',
+    description: 'Módulo inteligente para submissão, leitura automatizada (IA) e avaliação de currículos dos candidatos.',
+    steps: [
+      'Faça o upload dos currículos recebidos no sistema.',
+      'Confirme se as informações tabuladas pela Inteligência Artificial estão coerentes com o arquivo original.',
+      'Filtre os currículos baseados nas competências de uma vaga pré-cadastrada.',
+      'Avalie o candidato com notas nos critérios e avance o funil.'
+    ],
+    tips: [
+      'A análise de IA otimiza o tempo de leitura incrivelmente: dedique seu tempo com foco redobrado para a entrevista!',
+    ],
+    links: [
+      { path: '/rh/vagas', label: 'Gestão de Vagas' },
+    ],
+  },
+
+  // ── Cargos e Funções (SGQ/RH) ────────────────────────────────────────────────
+  '/sgq/cargos-funcoes': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Cargos e Funções',
+    icon: 'Contact',
+    description: 'Base de conhecimento e normatização de descritivos de cargos, funções da CBO e organograma corporativo.',
+    steps: [
+      'Visualize a árvore do organograma na interface principal.',
+      'Selecione um cargo para definir ou rever a sua "Descrição de Cargo".',
+      'Vincule quais são as funções críticas do cargo, riscos (EPIs e ambientais) e requisitos.',
+      'Aprove o descritivo em revisões rastreadas pelo SGQ.'
+    ],
+    tips: [
+      'Descritivos consolidados frequentemente facilitam o compliance imediato em auditorias da Norma ISO 9001 e de Segurança no Trabalho.',
+    ],
+    links: [
+      { path: '/sgq/treinamento', label: 'Treinamentos' },
+      { path: '/rh/vagas', label: 'Gestão de Vagas' },
+    ],
+  },
+
+  // ── SINCO - Formulário Principal ─────────────────────────────────────────────
+  '/engenharia/sinco/formulario': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#06b6d4',
+    title: 'Formulário SINCO',
+    icon: 'FormInput',
+    description: 'Cadastros e formulários de apoio originados diretamente do software de engenharia.',
+    steps: [
+      'Utilize esta tela para inputs de parâmetros adicionais não cobertos na árvore principal de engenharia.',
+      'Acompanhe o lançamento final gerado pelas macro/tarefas no Solid Edge.',
+      'Exiba os formulários finais para garantir a qualidade de lançamento das peças.'
+    ],
+    tips: [
+      'Confira os formulários após alterações estruturais de projetos customizados SINCO para confirmar persistência perante o banco de dados.',
+    ],
+    links: [
+      { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
+    ],
+  },
+
+  // ── Protheus Overview ────────────────────────────────────────────────────────
+  '/protheus': {
+    category: 'Administração',
+    categoryColor: '#64748b',
+    title: 'Protheus Overview',
+    icon: 'Database',
+    description: 'Dashboard principal de acompanhamento da saúde da integração, fila e endpoints do ambiente ERP Protheus e do sistema.',
+    steps: [
+      'Observe os alertas globais no painel para certificar sua integridade sistêmica.',
+      'Analise a fila pendente de migrações: Estruturas ou apontamentos.',
+      'Se for um administrador técnico, dispare o reenvio manual para fluxos vitais pendentes por interrupções.'
+    ],
+    tips: [
+      'Mantenha comunicação aberta sobre janelas de manutenção de infraestrutura para evitar falhas durante altas transações de chão de fábrica.',
+    ],
+    links: [
+      { path: '/admin/protheus-estudo', label: 'Admin – Protheus (Estudo)' },
+      { path: '/configuracoes', label: 'Configurações' },
+    ],
+  },
+
+  // ── Login / Acesso ──────────────────────────────────────────────────────────
+  '/login': {
+    category: 'Administração',
+    categoryColor: '#64748b',
+    title: 'Portal de Acesso',
+    icon: 'LogIn',
+    tabs: [
+      {
+        id: 'acesso',
+        label: 'Acesso',
+        description: 'Credenciais de acesso ao sistema MetalFisa PCP.',
+        steps: [
+          'Utilize seu nome de usuário (ex: pcp01) ou e-mail corporativo.',
+          'Insira sua senha de segurança definida no primeiro acesso.',
+          'Clique em "Entrar no Sistema".',
+          'A sessão permanecerá ativa enquanto o navegador estiver aberto.'
+        ],
+        tips: [
+          'Não compartilhe sua senha. Toda ação no sistema é rastreada pelo seu login.',
+          'Caso erre a senha 5 vezes, sua conta será bloqueada temporariamente.'
+        ]
+      },
+      {
+        id: 'recuperacao',
+        label: 'Recuperação',
+        description: 'Esqueceu sua senha? Veja como recuperar o acesso.',
+        steps: [
+          'Clique em "Esqueceu a senha?" na tela de login.',
+          'Informe seu e-mail corporativo cadastrado (@metalfisa.com.br).',
+          'Clique em "Receber Senha por E-mail".',
+          'Sua senha atual será enviada imediatamente para sua caixa de entrada.'
+        ],
+        tips: [
+          'Caso não receba o e-mail em 2 minutos, verifique sua pasta de SPAM.',
+          'Se o problema persistir, entre em contato com o suporte de TI.'
+        ]
+      },
+      {
+        id: 'cadastro',
+        label: 'Novo Usuário',
+        description: 'Solicitação de novo cadastro para colaboradores.',
+        steps: [
+          'Clique em "Criar Conta" na parte inferior.',
+          'Preencha seu nome completo e e-mail corporativo.',
+          'Escolha um login fácil de lembrar (ex: primeiro nome + sobrenome).',
+          'Clique em "Solicitar Cadastro".'
+        ],
+        tips: [
+          'Novos cadastros precisam ser aprovados manualmente pela administração.',
+          'Você receberá uma notificação quando seu acesso for liberado.'
+        ]
+      }
+    ],
+    links: [
+      { path: '/ajuda', label: 'Central de Ajuda' },
+    ],
+  },
+
+  // ── Central de Ajuda ─────────────────────────────────────────────────────────
+  '/ajuda': {
+    category: 'Comunicação',
+    categoryColor: '#fbbf24',
+    title: 'Central de Ajuda',
+    icon: 'HelpCircle',
+    description: 'Catálogo de manuais operacionais e centro de documentação virtual projetada para instruir a funcionalidade das telas.',
+    steps: [
+      'Pesquise as ferramentas por palavra-chave na tela principal para um acesso intuitivo.',
+      'Revise atentamente "O que faz" (Passos e Dicas) para tirar potenciais dúvidas ou limitações da interface.',
+      'Siga os links secundários para alternar entre relatórios correlacionados no mesmo departamento.'
+    ],
+    tips: [
+      'Dica mestre: Em qualquer local de acesso, seja onde estiver na plataforma — o botão azul (?) flutuante no canto inferior acessa as mesmas explicações adaptadas contextualmente ao seu monitor focado atual!',
+    ],
+    links: [
+      { path: '/avisos', label: 'Avisos e Comunicados' },
+      { path: '/', label: 'Dashboard Principal' },
     ],
   },
 
