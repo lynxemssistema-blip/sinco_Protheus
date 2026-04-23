@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp } from 'lucide-react';
-import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl } from '../services/api';
+import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0 } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
 import EngineeringReleaseModal from '../components/EngineeringReleaseModal';
@@ -103,6 +103,17 @@ const ProductStructure = () => {
     const handleGeneratePDF = async () => {
         setIsGeneratingPdf(true);
         try {
+            // Busca restrições detalhadas SZ0 para o produto principal
+            let sz0Records = [];
+            try {
+                if (codigo) {
+                    const rSz0 = await getSincoRestricoesSz0(codigo.trim().toUpperCase());
+                    sz0Records = Array.isArray(rSz0) ? rSz0 : [];
+                }
+            } catch (err) {
+                console.error("Erro ao buscar restrições SZ0 do produto principal:", err);
+            }
+
             // Pré-busca roteiros de todos os itens em paralelo
             const allRoutesMap = { ...routes };
             const missing = structure.filter(item => !allRoutesMap[item.codigo?.trim()]);
@@ -120,7 +131,7 @@ const ProductStructure = () => {
             // Atualiza o cache de roteiros na tela também
             setRoutes(allRoutesMap);
 
-            await generateEstruturaReport(structure, allRoutesMap);
+            await generateEstruturaReport(structure, allRoutesMap, { sz0Records });
 
         } catch (err) {
             console.error('Erro ao gerar relatório:', err);
@@ -133,6 +144,17 @@ const ProductStructure = () => {
     const handleGenerateNivel1PDF = async () => {
         setIsGeneratingPdfN1(true);
         try {
+            // Busca restrições detalhadas SZ0 para o produto principal
+            let sz0Records = [];
+            try {
+                if (codigo) {
+                    const rSz0 = await getSincoRestricoesSz0(codigo.trim().toUpperCase());
+                    sz0Records = Array.isArray(rSz0) ? rSz0 : [];
+                }
+            } catch (err) {
+                console.error("Erro ao buscar restrições SZ0 do produto principal:", err);
+            }
+
             // Somente nível 0 e nivel 1
             const filteredStructure = structure.filter(item => item.nivel === 0 || item.nivel === 1);
 
@@ -156,6 +178,7 @@ const ProductStructure = () => {
                 footerTitle: 'Estrutura Compacta (Nível 1)',
                 isNivel1: true,
                 includeSubLevelRestrictions: inclSubNiveisRestricao,
+                sz0Records
             });
 
         } catch (err) {

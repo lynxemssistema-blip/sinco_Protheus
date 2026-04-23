@@ -1,7 +1,8 @@
 {
   "scripts": {
     "dev": "npm run dev --prefix client",
-    "start:server": "cd server && node index.js"
+    "start:server": "cd server && node index.js",
+    "dev:all": "concurrently \"npm run start:server\" \"npm run dev\""
   },
   "dependencies": {
     "@googleworkspace/cli": "^0.11.1",
@@ -10,5 +11,8 @@
     "express": "^5.2.1",
     "node-ssh": "^13.2.1",
     "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

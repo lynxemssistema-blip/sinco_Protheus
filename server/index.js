@@ -57,6 +57,7 @@ app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
             process.env.CORS_ORIGIN,
+            'https://metalfisa.lynxems.com.br',
             'http://192.168.1.77:3001',
             'http://localhost:5173',
             'http://localhost:5174',
@@ -139,7 +140,8 @@ app.use('/api/pcpmetal', require('./routes/pcpmetal'));
 
 console.log('🔄 [DEBUG] Montando rota /api/producao...');
 app.use('/api/producao', require('./routes/producao'));
-console.log('✅ [DEBUG] Rota /api/producao montada.');
+app.use('/api/ind_pcp', require('./routes/ind_pcp'));
+console.log('✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.');
 
 // Romaneios Route
 app.use('/api/romaneios', require('./routes/romaneios'));

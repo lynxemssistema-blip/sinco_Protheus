@@ -900,9 +900,9 @@ router.get('/vertical/:operacao', async (req, res) => {
 // ============================================================
 router.get('/search-ops', async (req, res) => {
   try {
-    const { op, cliente, produto, prazo_de, prazo_ate, limit: lim = 50 } = req.query;
+    const { op, pedido, cliente, produto, prazo_de, prazo_ate, limit: lim = 50 } = req.query;
 
-    if (!op && !cliente && !produto && !prazo_de && !prazo_ate) {
+    if (!op && !pedido && !cliente && !produto && !prazo_de && !prazo_ate) {
       return res.status(400).json({ error: 'Informe ao menos um filtro.' });
     }
 
@@ -913,6 +913,10 @@ router.get('/search-ops', async (req, res) => {
     if (op) {
       conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
       params.push(`%${op.trim()}%`);
+    }
+    if (pedido) {
+      conditions.push(`TRIM(c2.c2_pedido) ILIKE $${pCount++}`);
+      params.push(`%${pedido.trim()}%`);
     }
     if (produto) {
       conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);

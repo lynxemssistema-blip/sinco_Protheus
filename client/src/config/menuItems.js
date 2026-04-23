@@ -69,6 +69,14 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'op_fracionada',
+        label: 'OP Fracionada',
+        items: [
+            { id: 'ind_pcp_release', label: 'Liberação PCP (Mescla)', path: '/ind-pcp-release', icon: Layers },
+            { id: 'ind_factory_floor', label: 'Apontamento Ativo (Local)', path: '/ind-factory-floor', icon: Factory }
+        ]
+    },
+    {
         id: 'ronaldo',
         label: 'Gestão a Vista',
         items: [

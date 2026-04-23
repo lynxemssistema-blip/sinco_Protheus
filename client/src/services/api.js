@@ -337,7 +337,7 @@ export const getRomaneioInitialNumber = () => api.get('/company/romaneio-number'
 export const setRomaneioInitialNumber = (numero) => api.post('/company/set-romaneio-number', { numero_inicial: numero }).then(res => res.data);
 
 // PRODUCTION CONTROL
-export const getProductionDashboard = (params) => api.get('/production', { params }).then(res => res.data);
+export const getProductionDashboard = (params, signal) => api.get('/production', { params, signal }).then(res => res.data);
 export const getProductionMatrix = (params) => api.get('/production/matrix', { params }).then(res => res.data);
 export const getOperationById = (opId) => api.get(`/production/operations/${opId}`).then(res => res.data);
 export const saveProductionPlan = (data) => api.post('/production/plan', data).then(res => res.data);

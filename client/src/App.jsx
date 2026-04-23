@@ -62,6 +62,8 @@ const ProductionEvolution = React.lazy(() => import('./pages/ProductionEvolution
 const InternalRequestsPage = React.lazy(() => import('./pages/InternalRequestsPage'));
 const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/SincoApontamentoPorUsuarioPage'));
 const ApontamentoPorUsuarioOpPage = React.lazy(() => import('./pages/pcp/ApontamentoPorUsuarioOpPage'));
+const IndPcpReleasePage = React.lazy(() => import('./pages/sinco/IndPcpReleasePage'));
+const IndFactoryFloorPage = React.lazy(() => import('./pages/sinco/IndFactoryFloorPage'));
 const AvisosHistorico = React.lazy(() => import('./pages/AvisosHistorico'));
 const SINCOProductStructure = React.lazy(() => import('./pages/sinco/SINCOProductStructure'));
 const VMIUploadPage = React.lazy(() => import('./pages/vmi/VMIUploadPage'));
@@ -602,6 +604,18 @@ function App() {
                                         <Route path="/vmi/historico" element={
                                             <Layout fullWidth={true}>
                                                 <VMIHistoricoPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* Modulo Independente Fracionamento */}
+                                        <Route path="/ind-pcp-release" element={
+                                            <Layout fullWidth={true}>
+                                                <IndPcpReleasePage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/ind-factory-floor" element={
+                                            <Layout fullWidth={true}>
+                                                <IndFactoryFloorPage />
                                             </Layout>
                                         } />
                                         

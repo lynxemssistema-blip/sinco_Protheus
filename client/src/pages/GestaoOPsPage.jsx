@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
@@ -87,11 +87,19 @@ const GestaoOPsPage = () => {
 
     // PCP Release modal state
     const [pcpReleaseModal, setPcpReleaseModal] = useState({ open: false, targets: [], registerRelease: true });
+    const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
+    
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
         document.addEventListener('click', close);
-        return () => document.removeEventListener('click', close);
+        document.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            document.removeEventListener('click', close);
+            document.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
     }, [openActionMenu]);
 
     const filters = {
@@ -682,6 +690,56 @@ const GestaoOPsPage = () => {
         }
     };
 
+    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null, itemObj = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-resource-drawings-${pedido}-${itemId}` : `op-resource-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, itemObj);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Resource PDF with Drawings:', error);
+            alert(`Erro ao gerar Espelho por Recurso com Desenhos: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null, itemObj = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}` : `op-stamp-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, itemObj);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP PDF with Ops Stamp Drawings:', error);
+            alert(`Erro ao gerar Espelho com Roteiro no Carimbo: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handlePrintOPByOperation = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
@@ -1246,17 +1304,32 @@ const GestaoOPsPage = () => {
                                                                 >
                                                                     <Bot className="w-4 h-4" />
                                                                 </button>
-                                                                {/* Dropdown de impressão/exportação */}
                                                                 <div className="relative" onClick={e => e.stopPropagation()}>
                                                                     <button
                                                                         title="Imprimir / Exportar"
-                                                                        onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === `order-${order.pedido}` ? null : `order-${order.pedido}`); }}
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation(); 
+                                                                            if (openActionMenu === `order-${order.pedido}`) {
+                                                                                setOpenActionMenu(null);
+                                                                            } else {
+                                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                                setMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right });
+                                                                                setOpenActionMenu(`order-${order.pedido}`);
+                                                                            }
+                                                                        }}
                                                                         className="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded hover:bg-gray-100"
                                                                     >
                                                                         <MoreVertical className="w-4 h-4" />
                                                                     </button>
                                                                     {openActionMenu === `order-${order.pedido}` && (
-                                                                        <div className="absolute right-0 top-full mt-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[210px]">
+                                                                        <div 
+                                                                            className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[210px]"
+                                                                            style={{ 
+                                                                                top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto', 
+                                                                                bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', 
+                                                                                right: `${menuPosition.right}px` 
+                                                                            }}
+                                                                        >
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); updateOrderFilters({ pedido: order.pedido, activeTab: 'pcp-export' }); setOpenActionMenu(null); }}
                                                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-green-50 hover:text-green-700 transition-colors"
@@ -1304,6 +1377,22 @@ const GestaoOPsPage = () => {
                                                                             >
                                                                                 {printingOrderId === `op-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
                                                                                 <span>OP + Desenhos (PDF)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-resource-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                <span>OP + Desenhos (Por Recurso)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-stamp-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                                                                <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                             </button>
                                                                             <button
                                                                                 onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
@@ -1416,13 +1505,39 @@ const GestaoOPsPage = () => {
                                                                                                             <div className="relative" onClick={e => e.stopPropagation()}>
                                                                                                                 <button
                                                                                                                     title="Mais ações"
-                                                                                                                    onClick={(e) => { e.stopPropagation(); const key = `item-${order.pedido}-${item.item}`; setOpenActionMenu(openActionMenu === key ? null : key); }}
+                                                                                                                    onClick={(e) => { 
+                                                                                                                        e.stopPropagation(); 
+                                                                                                                        const key = `item-${order.pedido}-${item.item}`; 
+                                                                                                                        if (openActionMenu === key) {
+                                                                                                                            setOpenActionMenu(null);
+                                                                                                                        } else {
+                                                                                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                                                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                                                                                            const spaceAbove = rect.top;
+                                                                                                                            const menuHeight = 350; // estimated max height
+                                                                                                                            if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+                                                                                                                                // Open upwards
+                                                                                                                                setMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right });
+                                                                                                                            } else {
+                                                                                                                                // Open downwards
+                                                                                                                                setMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right });
+                                                                                                                            }
+                                                                                                                            setOpenActionMenu(key);
+                                                                                                                        }
+                                                                                                                    }}
                                                                                                                     className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center"
                                                                                                                 >
                                                                                                                     <MoreVertical className="h-3.5 w-3.5" />
                                                                                                                 </button>
                                                                                                                 {openActionMenu === `item-${order.pedido}-${item.item}` && (
-                                                                                                                    <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[200px]">
+                                                                                                                    <div 
+                                                                                                                        className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]"
+                                                                                                                        style={{ 
+                                                                                                                            top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto', 
+                                                                                                                            bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', 
+                                                                                                                            right: `${menuPosition.right}px` 
+                                                                                                                        }}
+                                                                                                                    >
                                                                                                                         <button
                                                                                                                             onClick={(e) => { e.stopPropagation(); setEngineeringTarget({ orderId: order.pedido, item }); setOpenActionMenu(null); }}
                                                                                                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
@@ -1462,6 +1577,22 @@ const GestaoOPsPage = () => {
                                                                                                                         >
                                                                                                                             {printingOrderId === `op-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
                                                                                                                             <span>OP + Desenhos (PDF)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            <span>OP + Desenhos (Por Recurso)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(order.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                                                                         </button>
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}

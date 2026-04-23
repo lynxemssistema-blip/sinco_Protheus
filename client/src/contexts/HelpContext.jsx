@@ -90,7 +90,7 @@ export function HelpProvider({ children }) {
 
     return (
         <HelpContext.Provider value={{ 
-            isOpen, forcedPath, openHelp, closeHelp, toggleHelp, isPinned, togglePin,
+            isOpen, forcedPath, setForcedPath, openHelp, closeHelp, toggleHelp, isPinned, togglePin,
             allModules, loadingHelp, fetchHelpData, getHelpByPath
         }}>
             {children}

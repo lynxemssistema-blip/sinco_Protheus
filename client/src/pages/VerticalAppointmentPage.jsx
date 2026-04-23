@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Search, List, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer } from 'lucide-react';
 import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl } from '../services/api';
 import { toast } from 'react-toastify';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import useStickyState from '../hooks/useStickyState';
+import { generateVerticalPendingPdf } from '../services/verticalPendingPdfGenerator';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function VerticalAppointmentPage() {
+    const { user } = useAuth();
+    const [groupByResource, setGroupByResource] = useState(false);
     const [operations, setOperations] = useState([]);
     const [selectedOp, setSelectedOp] = useStickyState('', '@metalfisa:vert_selectedOp');
     const [data, setData] = useState([]);
@@ -160,47 +164,8 @@ export default function VerticalAppointmentPage() {
                 return;
             }
 
-            const doc = new jsPDF('landscape');
+            generateVerticalPendingPdf(pendencies, filters, user, groupByResource);
 
-            // Título
-            doc.setFontSize(14);
-            doc.text('Relatório Analítico de Operações Pendentes', 14, 15);
-
-            doc.setFontSize(9);
-            doc.setTextColor(120);
-            let filterText = [];
-            if (filters.pedido) filterText.push(`Pedido: ${filters.pedido}`);
-            if (filters.op) filterText.push(`OP: ${filters.op}`);
-            if (filters.produto) filterText.push(`Produto: ${filters.produto}`);
-            if (filters.cliente) filterText.push(`Cliente: ${filters.cliente}`);
-            doc.text(`Filtros: ${filterText.length > 0 ? filterText.join(' | ') : 'Nenhum'}`, 14, 22);
-            doc.text(`Emitido em: ${new Date().toLocaleString('pt-BR')}`, 14, 27);
-
-            // Preparando a tabela
-            const tableData = pendencies.map(row => [
-                row.pedido || '-',
-                row.op || '-',
-                `${row.produto}\n${row.desc_produto || ''}`,
-                `${row.operacao_codigo} - ${row.operacao_desc}`,
-                row.recurso_codigo || '-',
-                `${Number(row.qtd_op).toFixed(2)}`,
-                `${Number(row.qtd_apontada).toFixed(2)}`
-            ]);
-
-            doc.autoTable({
-                startY: 32,
-                head: [['Pedido Venda', 'Ordem Produção', 'Produto / Descrição', 'Operação / Passo', 'Recurso', 'Qtd Plan.', 'Qtd Apont.']],
-                body: tableData,
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 2, valign: 'middle' },
-                headStyles: { fillColor: [59, 130, 246], textColor: 255 },
-                columnStyles: {
-                    2: { cellWidth: 85 },
-                    3: { cellWidth: 60 }
-                }
-            });
-
-            doc.save(`pendencias_producao_${new Date().getTime()}.pdf`);
         } catch (err) {
             console.error('Erro ao gerar relatório de pendências', err);
             toast.error('Falha ao exportar PDF de Pendências.');
@@ -354,6 +319,15 @@ export default function VerticalAppointmentPage() {
                         >
                             Limpar Filtros
                         </button>
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-3 py-2 rounded border cursor-pointer hover:bg-slate-100 transition-colors">
+                            <input 
+                                type="checkbox" 
+                                checked={groupByResource} 
+                                onChange={(e) => setGroupByResource(e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Agrupar por Recurso
+                        </label>
                         <button
                             onClick={handleGeneratePendingReport}
                             className="bg-slate-800 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-900 transition-colors flex items-center justify-center gap-2 flex-1 md:flex-none"
@@ -534,6 +508,19 @@ export default function VerticalAppointmentPage() {
                                     );
                                 })}
                             </tbody>
+                            <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                                <tr>
+                                    <td colSpan="5" className="px-4 py-3 text-right font-bold text-slate-700">
+                                        TOTAL GERAL (Exibidos na Tela):
+                                    </td>
+                                    <td className="px-4 py-3 font-bold text-slate-800">
+                                        {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_op || 0), 0).toFixed(2)} <span className="text-xs text-slate-500 font-normal">Plan.</span>
+                                    </td>
+                                    <td className="px-4 py-3 font-bold text-slate-800" colSpan="2">
+                                        {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_apontada || 0), 0).toFixed(2)} <span className="text-xs text-slate-500 font-normal">Apont.</span>
+                                    </td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>

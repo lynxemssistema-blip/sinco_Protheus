@@ -26,11 +26,10 @@ export default function ProductionControl() {
     const [macroModalOp, setMacroModalOp] = useState(null);
     const [macroOperations, setMacroOperations] = useState([]);
     const [showLegend, setShowLegend] = useState(false);
-    const [currentPage, setCurrentPage] = useStickyState(1, '@metalfisa:prod_currentPage');
-    const [totalPages, setTotalPages] = useState(0);
     const [total, setTotal] = useState(0);
     const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
 
+    const VALID_STATUS_VALUES = ['', 'TODOS', 'in_progress', 'done', 'waiting,planned', 'late_start,late_delivery'];
     const [filters, setFilters] = useStickyState({
         op: '',
         pedido: '',
@@ -42,6 +41,13 @@ export default function ProductionControl() {
         status: '',
         pending_delivery: true // Default: Only show items with balance to deliver
     }, '@metalfisa:prod_filters');
+
+    // Migrate stale/invalid status values from localStorage
+    useEffect(() => {
+        if (!VALID_STATUS_VALUES.includes(filters.status)) {
+            setFilters(prev => ({ ...prev, status: '' }));
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const [sortConfig, setSortConfig] = useStickyState(null, '@metalfisa:prod_sortConfig');
     // Map of cod_produto_op -> { hasDoc: bool, url: string|null }
@@ -71,31 +77,38 @@ export default function ProductionControl() {
         setSortConfig({ key, direction });
     };
 
-    const loadData = async (page = currentPage) => {
+    const abortControllerRef = useRef(null);
+
+    const loadData = async () => {
         if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
             setOps([]);
-            setTotalPages(0);
             setTotal(0);
             setLoading(false);
             return;
         }
 
+        // Cancel any in-flight request
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
         setLoading(true);
         try {
-            const params = { ...filters, page, limit: 50 };
+            const params = { ...filters, limit: 5000 };
             Object.keys(params).forEach(key => {
-                if (params[key] === '' || (Array.isArray(params[key]) && params[key].length === 0)) {
+                if (params[key] === '' || (Array.isArray(params[key]) && params[key].length === 0) || params[key] === 'TODOS') {
                     delete params[key];
                 }
             });
 
-            const res = await getProductionDashboard(params);
+            const res = await getProductionDashboard(params, abortControllerRef.current.signal);
             setOps(res.data);
-            setTotalPages(res.totalPages);
             setTotal(res.total);
-            setCurrentPage(page);
         } catch (error) {
+            if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return; // aborted
             console.error(error);
+            toast.error('Erro ao carregar operações. Tente novamente.');
         } finally {
             setLoading(false);
         }
@@ -138,8 +151,7 @@ export default function ProductionControl() {
             toast.warning('Por favor, informe um Pedido, Cliente, Produto ou OP para buscar.');
             return;
         }
-        setCurrentPage(1);
-        loadData(1);
+        loadData();
     };
 
     const handlePlanSave = async (data) => {
@@ -319,9 +331,10 @@ export default function ProductionControl() {
                         >
                             <option value="">Status (Padrão)</option>
                             <option value="TODOS">Todos (Incl. Antigos)</option>
-                            <option value="EM_ANDAMENTO">Em Andamento</option>
-                            <option value="CONCLUIDO">Concluídos</option>
-                            <option value="NAO_INICIADO">Não Iniciados</option>
+                            <option value="in_progress">Em Andamento</option>
+                            <option value="done">Concluídos</option>
+                            <option value="waiting,planned">Não Iniciados</option>
+                            <option value="late_start,late_delivery">Atrasadas</option>
                         </select>
                     </div>
                     <div className="mt-3 flex gap-3">
@@ -350,7 +363,7 @@ export default function ProductionControl() {
 
                 {total > 0 && (
                     <div className="text-sm text-slate-600">
-                        Mostrando {ops.length} de {total} operações
+                        {total} operação{total !== 1 ? 'ões' : ''} encontrada{total !== 1 ? 's' : ''}
                     </div>
                 )}
 
@@ -490,50 +503,6 @@ export default function ProductionControl() {
                     </table >
                 </div >
 
-                {/* Pagination Controls */}
-                {
-                    totalPages > 1 && (
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mt-4 flex items-center justify-between">
-                            <button
-                                onClick={() => loadData(currentPage - 1)}
-                                disabled={currentPage === 1 || loading}
-                                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                            >
-                                ← Anterior
-                            </button>
-
-                            <div className="flex items-center gap-4">
-                                <span className="text-sm text-slate-600">
-                                    Página
-                                </span>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max={totalPages}
-                                    value={currentPage}
-                                    onChange={(e) => {
-                                        const page = parseInt(e.target.value);
-                                        if (page >= 1 && page <= totalPages) {
-                                            loadData(page);
-                                        }
-                                    }}
-                                    className="w-20 px-3 py-2 border rounded-lg text-center"
-                                />
-                                <span className="text-sm text-slate-600">
-                                    de {totalPages}
-                                </span>
-                            </div>
-
-                            <button
-                                onClick={() => loadData(currentPage + 1)}
-                                disabled={currentPage === totalPages || loading}
-                                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                            >
-                                Próximo →
-                            </button>
-                        </div>
-                    )
-                }
 
 
                 {/* MODALS */}

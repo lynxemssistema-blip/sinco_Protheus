@@ -27,6 +27,32 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Gestão de OPs / Pedidos de Venda ─────────────────────────────────────────
+  '/comercial/gestao-ops': {
+    category: 'Comercial / PCP',
+    categoryColor: '#3b82f6',
+    title: 'Pedidos de Venda e Gestão de OPs',
+    icon: 'List',
+    description: 'Interface principal que conecta as vendas (PVs) ao PCP (OPs). Visualize pedidos de clientes, libere ordens de produção, e tenha acesso a todas as opções avançadas de impressão e planejamento de fábrica.',
+    steps: [
+      'Visão de Tabela: Explore os pedidos abertos usando os filtros no topo (Pesquisa por Número, Cliente, ou Status).',
+      'Filtros de Data: Selecione a chave de filtro de data (Emissão, Previsão de OP, ou Entrega) para focar na métrica que importa para o seu departamento.',
+      'Menu de Ações (3 Pontinhos): Clique no menu "Mais Ações" na última coluna da tabela para acessar as ferramentas de gestão e impressão.',
+      'Aba de Impressões (OPs): Dentro do Menu de Ações, o botão "Imprimir OP..." abre opções ricas: "OP Espelho" (apenas capa simples), "Opção A: OP + Desenhos Agrupados" (folhas de desenho juntas no final), e "Opção B: OP + Desenhos Misturados/Roteirizados" (desenhos intercalados por etapa produtiva).',
+      'Impressão do PV (Pedido de Venda): Utilize o botão "Imprimir PV" no Menu de Ações para gerar um PDF com todas as informações do pedido focado na visão comercial.',
+      'Ata Viva (Engenharia): O botão "Engenharia / Restrições" abre a trilha de controle de projetos e desenha pendências diretamente ligadas ao item.',
+      'Planejamento Sequencial: Clique no ícone de "Planejamento Sequencial" para abrir o Gantt onde você gerencia as datas e durações produtivas do lote.',
+    ],
+    tips: [
+      'O Menu de Ações agora é inteligente e não fica mais cortado pelo fundo da tabela; se o item estiver muito embaixo, o menu abre para cima automaticamente.',
+      'O ícone da prancheta laranja sinaliza se o pedido já foi recebido no Totvs / PCP, exibindo o status atual do processamento ao passar o mouse.',
+    ],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Monitor de Faturamento' },
+      { path: '/planejamento-gantt', label: 'Planejamento Gantt' },
+    ],
+  },
+
   // ── Catálogo de Produtos ─────────────────────────────────────────────────────
   '/produtos': {
     category: 'Engenharia',
@@ -155,22 +181,22 @@ export const HELP_CONTENT = {
   '/engenharia/pedidos': {
     category: 'Engenharia',
     categoryColor: '#14b8a6',
-    title: 'Pedidos de Engenharia',
+    title: 'Ata Viva (Pedidos de Engenharia)',
     icon: 'Ruler',
-    description: 'Acompanhe os pedidos de desenvolvimento e revisão de engenharia. Controle apontamento de horas e entregas de documentação.',
+    description: 'Interface de Ata Viva departamental (PCP/Produção e Engenharia). Esta janela quebra a barreira entre as áreas, mantendo um log rigoroso do que está em desenvolvimento, pausado ou reprovado pelo PCP.',
     steps: [
-      'Use o botão Play ▶️ na coluna Ações para iniciar o apontamento de horas. O sistema pausará outros projetos ativos.',
-      'Clique na engrenagem de controle para exibir opções avançadas, incluindo a aba "Apontamentos ⏱️".',
-      'Na aba Apontamentos, visualize o extrato do tempo ou lance horas manualmente de forma retroativa.',
-      'Anexe documentos, mude datas de previsão e crie o espelho para a Produção.',
+      'Apontamento Inteligente (Cronômetro): Na coluna de Ações, o botão Play ▶️ dispara o cronômetro do seu usuário para esta tarefa. O sistema fecha/pausa todos os seus outros apontamentos automaticamente. Nada de "esquecer ligado".',
+      'Coluna Dupla de Entrega: A tabela exibe sempre lado a lado a "Data Prazo Acordada" e a "Data Real Entregue". Esta matemática alimenta os painéis de diretoria evidenciando gargalos sistêmicos de atraso.',
+      'Persistência de Visão (Customização): Arraste as colunas da tabela pelo Header para reordenar. Esconda colunas que você não quer ler no botão de engrenagem. Tudo isso fica salvo no cache da sua máquina e nunca mais se perde.',
+      'Adição Rápida Multi-Filtros: Os botões pílulas coloridos (Amarelo = Em Processo, Verde = Aprovado) no cabeçalho filtram instantaneamente a pilha.',
     ],
     tips: [
-      'Pedidos com prazo vencido aparecem destacados em vermelho.',
-      'Não se preocupe em pausar: dar Play no Pedido B pausa automaticamente o Pedido A.',
+      'Sanitização Automática: Evite digitar aspas ou caracteres especiais pesados no campo "Resumo/Restrição". O motor que sobe os dados pro Totvs os transforma obrigatoriamente para UPPERCASE e os higieniza pra salvar a tabela SZ0 de corrupção.',
+      'Para apontar horas do passado ou reverter um esquecimento, clique no modal de detalhes engrenagem => aba "Apontamentos ⏱️" e inclua carga manual fracionária.',
     ],
     links: [
-      { path: '/engenharia/relatorio-controle', label: 'Relatório Gerencial' },
-      { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
+      { path: '/engenharia/relatorio-controle', label: 'Relatórios Nível 1' },
+      { path: '/estrutura/:codigo', label: 'Verificar Escopo (Estrutura)' },
     ],
   },
 
@@ -178,19 +204,19 @@ export const HELP_CONTENT = {
   '/engenharia/relatorio-controle': {
     category: 'Engenharia',
     categoryColor: '#14b8a6',
-    title: 'Controle de Engenharia',
+    title: 'Relatório Nível 1 (Controle Engenharia)',
     icon: 'FileText',
-    description: 'Acompanhamento gerencial consolidado do andamento dos projetos e carga de horas apontadas na engenharia.',
+    description: 'Geração do formato tradicional "Relatório Nível 1" adaptado. Consumo cru, apenas visualizando requisições (SZ0) em status sólido e Aprovadas para auditoria de entrega.',
     steps: [
-      'Acompanhe todas as datas de "Previsto VS Realizado".',
-      'Visualize o total de "Horas" consumidas pelo projeto (soma de apontamentos automáticos e manuais).',
-      'Exporte os resultados em Excel para controle financeiro da Engenharia.',
+      'Filtro Rígido de Aprovados: A tabela traz internamente um hook embutido que descarta O.S reprovadas ou em andamento. Só aparecem cargas sólidas prontas.',
+      'Consumo Financeiro de HH: Observe as engrenagens de Apontamento - as "Horas Totais" não vêm secas. Elas agregam a soma do cronômetro automatizado mais todas injeções manuais feitas pela equipe em dias passados.',
+      'Exportação para XLS: Uma vez com a malha filtrada em tela, clique no botão para vazar o dado pro Excel que a diretoria usa p/ fechar folha ou precificar OP.',
     ],
     tips: [
-      'A coluna de Horas já converte os segundos de apontamento em frações fracionárias (Ex: 0.5h = 30min).',
+      'Para os cálculos de HH no Totvs, 0.5h equivale a 30 minutos na vida real. A exportação mantém o formato de engenharia para multiplicar pelo custo da hora/homem sem erro.',
     ],
     links: [
-      { path: '/engenharia/pedidos', label: 'Painel de Engenharia' }
+      { path: '/engenharia/pedidos', label: 'Corrigir Lançamento no Pedido' }
     ],
   },
 
@@ -353,23 +379,46 @@ export const HELP_CONTENT = {
   '/controle-producao': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Controle de Produção',
+    title: 'Monitor de Planejamento Macro (Gantt Estratégico)',
     icon: 'Gauge',
-    description: 'Painel centralizado de controle do chão de fábrica. Visualize o avanço das OPs, eficiência e gargalos em tempo real.',
+    description: 'Interface balística para alocação de carga-máquina (Planejamento Automático por Recurso). Substitui macros do Excel para injetar agendamentos finos diretamente na restrição de planta ERP.',
     steps: [
-      'Selecione o período de análise no filtro de datas.',
-      'Visualize o painel Kanban com as OPs por etapa produtiva.',
-      'Clique em uma OP para ver detalhes e registrar apontamentos.',
-      'Use os gráficos para identificar gargalos e ineficiências.',
+      'Visão de Drag-and-Drop: Na listagem de OPs já liberadas, você pode clicar e arrastar blocos para cima e para baixo. O sistema recalcula automaticamente o término da operação com base na restrição do centro de custo selecionado.',
+      'Modal de Planejamento Automático: Identifique o ícone "Flash" num recurso. O Modal permitirá duas matemáticas: Cálculo para Frente (baseado na data inicial e DSR saltando fins de semana) ou Cálculo Trás (amarrando à Data de Entrega do pedido forçando D-1).',
+      'Congelamento do Setup: Ao arrastar 1 OP para depois da OP 2, o sistema deduz se haverá Setup embutido ou se as matrizes e produtos são da mesma família de Setup-Livre.',
+      'Persistência de Linha Base (Baseline): Antes de comitar a simulação, ative o "Salvar Layout/Simulação". O botão visual mostrará "Tons de cor Ghost/Esmaecido" permitindo analisar o plano Original VS seu plano de simulação arrastado.',
     ],
     tips: [
-      'O painel é atualizado automaticamente a cada 5 minutos.',
-      'Arraste OPs entre colunas para atualizar o status diretamente.',
+      'Lembre-se: O planejamento só desce pro "Ind_Factory" ou pro "ERP" quando você aperta o Botão de Salvar verde no final. Arrastar os itens pela tela é apenas Simular Capacidade.',
+      'O sistema utiliza DSR Oficial nativo: feriados e finais de semana prolongados na tabela de calendário empurram o lote para a próxima data útil validada.',
     ],
     links: [
-      { path: '/producao', label: 'Ordens de Produção' },
-      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
-      { path: '/producao-matrix', label: 'Matriz de Produção' },
+      { path: '/producao-matrix', label: 'Carga Máquina Total' },
+      { path: '/pcp/apontamento-vertical', label: 'Lançamentos (Ponta a Ponta)' },
+    ],
+  },
+
+  // ── Planejamento Sequencial ──────────────────────────────────────────────────
+  '/planejamento-sequencial': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Planejamento Sequencial de OPs',
+    icon: 'GanttChart',
+    description: 'Interface de planejamento refinado e sequencial. Permite agendar as operações de uma Ordem de Produção considerando a duração inclusiva de cada etapa, saltando dias não úteis (ou forçando sábados) e criando um encadeamento progressivo ou regressivo.',
+    steps: [
+      'Escolha a Direção do Cálculo: No topo, defina se o cálculo será "Progressivo" (A partir de uma data inicial) ou "Regressivo" (De trás para frente, garantindo a data de entrega).',
+      'Ajuste o Calendário: Alterne entre "Corridos" (considera todos os dias da semana) ou "Úteis" (ignora Sábado e Domingo). No modo "Úteis", você pode forçar a inclusão do Sábado marcando a caixa "Incluir Sábado".',
+      'Arraste e Solte (Drag & Drop): Clique sobre a faixa colorida de uma operação e arraste para os lados para deslocar livremente aquela etapa.',
+      'Edição de Duração: A primeira célula de cada barra contém um pequeno campo numérico (ex: 3 d). Clique ali para digitar os dias estimados; o gráfico recalculará o encadeamento das próximas etapas automaticamente.',
+      'Incluir Serviços de Terceiro (ST): Marque "Incluir ST" se desejar que serviços externos travem o fluxo do Gantt, alongando a entrega.',
+    ],
+    tips: [
+      'A linha base em tons acinzentados fica visível por trás das barras principais, mostrando o planejamento anterior, permitindo comparar a sua simulação atual com o que já estava salvo no banco.',
+      'Ao alterar a data de entrega (Cálculo Regressivo), todas as operações são empurradas para trás respeitando os dias informados de trás pra frente.',
+    ],
+    links: [
+      { path: '/producao-matrix', label: 'Carga Máquina Total' },
+      { path: '/planejamento-gantt', label: 'Gantt Master' },
     ],
   },
 
@@ -553,46 +602,42 @@ export const HELP_CONTENT = {
 
   // ── Configurações ─────────────────────────────────────────────────────────────
   '/configuracoes': {
-    category: 'Administração',
-    categoryColor: '#64748b',
-    title: 'Configurações do Sistema',
+    category: 'Administração Core',
+    categoryColor: '#64748b', // slate-500
+    title: 'Configurações de Instância ERP',
     icon: 'Settings',
-    description: 'Gerencie usuários, permissões, parâmetros do sistema e integrações com outros sistemas.',
+    description: 'Painel Master de governança. Daqui nascem todas as macros que controlam disparos automáticos, travas de edição de Comercial/Faturamento e emails gerenciais de apontamentos diários.',
     steps: [
-      'Acesse a aba "Usuários" para criar e gerenciar contas de acesso.',
-      'Configure permissões por perfil em "Perfis de Acesso".',
-      'Defina parâmetros globais do sistema em "Parâmetros".',
-      'Configure integrações com ERP em "Integrações".',
+      'Configuração de Email Base: Na guia de Sistema, defina os emails destino que receberão o extrato de Relatórios Diários às 18:01 de faturamento (Automação Node-Cron).',
+      'Painel de Usuários (Auth): Edite senhas via bcrypt, adicione novos funcionários às permissões do sistema.',
+      'Auditoria de Alterações: Abaixo da tela, cheque o monitor Master Logs, listando quem modificou o quê (Ex: Quem reverteu o Lote "Faturado Parcial").',
     ],
     tips: [
-      'Apenas administradores têm acesso a esta tela.',
-      'Alterações em parâmetros críticos requerem confirmação dupla.',
+      'A aba Configurações de Servidor é sensível e mapeada via WebSocket. Alterá-la derruba conexões falsas.',
     ],
     links: [
-      { path: '/ajuda', label: 'Central de Ajuda' },
+      { path: '/ajuda', label: 'Central de Ajuda Master' },
     ],
   },
 
   // ── SGQ ──────────────────────────────────────────────────────────────────────
   '/sgq': {
-    category: 'SGQ',
-    categoryColor: '#14b8a6',
-    title: 'Sistema de Gestão da Qualidade',
+    category: 'Gestão de Qualidade',
+    categoryColor: '#14b8a6', // teal-500
+    title: 'ISO 9001 - Central de Qualidade',
     icon: 'Award',
-    description: 'Central do SGQ com acesso a todos os módulos de qualidade: processos, documentos, não conformidades, treinamentos e auditorias.',
+    description: 'Suíte completa desenhada seguindo a métrica da ISO 9001 (Documentos, Não Conformidades (RNC), Ações Corretivas e Preventivas e Treinamentos). O Hub gerencial converte planilhas estáticas num PDCA dinâmico.',
     steps: [
-      'Navegue pelos módulos de qualidade no menu lateral.',
-      'Acesse "Mapeamento de Processos" para visualizar os fluxos.',
-      'Registre não conformidades em "Não Conformidades".',
-      'Gerencie documentos do sistema em "Documentos".',
+      'Ouvidoria de Qualidade: Acompanhe os cards flutuantes. Se houver RNC não respondida por um departamento num prazo de SLA (ex: 5 dias para contenção), ela brilhará em vermelho.',
+      'Convergência com Fabricação: Qualquer peça reportada como "Refugo" na tela Apontamentos V2 pelo Operador abre automaticamente trilha preenchida neste módulo.',
+      'Monitoria de Treinamento: Avalie por Organograma (Setor > Gestor > Operador) quais matrizes de habilidade estão "vencendo" validade e exigem Re-Treinamento.',
     ],
     tips: [
-      'Indicadores de qualidade são atualizados diariamente.',
+      'A aba de documentos versiona com trava de revisão. Nunca é possível excluir uma matriz antiga, ela cai para o "Obsoleto".',
     ],
     links: [
-      { path: '/sgq/mapeamento-processos', label: 'Mapeamento de Processos' },
-      { path: '/sgq/documentos', label: 'Documentos SGQ' },
-      { path: '/sgq/nao-conformidades', label: 'Não Conformidades' },
+      { path: '/sgq/mapeamento-processos', label: 'VPOP - Visualizar Fluxo' },
+      { path: '/sgq/nao-conformidades', label: 'RNC (Aberturas)' },
     ],
   },
 
@@ -774,22 +819,24 @@ export const HELP_CONTENT = {
   '/vendas/itens-faturar': {
     category: 'Comercial',
     categoryColor: '#3b82f6',
-    title: 'Itens a Faturar',
+    title: 'Monitor de Itens a Faturar (Romaneios)',
     icon: 'DollarSign',
-    description: 'Lista consolidada de itens para acompanhamento e solicitação de faturamento.',
+    description: 'Interface tática do almoxarifado e do faturamento para despachar blocos faturáveis oriundos da balança comercial e ordens do PCP. Substitui planilhas offline gerando lotes 100% integrados à fila de carregamento.',
     steps: [
-      'A coluna Status indicará visualmente: 🟢 FATURADO 100%, 🟠 FAT. PARCIAL (se houver entrega parcial e saldo restante) ou ⚪ A FATURAR.',
-      'Acompanhe as quantidades Totais, Entregues e o respectivo Saldo Pendente na mesma visão.',
-      'Na coluna "Fat. Solicitados", visualize requisições exatas e empenhadas à programação (PCP) adequada, sem duplicações.',
-      'Selecione as NFs diretamente pelos botões na coluna de NFs Anteriores.',
+      'Geração de Requisição: Marque (checkbox) os itens que você quer faturar, coloque a Quantidade Solicitada, e clique no botão azul no rodapé "Solicitar Faturamento". Isso criará um Pacote na fila de controle.',
+      'Semaforização (Status): A coluna Status exibirá a realidade do ERP instantaneamente: 🟢 FATURADO 100% (cargas sem saldo), 🟠 FAT. PARCIAL (quando se emitiu faturamento menor que o total comprado pelo cliente) ou ⚪ A FATURAR.',
+      'Rastreio de Qtd e Saldo: Acompanhe as quantidades Totais de PV, o que já foi efetivamente entregue no ERP e o Saldo Remanescente disponível. O sistema impede solicitar saldo negativo fisicamente.',
+      'Empenho Duplo (Prevenção): Na coluna "Fat. Solicitados", observe se algum parceiro de setor já solicitou faturamento para aquela mesma linha (mesmo id). Você não mandará uma mesma linha se ela já tiver sido pendurada.',
+      'Filtro de Ruído: Utilize "Apenas Pendentes" ou "Ocultar Faturados 100%" para focar exclusivamente nos romaneios pendurados ou que o caminhão ainda precisa faturar.',
+      'Histórico de NFs: A bateria de notas fiscais lançadas pro item é mapeada e unificada no botão "Ver NFs".',
     ],
     tips: [
-      'Pedidos divididos em várias datas de entrega no PCP terão suas Solicitações de Faturamento encaixadas precisamente em suas linhas (ID de programação).',
-      'Filtrar por "Apenas Pendentes" remove rapidamente os que já possuem status 🟢 FATURADO 100%.',
+      'Pedidos fragmentados em N datas de entrega pelo cronograma fabril terão os IDs perfeitamente espelhados aqui em linhas separadas.',
+      'Gatilho bloqueador: Caso haja saldo excedido (tentando enviar 200 pro faturamento de um pedido que só tinha 100 de saldo líquido da embalagem), o sistema disparará Toast de erro bloqueando a ação na raiz.',
     ],
     links: [
-      { path: '/comercial/faturamento', label: 'Faturamento' },
-      { path: '/romaneios', label: 'Romaneios' },
+      { path: '/comercial/faturamento', label: 'Monitor de NFs (Controle)' },
+      { path: '/romaneios', label: 'Romaneios Embalagem' },
       { path: '/comercial/dashboard-faturamento', label: 'Dashboard Gerencial' },
     ],
   },
@@ -800,19 +847,20 @@ export const HELP_CONTENT = {
     categoryColor: '#3b82f6',
     title: 'Dashboard de Faturamento',
     icon: 'PieChart',
-    description: 'Painel gerencial consolidado para análise de desempenho financeiro e acompanhamento do status das solicitações de faturamento em tempo real.',
+    description: 'Cockpit financeiro-operacional em tempo real. Lê todo o pool de faturamentos pendentes ou efetuados na data, cruza com as Metas de Carregamento da empresa e exibe gráficos analíticos gerenciais.',
     steps: [
-      'Visão Geral: Monitore KPls críticos como Valor Total Faturado, Notas Fiscais emitidas, e proporção do que ainda está em processo de faturamento.',
-      'Filtros Globais: Utilize os filtros de data, status das solicitações, clientes ou produtos para refinar os indicadores de toda a tela simultaneamente.',
-      'Análise por Categoria: Alterne o agrupamento principal entre "Por Cliente" ou "Por Produto" para identificar as maiores fontes de faturamento e engarrafamentos operativos.',
-      'Acompanhamento de Status: Navegue pelos gráficos (barras e donuts) para visualizar de forma rápida a distribuição financeira e quantitativa dos status pendentes e finalizados.',
+      'Análise em Tempo Real (KPIs): No topo estão os Tickers principais. Eles apontam o Volume de Dinheiro Faturado nas notas VS o Financeiro parado nos caminhões ("Pendente").',
+      'Matriz de Status de Solicitações: O gráfico de Pizza (Donut) à esquerda quebra as estatísticas, dizendo se o financeiro está travado em "Cancelamentos" ou aguardando "Atendimento".',
+      'Ouvidoria de Dados Dinâmicos: Todo o teto de gastos da interface muda dinamicamente à medida que você altera as Datas de Competência ou Filtra Clientes na Sidebar de configurações à frente.',
+      'Top Clusters: O painel bar graphic exibe o "Top 10" agressores de ranking (seja agrupando por Top 10 Clientes Faturados ou Top Produtos da Linha que renderam o financeiro no recorte).',
     ],
     tips: [
-      'O gráfico de Top 10 rankeia imediatamente as maiores concentrações de valores, sendo ideal para focar o acompanhamento comercial ou priorização de liberações de faturamento.',
+      'O gráfico de Top 10, quando virado "Por Cliente" no select principal, pode ajudar a diretoria a priorizar o carregamento de carretas na doca logística priorizando as OPs mais caras.',
+      'Leva alguns milissegundos, mas a tela faz um bypass por todo o legado ERP para validar cancelamentos falsos. O número exibido é 100% Líquido e livre de estornos indevidos.',
     ],
     links: [
-      { path: '/vendas/itens-faturar', label: 'Ir para Itens a Faturar' },
-      { path: '/comercial/faturamento', label: 'Gestão de Faturamento (NFs)' },
+      { path: '/vendas/itens-faturar', label: 'Ver Itens a Faturar (Base de Dados)' },
+      { path: '/comercial/faturamento', label: 'Ir Gestão de NFs' },
     ],
   },
 
@@ -866,17 +914,18 @@ export const HELP_CONTENT = {
   '/comercial/faturamento': {
     category: 'Comercial',
     categoryColor: '#3b82f6',
-    title: 'Faturamento',
+    title: 'Controle de Faturamento',
     icon: 'FileInvoice',
-    description: 'Gestão de notas fiscais emitidas. Acompanhe o status de transmissão à SEFAZ, cancelamentos e reimpressões.',
+    description: 'Central corporativa de liberação e controle de Faturas e Expedição. Realize a vinculação das NFs e o fechamento ou estorno final de solicitações abertas.',
     steps: [
-      'Consulte as NFs emitidas pelo período, cliente ou número.',
-      'Verifique o status: Aguardando, Autorizada, Cancelada.',
-      'Reimprima o DANFE clicando no ícone de impressão.',
-      'Solicite cancelamento quando necessário (respeitando o prazo legal).',
+      'Controle Visual: Utilize a aba de filtros para navegar entre cargas "Pendentes", "Faturadas" ou "Canceladas".',
+      'Trava de Segurança: Lotes marcados como "Faturado" sofrem congelamento automático. Apenas o usuário que realizou e assinou o fechamento do lote tem permissão para editá-lo, remover itens ou estorná-lo.',
+      'Auditoria de Alterações: O painel lateral monitora toda a linha do tempo (timeline) cronológica exibindo quem, o quê e quando alguma quantidade ou status de faturamento foi reescrito.',
+      'O sistema inclui um Agendador Noturno que dispara um Relatório Gerencial consolidado via e-mail corporativo (para a equipe cadastrada) sempre às 18h01 com a carga pendente total.',
     ],
     tips: [
-      'NFs rejeitadas pela SEFAZ exibem o motivo da rejeição em destaque.',
+      'A automação diária das 18h01 de notificação pode ser desligada caso os e-mails na aba de configurações na tabela da grid sejam removidos.',
+      'Caso necessite alterar a Nota Fiscal de um lote travado de outra pessoa, você precisará pedir que o dono do lote faça a mudança ou reset.',
     ],
     links: [
       { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
@@ -1168,130 +1217,133 @@ export const HELP_CONTENT = {
 
   // ── VMI Forecast ─────────────────────────────────────────────────────────────
   '/vmi/forecast': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Forecast',
+    title: 'Monitor de Consumo e Previsões (Forecast)',
     icon: 'TrendingUp',
-    description: 'Previsão de demanda e forecast de vendas para planejamento de produção e compras.',
+    description: 'Interface avançada para prever matematicamente a necessidade diária de consumo das montadoras baseada no giro histórico. Este painel dita o ritmo de reposição da MetalFisa.',
     steps: [
-      'Visualize o forecast atual por produto e período.',
-      'Ajuste as previsões manualmente quando necessário.',
-      'Compare forecast com consumo real.',
-      'Exporte para uso no planejamento de produção.',
+      'Visualização Mensal/Diária: Navegue entre a "Visão Diária" (focada nas entregas do dia D e da semana) e a "Visão Mensal" agregada.',
+      'Ajuste Sensível de Previsão: Digite manualmente no input numérico se o cliente mandou uma quebra de projeção forçada. O sistema vai ignorar a média nativa e vai adotar sua cotação.',
+      'Comparações Real vs Desejado: Cada linha de produto exibe o que estava previsto contra o Consumo Efetivo (Baixas por Notas Fiscais ou Reporte de Cliente).',
+      'Exportação Tática: Utilize o botão Exportar para gerar um grid em Excel validado que as montadoras utilizam em suas reuniões D-1 de abastecimento.',
     ],
     tips: [
-      'Forecasts são atualizados automaticamente com base no histórico de pedidos.',
+      'Mudanças feitas no forecast são rastreadas e o sistema sempre avisa "Atualizado em" com o carimbo do usuário que realizou a última sobreposição matemática.',
+      'Caso a previsão seja "zerada" a linha entra em modo ad-hoc (reposologia por pulo).',
     ],
     links: [
-      { path: '/vmi/pedido', label: 'VMI – Pedido' },
-      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+      { path: '/vmi/pedido', label: 'Monitor de Pedidos VMI' },
+      { path: '/vmi/leitura', label: 'Importador Excel do Cliente' },
     ],
   },
 
   // ── VMI Pedido ───────────────────────────────────────────────────────────────
   '/vmi/pedido': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Pedido',
+    title: 'Carga de Pedidos VMI e Necessidades',
     icon: 'ShoppingBag',
-    description: 'Gestão de pedidos no modelo VMI (Vendor Managed Inventory).',
+    description: 'Mesa de operações focada na transformação das projeções do fluxo de linha em Pedidos reais (necessidade de carregamento / empurrar estoque pro cliente).',
     steps: [
-      'Visualize os pedidos VMI recebidos dos clientes.',
-      'Confirme disponibilidade e datas de entrega.',
-      'Gere ordens de produção a partir dos pedidos VMI.',
+      'Recepção Passiva: Todo cliente VMI que roda seu MRP de planta mandará as ordens de EDI e elas caem neste painel.',
+      'Validação de Cobertura: O botão verde / amarelo à direita avalia instantaneamente se nós temos a peça no almoxarifado interno MetalFisa ou se estamos arriscando Parada de Linha do Cliente.',
+      'Gatilho de Produção: Sempre que um componente apresenta defasagem e o indicador Ponto de Reposição estoura, um gatilho envia um "Sinal de Fumaça" direto para a fila do planejamento de fábrica gerando Sugestão de OP.',
     ],
     tips: [
-      'No modelo VMI, o fornecedor gerencia o estoque do cliente automaticamente.',
+      'As requisições que caem aqui respeitam a curva ABC do VMI: componentes críticos aparecem primeiro!',
+      'Você pode gerar faturamento diretamente dessa carga caso o item possua estoque físico na planta em Embalagem/Faturamento.',
     ],
     links: [
-      { path: '/vmi/forecast', label: 'VMI – Forecast' },
-      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
+      { path: '/vmi/forecast', label: 'Verificar Consumo Original' },
+      { path: '/vmi/dashboard', label: 'Analisar Riscos no Dashboard' },
     ],
   },
 
   // ── VMI Leitura ──────────────────────────────────────────────────────────────
   '/vmi/leitura': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Leitura de Estoque',
+    title: 'Importador (Leitura) de Excel dos Clientes',
     icon: 'BarcodeScan',
-    description: 'Leitura e atualização do estoque VMI no cliente via coleta de dados.',
+    description: 'Processo super flexível para traduzir a planilha dos portais de clientes (CNH, Catterpillar, JD, etc) para a arquitetura do ERP MetalFisa.',
     steps: [
-      'Importe o arquivo de inventário recebido do cliente.',
-      'Confira as divergências entre o esperado e o informado.',
-      'Confirme a leitura para atualizar o sistema.',
+      'Importação em Duas Etapas: Ao fazer drag-and-drop da planilha de inventário do cliente, a tela primeiro exibe o Modo de Pré-Visualização das métricas. Sem salvar.',
+      'Intersecção de Códigos: Internamente o módulo captura o famoso "Descr do Equipamento" (código descritivo extenso das colunas em texto) e aciona o motor regex.',
+      'Expurgo Inteligente: O motor Regex engole os sufixos "-10", "-B", "-ZN" exigidos por clientes e converte pro Código Base limpo registrado na aba SC2 da MetalFisa. Nenhuma falha manual entra na base.',
+      'Botão Salvar / Commit: Apenas quando tudo estiver verde/OK e as validações visuais não apontarem linhas orfãs, o botão Salvar grava o bloco de dados validado no sistema.',
     ],
     tips: [
-      'A leitura periódica garante a acuracidade do VMI.',
+      'Regra 401 de Segurança: Após o Login e o Auth vencerem (401), se der tela vermelha ou o envio falhar no Console, basta relogar. A API deste módulo é rigidamente restrita.',
+      'As mensagens de retorno do Importador são auditadas num cronômetro.',
     ],
     links: [
-      { path: '/vmi/pedido', label: 'VMI – Pedido' },
-      { path: '/vmi/estrategia', label: 'VMI – Estratégia' },
+      { path: '/vmi/dashboard', label: 'Impactos no Abastecimento' },
     ],
   },
 
   // ── VMI Dashboard ────────────────────────────────────────────────────────────
   '/vmi/dashboard': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Dashboard',
+    title: 'Monitor de Saúde Preditiva (Dashboard VMI)',
     icon: 'LayoutDashboard',
-    description: 'Dashboard executivo do programa VMI com KPIs de nível de serviço, cobertura e giro.',
+    description: 'Dashboard executivo paramétrico que mescla a Cobertura Física (Almoxarifado) com a Demanda Futura do Cliente (Forecast). Este é o termômetro principal do programa.',
     steps: [
-      'Visualize o nível de serviço atual vs. meta.',
-      'Analise a cobertura de estoque por produto.',
-      'Identifique itens críticos (abaixo do ponto de reposição).',
+      'Análise de Nível de Serviço (SLA): Visualize o velocímetro apontando o % de saúde dos suprimentos VMI em comparação à métrica do contrato.',
+      'Matriz de Cobertura de Estoque: O gráfico de barras demonstra exatamente quantos DIAS DE SOBREVIVÊNCIA o cliente interno tem com o saldo projetado.',
+      'Gestão de Crise (Ruptura Eminente): O sistema acenderá luzes laranjas e vermelhas nos itens abaixo do Ponto de Ruptura (estoque incapaz de cobrir o lead time da próxima remessa).',
     ],
     tips: [
-      'Um nível de serviço abaixo de 95% requer atenção imediata.',
+      'As caixas e KPIs do dashboard são filtrados em tempo real na dropdown do cliente. Ao reportar o status para a CNH, mude o Switch exclusivo deles.',
+      'Não confunda "Ponto de Reposição" (Aviso) com "Estoque Mínimo" (Sobrevivência).',
     ],
     links: [
-      { path: '/vmi/forecast', label: 'VMI – Forecast' },
-      { path: '/vmi/historico', label: 'VMI – Histórico' },
+      { path: '/vmi/forecast', label: 'Injetar Forecast Tático' },
+      { path: '/vmi/historico', label: 'Evolução do Saldo' },
     ],
   },
 
   // ── VMI Estratégia ───────────────────────────────────────────────────────────
   '/vmi/estrategia': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Estratégia',
+    title: 'Parametrização do Motor VMI',
     icon: 'Target',
-    description: 'Defina os parâmetros estratégicos do VMI: pontos de reposição, lotes mínimos e metas de cobertura.',
+    description: 'O cérebro matemático por trás dos cálculos automatizados. Aqui o Comercial define o grau agressivo de reposição para que o motor crie Pedidos sozinhos.',
     steps: [
-      'Configure o ponto de reposição para cada produto VMI.',
-      'Defina o lote mínimo de abastecimento.',
-      'Estabeleça as metas de cobertura de estoque.',
-      'Salve as configurações para ativar o cálculo automático.',
+      'Aba Lote Mínimo e Múltiplo: Informe se o produto só pode ser empurrado pro cliente de 10 em 10 peças (caixas fechadas). O motor irá arredondar requisições quebradas pro número exato.',
+      'Coberturas Desejadas de Estoque (Safety Stock): Defina quantos dias de segurança você deseja manter no teto do Cliente (Max) e o Piso de disparo (Min).',
+      'Lead Time (Lead Time SLA): Cadastre aqui os dias que a MetalFisa leva pra injetar peça no cliente (do frete à produção).',
+      'Persistência em Massa: Use o botão de Salvamento Lógico após checar toda a grid. Modificações aqui afetam todas as equações do próximo dia.',
     ],
     tips: [
-      'Revise os parâmetros trimestralmente conforme mudanças de demanda.',
+      'As mudanças não são retroativas. Elas recalcularão a Demanda da Carga VMI do dia subsequente ou num Forçar Atualização.',
     ],
     links: [
-      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
-      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+      { path: '/vmi/dashboard', label: 'Painel Tático' },
+      { path: '/producao/relatorios', label: 'Relatórios Base' },
     ],
   },
 
   // ── VMI Histórico ────────────────────────────────────────────────────────────
   '/vmi/historico': {
-    category: 'Comercial',
+    category: 'VMI (Demanda)',
     categoryColor: '#3b82f6',
-    title: 'VMI – Histórico',
+    title: 'Extrato Contábil VMI',
     icon: 'History',
-    description: 'Consulte o histórico de movimentações e reposições VMI por período e produto.',
+    description: 'Controle de prestação de contas. Esta tela imita o "Saída e Entrada" bancário para confrontar se as requisições geradas bateram com o que o cliente efetivamente consumiu da nossa carga mensal.',
     steps: [
-      'Selecione o período e o cliente VMI.',
-      'Analise o histórico de pedidos e reposições.',
-      'Compare consumo real vs. forecast.',
-      'Exporte para relatórios de gestão.',
+      'Leitura de Snapshot: As tabelas listarão por Código-Revisão cada pulso disparado pro cliente e a resposta de consumo da ponta oposta.',
+      'Investigação de Desperdício: Verificando "Consumo Médio" x "Enviado", caso haja discrepância forte a linha apita para auditoria.',
+      'Relatórios Retrospectivos: Filtre por ano e mês para provar para reuniões operacionais de que houve Abastecimento Full no período.',
     ],
     tips: [
-      'Use para análise de sazonalidade e ajuste do forecast.',
+      'Este relatório cruza dados da tabela de Leituras (planilhas de estoque deles) fechando no "Liquidado".',
     ],
     links: [
-      { path: '/vmi/dashboard', label: 'VMI – Dashboard' },
-      { path: '/vmi/forecast', label: 'VMI – Forecast' },
+      { path: '/vmi/leitura', label: 'Auditoria da Planilha' },
+      { path: '/vendas/itens-faturar', label: 'Cruzar com ERP Interno' },
     ],
   },
 
@@ -1614,6 +1666,48 @@ export const HELP_CONTENT = {
     links: [
       { path: '/avisos', label: 'Avisos e Comunicados' },
       { path: '/', label: 'Dashboard Principal' },
+    ],
+  },
+  
+  // ── Módulo PCP Independente ──────────────────────────────────────────────────
+  '/ind-pcp-release': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Gestão de OP Fracionada',
+    icon: 'PackagePlus',
+    description: 'Interface exclusiva para a fragmentação e liberação isolada de Ordens de Produção (SC2) antes do carregamento industrial. Este módulo desvincula a restrição do SC2 oficial gravando o loteamento da fábrica diretamente na base segura local.',
+    steps: [
+      'Alternância de Visão Visual: O painel oferece dois formatos – "Hierárquico (Árvore)", útil para entender amarrações de conjunto, e "Lista Plana", feito para leitura crua de matriz produtiva.',
+      'Critério de Filtragem (Faturamento): Em ambas as visualizações, a tabela apenas lista e acusa OPs filhas em que o seu Pedido de Venda contiver Saldo Remanescente (Quantidade Faturada menor que Original).',
+      'Informação Estratégica: Visualize a coluna "Previsão de Entrega" espelhada diretamente da carga SC6/SC5. Isso ajuda o chão de fábrica a processar os pacotes respeitando a viabilidade comercial.',
+      'Liberação em Cotes: Utilize a aba de expansão e clique em "Liberar Qtd Personalizada" para descer uma O.P. de 1000 pçs para um Kanban fabril com apenas 200 pçs, por exemplo. O sistema deduzirá o saldo do ERP temporariamente.',
+    ],
+    tips: [
+      'Não se preocupe em "estragar" o ERP. Esta tela escreve no histórico da tabela autônoma garantindo que a contagem do SC2 siga íntegra enquanto o chão de fábrica manipula uma O.P fantasma fracionada perfeitamente amarrada.',
+      'Utilize os Filtros Multiseleção (bolhas acima da tabela) para focar sub-recursos.'
+    ],
+    links: [
+      { path: '/ind-factory-floor', label: 'Kanban do Chão de Fábrica' },
+      { path: '/producao', label: 'O.Ps Tradicionais' },
+    ],
+  },
+
+  '/ind-factory-floor': {
+    category: 'PCP / Fábrica',
+    categoryColor: '#10b981', // green-500
+    title: 'Apontamento Kanban (Chão de Fábrica)',
+    icon: 'HammerFocus',
+    description: 'Tela viva e dinâmica de apontamentos. Uma vez que as OPs fracionadas são geradas pela "Gestão de OP Fracionada", elas caem diretamente neste funil para consumo livre dos operadores em campo.',
+    steps: [
+      'As OPs abertas ficarão listadas em esteiras/cartões de acordo com o recurso/operação corrente.',
+      'A tela exibirá as quantidades já apontadas via terminal e o progresso em relação à meta fracionada.',
+      'Os operadores não enxergam gargalos do TOTVS; a interface isola as restrições logando num banco dinâmico (com baixa final sincronizada de forma limpa).',
+    ],
+    tips: [
+      'A leitura de Cartões na aba Kanban serve para varrer Código de Barras dos lotes físicos impressos pelo almoxarifado.',
+    ],
+    links: [
+      { path: '/ind-pcp-release', label: 'Gestão de OP Fracionada' },
     ],
   },
 

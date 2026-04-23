@@ -925,7 +925,6 @@ router.get('/', async (req, res) => {
             op, item, sequencia, produto, cliente, operacao,
             planned_date_start, planned_date_end, date_start, date_end,
             status, // Comma-separated or array
-            page = 1, limit = 100
         } = req.query;
 
 
@@ -938,12 +937,6 @@ router.get('/', async (req, res) => {
         console.log('  - Cliente:', cliente || '(empty)');
         console.log('  - Operacao:', operacao || '(empty)');
 
-        // Parse pagination params
-        const pageNum = parseInt(page) || 1;
-        const limitNum = parseInt(limit) || 100;
-        const offset = (pageNum - 1) * limitNum;
-
-        console.log('📄 [DEBUG] Pagination:', { page: pageNum, limit: limitNum, offset });
 
         // 0. Pre-filter by Planned Dates (MySQL) if provided
         let plannedOpsFilter = null;
@@ -965,7 +958,7 @@ router.get('/', async (req, res) => {
             // If filtering by date and no plans found, return empty early
             if (plannedRows.length === 0) {
                 console.log('⚠️ [DEBUG] No planned operations found, returning empty');
-                return res.json({ data: [], total: 0, page: pageNum, limit: limitNum, totalPages: 0 });
+                return res.json({ data: [], total: 0 });
             }
 
             plannedOpsFilter = plannedRows;
@@ -997,6 +990,7 @@ router.get('/', async (req, res) => {
                 g2.g2_operac  AS operacao,
                 g2.g2_descri  AS desc_operacao,
                 g2.g2_recurso AS recurso,
+                TRIM(h1.h1_descri) AS desc_recurso,
                 LAG(g2.g2_operac) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac) as prev_operacao,
                 LEAD(g2.g2_operac) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac) as next_operacao,
                 TRIM(LAG(g2.g2_descri) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac)) as prev_desc_operacao,
@@ -1006,6 +1000,7 @@ router.get('/', async (req, res) => {
             LEFT JOIN public.sc2010 root_op ON root_op.c2_num = c2.c2_num AND root_op.c2_item = c2.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sh1010 h1 ON btrim(h1.h1_codigo) = btrim(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sc6010 c6 
                 ON c6.c6_filial = c2.c2_filial 
                 AND c6.c6_num = c2.c2_pedido
@@ -1087,14 +1082,9 @@ router.get('/', async (req, res) => {
             console.log(`🔧 [DEBUG] Filter: PENDING DELIVERY Only`);
         }
 
-        pgQuery += ` ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen, g2.g2_operac`;
+        pgQuery += ` ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen, g2.g2_operac LIMIT 5000`;
 
-        console.log('═══════════════════════════════════════════════════════════');
-        console.log('🔍 [DEBUG] FINAL SQL PREPARATION');
-        console.log('📊 Total Parameters:', params.length);
-        console.log('📝 Parameters:', JSON.stringify(params));
         console.log('🎯 Applied Filters:', appliedFilters.join(' AND '));
-        console.log('═══════════════════════════════════════════════════════════');
 
         console.log('⏳ [DEBUG] Executing SQL query...');
         const pgRes = await db.query(pgQuery, params);
@@ -1130,36 +1120,42 @@ router.get('/', async (req, res) => {
             });
         }
 
-        // Fetch MySQL Data (Plans & Appointments) BEFORE pagination to allow status filtering
-        const [plans] = await mysqlPool.query(`SELECT * FROM app_production_planning`);
-        const [appointments] = await mysqlPool.query(`
-            SELECT 
-                op_numero, op_item, op_sequencia, operacao_codigo,
-                SUM(quantidade) as total_produzido,
-                COUNT(*) as num_apontamentos,
-                SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
-                MIN(data_inicio) as data_real_inicio,
-                MAX(data_fim) as data_real_fim,
-                MAX(data_fim) as ultimo_apontamento
-            FROM app_production_appointments
-            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-        `);
+        // Fetch MySQL Data (Plans & Appointments) filtered to the relevant OPs
+        const relevantOpNums = [...new Set(ops.map(o => o.op).filter(Boolean))].slice(0, 500);
+        let plans = [], appointments = [];
+        if (relevantOpNums.length > 0) {
+            const opPlaceholders = relevantOpNums.map(() => '?').join(',');
+            const [plansRows] = await mysqlPool.execute(
+                `SELECT * FROM app_production_planning WHERE op_numero IN (${opPlaceholders})`,
+                relevantOpNums
+            );
+            plans = plansRows;
+            const [apptRows] = await mysqlPool.execute(`
+                SELECT
+                    op_numero, op_item, op_sequencia, operacao_codigo,
+                    SUM(quantidade) as total_produzido,
+                    COUNT(*) as num_apontamentos,
+                    SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
+                    MIN(data_inicio) as data_real_inicio,
+                    MAX(data_fim) as data_real_fim,
+                    MAX(data_fim) as ultimo_apontamento
+                FROM app_production_appointments
+                WHERE op_numero IN (${opPlaceholders})
+                GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+            `, relevantOpNums);
+            appointments = apptRows;
+        }
 
-        // 4. Merge Data (All OPs, not just paginated)
+        // 4. Merge Data — build Maps for O(1) lookup instead of O(n²) find()
+        const planKey = (o) => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
+        const apptKey = (o) => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
+        const plansMap = new Map(plans.map(p => [planKey(p), p]));
+        const apptMap = new Map(appointments.map(a => [apptKey(a), a]));
+
         let mergedOps = ops.map(row => {
-            const plan = plans.find(p =>
-                p.op_numero === row.op &&
-                p.op_item === row.item_op &&
-                p.op_sequencia === row.sequen &&
-                p.operacao_codigo === row.operacao
-            );
-
-            const progress = appointments.find(a =>
-                a.op_numero === row.op &&
-                a.op_item === row.item_op &&
-                a.op_sequencia === row.sequen &&
-                a.operacao_codigo === row.operacao
-            );
+            const rowKey = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
+            const plan = plansMap.get(rowKey);
+            const progress = apptMap.get(rowKey);
 
             return {
                 ...row,
@@ -1200,13 +1196,10 @@ router.get('/', async (req, res) => {
             });
         }
 
-        // 6. Pagination
         const total = mergedOps.length;
-        const totalPages = Math.ceil(total / limitNum);
-        const paginatedOps = mergedOps.slice(offset, offset + limitNum);
 
-        // 7. Enhance with Documents (Only for paginated)
-        const productCodes = [...new Set(paginatedOps.map(o => (o.cod_produto_op || '').trim().toUpperCase()))];
+        // Enhance with Documents
+        const productCodes = [...new Set(mergedOps.map(o => (o.cod_produto_op || '').trim().toUpperCase()))];
         let docsMap = {};
 
         if (productCodes.length > 0) {
@@ -1230,7 +1223,7 @@ router.get('/', async (req, res) => {
             } catch (docErr) { console.error('Doc Error:', docErr); }
         }
 
-        const finalOps = paginatedOps.map(op => {
+        const finalOps = mergedOps.map(op => {
             const docInfo = docsMap[(op.cod_produto_op || '').trim().toUpperCase()];
             // If product has operation defined in docs, override or attach it
             // Typically we want to show this in the frontend as "Default Operation"
@@ -1246,9 +1239,6 @@ router.get('/', async (req, res) => {
         res.json({
             data: finalOps,
             total: total,
-            page: pageNum,
-            limit: limitNum,
-            totalPages: totalPages
         });
     } catch (err) {
         console.error(err);

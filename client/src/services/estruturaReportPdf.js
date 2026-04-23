@@ -279,6 +279,69 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
   });
 }
 
+// ─── Helper: tabela detalhada de registros SZ0 ────────────────────────────────
+function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr, title) {
+  // Filtra apenas as restrições com status "A" (Aprovado)
+  const approvedRecords = sz0Records.filter(r => r.status === 'A');
+  
+  if (!approvedRecords || approvedRecords.length === 0) return;
+
+  const PH = doc.internal.pageSize.getHeight();
+  const { y: titleY } = nextSectionStart(doc, PH, ML, MR, root, PW, dateStr, timeStr, title);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...C.darkBlue);
+  doc.text(`RESTRIÇÕES DE ENGENHARIA APROVADAS (SZ0) - ${root.codigo}`, ML, titleY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...C.mutedText);
+  doc.text(`Total de registros aprovados: ${approvedRecords.length}`, ML, titleY + 5);
+
+  const sz0Rows = approvedRecords.map((r) => {
+    const statusLabel = 'Aprovado';
+    const dtFormatted = r.dt_ultima_alt ? r.dt_ultima_alt.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '—';
+    return {
+      statusCode: r.status,
+      data: [
+        r.item || '—',
+        statusLabel,
+        r.resumo || '—',
+        r.restricao || '—',
+        r.revisao || '—',
+        r.responsavel || '—',
+        `${dtFormatted} ${r.hr_ultima_alt || ''}`.trim()
+      ]
+    };
+  });
+
+  autoTable(doc, {
+    startY: titleY + 10,
+    head: [['ITEM', 'STATUS', 'RESUMO', 'DESCRIÇÃO DA RESTRIÇÃO', 'REVISÃO', 'RESPONSÁVEL', 'ÚLT. ALTERAÇÃO']],
+    body: sz0Rows.map(r => r.data),
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'courier' },
+    headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 15 },
+      1: { halign: 'center', cellWidth: 20 },
+      2: { halign: 'left', cellWidth: 45 },
+      3: { halign: 'left', overflow: 'linebreak' },
+      4: { halign: 'center', cellWidth: 15 },
+      5: { halign: 'left', cellWidth: 40 },
+      6: { halign: 'center', cellWidth: 30 }
+    },
+    didParseCell: (data) => {
+      // Formato padrão, sem cores customizadas por célula
+    },
+    didDrawPage: (data) => {
+      if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
+    },
+    margin: { left: ML, right: MR, top: 40, bottom: 15 },
+  });
+}
+
 // ─── Exportação principal ─────────────────────────────────────────────────────
 export const generateEstruturaReport = async (structure, routesMap, options = {}) => {
   if (!structure || structure.length === 0) return;
@@ -469,6 +532,11 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
         margin: { left: ML, right: MR, top: 40, bottom: 15 },
       });
     }
+    // Nova tabela SZ0 detalhada do produto pai
+    if (options.sz0Records && options.sz0Records.length > 0) {
+      drawSZ0DetailsTable(doc, options.sz0Records, root, PW, ML, MR, dateStr, timeStr, title);
+    }
+
     // Nível 00 sempre exibido; subitens (Nv.01+) apenas se a opção estiver ativa
     const restrictionLevelFilter = options.includeSubLevelRestrictions ? null : 0;
     drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeStr, title, restrictionLevelFilter);
@@ -540,6 +608,11 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       },
       margin: { left: ML, right: MR, top: 40, bottom: 15 },
     });
+
+    if (options.sz0Records && options.sz0Records.length > 0) {
+      drawSZ0DetailsTable(doc, options.sz0Records, root, PW, ML, MR, dateStr, timeStr, title);
+    }
+
     drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeStr, title, null);
   }
 

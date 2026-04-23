@@ -82,11 +82,19 @@ const OrdersTable = () => {
 
     // Action dropdown menu state
     const [openActionMenu, setOpenActionMenu] = useState(null);
+    const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
+    
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
         document.addEventListener('click', close);
-        return () => document.removeEventListener('click', close);
+        document.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            document.removeEventListener('click', close);
+            document.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
     }, [openActionMenu]);
 
     const filters = {
@@ -97,6 +105,7 @@ const OrdersTable = () => {
         dataFinal: orderFilters.dataFinal,
         dateType: orderFilters.dateType,
         tipo_item: orderFilters.tipo_item || '',
+        op_status: orderFilters.op_status || '',
         only_active: orderFilters.only_active
     };
 
@@ -123,6 +132,34 @@ const OrdersTable = () => {
         return () => console.log('📦 [OrdersTable] Component UNMOUNTED');
     }, []);
 
+    // Selection State (Flat View)
+    const [selectedItems, setSelectedItems] = useState([]);
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            // Select all currently loaded flat items
+            setSelectedItems([...orders]);
+        } else {
+            setSelectedItems([]);
+        }
+    };
+
+    const handleSelectItem = (item) => {
+        setSelectedItems(prev => {
+            const isSelected = prev.some(i => i.pedido === item.pedido && i.item === item.item);
+            if (isSelected) {
+                return prev.filter(i => !(i.pedido === item.pedido && i.item === item.item));
+            } else {
+                return [...prev, item];
+            }
+        });
+    };
+
+    // Keep selection cleared if pagination, search, or viewMode changes
+    useEffect(() => {
+        setSelectedItems([]);
+    }, [orders, viewMode]);
+
     // AbortController ref — cancels stale requests on rapid filter/page changes
     const abortRef = useRef(null);
 
@@ -143,6 +180,7 @@ const OrdersTable = () => {
                 dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
                 dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
                 tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
+                op_status: overrides.op_status !== undefined ? overrides.op_status : filters.op_status,
                 only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
             };
             const searchPage = overrides.page || page;
@@ -435,6 +473,56 @@ const OrdersTable = () => {
         }
     };
 
+    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-resource-drawings-${pedido}-${itemId}` : `op-resource-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Resource PDF with Drawings:', error);
+            alert(`Erro ao gerar Espelho por Recurso com Desenhos: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}` : `op-stamp-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP PDF with Ops Stamp Drawings:', error);
+            alert(`Erro ao gerar Espelho com Roteiro no Carimbo: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handlePrintOPByOperation = async (pedido, e, itemId = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
@@ -605,7 +693,7 @@ const OrdersTable = () => {
                     </div>
                 </div>
 
-                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
+                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-3 items-end">
                     <div className="flex flex-col gap-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
                         <div className="relative">
@@ -697,23 +785,58 @@ const OrdersTable = () => {
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    {/* Filtro Tipo de Item (Multi-select Pills) */}
+                    <div className="flex flex-col gap-1 md:col-span-2">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Tipo de Item:</label>
-                        <select
-                            name="tipo_item"
-                            value={filters.tipo_item}
-                            onChange={handleFilterChange}
-                            className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
-                        >
-                            <option value="">Todos</option>
-                            <option value="PCP">PCP</option>
-                            <option value="Restrição">Restrição</option>
-                            <option value="Revisão">Revisão</option>
-                            <option value="Novo">Novo</option>
-                        </select>
+                        <div className="flex flex-wrap gap-1">
+                            {['PCP', 'Restrição', 'Revisão', 'Novo'].map(tipo => {
+                                const activeTipos = filters.tipo_item ? filters.tipo_item.split(',') : [];
+                                const isActive = activeTipos.includes(tipo);
+                                return (
+                                    <button
+                                        key={tipo}
+                                        type="button"
+                                        onClick={() => {
+                                            let newTipos = [...activeTipos];
+                                            if (isActive) newTipos = newTipos.filter(t => t !== tipo);
+                                            else newTipos.push(tipo);
+                                            setFilters({ tipo_item: newTipos.join(','), page: 1 });
+                                        }}
+                                        className={`px-3 py-1 flex items-center justify-center text-[11px] font-semibold rounded-full border transition-all ${
+                                            isActive
+                                                ? 'bg-blue-100 text-blue-700 border-blue-200 shadow-sm'
+                                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {tipo}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
 
-                    <div className="md:col-span-1 flex gap-2">
+                    {/* Filtro OP Status (Single-select Pills) */}
+                    <div className="flex flex-col gap-1 md:col-span-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">Status da OP:</label>
+                        <div className="flex bg-gray-100 rounded-lg p-1 w-full">
+                            {[{value: '', label: 'Todos'}, {value: 'com_op', label: 'Com OP'}, {value: 'sem_op', label: 'Sem OP'}].map(opt => (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => setFilters({ op_status: opt.value, page: 1 })}
+                                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all ${
+                                        (filters.op_status || '') === opt.value
+                                            ? 'bg-white text-blue-700 shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="md:col-span-2 lg:col-span-2 flex gap-2">
                         <button
                             type="submit"
                             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
@@ -781,28 +904,43 @@ const OrdersTable = () => {
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex border-b border-gray-100 bg-white print:hidden">
-                <button
-                    onClick={() => setActiveTab('evolucao')}
-                    className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'evolucao'
-                        ? 'border-blue-600 text-blue-600 bg-blue-50/30'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
-                >
-                    <TrendingUp className="w-4 h-4" />
-                    Evolução da Carteira
-                </button>
+            <div className="flex items-center justify-between border-b border-gray-100 bg-white print:hidden">
+                <div className="flex">
+                    <button
+                        onClick={() => setActiveTab('evolucao')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'evolucao'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <TrendingUp className="w-4 h-4" />
+                        Evolução da Carteira
+                    </button>
 
-                <button
-                    onClick={() => setActiveTab('pcp-export')}
-                    className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pcp-export'
-                        ? 'border-blue-600 text-blue-600 bg-blue-50/30'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
-                >
-                    <FileSpreadsheet className="w-4 h-4" />
-                    Exportação Materiais
-                </button>
+                    <button
+                        onClick={() => setActiveTab('pcp-export')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pcp-export'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Exportação Materiais
+                    </button>
+                </div>
+                
+                {/* Lote Actions */}
+                {selectedItems.length > 0 && viewMode === 'flat' && (
+                    <div className="px-4">
+                        <button
+                            onClick={() => setPcpForecastTarget(selectedItems)}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <Package className="w-4 h-4" />
+                            Gerar Lote de O.P. ({selectedItems.length})
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Evolução Content */}
@@ -824,6 +962,14 @@ const OrdersTable = () => {
                                     </tr>
                                 ) : (
                                     <tr>
+                                        <th className="px-4 py-3 font-semibold text-center w-8">
+                                            <input 
+                                                type="checkbox" 
+                                                onChange={handleSelectAll} 
+                                                checked={orders.length > 0 && selectedItems.length === orders.length}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            />
+                                        </th>
                                         <th className="px-4 py-3 font-semibold">Pedido</th>
                                         <th className="px-4 py-3 font-semibold text-center">Emissão</th>
                                         <th className="px-4 py-3 font-semibold">Ref. Cliente</th>
@@ -941,13 +1087,29 @@ const OrdersTable = () => {
                                                                 <div className="relative" onClick={e => e.stopPropagation()}>
                                                                     <button
                                                                         title="Imprimir / Exportar"
-                                                                        onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === `order-${order.pedido}` ? null : `order-${order.pedido}`); }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (openActionMenu === `order-${order.pedido}`) {
+                                                                                setOpenActionMenu(null);
+                                                                            } else {
+                                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                                setMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right });
+                                                                                setOpenActionMenu(`order-${order.pedido}`);
+                                                                            }
+                                                                        }}
                                                                         className="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded hover:bg-gray-100"
                                                                     >
                                                                         <MoreVertical className="w-4 h-4" />
                                                                     </button>
                                                                     {openActionMenu === `order-${order.pedido}` && (
-                                                                        <div className="absolute right-0 top-full mt-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[210px]">
+                                                                        <div 
+                                                                            className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[210px]"
+                                                                            style={{ 
+                                                                                top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto', 
+                                                                                bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', 
+                                                                                right: `${menuPosition.right}px` 
+                                                                            }}
+                                                                        >
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); updateOrderFilters({ pedido: order.pedido, activeTab: 'pcp-export' }); setOpenActionMenu(null); }}
                                                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-green-50 hover:text-green-700 transition-colors"
@@ -995,6 +1157,22 @@ const OrdersTable = () => {
                                                                             >
                                                                                 {printingOrderId === `op-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
                                                                                 <span>OP + Desenhos (PDF)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-resource-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                <span>OP + Desenhos (Por Recurso)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={printingOrderId === `op-stamp-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-40"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                                                                <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                             </button>
                                                                             <button
                                                                                 onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
@@ -1107,13 +1285,39 @@ const OrdersTable = () => {
                                                                                                             <div className="relative" onClick={e => e.stopPropagation()}>
                                                                                                                 <button
                                                                                                                     title="Mais ações"
-                                                                                                                    onClick={(e) => { e.stopPropagation(); const key = `item-${order.pedido}-${item.item}`; setOpenActionMenu(openActionMenu === key ? null : key); }}
+                                                                                                                    onClick={(e) => { 
+                                                                                                                        e.stopPropagation(); 
+                                                                                                                        const key = `item-${order.pedido}-${item.item}`; 
+                                                                                                                        if (openActionMenu === key) {
+                                                                                                                            setOpenActionMenu(null);
+                                                                                                                        } else {
+                                                                                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                                                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                                                                                            const spaceAbove = rect.top;
+                                                                                                                            const menuHeight = 350; // estimated max height
+                                                                                                                            if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+                                                                                                                                // Open upwards
+                                                                                                                                setMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right });
+                                                                                                                            } else {
+                                                                                                                                // Open downwards
+                                                                                                                                setMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right });
+                                                                                                                            }
+                                                                                                                            setOpenActionMenu(key);
+                                                                                                                        }
+                                                                                                                    }}
                                                                                                                     className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center"
                                                                                                                 >
                                                                                                                     <MoreVertical className="h-3.5 w-3.5" />
                                                                                                                 </button>
                                                                                                                 {openActionMenu === `item-${order.pedido}-${item.item}` && (
-                                                                                                                    <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg py-1 min-w-[200px]">
+                                                                                                                    <div 
+                                                                                                                        className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]"
+                                                                                                                        style={{ 
+                                                                                                                            top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto', 
+                                                                                                                            bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', 
+                                                                                                                            right: `${menuPosition.right}px` 
+                                                                                                                        }}
+                                                                                                                    >
                                                                                                                         <button
                                                                                                                             onClick={(e) => { e.stopPropagation(); setEngineeringTarget({ orderId: order.pedido, item }); setOpenActionMenu(null); }}
                                                                                                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
@@ -1153,6 +1357,22 @@ const OrdersTable = () => {
                                                                                                                         >
                                                                                                                             {printingOrderId === `op-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
                                                                                                                             <span>OP + Desenhos (PDF)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            <span>OP + Desenhos (Por Recurso)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                                                                         </button>
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}
@@ -1335,7 +1555,15 @@ const OrdersTable = () => {
                                         ) : (
                                             // FLAT VIEW IMPLEMENTATION
                                             orders.map((item, idx) => (
-                                                <tr key={`${item.pedido}-${item.item}-${idx}`} className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'}`}>
+                                                <tr key={`${item.pedido}-${item.item}-${idx}`} className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'} ${selectedItems.some(i => i.pedido === item.pedido && i.item === item.item) ? 'bg-blue-50' : ''}`}>
+                                                    <td className="px-4 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)} 
+                                                            onChange={() => handleSelectItem(item)}
+                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </td>
                                                     <td className="px-4 py-2 whitespace-nowrap">
                                                         <span className="font-bold text-gray-900">{item.pedido}</span>
                                                     </td>

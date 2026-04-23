@@ -28,6 +28,11 @@ const ControleFaturamento = () => {
     const [selectedSolicitacao, setSelectedSolicitacao] = useState(null);
     const [auditoria, setAuditoria] = useState([]);
 
+    // Bloqueio de Edição para Faturados
+    const faturadoLog = auditoria.find(log => log.acao === 'ALTERACAO_STATUS' && log.detalhes && log.detalhes.includes('Atendido'));
+    const faturadoPor = faturadoLog ? faturadoLog.usuario : null;
+    const isLockedFaturado = selectedSolicitacao?.status === 'Atendido' && user?.nome !== faturadoPor;
+
     // Filtros
     const [statusFilter, setStatusFilter] = useStickyState('Pendente', '@metalfisa:controleFat_status');
 
@@ -146,6 +151,7 @@ const ControleFaturamento = () => {
     };
 
     const handleConfirmAddItem = async () => {
+        if(isLockedFaturado) return toast.error("Apenas o usuário que mudou para 'Faturado' pode alterar itens.");
         if(!candidateItem) return;
         if(!addQtdForm || addQtdForm <= 0) return toast.warning('Quantidade inválida.');
         if(addQtdForm > candidateItem.qtd_faturar) return toast.warning('Excede o saldo do Pedido!');
@@ -201,6 +207,7 @@ const ControleFaturamento = () => {
     };
 
     const handleSaveNf = async () => {
+        if (isLockedFaturado) return toast.error("Apenas o usuário que mudou para 'Faturado' pode alterar a NF.");
         if (!selectedSolicitacao || !globalNf.trim()) return;
         setSavingNf(true);
         try {
@@ -218,6 +225,7 @@ const ControleFaturamento = () => {
     };
 
     const handleChangeStatus = async (newStatus) => {
+        if (isLockedFaturado) return toast.error("Apenas o usuário que mudou para 'Faturado' pode reverter ou alterar status.");
         if (!selectedSolicitacao) return;
 
         // NF obrigatória para marcar como Faturado
@@ -252,6 +260,7 @@ const ControleFaturamento = () => {
     };
 
     const handleDeleteItem = async (itemId) => {
+        if (isLockedFaturado) return toast.error("Apenas o usuário que mudou para 'Faturado' pode excluir itens.");
         if (!window.confirm('Tem certeza que deseja remover este item desta Remessa?')) return;
         try {
             await deleteFaturamentoSolicitacaoItem(selectedSolicitacao.id, itemId, { usuario: user?.nome || 'Sistema' });
@@ -267,6 +276,7 @@ const ControleFaturamento = () => {
     const [editingItemQty, setEditingItemQty] = useState({ id: null, value: '' });
 
     const handleSaveItemQty = async (item) => {
+        if (isLockedFaturado) return toast.error("Apenas o usuário que mudou para 'Faturado' pode alterar as quantidades.");
         let valStr = String(editingItemQty.value).replace(',', '.');
         const novoValor = parseFloat(valStr);
         if (isNaN(novoValor) || novoValor <= 0) {
@@ -387,9 +397,9 @@ const ControleFaturamento = () => {
                                 </div>
                                 <div className="flex flex-col md:flex-row items-end md:items-center gap-3">
                                     <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
-                                        <button onClick={() => handleChangeStatus('Pendente')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Pendente' ? 'bg-yellow-100 text-yellow-800 shadow' : 'text-gray-500 hover:text-gray-700'}`}>Pendente</button>
-                                        <button onClick={() => handleChangeStatus('Atendido')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Atendido' ? 'bg-green-100 text-green-800 shadow' : 'text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}>Faturado</button>
-                                        <button onClick={() => handleChangeStatus('Cancelado')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Cancelado' ? 'bg-red-100 text-red-800 shadow' : 'text-gray-500 hover:text-gray-700'}`}>Cancel</button>
+                                        <button onClick={() => handleChangeStatus('Pendente')} disabled={selectedSolicitacao.status === 'Pendente' || isLockedFaturado} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Pendente' ? 'bg-yellow-100 text-yellow-800 shadow' : 'text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}>Pendente</button>
+                                        <button onClick={() => handleChangeStatus('Atendido')} disabled={selectedSolicitacao.status === 'Atendido' || isLockedFaturado} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Atendido' ? 'bg-green-100 text-green-800 shadow' : 'text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}>Faturado</button>
+                                        <button onClick={() => handleChangeStatus('Cancelado')} disabled={selectedSolicitacao.status === 'Cancelado' || isLockedFaturado} className={`px-3 py-1.5 text-xs font-bold rounded-md ${selectedSolicitacao.status === 'Cancelado' ? 'bg-red-100 text-red-800 shadow' : 'text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}>Cancel</button>
                                     </div>
                                     <button 
                                         onClick={() => generateFaturamentosExcel([selectedSolicitacao])}
@@ -422,7 +432,7 @@ const ControleFaturamento = () => {
                                             value={globalNf}
                                             onChange={e => setGlobalNf(e.target.value)}
                                             placeholder="Ex: NF-00213"
-                                            disabled={selectedSolicitacao.status === 'Cancelado'}
+                                            disabled={selectedSolicitacao.status === 'Cancelado' || isLockedFaturado}
                                             className={`flex-1 w-full text-sm rounded-md font-semibold focus:ring-2 focus:outline-none transition-colors ${
                                                 !globalNf.trim() && selectedSolicitacao.status !== 'Cancelado'
                                                     ? 'border-amber-300 focus:ring-amber-300 bg-white text-gray-700'
@@ -431,7 +441,7 @@ const ControleFaturamento = () => {
                                         />
                                         <button
                                             onClick={handleSaveNf}
-                                            disabled={savingNf || !globalNf.trim() || selectedSolicitacao.status === 'Cancelado' || globalNf.trim() === (selectedSolicitacao.nota_fiscal || '')}
+                                            disabled={savingNf || !globalNf.trim() || selectedSolicitacao.status === 'Cancelado' || globalNf.trim() === (selectedSolicitacao.nota_fiscal || '') || isLockedFaturado}
                                             className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                                         >
                                             <Save className="w-3.5 h-3.5" /> {savingNf ? 'Salvando...' : 'Salvar NF'}
@@ -449,7 +459,7 @@ const ControleFaturamento = () => {
 
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="font-bold text-gray-800 text-lg">Itens Faturados / Solicitados</h3>
-                                {selectedSolicitacao.status === 'Pendente' && (
+                                {(selectedSolicitacao.status === 'Pendente' || (selectedSolicitacao.status === 'Atendido' && !isLockedFaturado)) && (
                                     <button 
                                         onClick={() => {
                                             setAddSearchText('');
@@ -530,7 +540,7 @@ const ControleFaturamento = () => {
 
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex flex-col items-end">
-                                                        {selectedSolicitacao.status === 'Pendente' && editingItemQty.id === it.id ? (
+                                                        {(selectedSolicitacao.status === 'Pendente' || (selectedSolicitacao.status === 'Atendido' && !isLockedFaturado)) && editingItemQty.id === it.id ? (
                                                             <div className="flex items-center gap-1">
                                                                 <input
                                                                     type="text"
@@ -560,10 +570,10 @@ const ControleFaturamento = () => {
                                                             </div>
                                                         ) : (
                                                             <span
-                                                                className={`font-black text-gray-800 ${selectedSolicitacao.status === 'Pendente' ? 'cursor-pointer hover:underline decoration-blue-400 underline-offset-2 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors' : 'px-2 py-0.5'}`}
-                                                                title={selectedSolicitacao.status === 'Pendente' ? "Clique para editar quantidade" : ""}
+                                                                className={`font-black text-gray-800 ${(selectedSolicitacao.status === 'Pendente' || (selectedSolicitacao.status === 'Atendido' && !isLockedFaturado)) ? 'cursor-pointer hover:underline decoration-blue-400 underline-offset-2 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors' : 'px-2 py-0.5'}`}
+                                                                title={(selectedSolicitacao.status === 'Pendente' || (selectedSolicitacao.status === 'Atendido' && !isLockedFaturado)) ? "Clique para editar quantidade" : ""}
                                                                 onClick={() => {
-                                                                    if (selectedSolicitacao.status === 'Pendente') {
+                                                                    if (selectedSolicitacao.status === 'Pendente' || (selectedSolicitacao.status === 'Atendido' && !isLockedFaturado)) {
                                                                         setEditingItemQty({ id: it.id, value: String(it.quantidade_solicitada).replace('.', ',') });
                                                                     }
                                                                 }}
@@ -574,9 +584,11 @@ const ControleFaturamento = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-2 py-3 text-center">
-                                                    <button onClick={() => handleDeleteItem(it.id)} className="text-red-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors mx-auto" title="Remover Item Falho">
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                                    {(!isLockedFaturado) && (
+                                                        <button onClick={() => handleDeleteItem(it.id)} className="text-red-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors mx-auto" title="Remover Item Falho">
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

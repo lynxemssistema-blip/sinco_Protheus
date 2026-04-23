@@ -11,7 +11,7 @@ const ExcelJS = require('exceljs');
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, page = 1, limit = 50, only_active = 'false' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, page = 1, limit = 50, only_active = 'false', op_status = '' } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
@@ -61,6 +61,34 @@ router.get('/', async (req, res) => {
             )`;
             params.push(produto);
             paramCount++;
+        }
+
+        if (op_status === 'com_op') {
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM public.sc6010 c6_op_filter
+                WHERE c6_op_filter.c6_num = c5.c5_num
+                AND c6_op_filter.c6_filial = c5.c5_filial
+                AND COALESCE(c6_op_filter.d_e_l_e_t_, '') = ''
+                AND EXISTS (
+                     SELECT 1 FROM public.sc2010 c2_op
+                     WHERE (c2_op.c2_pedido = c6_op_filter.c6_num OR (TRIM(COALESCE(c2_op.c2_pedido, '')) = '' AND c2_op.c2_obs LIKE c6_op_filter.c6_num || '%'))
+                     AND c2_op.c2_itempv = c6_op_filter.c6_item
+                     AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                )
+            )`;
+        } else if (op_status === 'sem_op') {
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM public.sc6010 c6_sem_op_filter
+                WHERE c6_sem_op_filter.c6_num = c5.c5_num
+                AND c6_sem_op_filter.c6_filial = c5.c5_filial
+                AND COALESCE(c6_sem_op_filter.d_e_l_e_t_, '') = ''
+                AND NOT EXISTS (
+                     SELECT 1 FROM public.sc2010 c2_op
+                     WHERE (c2_op.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_op.c2_pedido, '')) = '' AND c2_op.c2_obs LIKE c5.c5_num || '%'))
+                     AND c2_op.c2_itempv = c6_sem_op_filter.c6_item
+                     AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                )
+            )`;
         }
 
         // Filtro por data de emissão
@@ -198,7 +226,7 @@ router.get('/flat', async (req, res) => {
     let paramsCount = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -242,60 +270,79 @@ router.get('/flat', async (req, res) => {
             paramCount++;
         }
 
-        // --- Novo Filtro de Tipo de Item ---
+        // --- Novo Filtro de Tipo de Item (Múltipla Seleção) ---
         if (tipo_item) {
-            if (tipo_item === 'Restrição') {
-                whereClause += ` AND (
-                    EXISTS (
-                        SELECT 1 FROM public.sb1010 filter_sb
-                        WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
-                        AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
-                        AND filter_sb.b1_msblql IN ('1','S','T','Y')
-                    ) OR EXISTS (
-                        SELECT 1 FROM public.sz0010 filter_sz
-                        WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
-                        AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
-                        AND filter_sz.z0_status = 'P'
-                    )
-                )`;
-            } else if (tipo_item === 'Revisão') {
-                whereClause += ` AND COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '')`;
-            } else if (tipo_item === 'Novo') {
-                whereClause += ` AND NOT EXISTS (
-                    SELECT 1 FROM public.sg1010 sg1
-                    WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
-                    AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM public.sg2010 sg2
-                    WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
-                    AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
-                )`;
-            } else if (tipo_item === 'PCP') {
-                whereClause += ` AND NOT (
-                    EXISTS (
-                        SELECT 1 FROM public.sb1010 filter_sb
-                        WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
-                        AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
-                        AND filter_sb.b1_msblql IN ('1','S','T','Y')
-                    ) OR EXISTS (
-                        SELECT 1 FROM public.sz0010 filter_sz
-                        WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
-                        AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
-                        AND filter_sz.z0_status = 'P'
-                    )
-                ) AND COALESCE(c6.c6_xrevm, '') = COALESCE(c6.c6_xrevc, '') 
-                  AND (
-                    EXISTS (
+            const tipos = tipo_item.split(',').filter(Boolean);
+            if (tipos.length > 0) {
+                const tipoConditions = [];
+                
+                if (tipos.includes('Restrição')) {
+                    tipoConditions.push(`(
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    )`);
+                }
+                if (tipos.includes('Revisão')) {
+                    tipoConditions.push(`(COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, ''))`);
+                }
+                if (tipos.includes('Novo')) {
+                    tipoConditions.push(`(NOT EXISTS (
                         SELECT 1 FROM public.sg1010 sg1
                         WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
                         AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
-                    ) OR EXISTS (
+                    ) AND NOT EXISTS (
                         SELECT 1 FROM public.sg2010 sg2
                         WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
                         AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
-                    )
-                )`;
+                    ))`);
+                }
+                if (tipos.includes('PCP')) {
+                    tipoConditions.push(`(NOT (
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    ) AND COALESCE(c6.c6_xrevm, '') = COALESCE(c6.c6_xrevc, '') 
+                      AND (
+                        EXISTS (
+                            SELECT 1 FROM public.sg1010 sg1
+                            WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sg2010 sg2
+                            WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                        )
+                    ))`);
+                }
+                
+                if (tipoConditions.length > 0) {
+                    whereClause += ` AND (${tipoConditions.join(' OR ')})`;
+                }
             }
+        }
+
+        // --- Filtro de Status da OP ---
+        if (op_status === 'com_op') {
+            whereClause += ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_status.c2_pedido, '')) = '' AND c2_status.c2_obs LIKE c5.c5_num || '%')) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+        } else if (op_status === 'sem_op') {
+            whereClause += ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_status.c2_pedido, '')) = '' AND c2_status.c2_obs LIKE c5.c5_num || '%')) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
         }
 
         if (dataInicial || dataFinal) {
@@ -901,7 +948,7 @@ router.get('/:id/itens', async (req, res) => {
                 sb1.b1_desc   AS descricao,
                 c6.c6_um      AS unidade,
                 COALESCE(c6.c6_qtdven, 0)::numeric(18,6)  AS quantidade,
-                TO_CHAR(TO_DATE(NULLIF(TRIM(c6.c6_entreg), ''), 'YYYYMMDD'), 'DD/MM/YY') AS entrega,
+                TRIM(c6.c6_entreg) AS entrega_raw,
                 TRIM(c6.c6_pedcli) AS ped_cliente,
                 TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num,
                 c2.c2_quant   AS op_qtd,
@@ -984,7 +1031,7 @@ router.get('/:id/itens', async (req, res) => {
                 db.query(`
                     SELECT d2.d2_itempv as item,
                         TRIM(d2.d2_doc) as nota, TRIM(d2.d2_serie) as serie,
-                        TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao), ''), 'YYYYMMDD'), 'DD/MM/YY') as emissao,
+                        TRIM(f2.f2_emissao) as emissao_raw,
                         '' as natureza, TRIM(d2.d2_cf) as cfop,
                         d2.d2_quant::numeric(18,2) as qtd, d2.d2_prunit::numeric(18,2) as valor_unit,
                         d2.d2_total::numeric(18,2) as valor_total, d2.d2_valicm::numeric(18,2) as valor_icms,
@@ -1069,7 +1116,7 @@ router.get('/:id/itens', async (req, res) => {
                 nfResult.value.rows.forEach(nf => {
                     const key = String(nf.item).trim();
                     if (!nfMap[key]) nfMap[key] = [];
-                    nfMap[key].push({ nota: nf.nota, serie: nf.serie, emissao: nf.emissao, natureza: nf.natureza, cfop: nf.cfop, qtd: nf.qtd, valor_unit: nf.valor_unit, valor_total: nf.valor_total, valor_icms: nf.valor_icms, valor_ipi: nf.valor_ipi, valor_frete: nf.valor_frete, peso_bruto: nf.peso_bruto, peso_liquido: nf.peso_liquido, transporte: nf.transporte });
+                    nfMap[key].push({ nota: nf.nota, serie: nf.serie, emissao_raw: nf.emissao_raw, natureza: nf.natureza, cfop: nf.cfop, qtd: nf.qtd, valor_unit: nf.valor_unit, valor_total: nf.valor_total, valor_icms: nf.valor_icms, valor_ipi: nf.valor_ipi, valor_frete: nf.valor_frete, peso_bruto: nf.peso_bruto, peso_liquido: nf.peso_liquido, transporte: nf.transporte });
                 });
                 items.forEach(item => {
                     item.notas_fiscais = nfMap[String(item.item).trim()] || null;
@@ -1120,6 +1167,21 @@ router.get('/:id/itens', async (req, res) => {
             } catch (err) {
                 console.error('Error merging PCP forecasts:', err);
             }
+
+            // Converter datas de Protheus string (YYYYMMDD) para formato legível (DD/MM/YY) p/ Frontend
+            const parseDateStr = (dStr) => {
+                if (!dStr || dStr.trim() === '' || dStr.length < 8) return null;
+                return `${dStr.substring(6, 8)}/${dStr.substring(4, 6)}/${dStr.substring(2, 4)}`;
+            };
+
+            items.forEach(item => {
+                item.entrega = parseDateStr(item.entrega_raw);
+                if (item.notas_fiscais) {
+                    item.notas_fiscais.forEach(nf => {
+                        nf.emissao = parseDateStr(nf.emissao_raw);
+                    });
+                }
+            });
         }
 
         res.json(items);
@@ -1469,6 +1531,63 @@ router.get('/:pedido/items/:item/history', async (req, res) => {
 });
 
 // PCP Delivery Forecast Endpoints
+router.post('/pcp-forecasts/batch', async (req, res) => {
+    try {
+        const { items, data_entrega_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote } = req.body;
+
+        if (!items || !Array.isArray(items) || items.length === 0 || !data_entrega_pcp || !usuario) {
+            return res.status(400).json({ error: 'Dados incompletos para o planejamento Lote PCP.' });
+        }
+
+        const connection = await mysqlPool.getConnection();
+        await connection.beginTransaction();
+
+        try {
+            const savedItems = []; // itens efetivamente salvos com quantidade real
+
+            for (const it of items) {
+                let { pedido, item, quantidade_pcp, qtd_total_item } = it;
+
+                if (!pedido || !item || quantidade_pcp === undefined) continue;
+
+                if (qtd_total_item !== undefined) {
+                    const [existing] = await connection.query(
+                        'SELECT COALESCE(SUM(quantidade_pcp), 0) as total FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+                        [String(pedido).trim(), String(item).trim()]
+                    );
+                    const totalAtual = parseFloat(existing[0].total) || 0;
+                    const novaQtd = parseFloat(quantidade_pcp);
+                    const limite = parseFloat(qtd_total_item);
+
+                    if (totalAtual + novaQtd > limite + 0.01) {
+                        const restante = Math.max(0, limite - totalAtual);
+                        if (restante <= 0.01) continue; // já 100% programado, pula
+                        quantidade_pcp = parseFloat(restante.toFixed(2)); // quantidade parcial real
+                    }
+                }
+
+                await connection.query(
+                    'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null]
+                );
+
+                savedItems.push({ pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
+            }
+            await connection.commit();
+            res.json({ success: true, message: 'Lote programado com sucesso', savedItems });
+        } catch (txnErr) {
+            await connection.rollback();
+            throw txnErr;
+        } finally {
+            connection.release();
+        }
+
+    } catch (err) {
+        console.error('Error saving PCP forecast batch:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/pcp-forecasts', async (req, res) => {
     try {
         const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item } = req.body;
@@ -1486,9 +1605,9 @@ router.post('/pcp-forecasts', async (req, res) => {
             const totalAtual = parseFloat(existing[0].total) || 0;
             const novaQtd = parseFloat(quantidade_pcp);
             const limite = parseFloat(qtd_total_item);
-            if (totalAtual + novaQtd > limite) {
+            if (totalAtual + novaQtd > limite + 0.01) {
                 return res.status(400).json({
-                    error: `Quantidade excede o total do item. Já programado: ${totalAtual}, disponível: ${(limite - totalAtual).toFixed(2)}.`
+                    error: `Quantidade excede o total do item. Já programado: ${totalAtual}, disponível: ${Math.max(0, limite - totalAtual).toFixed(2)}.`
                 });
             }
         }

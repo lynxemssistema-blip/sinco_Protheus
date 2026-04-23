@@ -136,7 +136,7 @@ const ArvoreNode = ({ item, level = 0 }) => {
 // ─── Painel de Busca de OPs ─────────────────────────────────────────────────
 
 const SearchPanel = ({ onSelectOp }) => {
-    const [filters, setFilters] = useState({ op: '', cliente: '', produto: '', prazo_de: '', prazo_ate: '' });
+    const [filters, setFilters] = useState({ op: '', pedido: '', cliente: '', produto: '', prazo_de: '', prazo_ate: '' });
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
@@ -176,7 +176,7 @@ const SearchPanel = ({ onSelectOp }) => {
     };
 
     const clearFilters = () => {
-        setFilters({ op: '', cliente: '', produto: '', prazo_de: '', prazo_ate: '' });
+        setFilters({ op: '', pedido: '', cliente: '', produto: '', prazo_de: '', prazo_ate: '' });
         setResults([]);
         setSearched(false);
         setError(null);
@@ -195,13 +195,22 @@ const SearchPanel = ({ onSelectOp }) => {
                         </button>
                     )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
                     <div className="relative">
                         <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                         <input
                             value={filters.op}
                             onChange={e => handleChange('op', e.target.value)}
                             placeholder="Nº da OP"
+                            className="w-full pl-8 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        />
+                    </div>
+                    <div className="relative">
+                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                        <input
+                            value={filters.pedido}
+                            onChange={e => handleChange('pedido', e.target.value)}
+                            placeholder="Nº do Pedido"
                             className="w-full pl-8 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         />
                     </div>
@@ -294,7 +303,7 @@ const SearchPanel = ({ onSelectOp }) => {
                                             </span>
                                         </div>
                                         <div className="text-xs text-slate-500 truncate mt-0.5">
-                                            {r.descricao || '—'} {r.cliente ? `• ${r.cliente}` : ''}
+                                            {r.descricao || '—'} {r.cliente ? `• ${r.cliente}` : ''} {r.pedido_venda ? `• Ped. ${r.pedido_venda}` : ''}
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">

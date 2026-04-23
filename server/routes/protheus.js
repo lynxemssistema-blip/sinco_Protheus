@@ -18,11 +18,11 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 /**
  * Utilitário para rodar Queries no PostgreSQL do Protheus
  */
-async function queryProtheus(sql) {
+async function queryProtheus(sql, params = []) {
     const client = new Client(pgConfig);
     await client.connect();
     try {
-        const res = await client.query(sql);
+        const res = await client.query(sql, params);
         return res.rows;
     } finally {
         await client.end();
@@ -163,6 +163,83 @@ router.post('/produtos/create', async (req, res) => {
     } catch (error) {
         console.error('Protheus Integrador Erro:', error.response?.data || error.message);
         res.status(500).json({ error: 'Erro ao Submeter Produto à API.', details: error.response?.data || error.message });
+    }
+});
+
+// =========================================================================
+// ROTA: Gerar Ordem de Producao via API POST (Lote)
+// =========================================================================
+router.post('/ordem-producao/incluir', async (req, res) => {
+    try {
+        const { items } = req.body;
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item informado para gerar O.P.' });
+        }
+
+        // 1. Requisitar Token
+        let accessToken = '';
+        try {
+            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
+            accessToken = tokenRes.data.access_token;
+        } catch (authError) {
+            throw new Error('Falha de Login na API Protheus (O.P.): ' + authError.message);
+        }
+        if (!accessToken) throw new Error('Token JWT retornado estava em branco.');
+
+        // 2. Montar OPs — layout exato da documentação API Sinco
+        const ordensProducao = items.map(it => ({
+            EMPRESA:   "01",
+            CFILANT:   (it.filial || "01"),
+            NOPER:     3,                                                   // único valor aceito pela API (inclusão)
+            C2_NUM:    "000001",                                            // Protheus auto-gera o número real
+            C2_ITEM:   String(it.itempv || "01").padStart(2, '0'),
+            C2_PRODUTO: (it.produto || "").trim(),
+            C2_QUANT:  Number(it.quant) || 0,
+            C2_DATPRI: it.datpri || "",
+            C2_DATPRF: it.datprf || "",
+            C2_OBS:    (it.obs || "").trim(),
+            C2_ROTEIRO: "01",
+            C2_PEDIDO: String(it.pedido || "").padStart(6, '0'),
+            C2_ITEMPV: String(it.itempv || "01").padStart(2, '0')
+        }));
+
+        // 3. Payload — estrutura exata da documentação
+        const payload = { data: { ordensProducao } };
+
+        console.log('🚀 [OP] Payload →', JSON.stringify(payload, null, 2));
+
+        // 4. Enviar para o Protheus
+        const protheusRes = await axios.post(
+            'https://192.168.1.60:47500/ordem-producao/incluir',
+            payload,
+            { headers: { 'Authorization': `Bearer ${accessToken}` }, httpsAgent, timeout: 60000 }
+        );
+
+        const protheusResp = protheusRes.data;
+        console.log('📬 [OP] Resposta Protheus →', JSON.stringify(protheusResp, null, 2));
+
+        // Protheus retorna HTTP 200 mesmo em falha; checar messages[]
+        const messages = Array.isArray(protheusResp.message)
+            ? protheusResp.message.map(String)
+            : (protheusResp.message ? [String(protheusResp.message)] : []);
+
+        const hasError = protheusResp.status === "error"
+            || messages.some(m => m.toLowerCase().includes('erro'));
+
+        if (hasError) {
+            return res.status(400).json({
+                error: 'Protheus recusou a O.P.',
+                details: messages.join(' | ') || 'Erro sem detalhes retornado pelo Protheus.'
+            });
+        }
+
+        res.json({ success: true, message: 'O.P.(s) gerada(s) com sucesso.', details: protheusResp });
+
+    } catch (error) {
+        console.error('[OP] Erro integração:', error.response?.data || error.message);
+        const detail = error.response?.data?.message || error.response?.data || error.message;
+        res.status(500).json({ error: 'Erro ao submeter O.P. ao Protheus.', details: detail });
     }
 });
 

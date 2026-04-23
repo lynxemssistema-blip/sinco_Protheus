@@ -12,7 +12,8 @@ const EMPTY_FORM = {
     serie_cliente: '',
     serie_metalfisa: '',
     lote: '',
-    numero_lote: ''
+    numero_lote: '',
+    gerar_op_protheus: true
 };
 
 const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit }) => (
@@ -24,24 +25,31 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                 value={value.data_entrega_pcp}
                 onChange={e => onChange(p => ({ ...p, data_entrega_pcp: e.target.value }))} />
         </div>
-        <div>
-            <div className="flex justify-between items-end mb-1">
-                <label className="block text-xs font-medium text-gray-600">Quantidade *</label>
-                {qtdTotal > 0 && qtdDisponivel > 0 && (
-                    <button type="button" tabIndex="-1"
-                        onClick={() => onChange(p => ({ ...p, quantidade_pcp: String(Number(qtdDisponivel.toFixed(2))) }))}
-                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium cursor-pointer transition-colors hover:underline"
-                        title="Preencher com saldo restante"
-                    >
-                        Saldo: {qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
-                    </button>
-                )}
+        {!value.isBatch && (
+            <div>
+                <div className="flex justify-between items-end mb-1">
+                    <label className="block text-xs font-medium text-gray-600">Quantidade *</label>
+                    {qtdTotal > 0 && qtdDisponivel > 0 && (
+                        <button type="button" tabIndex="-1"
+                            onClick={() => onChange(p => ({ ...p, quantidade_pcp: String(Number(qtdDisponivel.toFixed(2))) }))}
+                            className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium cursor-pointer transition-colors hover:underline"
+                            title="Preencher com saldo restante"
+                        >
+                            Saldo: {qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                        </button>
+                    )}
+                </div>
+                <input type="number" step="0.01" min="0.01" required placeholder="0.00"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={value.quantidade_pcp}
+                    onChange={e => onChange(p => ({ ...p, quantidade_pcp: e.target.value }))} />
             </div>
-            <input type="number" step="0.01" min="0.01" required placeholder="0.00"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={value.quantidade_pcp}
-                onChange={e => onChange(p => ({ ...p, quantidade_pcp: e.target.value }))} />
-        </div>
+        )}
+        {value.isBatch && (
+            <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 font-medium">
+                <Package className="h-4 w-4 inline mr-1 -mt-0.5" /> A quantidade a ser produzida/programada de cada item corresponderá ao saldo pendente restante do mesmo de forma automática.
+            </div>
+        )}
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Série Cliente</label>
             <input type="text" placeholder="Ex: SC-001"
@@ -85,6 +93,20 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                 onChange={e => onChange(p => ({ ...p, observacao: e.target.value }))} />
         </div>
 
+        {!isEdit && (
+            <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 flex items-center justify-between">
+                <div>
+                    <div className="text-sm font-semibold text-indigo-900">Gerar OP Protheus</div>
+                    <div className="text-xs text-indigo-700">Emitir Ordem Prod. automaticamente para a fábrica.</div>
+                </div>
+                <label className="relative flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={value.gerar_op_protheus} onChange={e => onChange(p => ({ ...p, gerar_op_protheus: e.target.checked }))} />
+                    <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+            </div>
+        )}
+
+
         <div className="flex gap-2 mt-1">
             <button type="submit" disabled={saving}
                 className={`flex-1 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${isEdit ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
@@ -109,10 +131,13 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const [editingId, setEditingId] = useState(null);   // id da prog em edição
     const [editForm, setEditForm] = useState(EMPTY_FORM);
 
-    const pedido = item?.pedido || item?.pedido_id;
-    const itemNum = item?.item;
-    const qtdTotal = parseFloat(item?.quantidade || 0);
-    const qtdTotalStr = qtdTotal.toLocaleString('pt-BR');
+    const isBatch = Array.isArray(item);
+    const targetItems = isBatch ? item : [item];
+
+    const pedido = isBatch ? 'Lote' : (item?.pedido || item?.pedido_id);
+    const itemNum = isBatch ? `${targetItems.length} Itens` : item?.item;
+    const qtdTotal = isBatch ? 0 : parseFloat(item?.quantidade || 0);
+    const qtdTotalStr = isBatch ? '-' : qtdTotal.toLocaleString('pt-BR');
 
     const qtdProgramada = programacoes.reduce((s, p) => s + parseFloat(p.quantidade_pcp || 0), 0);
     const qtdDisponivel = qtdTotal - qtdProgramada;
@@ -125,14 +150,20 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     };
 
     useEffect(() => {
-        if (isOpen && pedido && itemNum) {
-            setFormData(EMPTY_FORM);
+        if (isOpen && item) {
+            setFormData({ ...EMPTY_FORM, isBatch, gerar_op_protheus: isBatch });
             setEditingId(null);
-            loadProgramacoes(true);
+            if (!isBatch && pedido && itemNum) {
+                loadProgramacoes(true);
+            } else {
+                setProgramacoes([]);
+            }
         }
-    }, [isOpen, pedido, itemNum]);
+    }, [isOpen, item, isBatch]);
 
     const loadProgramacoes = async (isInitialLoad = false) => {
+        if (isBatch) return;
+        
         setLoading(true);
         try {
             const res = await api.get(`/pedidos/items/${pedido}/${itemNum}/pcp-forecasts/history`);
@@ -162,6 +193,90 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
     const handleAdd = async (e) => {
         e.preventDefault();
+        
+        if (isBatch) {
+            if (!formData.data_entrega_pcp) {
+                toast.warning('A Data de Entrega é obrigatória.');
+                return;
+            }
+
+            setSaving(true);
+            try {
+                // 1. Prepara Lote
+                const batchItems = targetItems.map(t => {
+                    const tQtdTotal = parseFloat(t.quantidade || 0);
+                    const tQtdFaturar = parseFloat(t.qtd_faturar || 0);
+                    const quantidade_pcp = tQtdFaturar > 0 ? tQtdFaturar : tQtdTotal;
+                    return {
+                        pedido: t.pedido,
+                        item: t.item,
+                        quantidade_pcp: quantidade_pcp,
+                        qtd_total_item: tQtdTotal
+                    };
+                });
+                
+                // 2. Gravar Programações no PCP Batch
+                // O backend pode ajustar a quantidade (cap no saldo restante) — usamos savedItems para OP
+                const batchResp = await api.post('/pedidos/pcp-forecasts/batch', {
+                    items: batchItems,
+                    data_entrega_pcp: formData.data_entrega_pcp,
+                    usuario: user?.nome || user?.name || user?.login || 'Usuário',
+                    observacao: formData.observacao || null,
+                    numero_serie: formData.numero_serie || null,
+                    serie_cliente: formData.serie_cliente || null,
+                    serie_metalfisa: formData.serie_metalfisa || null,
+                    lote: formData.lote || null,
+                    numero_lote: formData.numero_lote || null
+                });
+
+                // 3. Criar OPs no Protheus — quantidade = o que foi efetivamente salvo no PCP
+                if (formData.gerar_op_protheus) {
+                    // savedItems contém a quantidade real após ajuste de saldo pelo backend
+                    const savedItems = batchResp.data?.savedItems || [];
+                    const savedMap = Object.fromEntries(
+                        savedItems.map(s => [`${s.pedido}_${s.item}`, s.quantidade_pcp])
+                    );
+
+                    const protheusItems = targetItems
+                        .map(t => {
+                            const chave = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
+                            const qtdSalva = savedMap[chave];
+                            // Se não está em savedItems, foi pulado (já 100% programado)
+                            if (qtdSalva === undefined) return null;
+                            return {
+                                filial: t.filial || '01',
+                                produto: t.codigo,
+                                quant: qtdSalva,          // quantidade parcial real, não qtd_faturar
+                                datpri: formData.data_entrega_pcp.replace(/-/g, ''),
+                                datprf: formData.data_entrega_pcp.replace(/-/g, ''),
+                                obs: formData.observacao,
+                                pedido: t.pedido,
+                                itempv: t.item
+                            };
+                        })
+                        .filter(Boolean); // remove itens pulados
+
+                    if (protheusItems.length > 0) {
+                        const resp = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                        if (resp.data?.details) console.log('🚀 [PROTHEUS RETORNO]:', resp.data.details);
+                        toast.success('Ordem de Produção gerada com sucesso no Protheus!');
+                    }
+                }
+
+                toast.success('Programação Lote adicionada!');
+                onClose();
+                if (onSaveSuccess) onSaveSuccess();
+            } catch (err) {
+                console.error("❌ [ERRO API PROTHEUS/LOTE] Detalhes:", err.response?.data || err);
+                const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao processar lote.';
+                toast.error(`Falha no Lote: ${errMsg}`, { autoClose: 8000 });
+            } finally {
+                setSaving(false);
+            }
+            return;
+        }
+
+        // --- SINGLE ITEM LOGIC ---
         if (!formData.data_entrega_pcp || !formData.quantidade_pcp) {
             toast.warning('Data e Quantidade são obrigatórios.');
             return;
@@ -187,12 +302,31 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 numero_lote: formData.numero_lote || null,
                 qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined
             });
+
+            if (formData.gerar_op_protheus) {
+                const protheusItems = [{
+                    filial: item.filial || '01',
+                    produto: item.codigo,
+                    quant: novaQtd,
+                    datpri: formData.data_entrega_pcp.replace(/-/g, ''),
+                    datprf: formData.data_entrega_pcp.replace(/-/g, ''),
+                    obs: formData.observacao,
+                    pedido: pedido,
+                    itempv: itemNum
+                }];
+                console.log("🚀 [PROTHEUS PAYLOAD SINGLE] Enviando JSON:", JSON.stringify({ items: protheusItems }, null, 2));
+                await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                toast.success(`OP gerada com sucesso no Protheus.`);
+            }
+
             toast.success('Programação adicionada!');
             setFormData(EMPTY_FORM);
             await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess();
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Erro ao salvar.');
+            console.error("❌ [ERRO API PROTHEUS/SINGLE] Detalhes:", err.response?.data || err);
+            const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao salvar.';
+            toast.error(`Falha ao Gerar O.P.: ${errMsg}`, { autoClose: 8000 });
         } finally {
             setSaving(false);
         }
@@ -283,9 +417,9 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     <div className="flex items-center gap-3">
                         <Calendar className="h-6 w-6" />
                         <div>
-                            <h2 className="text-lg font-bold">Programações de Entrega PCP</h2>
+                            <h2 className="text-lg font-bold">{isBatch ? 'Programação Lote PCP' : 'Programações de Entrega PCP'}</h2>
                             <p className="text-indigo-100 text-xs">
-                                Pedido {pedido} · Item {itemNum} · {item.codigo} — {item.descricao}
+                                {isBatch ? `${targetItems.length} Itens Múltiplos Selecionados` : `Pedido ${pedido} · Item ${itemNum} · ${item.codigo} — ${item.descricao}`}
                             </p>
                         </div>
                     </div>
@@ -294,20 +428,22 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     </button>
                 </div>
 
-                {/* Progresso */}
-                <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 shrink-0">
-                    <div className="flex items-center justify-between text-xs text-indigo-700 font-medium mb-1">
-                        <span>Total programado: <strong>{qtdProgramada.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong> / {qtdTotalStr}</span>
-                        <span className={qtdDisponivel < 0 ? 'text-red-600 font-bold' : qtdDisponivel === 0 ? 'text-emerald-600 font-bold' : ''}>
-                            {qtdDisponivel === 0 ? 'Totalmente programado' : `Disponível: `}
-                            {qtdDisponivel !== 0 && <strong>{qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong>}
-                        </span>
+                {/* Progresso (Somente Individual) */}
+                {!isBatch && (
+                    <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 shrink-0">
+                        <div className="flex items-center justify-between text-xs text-indigo-700 font-medium mb-1">
+                            <span>Total programado: <strong>{qtdProgramada.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong> / {qtdTotalStr}</span>
+                            <span className={qtdDisponivel < 0 ? 'text-red-600 font-bold' : qtdDisponivel === 0 ? 'text-emerald-600 font-bold' : ''}>
+                                {qtdDisponivel === 0 ? 'Totalmente programado' : `Disponível: `}
+                                {qtdDisponivel !== 0 && <strong>{qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong>}
+                            </span>
+                        </div>
+                        <div className="w-full bg-indigo-200 rounded-full h-2">
+                            <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                style={{ width: `${pctProgramado}%` }} />
+                        </div>
                     </div>
-                    <div className="w-full bg-indigo-200 rounded-full h-2">
-                        <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                            style={{ width: `${pctProgramado}%` }} />
-                    </div>
-                </div>
+                )}
 
                 <div className="flex flex-col md:flex-row overflow-hidden flex-1 min-h-0">
                     {/* Painel esquerdo: Adicionar nova */}
@@ -326,7 +462,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                 isEdit={false}
                             />
                         </div>
-                        {qtdDisponivel <= 0 && programacoes.length > 0 && (
+                        {!isBatch && qtdDisponivel <= 0 && programacoes.length > 0 && (
                             <div className="absolute inset-0 z-10 bg-white/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
                                 <div className="bg-emerald-100 p-3 rounded-full mb-3 shadow-sm border border-emerald-200">
                                     <CheckCircle className="h-8 w-8 text-emerald-600" />
@@ -337,94 +473,121 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                         )}
                     </div>
 
-                    {/* Lista de Programações */}
+                    {/* Lista de Programações ou Itens do Lote */}
                     <div className="flex-1 p-5 overflow-y-auto">
-                        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-4">
-                            <Package className="h-4 w-4 text-indigo-600" />
-                            Programações ({programacoes.length})
-                        </h3>
-
-                        {loading ? (
-                            <div className="text-gray-400 text-sm text-center py-8">Carregando...</div>
-                        ) : programacoes.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-gray-300">
-                                <AlertCircle className="h-10 w-10 mb-2 opacity-30" />
-                                <span className="text-sm">Nenhuma programação cadastrada.</span>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {programacoes.map((prog, idx) => (
-                                    <div key={prog.id}
-                                        className={`rounded-xl border p-4 transition-all ${editingId === prog.id ? 'border-amber-400 bg-amber-50 shadow-md' : 'bg-gray-50 border-gray-200 hover:border-indigo-200'}`}>
-
-                                        {/* Cabeçalho da prog */}
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">#{idx + 1}</span>
-                                                {editingId !== prog.id && (
-                                                    <>
-                                                        <span className="text-sm font-bold text-gray-800">{fmtDate(prog.data_entrega_pcp)}</span>
-                                                        <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded">
-                                                            {parseFloat(prog.quantidade_pcp).toLocaleString('pt-BR')} un
-                                                        </span>
-                                                    </>
-                                                )}
-                                                {editingId === prog.id && (
-                                                    <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Editando...</span>
-                                                )}
+                        {isBatch ? (
+                            <>
+                                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-4">
+                                    <Package className="h-4 w-4 text-indigo-600" />
+                                    Itens Selecionados ({targetItems.length})
+                                </h3>
+                                <div className="space-y-2">
+                                    {targetItems.map((t, idx) => (
+                                        <div key={`${t.pedido}-${t.item}-${idx}`} className="rounded bg-gray-50 border border-gray-200 p-3 flex justify-between items-center text-sm">
+                                            <div>
+                                                <span className="font-bold text-gray-800">Pedido: {t.pedido}</span> <span className="text-gray-500 mx-1">/</span>
+                                                <span className="font-bold text-gray-800">Item: {t.item}</span>
+                                                <div className="text-xs text-gray-600 mt-0.5">{t.codigo} - {t.descricao}</div>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                {editingId !== prog.id && (
-                                                    <button onClick={() => startEdit(prog)}
-                                                        className="p-1.5 text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors rounded"
-                                                        title="Editar programação">
-                                                        <Pencil className="h-3.5 w-3.5" />
-                                                    </button>
-                                                )}
-                                                <button onClick={() => handleDelete(prog.id)}
-                                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors rounded"
-                                                    title="Remover">
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </button>
+                                            <div className="text-right">
+                                                <div className="text-xs text-indigo-600 font-bold block bg-indigo-50 px-2 py-1 rounded">Qtd: {parseFloat(t.quantidade || 0).toLocaleString('pt-BR')}</div>
                                             </div>
                                         </div>
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-4">
+                                    <Package className="h-4 w-4 text-indigo-600" />
+                                    Programações ({programacoes.length})
+                                </h3>
 
-                                        {/* Modo visualização */}
-                                        {editingId !== prog.id && (
-                                            <>
-                                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
-                                                    {prog.serie_cliente && <span><strong>Série Cli:</strong> {prog.serie_cliente}</span>}
-                                                    {prog.serie_metalfisa && <span><strong>Série MF:</strong> {prog.serie_metalfisa}</span>}
-                                                    {prog.numero_serie && <span><strong>Nº Série:</strong> {prog.numero_serie}</span>}
-                                                    {prog.lote && <span><strong>Lote:</strong> {prog.lote}</span>}
-                                                    {prog.numero_lote && <span><strong>Nº Lote:</strong> {prog.numero_lote}</span>}
-                                                    {prog.observacao && <span className="col-span-2 italic text-gray-400"><strong>Obs:</strong> {prog.observacao}</span>}
-                                                </div>
-                                                <div className="mt-2 text-[10px] text-gray-400 flex justify-between">
-                                                    <span>{prog.usuario}</span>
-                                                    <span>{new Date(prog.created_at).toLocaleString('pt-BR')}</span>
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {/* Modo edição inline */}
-                                        {editingId === prog.id && (
-                                            <div className="mt-2 border-t border-amber-200 pt-3">
-                                                <ProgForm
-                                                    value={editForm}
-                                                    onChange={setEditForm}
-                                                    onSubmit={(e) => handleUpdate(e, prog)}
-                                                    onCancel={cancelEdit}
-                                                    saving={saving && !!editingId}
-                                                    qtdDisponivel={qtdDisponivelEdit(prog)}
-                                                    qtdTotal={qtdTotal}
-                                                    isEdit={true}
-                                                />
-                                            </div>
-                                        )}
+                                {loading ? (
+                                    <div className="text-gray-400 text-sm text-center py-8">Carregando...</div>
+                                ) : programacoes.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-gray-300">
+                                        <AlertCircle className="h-10 w-10 mb-2 opacity-30" />
+                                        <span className="text-sm">Nenhuma programação cadastrada.</span>
                                     </div>
-                                ))}
-                            </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {programacoes.map((prog, idx) => (
+                                            <div key={prog.id}
+                                                className={`rounded-xl border p-4 transition-all ${editingId === prog.id ? 'border-amber-400 bg-amber-50 shadow-md' : 'bg-gray-50 border-gray-200 hover:border-indigo-200'}`}>
+
+                                                {/* Cabeçalho da prog */}
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">#{idx + 1}</span>
+                                                        {editingId !== prog.id && (
+                                                            <>
+                                                                <span className="text-sm font-bold text-gray-800">{fmtDate(prog.data_entrega_pcp)}</span>
+                                                                <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded">
+                                                                    {parseFloat(prog.quantidade_pcp).toLocaleString('pt-BR')} un
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                        {editingId === prog.id && (
+                                                            <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Editando...</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        {editingId !== prog.id && (
+                                                            <button onClick={() => startEdit(prog)}
+                                                                className="p-1.5 text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors rounded"
+                                                                title="Editar programação">
+                                                                <Pencil className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => handleDelete(prog.id)} disabled={editingId === prog.id}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30">
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Edit Form */}
+                                                {editingId === prog.id ? (
+                                                    <div className="pt-3 border-t border-amber-200 border-dashed">
+                                                        <ProgForm
+                                                            value={editForm}
+                                                            onChange={setEditForm}
+                                                            onSubmit={(e) => handleUpdate(e, prog)}
+                                                            onCancel={cancelEdit}
+                                                            saving={saving && editingId === prog.id}
+                                                            qtdDisponivel={qtdDisponivelEdit(prog)}
+                                                            qtdTotal={qtdTotal}
+                                                            isEdit={true}
+                                                            hideOpSwitch={true}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5 pl-2 mt-2 border-l-2 border-gray-200">
+                                                        {prog.observacao && <div className="text-xs text-gray-600"><span className="font-semibold text-gray-500">Obs:</span> {prog.observacao}</div>}
+                                                        {prog.numero_serie && <div className="text-xs text-gray-600"><span className="font-semibold text-gray-500">Nº Série:</span> {prog.numero_serie}</div>}
+                                                        {(prog.serie_cliente || prog.serie_metalfisa) && (
+                                                            <div className="flex gap-4 text-xs text-gray-600">
+                                                                {prog.serie_cliente && <div><span className="font-semibold text-gray-500">SC:</span> {prog.serie_cliente}</div>}
+                                                                {prog.serie_metalfisa && <div><span className="font-semibold text-gray-500">SM:</span> {prog.serie_metalfisa}</div>}
+                                                            </div>
+                                                        )}
+                                                        {(prog.lote || prog.numero_lote) && (
+                                                            <div className="flex gap-4 text-xs text-gray-600">
+                                                                {prog.lote && <div><span className="font-semibold text-gray-500">Lote:</span> {prog.lote}</div>}
+                                                                {prog.numero_lote && <div><span className="font-semibold text-gray-500">Nº Lote:</span> {prog.numero_lote}</div>}
+                                                            </div>
+                                                        )}
+                                                        <div className="text-[10px] text-gray-400 mt-2">
+                                                            Registrado por {prog.usuario}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>
