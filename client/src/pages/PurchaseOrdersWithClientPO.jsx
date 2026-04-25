@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import useStickyState from '../hooks/useStickyState';
 import { Search, Loader2, Package, FileText, Calendar, Filter, X, ShoppingCart, TrendingUp } from 'lucide-react';
 import { getPurchaseOrdersWithClientPO } from '../services/api';
 
@@ -7,7 +8,7 @@ export default function PurchaseOrdersWithClientPO() {
     const [results, setResults] = useState([]);
     const [hasSearched, setHasSearched] = useState(false);
     const [warning, setWarning] = useState(null);
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         pv_numero: '',
         pedido_cliente: '',
         produto: '',
@@ -17,7 +18,7 @@ export default function PurchaseOrdersWithClientPO() {
         fornecedor: '',
         data_pv_de: '',
         data_pv_ate: ''
-    });
+    }, '@metalfisa:purchase_with_client_po_filters');
 
     const handleSearch = async (e) => {
         e?.preventDefault();

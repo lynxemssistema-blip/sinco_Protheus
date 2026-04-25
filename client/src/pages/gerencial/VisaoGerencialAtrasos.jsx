@@ -163,9 +163,9 @@ const VisaoGerencialAtrasos = () => {
     const canViewFinance = user?.tipo === 'A' || hasPermission('financeiro', 'view');
 
     return (
-        <div className="p-6 bg-slate-50 min-h-screen">
+        <div className="p-6 bg-slate-50 h-screen flex flex-col overflow-hidden">
             {/* Header & Toggle Section */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 relative">
+            <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 relative">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Target className="text-red-500 h-6 w-6" />
@@ -184,7 +184,7 @@ const VisaoGerencialAtrasos = () => {
             </div>
 
             {/* TAB Navigation */}
-            <div className="flex border-b border-slate-200 mb-6 bg-white rounded-t-xl overflow-hidden px-4 pt-2 shadow-sm">
+            <div className="flex-none flex border-b border-slate-200 mb-4 bg-white rounded-t-xl overflow-hidden px-4 pt-2 shadow-sm">
                 <button
                     onClick={() => setActiveTab('logistica')}
                     className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'logistica'
@@ -217,16 +217,16 @@ const VisaoGerencialAtrasos = () => {
 
             {/* Content Area */}
             {loading ? (
-                <div className="flex justify-center items-center h-48 bg-white rounded-xl shadow-sm border border-slate-100">
+                <div className="flex-1 flex justify-center items-center bg-white rounded-xl shadow-sm border border-slate-100">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 </div>
             ) : error ? (
-                <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 flex items-center gap-2">
+                <div className="flex-none p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5" />
                     {error}
                 </div>
             ) : data.length === 0 ? (
-                <div className="p-12 bg-white rounded-xl shadow-sm border border-slate-100 text-center">
+                <div className="flex-1 p-12 bg-white rounded-xl shadow-sm border border-slate-100 text-center flex flex-col justify-center">
                     <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Target className="w-8 h-8" />
                     </div>
@@ -234,106 +234,107 @@ const VisaoGerencialAtrasos = () => {
                     <p className="text-slate-500 mt-2">Nenhum pedido em aberto e atrasado encontrado.</p>
                 </div>
             ) : (
-                <div className="flex flex-col gap-6">
+                <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-2">
 
                     {/* KPI Cards */}
-                    <div ref={exportRef} className="bg-slate-50 relative">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
-                                <Box className="w-6 h-6" />
+                    <div ref={exportRef} className="bg-slate-50 relative flex-none">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                                    <Box className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-slate-500">Total Items Atrasados</p>
+                                    <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalItems}</h3>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">Total Items Atrasados</p>
-                                <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalItems}</h3>
+
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                                <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center">
+                                    <Package className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-slate-500">Qtd Física Pendente</p>
+                                    <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalSaldoQtd.toLocaleString()}</h3>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+                                    <DollarSign className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-slate-500">Risco Financeiro Global</p>
+                                    <h3 className="text-2xl font-bold text-slate-800">
+                                        {canViewFinance ? formatBRL(processedData.metrics.totalSaldoBrl) : '••••••••'}
+                                    </h3>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                                <div className="w-12 h-12 bg-red-50 text-red-600 rounded-lg flex items-center justify-center">
+                                    <AlertTriangle className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-slate-500">Média de Atraso</p>
+                                    <h3 className="text-2xl font-bold text-slate-800">
+                                        {processedData.metrics.avgAtraso} <span className="text-sm font-normal text-slate-500">dias</span>
+                                    </h3>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center">
-                                <Package className="w-6 h-6" />
+                        {/* Charts Section */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                            {/* CHART 1: TOP Clientes */}
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
+                                <h3 className="text-base font-bold text-slate-800 mb-4">Top 5 Clientes c/ Atrasos</h3>
+                                <div className="h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={processedData.charts.clientes} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                                            <XAxis 
+                                                type="number" 
+                                                fontSize={11} 
+                                                tickFormatter={val => activeTab === 'financeiro' ? `R$ ${(val/1000).toFixed(0)}k` : `${val} pçs`} 
+                                                label={{ value: activeTab === 'financeiro' ? 'Saldo Financeiro em Atraso (R$)' : 'Volume Pendente (Peças)', position: 'insideBottom', offset: -15, fontSize: 12, fill: '#64748b' }}
+                                            />
+                                            <YAxis dataKey="name" type="category" width={160} fontSize={10} tickFormatter={(name) => name && name.length > 20 ? name.substring(0, 20) + '...' : name} />
+                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
+                                            <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#4f46e5' : '#3b82f6'} radius={[0, 4, 4, 0]} barSize={20} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">Qtd Física Pendente</p>
-                                <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalSaldoQtd.toLocaleString()}</h3>
-                            </div>
-                        </div>
 
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">Risco Financeiro Global</p>
-                                <h3 className="text-2xl font-bold text-slate-800">
-                                    {canViewFinance ? formatBRL(processedData.metrics.totalSaldoBrl) : '••••••••'}
-                                </h3>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-lg flex items-center justify-center">
-                                <AlertTriangle className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">Média de Atraso</p>
-                                <h3 className="text-2xl font-bold text-slate-800">
-                                    {processedData.metrics.avgAtraso} <span className="text-sm font-normal text-slate-500">dias</span>
-                                </h3>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Charts Section */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* CHART 1: TOP Clientes */}
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                            <h3 className="text-base font-bold text-slate-800 mb-4">Top 5 Clientes c/ Atrasos</h3>
-                            <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={processedData.charts.clientes} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                                        <XAxis 
-                                            type="number" 
-                                            fontSize={11} 
-                                            tickFormatter={val => activeTab === 'financeiro' ? `R$ ${(val/1000).toFixed(0)}k` : `${val} pçs`} 
-                                            label={{ value: activeTab === 'financeiro' ? 'Saldo Financeiro em Atraso (R$)' : 'Volume Pendente (Peças)', position: 'insideBottom', offset: -15, fontSize: 12, fill: '#64748b' }}
-                                        />
-                                        <YAxis dataKey="name" type="category" width={160} fontSize={10} tickFormatter={(name) => name && name.length > 20 ? name.substring(0, 20) + '...' : name} />
-                                        <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
-                                        <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#4f46e5' : '#3b82f6'} radius={[0, 4, 4, 0]} barSize={20} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* CHART 2: Linha do Tempo Acumulada */}
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                            <h3 className="text-base font-bold text-slate-800 mb-4">Atrasos por Mês</h3>
-                            <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={processedData.charts.meses} margin={{ top: 5, right: 5, left: 20, bottom: 20 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                        <XAxis 
-                                            dataKey="name" 
-                                            fontSize={11} 
-                                            label={{ value: 'Mês/Ano de Entrega', position: 'insideBottom', offset: -15, fontSize: 12, fill: '#64748b' }}
-                                        />
-                                        <YAxis 
-                                            fontSize={11} 
-                                            tickFormatter={val => activeTab === 'financeiro' ? `R$ ${(val/1000).toFixed(0)}k` : `${val} pçs`} 
-                                            label={{ value: activeTab === 'financeiro' ? 'Valor (R$)' : 'Volume (Peças)', angle: -90, position: 'insideLeft', offset: -10, fontSize: 12, fill: '#64748b' }}
-                                        />
-                                        <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
-                                        <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#10b981' : '#f59e0b'} radius={[4, 4, 0, 0]} maxBarSize={40} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                            {/* CHART 2: Linha do Tempo Acumulada */}
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
+                                <h3 className="text-base font-bold text-slate-800 mb-4">Atrasos por Mês</h3>
+                                <div className="h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={processedData.charts.meses} margin={{ top: 5, right: 5, left: 20, bottom: 20 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                            <XAxis 
+                                                dataKey="name" 
+                                                fontSize={11} 
+                                                label={{ value: 'Mês/Ano de Entrega', position: 'insideBottom', offset: -15, fontSize: 12, fill: '#64748b' }}
+                                            />
+                                            <YAxis 
+                                                fontSize={11} 
+                                                tickFormatter={val => activeTab === 'financeiro' ? `R$ ${(val/1000).toFixed(0)}k` : `${val} pçs`} 
+                                                label={{ value: activeTab === 'financeiro' ? 'Valor (R$)' : 'Volume (Peças)', angle: -90, position: 'insideLeft', offset: -10, fontSize: 12, fill: '#64748b' }}
+                                            />
+                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
+                                            <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#10b981' : '#f59e0b'} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Data Grid: Agrupado */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex-none">
                         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                             <h3 className="font-bold text-slate-800">Espelho Dinâmico de Pendências</h3>
                             <span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-md">Agrupado: Cliente {'>'} Mês</span>
@@ -341,15 +342,15 @@ const VisaoGerencialAtrasos = () => {
                         
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                        <th className="p-3 pl-4 font-semibold w-12">Exp.</th>
-                                        <th className="p-3 font-semibold">Cliente / Item / Produto</th>
-                                        <th className="p-3 font-semibold text-center">Data Entrada</th>
-                                        <th className="p-3 font-semibold text-center">Data Entrega</th>
-                                        <th className="p-3 font-semibold text-right">Qtd Atrasada</th>
-                                        {activeTab === 'financeiro' && <th className="p-3 font-semibold text-right text-indigo-600">R$ Faturar</th>}
-                                        <th className="p-3 font-semibold text-center w-24">Dias Atraso</th>
+                                <thead className="sticky top-0 z-10 shadow-sm bg-slate-50">
+                                    <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50">
+                                        <th className="p-3 pl-4 font-semibold w-12 bg-slate-50">Exp.</th>
+                                        <th className="p-3 font-semibold bg-slate-50">Cliente / Item / Produto</th>
+                                        <th className="p-3 font-semibold text-center bg-slate-50">Data Entrada</th>
+                                        <th className="p-3 font-semibold text-center bg-slate-50">Data Entrega</th>
+                                        <th className="p-3 font-semibold text-right bg-slate-50">Qtd Atrasada</th>
+                                        {activeTab === 'financeiro' && <th className="p-3 font-semibold text-right text-indigo-600 bg-slate-50">R$ Faturar</th>}
+                                        <th className="p-3 font-semibold text-center w-24 bg-slate-50">Dias Atraso</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -451,7 +452,6 @@ const VisaoGerencialAtrasos = () => {
                         </div>
                     </div>
 
-                </div>
                 </div>
             )}
         </div>

@@ -3,6 +3,7 @@ const router = express.Router();
 console.log('🔄 [DEBUG] Carregando arquivo routes/production.js');
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // GET /api/production/analytics-dashboard - Production Analytics Dashboard
 // DEBUG MIDDLEWARE
@@ -593,8 +594,8 @@ router.get('/analytics-dashboard', async (req, res) => {
 
         console.log(`📊 [ANALYTICS] Filters:`, { pedido_venda, cliente: clienteFilter, ped_cliente, op, produto });
 
-        // Build query dynamically based on filters
-        let whereClause = `WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`;
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        let whereClause = `WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ') ${getInactiveFilter('c2.c2_pedido')}`;
         const params = [];
         let paramCount = 1;
 
@@ -966,6 +967,7 @@ router.get('/', async (req, res) => {
 
         // 1. Fetch OPs from Protheus (Base Query)
         console.log('🔨 [DEBUG] Building SQL Query...');
+        const getInactiveFilterOpList = await getInactiveOrdersFilter();
         let pgQuery = `
             SELECT
                 c2.c2_num     AS op,
@@ -1010,6 +1012,7 @@ router.get('/', async (req, res) => {
             LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
 
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+            ${getInactiveFilterOpList('c5.c5_num')}
         `;
 
         const params = [];
@@ -1835,50 +1838,86 @@ router.post('/appoint', async (req, res) => {
             return res.status(400).json({ error: 'Quantidade deve ser maior que zero.' });
         }
 
-        // --- VALIDAÇÃO DE SALDO ---
-        // 1. Fetch Planejado (Protheus PG)
-        const pgQuery = `
-            SELECT c2.c2_quant::numeric AS qtd_planejada
-            FROM public.sc2010 c2
-            WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
-            AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-        `;
-        const pgRes = await db.query(pgQuery, [op_numero, op_item, op_sequencia]);
+        // --- LEITURA DE CONFIG ---
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        let appointmentMode = 'free';
+        let enableVerification = false;
+        if (configRows.length > 0 && configRows[0].general_config) {
+            const cfg = typeof configRows[0].general_config === 'string'
+                ? JSON.parse(configRows[0].general_config)
+                : configRows[0].general_config;
+            appointmentMode = cfg.production_appointment_mode || 'free';
+            enableVerification = !!cfg.enable_production_verification;
+        }
 
-        if (pgRes.rows.length > 0) {
-            const planejada = Number(pgRes.rows[0].qtd_planejada) || 0;
-            if (planejada > 0) {
-                // 2. Fetch Produzido (MySQL)
-                const [appRows] = await mysqlPool.execute(`
-                     SELECT SUM(quantidade) AS total
-                     FROM app_production_appointments
-                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
-                 `, [op_numero, op_item, op_sequencia, operacao_codigo]);
+        // --- VALIDAÇÃO DE SALDO (modos: balance, sequence) ---
+        let qtdPlanejada = 0;
+        if (appointmentMode === 'balance' || appointmentMode === 'sequence') {
+            const pgRes = await db.query(
+                `SELECT c2.c2_quant::numeric AS qtd_planejada
+                 FROM public.sc2010 c2
+                 WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
+                 AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`,
+                [op_numero, op_item, op_sequencia]
+            );
 
-                const produzido = Number(appRows[0].total) || 0;
-                const newTotal = produzido + qtyNum;
+            if (pgRes.rows.length > 0) {
+                qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
+                if (qtdPlanejada > 0) {
+                    const [appRows] = await mysqlPool.execute(
+                        `SELECT SUM(quantidade) AS total FROM app_production_appointments
+                         WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                        [op_numero, op_item, op_sequencia, operacao_codigo]
+                    );
+                    const produzido = Number(appRows[0].total) || 0;
+                    if (produzido + qtyNum > qtdPlanejada + 0.001) {
+                        return res.status(400).json({
+                            error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
+                        });
+                    }
+                }
+            }
+        }
 
-                // Tolerance for floating point
-                if (newTotal > planejada + 0.001) {
+        // --- VALIDAÇÃO DE SEQUÊNCIA (modo: sequence) ---
+        if (appointmentMode === 'sequence') {
+            const prevRes = await db.query(
+                `SELECT prev_operacao FROM (
+                    SELECT
+                        g2.g2_operac AS operacao,
+                        LAG(g2.g2_operac) OVER (
+                            PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen
+                            ORDER BY g2.g2_operac
+                        ) AS prev_operacao
+                    FROM public.sc2010 c2
+                    LEFT JOIN public.sg2010 g2
+                        ON btrim(g2.g2_produto) = btrim(c2.c2_produto)
+                        AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                    WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
+                    AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                ) t WHERE operacao = $4`,
+                [op_numero, op_item, op_sequencia, operacao_codigo]
+            );
+
+            if (prevRes.rows.length > 0 && prevRes.rows[0].prev_operacao && qtdPlanejada > 0) {
+                const prevOp = prevRes.rows[0].prev_operacao;
+                const [prevAppRows] = await mysqlPool.execute(
+                    `SELECT SUM(quantidade) AS total FROM app_production_appointments
+                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                    [op_numero, op_item, op_sequencia, prevOp]
+                );
+                const prevProduzido = Number(prevAppRows[0].total) || 0;
+                if (prevProduzido < qtdPlanejada - 0.001) {
                     return res.status(400).json({
-                        error: `Quantidade excede saldo! Planejado: ${planejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
+                        error: `Operação anterior (${prevOp}) não foi concluída. Produzido: ${prevProduzido} / Planejado: ${qtdPlanejada}`
                     });
                 }
             }
         }
-        // --- FIM DA VALIDAÇÃO ---
+        // --- FIM DAS VALIDAÇÕES ---
 
         const materiaisJson = materiais_utilizados ? JSON.stringify(materiais_utilizados) : null;
-
-        // Fetch verification config
-        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
-        let initialStatus = 'OK';
-        if (configRows.length > 0 && configRows[0].general_config) {
-            let config = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-            if (config.enable_production_verification) {
-                initialStatus = 'PENDENTE';
-            }
-        }
+        const initialStatus = enableVerification ? 'PENDENTE' : 'OK';
 
         await mysqlPool.execute(`
             INSERT INTO app_production_appointments

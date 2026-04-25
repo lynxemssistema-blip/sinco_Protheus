@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const ExcelJS = require('exceljs');
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/pcp/orders
@@ -14,7 +15,8 @@ router.get('/orders', async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        let whereExtra = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''";
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        let whereExtra = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = '' " + getInactiveFilter('c5.c5_num');
 
         if (only_active === 'true') {
             whereExtra += ` AND (

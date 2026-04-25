@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // PostgreSQL (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (Local)
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // Função auxiliar para formatar datas (YYYYMMDD) que vêm do Protheus
 const parseProtheusDate = (dateString) => {
@@ -16,6 +17,7 @@ const parseProtheusDate = (dateString) => {
 router.get('/pending-ops', async (req, res) => {
     try {
         // Passo 1: Pegar as OPs do Protheus que estão válidas (abertas/recentes)
+        const getInactiveFilter = await getInactiveOrdersFilter();
         const protheusQuery = `
             SELECT 
                 TRIM(SC2.C2_NUM) AS c2_num,
@@ -51,6 +53,7 @@ router.get('/pending-ops', async (req, res) => {
             AND SC2.C2_DATPRI >= '20240101'
             AND SC2.C2_QUANT > 0
             AND (COALESCE(SC6.C6_QTDVEN, 0) - COALESCE(SC6.C6_QTDENT, 0)) > 0
+            ${getInactiveFilter('SC5.C5_NUM')}
             ORDER BY SC2.C2_DATPRI DESC
             LIMIT 2000
         `;

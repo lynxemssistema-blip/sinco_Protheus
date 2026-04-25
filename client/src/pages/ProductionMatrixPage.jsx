@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import useStickyState from '../hooks/useStickyState';
 import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History } from 'lucide-react';
-import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl } from '../services/api';
+import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl, getCompanySettings } from '../services/api';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
@@ -17,8 +18,9 @@ const formatDate = (dateStr) => {
 export default function ProductionMatrixPage() {
     const [data, setData] = useState({ operations: [], items: [] });
     const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({ op: '', produto: '', cliente: '', pedido: '', operacao: '' }); // Add Operacao filter
+    const [filters, setFilters] = useStickyState({ op: '', produto: '', cliente: '', pedido: '', operacao: '' }, '@metalfisa:matrix_filters');
     const [appointingOp, setAppointingOp] = useState(null);
+    const [appointmentMode, setAppointmentMode] = useState(null);
     const [showProcessLegend, setShowProcessLegend] = useState(false);
     const [historyTarget, setHistoryTarget] = useState(null); // For completed item history
 
@@ -27,7 +29,10 @@ export default function ProductionMatrixPage() {
 
     useEffect(() => {
         // loadData(); // Removido: o usuário pediu para buscar apenas ao aplicar o filtro
-        setLoading(false); // apenas desativar o skeleton inicial
+        setLoading(false);
+        getCompanySettings()
+            .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
+            .catch(() => setAppointmentMode('free'));
     }, []);
 
     const loadData = async () => {
@@ -156,12 +161,11 @@ export default function ProductionMatrixPage() {
     };
 
     const handleAppointmentSave = async (data) => {
-        try {
-            await saveAppointment(data);
-            setAppointingOp(null);
+        await saveAppointment(data); // throws on validation error — modal handles display
+        setAppointingOp(null);
 
-            // ATUALIZAÇÃO OTIMISTA (Sem Reload)
-            setData(prev => {
+        // ATUALIZAÇÃO OTIMISTA (Sem Reload)
+        setData(prev => {
                 const newItems = prev.items.map(item => {
                     // Encontrar o item correto (OP, ItemOP e SEQUENCIA)
                     if (item.op === data.op_numero &&
@@ -199,12 +203,7 @@ export default function ProductionMatrixPage() {
                     return item;
                 });
                 return { ...prev, items: newItems };
-            });
-            // loadData(); // Removido reload forçado
-        } catch (err) {
-            console.error(err);
-            alert('Erro ao registrar apontamento');
-        }
+        });
     };
 
     const getStatusColor = (status) => {
@@ -233,6 +232,16 @@ export default function ProductionMatrixPage() {
                     </h1>
                     <p className="text-sm text-slate-600 mt-1">Visualize o progresso de cada item em todas as operações</p>
                 </div>
+                {appointmentMode && (
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
+                        appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        appointmentMode === 'balance'  ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                          'bg-slate-100 text-slate-500 border-slate-300'
+                    }`}>
+                        Apontamento: {appointmentMode === 'sequence' ? 'Sequencia' :
+                                      appointmentMode === 'balance'  ? 'Saldo' : 'Livre'}
+                    </span>
+                )}
             </div>
 
             {/* Filtros */}
@@ -343,7 +352,7 @@ export default function ProductionMatrixPage() {
                             </thead>
                             <tbody>
                                 {data.items.map((item) => (
-                                    <tr key={`${item.op}_${item.item_op}_${item.sequencia || '001'}`} className="hover:bg-slate-50 transition-colors">
+                                    <tr key={`${item.op}_${item.item_op}_${item.sequencia || '001'}`} className={`transition-colors ${(!item.sequencia || item.sequencia === '001') ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
                                         <td className="border-b border-r px-4 py-3 bg-white sticky left-0 z-10">
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className={`flex-1 ${(item.sequencia && item.sequencia !== '001') ? 'pl-4 border-l-2 border-slate-200 ml-1' : ''}`}>
@@ -427,7 +436,14 @@ export default function ProductionMatrixPage() {
                                                                     {opData.qtd_produzida.toFixed(0)}/{opData.qtd_planejada.toFixed(0)}
                                                                 </span>
                                                             </div>
-                                                            <div className="text-xs font-medium pb-1">{opData.percentual}%</div>
+                                                            <div className="text-xs font-medium">{opData.percentual}%</div>
+                                                            
+                                                            {opData.dates?.plan_start && (
+                                                                <div className="text-[9px] font-medium text-slate-500 bg-white/50 rounded inline-block px-1 mb-1">
+                                                                    P: {formatDate(opData.dates.plan_start)} 
+                                                                    {opData.dates.plan_end && formatDate(opData.dates.plan_start) !== formatDate(opData.dates.plan_end) ? ` a ${formatDate(opData.dates.plan_end)}` : ''}
+                                                                </div>
+                                                            )}
 
                                                             {opData.tem_pendencia && (
                                                                 <div

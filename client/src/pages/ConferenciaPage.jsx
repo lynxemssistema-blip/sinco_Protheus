@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter, Clock, User, ClipboardList, Camera, ImagePlus, Trash2, History, FileText, ChevronDown, ChevronRight, Users, Package } from 'lucide-react';
 import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico, getFileUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -658,7 +658,7 @@ export default function ConferenciaPage() {
                                     }
 
                                     return (
-                                        <>
+                                        <Fragment key={grupo.key}>
                                             {/* Group header row */}
                                             <tr
                                                 key={grupo.key}
@@ -807,7 +807,7 @@ export default function ConferenciaPage() {
                                                     </tr>
                                                 );
                                             })}
-                                        </>
+                                        </Fragment>
                                     );
                                 })}
                             </tbody>

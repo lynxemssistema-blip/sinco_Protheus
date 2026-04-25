@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, List, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer } from 'lucide-react';
-import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl } from '../services/api';
+import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl, getCompanySettings } from '../services/api';
 import { toast } from 'react-toastify';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,12 +29,16 @@ export default function VerticalAppointmentPage() {
 
     const [appointingOp, setAppointingOp] = useState(null);
     const [historyTarget, setHistoryTarget] = useState(null);
+    const [appointmentMode, setAppointmentMode] = useState(null);
 
     // Estado local para datas de planejamento em edição
     const [draftPlans, setDraftPlans] = useState({});
 
     useEffect(() => {
         loadOperations();
+        getCompanySettings()
+            .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
+            .catch(() => setAppointmentMode('free'));
     }, []);
 
     const loadOperations = async () => {
@@ -136,14 +140,9 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleAppointmentSave = async (payload) => {
-        try {
-            await saveAppointment(payload);
-            setAppointingOp(null);
-            loadData(false);
-        } catch (err) {
-            console.error(err);
-            toast.error('Erro ao registrar apontamento');
-        }
+        await saveAppointment(payload); // throws on validation error — modal handles display
+        setAppointingOp(null);
+        loadData(false);
     };
 
     const handleGeneratePendingReport = async () => {
@@ -201,6 +200,16 @@ export default function VerticalAppointmentPage() {
                     </h1>
                     <p className="text-sm text-slate-600 mt-1">Selecione uma operação para planejar e apontar a fila de trabalho.</p>
                 </div>
+                {appointmentMode && (
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
+                        appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        appointmentMode === 'balance'  ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                          'bg-slate-100 text-slate-500 border-slate-300'
+                    }`}>
+                        Apontamento: {appointmentMode === 'sequence' ? 'Sequencia' :
+                                      appointmentMode === 'balance'  ? 'Saldo' : 'Livre'}
+                    </span>
+                )}
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border p-4 space-y-4">
@@ -359,10 +368,10 @@ export default function VerticalAppointmentPage() {
                     <div className="text-sm mt-1 mb-2">Por questões de performance, a busca não é automática. <br />Verifique se selecionou um <strong>Centro de Custo</strong> e informou ao menos <strong>um Filtro</strong> para buscar.</div>
                 </div>
             ) : filteredData.length > 0 ? (
-                <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                    <div className="overflow-x-auto">
+                <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex-1 flex flex-col min-h-0">
+                    <div className="overflow-auto h-[calc(100vh-320px)]">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 text-slate-600 border-b">
+                            <thead className="bg-slate-50 text-slate-600 border-b sticky top-0 z-10 shadow-sm">
                                 <tr>
                                     <th className="px-4 py-3 font-semibold">Status</th>
                                     <th className="px-4 py-3 font-semibold">OP</th>
@@ -381,7 +390,7 @@ export default function VerticalAppointmentPage() {
                                     const draftDate = draftPlans[opKey] !== undefined ? draftPlans[opKey] : (row.planejamento_inicio ? row.planejamento_inicio.substring(0, 10) : '');
 
                                     return (
-                                        <tr key={opKey} className="hover:bg-slate-50/80 transition-colors">
+                                        <tr key={opKey} className={`transition-colors ${row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50/80'}`}>
                                             <td className="px-4 py-3 align-top">
                                                 <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(row.status)}`}>
                                                     {getStatusIcon(row.status)}

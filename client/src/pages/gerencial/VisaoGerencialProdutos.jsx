@@ -215,9 +215,9 @@ const VisaoGerencialProdutos = () => {
     const isShowingFinance = activeTab === 'financeiro';
 
     return (
-        <div className="p-6 bg-slate-50 min-h-screen">
+        <div className="p-6 bg-slate-50 h-screen flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex-none flex flex-col md:flex-row md:items-center justify-between mb-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Factory className="text-indigo-600 h-6 w-6" />
@@ -242,10 +242,10 @@ const VisaoGerencialProdutos = () => {
             </div>
 
             {/* Content to be PDF Exported */}
-            <div ref={exportRef} className="space-y-6 bg-slate-50 pb-4">
+            <div ref={exportRef} className="flex-1 flex flex-col min-h-0 space-y-4 pb-2">
                 
                 {/* KPIs */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="flex-none grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-red-500">
                          <div className="flex items-center justify-between">
                              <div className="p-2 bg-red-50 text-red-600 rounded-lg"><Clock size={20} /></div>
@@ -288,8 +288,8 @@ const VisaoGerencialProdutos = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="flex items-center border-b border-slate-200 overflow-x-auto">
+                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+                    <div className="flex-none flex items-center border-b border-slate-200 overflow-x-auto">
                         <button
                             onClick={() => setActiveTab('futuro')}
                             className={`flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'futuro' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
@@ -325,16 +325,16 @@ const VisaoGerencialProdutos = () => {
                     </div>
 
                     {/* Table View */}
-                    <div className="overflow-x-auto">
+                    <div className="flex-1 overflow-auto">
                         <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                    <th className="p-3 pl-4 font-semibold w-12">Exp.</th>
-                                    <th className="p-3 font-semibold">Agrupamento (Quinzena / Produto / Pedido)</th>
-                                    <th className="p-3 font-semibold text-center">Data Entrada</th>
-                                    <th className="p-3 font-semibold text-center">Data Entrega</th>
-                                    <th className="p-3 font-semibold text-right">Qtd</th>
-                                    {isShowingFinance && <th className="p-3 font-semibold text-right text-indigo-600">Valor (R$)</th>}
+                            <thead className="sticky top-0 z-10 shadow-sm bg-slate-50">
+                                <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50">
+                                    <th className="p-3 pl-4 font-semibold w-12 bg-slate-50">Exp.</th>
+                                    <th className="p-3 font-semibold bg-slate-50">Agrupamento (Quinzena / Produto / Pedido)</th>
+                                    <th className="p-3 font-semibold text-center bg-slate-50">Data Entrada</th>
+                                    <th className="p-3 font-semibold text-center bg-slate-50">Data Entrega</th>
+                                    <th className="p-3 font-semibold text-right bg-slate-50">Qtd</th>
+                                    {isShowingFinance && <th className="p-3 font-semibold text-right text-indigo-600 bg-slate-50">Valor (R$)</th>}
                                 </tr>
                             </thead>
                             <tbody>

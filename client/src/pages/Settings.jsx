@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2 } from 'lucide-react';
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials } from '../services/api';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff } from 'lucide-react';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
@@ -13,6 +13,7 @@ export default function Settings() {
 
     const tabs = [
         { id: 'general', label: 'Geral', icon: Building2 },
+        { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
         { id: 'menu', label: 'Menu & Navegação', icon: Menu },
         { id: 'users', label: 'Usuários', icon: UserPlus },
         { id: 'pending', label: 'Aprovações Pendentes', icon: ShieldAlert },
@@ -210,6 +211,12 @@ export default function Settings() {
 
     const [loading, setLoading] = useState(false);
     const [loadingCompany, setLoadingCompany] = useState(false);
+    
+    // Pedidos Status State
+    const [hideInactiveOrders, setHideInactiveOrders] = useState(false);
+    const [inactiveOrdersList, setInactiveOrdersList] = useState([]);
+    const [pedidosSearch, setPedidosSearch] = useState('');
+    const [loadingPedidos, setLoadingPedidos] = useState(false);
 
     useEffect(() => {
         if (user?.tipo === 'A') {
@@ -240,8 +247,66 @@ export default function Settings() {
             if (romNumData && romNumData.current_number) {
                 setRomaneioNumberForm(romNumData.current_number);
             }
+            
+            // Fetch Pedidos Status
+            loadPedidosStatus();
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const loadPedidosStatus = async (search = '') => {
+        try {
+            setLoadingPedidos(true);
+            const settings = await getPedidosStatusSettings();
+            setHideInactiveOrders(settings.hide_inactive_orders === 1);
+            
+            const list = await getPedidosStatusList(search);
+            setInactiveOrdersList(list);
+        } catch (err) {
+            console.error("Erro ao carregar configurações de pedidos inativos", err);
+        } finally {
+            setLoadingPedidos(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!user || user.tipo !== 'A') return;
+        
+        const delayDebounceFn = setTimeout(() => {
+            if (activeTab === 'orders_visibility') {
+                loadPedidosStatus(pedidosSearch);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [pedidosSearch, activeTab, user]);
+
+    const handleToggleGlobalPedidosStatus = async () => {
+        try {
+            setLoadingPedidos(true);
+            const newValue = !hideInactiveOrders;
+            await togglePedidosStatusGlobal(newValue);
+            setHideInactiveOrders(newValue);
+            alert(`Filtro global de pedidos inativos ${newValue ? 'ATIVADO' : 'DESATIVADO'}.`);
+        } catch (err) {
+            alert('Erro ao alterar status global de pedidos: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingPedidos(false);
+        }
+    };
+
+    const handleTogglePedidoStatus = async (pedido, isCurrentlyActive) => {
+        try {
+            // Optimistic update
+            setInactiveOrdersList(prev => prev.map(p => 
+                p.pedido === pedido ? { ...p, ativo: !isCurrentlyActive } : p
+            ));
+            
+            await togglePedidoStatus(pedido, !isCurrentlyActive);
+        } catch (err) {
+            alert('Erro ao alterar status do pedido: ' + (err.response?.data?.error || err.message));
+            loadPedidosStatus(); // Revert on error
         }
     };
 
@@ -670,7 +735,33 @@ export default function Settings() {
                                         </div>
                                     )}
                                 </div>
-                                
+
+                                {/* Controle de Apontamento de Produção */}
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                    <h4 className="font-medium text-slate-800 mb-1">Controle de Apontamento de Produção</h4>
+                                    <p className="text-sm text-slate-500 mb-3">
+                                        Define como o sistema valida um novo apontamento em relação ao roteiro de produção.
+                                    </p>
+                                    <select
+                                        className="w-full md:w-2/3 p-2 border rounded-lg bg-white text-sm"
+                                        value={companyForm.general_config?.production_appointment_mode || 'free'}
+                                        onChange={e => setCompanyForm(prev => ({
+                                            ...prev,
+                                            general_config: {
+                                                ...prev.general_config,
+                                                production_appointment_mode: e.target.value
+                                            }
+                                        }))}
+                                    >
+                                        <option value="free">Livre — Aponta sem restrições de sequência ou saldo</option>
+                                        <option value="balance">Saldo — Bloqueia se o saldo planejado já foi atingido</option>
+                                        <option value="sequence">Sequência — Bloqueia se a operação anterior não foi 100% concluída</option>
+                                    </select>
+                                    <p className="text-xs text-slate-400 mt-2">
+                                        O modo "Livre" é o padrão. Alterações entram em vigor imediatamente após salvar.
+                                    </p>
+                                </div>
+
                                 {/* Romaneio Config */}
                                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                     <h4 className="font-medium text-slate-800 mb-2">Numeração Automática do Romaneio</h4>
@@ -694,6 +785,7 @@ export default function Settings() {
                                     </div>
                                 </div>
                                 
+
                                 {/* Notificações de Faturamento por E-mail */}
                                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                     <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Mail className="w-5 h-5 text-indigo-500" /> Notificações de Faturamento</h4>
@@ -730,6 +822,107 @@ export default function Settings() {
                                         })}
                                         {usersList.filter(u => u.aprovado === 1 && u.email).length === 0 && (
                                             <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário com e-mail válido cadastrado no sistema.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* VISIBILIDADE DE PEDIDOS TAB */}
+                {activeTab === 'orders_visibility' && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                        <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
+                            <div className="flex items-center gap-3">
+                                <EyeOff className="w-6 h-6 text-indigo-600" />
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">Visibilidade de Pedidos</h2>
+                                    <p className="text-sm text-slate-500">Controle a exibição de pedidos específicos em todos os módulos do sistema.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            {/* Global Toggle para Ocultar Pedidos Inativos */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Filtro Global de Pedidos (Ocultar Inativos)</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Quando ativo, pedidos inativos não serão exibidos em nenhum módulo (Produção, PCP, Relatórios, etc).
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={loadingPedidos}
+                                        onClick={handleToggleGlobalPedidosStatus}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${hideInactiveOrders ? 'bg-blue-600' : 'bg-slate-200'} ${loadingPedidos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${hideInactiveOrders ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                
+                                <div className="border-t border-slate-200 pt-4 mt-4">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h5 className="text-sm font-medium text-slate-800">Status dos Pedidos (Visibilidade)</h5>
+                                        <input 
+                                            type="text"
+                                            className="w-64 p-2 border rounded-lg text-sm"
+                                            placeholder="Buscar PV ou Cliente..."
+                                            value={pedidosSearch}
+                                            onChange={e => setPedidosSearch(e.target.value)}
+                                        />
+                                    </div>
+                                    
+                                    <div className="max-h-[500px] overflow-y-auto bg-white border border-slate-200 rounded-lg">
+                                        {inactiveOrdersList.length === 0 ? (
+                                            <div className="p-4 text-center text-sm text-slate-500">
+                                                {loadingPedidos ? 'Carregando pedidos...' : 'Nenhum pedido encontrado.'}
+                                            </div>
+                                        ) : (
+                                            <table className="min-w-full divide-y divide-gray-200">
+                                                <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Pedido</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Cliente</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Data Emissão</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Status (Visível)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                    {inactiveOrdersList
+                                                        .filter(p => !pedidosSearch || p.pedido.includes(pedidosSearch) || (p.cliente_nome && p.cliente_nome.toLowerCase().includes(pedidosSearch.toLowerCase())))
+                                                        .slice(0, 100) // Render only top 100 to avoid lag
+                                                        .map(item => (
+                                                        <tr key={item.pedido} className={item.ativo ? '' : 'bg-red-50'}>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.pedido}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 truncate max-w-[200px]" title={item.cliente_nome}>{item.cliente_nome || '-'}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                                                                {item.emissao ? item.emissao.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '-'}
+                                                            </td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={loadingPedidos}
+                                                                    onClick={() => handleTogglePedidoStatus(item.pedido, item.ativo)}
+                                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${item.ativo ? 'bg-green-500' : 'bg-red-400'} ${loadingPedidos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                    title={item.ativo ? 'Ativo (Visível) - Clique para Ocultar' : 'Oculto - Clique para Exibir'}
+                                                                >
+                                                                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${item.ativo ? 'translate-x-5' : 'translate-x-1'}`} />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {inactiveOrdersList.filter(p => !pedidosSearch || p.pedido.includes(pedidosSearch) || (p.cliente_nome && p.cliente_nome.toLowerCase().includes(pedidosSearch.toLowerCase()))).length > 100 && (
+                                                        <tr>
+                                                            <td colSpan="4" className="px-4 py-2 text-center text-xs text-gray-400 bg-gray-50">
+                                                                Use a busca para encontrar mais pedidos...
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         )}
                                     </div>
                                 </div>

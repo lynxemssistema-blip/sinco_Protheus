@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Clock, X, CheckSquare, ChevronRight, CheckCircle, AlertTriangle, History, ChevronDown, ChevronUp, Play, Pause, Square, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAppointmentHistory } from '../services/api';
+import { getAppointmentHistory, getCompanySettings } from '../services/api';
 import { useTimer } from '../contexts/TimerContext';
 
 export default function ProductionAppointmentModal({ op, onClose, onSave }) {
@@ -34,6 +34,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [showHistory, setShowHistory] = useState(false);
+    const [appointmentMode, setAppointmentMode] = useState(null);
     const qtdInputRef = useRef(null);
 
     // Auto-focus no campo de quantidade ao abrir o modal
@@ -77,9 +78,12 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
         onClose();
     };
 
-    // Load history on mount
+    // Load history and appointment mode on mount
     useEffect(() => {
         loadHistory();
+        getCompanySettings()
+            .then(data => setAppointmentMode(data?.general_config?.production_appointment_mode || 'free'))
+            .catch(() => setAppointmentMode('free'));
     }, []);
 
     const loadHistory = async () => {
@@ -123,7 +127,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             });
             onClose();
         } catch (error) {
-            alert('Erro ao salvar: ' + error.message);
+            alert('Erro ao salvar: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
         }
@@ -137,9 +141,22 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                         <CheckSquare className="w-5 h-5 text-green-600" />
                         Apontar Produção
                     </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-                        <X className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {appointmentMode && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                appointmentMode === 'balance'  ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                  'bg-slate-100 text-slate-500 border-slate-300'
+                            }`}>
+                                {appointmentMode === 'sequence' ? 'Modo: Sequencia' :
+                                 appointmentMode === 'balance'  ? 'Modo: Saldo' :
+                                                                   'Modo: Livre'}
+                            </span>
+                        )}
+                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-4 space-y-4">

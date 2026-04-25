@@ -126,6 +126,7 @@ app.use('/api', authenticateToken);
 
 // Routes (all protected by auth middleware above)
 app.use('/api/pedidos', pedidosRouter);
+app.use('/api/pedidos-status', require('./routes/pedidos_status'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/produtos', require('./routes/produtos'));
 app.use('/api/docs', require('./routes/docs'));
@@ -177,6 +178,10 @@ app.use('/api/compras', require('./routes/compras'));
 // Reports Route
 app.use('/api/reports', require('./routes/reports'));
 
+// PCP Setores — Cadastro de Setores, Recursos e Visão Gerencial
+app.use('/api/pcp-setores', require('./routes/setores'));
+
+
 // Gestão Global de E-mails / SMTP / IMAP
 app.use('/api/email', require('./routes/email'));
 
@@ -210,6 +215,9 @@ app.use('/api/faturamento', require('./routes/faturamento'));
 
 // Financeiro Dashboard
 app.use('/api/financeiro', require('./routes/financeiro'));
+
+// System Settings
+app.use('/api/settings', require('./routes/system_settings'));
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));

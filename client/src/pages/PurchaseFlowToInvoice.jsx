@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useStickyState from '../hooks/useStickyState';
 import { Search, Loader2, FileText, Filter, X, ArrowRightCircle } from 'lucide-react';
 import { getPurchaseFlowToInvoice, getCompanySettings } from '../services/api';
 
@@ -6,7 +7,7 @@ export default function PurchaseFlowToInvoice() {
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState([]);
     const [hasSearched, setHasSearched] = useState(false);
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         filial: '',
         sc_numero: '',
         sc_numero_de: '',
@@ -23,7 +24,7 @@ export default function PurchaseFlowToInvoice() {
         nf_recebimento_ate: '',
         tem_nf: '',
         comprador: ''
-    });
+    }, '@metalfisa:purchase_flow_filters');
     const [showValues, setShowValues] = useState(false);
 
     useEffect(() => {

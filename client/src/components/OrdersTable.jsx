@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
@@ -97,7 +97,7 @@ const OrdersTable = () => {
         };
     }, [openActionMenu]);
 
-    const filters = {
+    const filters = useMemo(() => ({
         cliente: orderFilters.cliente,
         pedido: orderFilters.pedido,
         produto: orderFilters.produto,
@@ -107,7 +107,11 @@ const OrdersTable = () => {
         tipo_item: orderFilters.tipo_item || '',
         op_status: orderFilters.op_status || '',
         only_active: orderFilters.only_active
-    };
+    }), [
+        orderFilters.cliente, orderFilters.pedido, orderFilters.produto,
+        orderFilters.dataInicial, orderFilters.dataFinal, orderFilters.dateType,
+        orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active
+    ]);
 
     const setFilters = (val) => {
         // Handle full object or updater function
@@ -126,11 +130,6 @@ const OrdersTable = () => {
     const limit = viewMode === 'flat' ? 50 : 20;
     const colSpanCount = viewMode === 'flat' ? 23 : 7;
 
-    // Debug mount
-    useEffect(() => {
-        console.log('📦 [OrdersTable] Component MOUNTED');
-        return () => console.log('📦 [OrdersTable] Component UNMOUNTED');
-    }, []);
 
     // Selection State (Flat View)
     const [selectedItems, setSelectedItems] = useState([]);
@@ -186,7 +185,6 @@ const OrdersTable = () => {
             const searchPage = overrides.page || page;
             const searchViewMode = overrides.viewMode || viewMode;
 
-            console.log(`📡 [OrdersTable] Fetching data... Page: ${searchPage}, View: ${searchViewMode}`);
 
             const searchLimit = searchFilters.pedido ? 5000 : limit;
             const reqOptions = { signal: controller.signal };
@@ -232,7 +230,6 @@ const OrdersTable = () => {
 
         setItemsLoading(true);
         try {
-            console.log(`📡 Buscando itens para pedido: ${pedidoId}`);
             const itens = await getItensPedido(pedidoId);
 
             if (Array.isArray(itens)) {
@@ -251,7 +248,6 @@ const OrdersTable = () => {
 
     // Fetch on filter/page change — cleanup aborts stale requests
     useEffect(() => {
-        console.log('🚀 [OrdersTable] Component rendered - DateType filter active', filters.dateType);
         fetchData();
         return () => { if (abortRef.current) abortRef.current.abort(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps

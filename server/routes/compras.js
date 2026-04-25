@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // ===================================================================
 // GET /api/compras/solicitacoes - Listar Solicitações de Compra
@@ -229,6 +230,7 @@ router.get('/pedidos-com-pv', async (req, res) => {
         }
 
         const baseWhereClause = baseWhere.length > 0 ? `AND ${baseWhere.join(' AND ')}` : '';
+        const getInactiveFilter = await getInactiveOrdersFilter();
 
         // Query otimizada com CTEs (Common Table Expressions)
         const sql = `
@@ -254,6 +256,7 @@ WITH base_pvs AS (
        AND sc6.c6_num = sc5.c5_num
        AND TRIM(COALESCE(sc6.d_e_l_e_t_, '')) = ''
     WHERE TRIM(COALESCE(sc5.d_e_l_e_t_, '')) = ''
+    ${getInactiveFilter('sc5.c5_num')}
     ${baseWhereClause}
 ),
 

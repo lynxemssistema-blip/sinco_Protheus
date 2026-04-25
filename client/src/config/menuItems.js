@@ -3,7 +3,8 @@ import {
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
-    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2
+    FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
+    Landmark, Link, PieChart
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -66,6 +67,15 @@ export const MENU_GROUPS = [
             { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
             { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText }
+        ]
+    },
+    {
+        id: 'pcp_setor',
+        label: 'PCP Setor',
+        items: [
+            { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
+            { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
+            { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link }
         ]
     },
     {

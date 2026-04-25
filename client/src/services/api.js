@@ -335,6 +335,10 @@ export const updateMenuSettings = (data) => api.put('/company/menu', data).then(
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);
 export const getRomaneioInitialNumber = () => api.get('/company/romaneio-number').then(res => res.data);
 export const setRomaneioInitialNumber = (numero) => api.post('/company/set-romaneio-number', { numero_inicial: numero }).then(res => res.data);
+export const getPedidosStatusSettings = () => api.get('/pedidos-status/settings').then(res => res.data);
+export const togglePedidosStatusGlobal = (hide) => api.post('/pedidos-status/settings', { hideInactive: hide }).then(res => res.data);
+export const getPedidosStatusList = (q) => api.get('/pedidos-status/list', { params: { q } }).then(res => res.data);
+export const togglePedidoStatus = (pedido, ativo) => api.post('/pedidos-status/toggle', { pedido, ativo }).then(res => res.data);
 
 // PRODUCTION CONTROL
 export const getProductionDashboard = (params, signal) => api.get('/production', { params, signal }).then(res => res.data);
@@ -391,6 +395,7 @@ export const getPurchaseFlowToInvoice = (params) => api.get('/compras/fluxo-comp
 // REPORTS
 export const getProductionReportData = (params) => api.get('/reports/production/data', { params }).then(res => res.data);
 export const getSalesPlanningReportData = (params) => api.get('/reports/sales-planning/data', { params }).then(res => res.data);
+export const getResourceEvolutionReportData = (params) => api.get('/reports/resource-evolution', { params }).then(res => res.data);
 
 // SALES NOTES (Ata Viva)
 export const getSalesNotes = (orders, item, enrich = false) => api.get('/sales/notes', { params: { orders: Array.isArray(orders) ? orders.join(',') : orders, item, enrich } }).then(res => res.data);
@@ -510,6 +515,17 @@ export const getFaturamentoDashboard = async (params) => {
 
 export const getFluxoCaixa = async (params) => {
     const response = await api.get('/financeiro/fluxo-caixa', { params });
+    return response.data;
+};
+
+// System Settings API
+export const getSystemSetting = async (key) => {
+    const response = await api.get(`/settings/${key}`);
+    return response.data;
+};
+
+export const saveSystemSetting = async (key, value) => {
+    const response = await api.post(`/settings/${key}`, { value });
     return response.data;
 };
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import useStickyState from '../hooks/useStickyState';
 import { Search, Loader2, Package, FileText, Calendar, Filter, X, ShoppingCart } from 'lucide-react';
 import { getPurchaseRequests } from '../services/api';
 
@@ -6,7 +7,7 @@ export default function PurchaseRequests() {
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState([]);
     const [hasSearched, setHasSearched] = useState(false);
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         filial: '',
         numero_sc: '',
         produto: '',
@@ -16,7 +17,7 @@ export default function PurchaseRequests() {
         data_de: '',
         data_ate: '',
         limit: 500
-    });
+    }, '@metalfisa:purchase_requests_filters');
 
     const handleSearch = async (e) => {
         e?.preventDefault();

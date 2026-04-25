@@ -7,7 +7,8 @@ const archiver = require('archiver');
 const fs = require('fs');
 const nodePath = require('path');
 const ExcelJS = require('exceljs');
-
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
@@ -23,7 +24,8 @@ router.get('/', async (req, res) => {
         let paramCount = 1;
 
         // Construção dinâmica de filtros
-        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'";
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + getInactiveFilter('c5.c5_num');
 
         // Filtra fora os "Vermelhos" (Faturados) - Optional now for Performance
         if (only_active === 'true') {
@@ -71,7 +73,7 @@ router.get('/', async (req, res) => {
                 AND COALESCE(c6_op_filter.d_e_l_e_t_, '') = ''
                 AND EXISTS (
                      SELECT 1 FROM public.sc2010 c2_op
-                     WHERE (c2_op.c2_pedido = c6_op_filter.c6_num OR (TRIM(COALESCE(c2_op.c2_pedido, '')) = '' AND c2_op.c2_obs LIKE c6_op_filter.c6_num || '%'))
+                     WHERE (c2_op.c2_pedido = c6_op_filter.c6_num)
                      AND c2_op.c2_itempv = c6_op_filter.c6_item
                      AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
                 )
@@ -84,7 +86,7 @@ router.get('/', async (req, res) => {
                 AND COALESCE(c6_sem_op_filter.d_e_l_e_t_, '') = ''
                 AND NOT EXISTS (
                      SELECT 1 FROM public.sc2010 c2_op
-                     WHERE (c2_op.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_op.c2_pedido, '')) = '' AND c2_op.c2_obs LIKE c5.c5_num || '%'))
+                     WHERE (c2_op.c2_pedido = c5.c5_num)
                      AND c2_op.c2_itempv = c6_sem_op_filter.c6_item
                      AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
                 )
@@ -127,7 +129,7 @@ router.get('/', async (req, res) => {
             AND COALESCE(c6_op.d_e_l_e_t_, '') = ''
             AND EXISTS (
                 SELECT 1 FROM public.sc2010 c2
-                WHERE (c2.c2_pedido = c6_op.c6_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c6_op.c6_num || '%'))
+                WHERE (c2.c2_pedido = c6_op.c6_num )
                 AND c2.c2_itempv = c6_op.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             )
@@ -151,14 +153,14 @@ router.get('/', async (req, res) => {
             ) > (
                 SELECT COUNT(DISTINCT c2_m.c2_itempv)
                 FROM public.sc2010 c2_m
-                WHERE (c2_m.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_m.c2_pedido, '')) = '' AND c2_m.c2_obs LIKE c5.c5_num || '%'))
+                WHERE (c2_m.c2_pedido = c5.c5_num)
                 AND COALESCE(c2_m.d_e_l_e_t_, '') = ''
             ) AND EXISTS (
-                SELECT 1 FROM public.sc2010 c2_e WHERE (c2_e.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_e.c2_pedido, '')) = '' AND c2_e.c2_obs LIKE c5.c5_num || '%')) AND COALESCE(c2_e.d_e_l_e_t_, '') = ''
+                SELECT 1 FROM public.sc2010 c2_e WHERE (c2_e.c2_pedido = c5.c5_num) AND COALESCE(c2_e.d_e_l_e_t_, '') = ''
             ) THEN 'orange'
 
             -- Todos os itens sem OP
-            WHEN NOT EXISTS (SELECT 1 FROM public.sc2010 c2_none WHERE (c2_none.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_none.c2_pedido, '')) = '' AND c2_none.c2_obs LIKE c5.c5_num || '%')) AND COALESCE(c2_none.d_e_l_e_t_, '') = '') THEN 'red'
+            WHEN NOT EXISTS (SELECT 1 FROM public.sc2010 c2_none WHERE (c2_none.c2_pedido = c5.c5_num) AND COALESCE(c2_none.d_e_l_e_t_, '') = '') THEN 'red'
 
             -- Padrão Protheus
             WHEN c5.c5_liberok = '' AND COALESCE(c5.c5_nota, '') = '' THEN 'green'
@@ -235,7 +237,8 @@ router.get('/flat', async (req, res) => {
         let paramCount = 1;
 
         // Base Filter Logic
-        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''";
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + getInactiveFilter('c5.c5_num');
 
         if (only_active === 'true') {
             whereClause += ` AND (
@@ -340,9 +343,9 @@ router.get('/flat', async (req, res) => {
 
         // --- Filtro de Status da OP ---
         if (op_status === 'com_op') {
-            whereClause += ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_status.c2_pedido, '')) = '' AND c2_status.c2_obs LIKE c5.c5_num || '%')) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            whereClause += ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
         } else if (op_status === 'sem_op') {
-            whereClause += ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2_status.c2_pedido, '')) = '' AND c2_status.c2_obs LIKE c5.c5_num || '%')) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            whereClause += ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
         }
 
         if (dataInicial || dataFinal) {
@@ -443,7 +446,7 @@ router.get('/flat', async (req, res) => {
                 ON sb1.b1_cod = c6.c6_produto
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             LEFT JOIN public.sc2010 c2
-                ON (c2.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c5.c5_num || '%'))
+                ON (c2.c2_pedido = c5.c5_num )
                 AND c2.c2_itempv = c6.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             LEFT JOIN LATERAL (
@@ -737,148 +740,12 @@ router.get('/flat', async (req, res) => {
 
 // GET /api/pedidos/visao-gerencial-atrasos - Dashboard Diretor (Só Atrasados)
 router.get('/visao-gerencial-atrasos', async (req, res) => {
-    try {
-        const query = `
-            SELECT
-                TRIM(c5.c5_num) as pedido,
-                TRIM(c5.c5_cliente) as cod_cliente,
-                sa1.a1_nome as nome_cliente,
-                TRIM(c6.c6_item) as item,
-                TRIM(c6.c6_produto) as codigo,
-                sb1.b1_desc as descricao,
-                COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
-                COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
-                (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
-                c6.c6_prcven::numeric(18,2) as valor_unitario,
-                ((COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) * COALESCE(c6.c6_prcven, 0))::numeric(18,2) as valor_saldo,
-                TRIM(c5.c5_emissao) as c5_emissao_raw,
-                TRIM(COALESCE(c6.c6_entreg, '')) as entrega_raw
-            FROM public.sc5010 c5
-            JOIN public.sc6010 c6
-                ON COALESCE(c6.d_e_l_e_t_, '') = ''
-                AND c6.c6_filial = c5.c5_filial
-                AND c6.c6_num = c5.c5_num
-            LEFT JOIN public.sa1010 sa1
-                ON sa1.a1_cod = c5.c5_cliente
-                AND sa1.a1_loja = c5.c5_lojacli
-                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sb1010 sb1
-                ON sb1.b1_cod = c6.c6_produto
-                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-            WHERE COALESCE(c5.d_e_l_e_t_, '') = '' 
-              AND c5.c5_tipo <> 'B'
-              AND (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0
-              AND NULLIF(TRIM(c6.c6_entreg), '') IS NOT NULL
-              AND c6.c6_entreg < TO_CHAR(CURRENT_DATE, 'YYYYMMDD')
-            ORDER BY c6.c6_entreg ASC, c5.c5_num DESC;
-        `;
-        const result = await db.query(query);
-        const data = result.rows.map(row => {
-            const parseDate = (dStr) => {
-                if (!dStr || dStr.trim() === '' || dStr.length < 8) return '';
-                return `${dStr.substring(6, 8)}/${dStr.substring(4, 6)}/${dStr.substring(2, 4)}`;
-            };
-            const parseDiasAtraso = (dStr) => {
-                if (!dStr || dStr.trim() === '' || dStr.length < 8) return 0;
-                const d = parseInt(dStr.substring(6, 8), 10);
-                const m = parseInt(dStr.substring(4, 6), 10) - 1;
-                const y = parseInt(dStr.substring(0, 4), 10);
-                const targetDate = new Date(y, m, d);
-                if (isNaN(targetDate.getTime())) return 0;
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                return Math.floor((today - targetDate) / (1000 * 60 * 60 * 24));
-            };
-            return {
-                ...row,
-                emissao_formatada: parseDate(row.c5_emissao_raw),
-                entrega_formatada: parseDate(row.entrega_raw),
-                dias_atraso: parseDiasAtraso(row.entrega_raw)
-            };
-        });
-        res.json({ data: data });
-    } catch (err) {
-        console.error('Erro na Visão Gerencial Atrasos:', err);
-        res.status(500).json({ error: 'Erro ao processar visão gerencial.', details: err.message });
-    }
+    return getVisaoGerencial(req, res, true);
 });
 
 // GET /api/pedidos/visao-gerencial-fabrica - Dashboard Diretor (Toda a Fábrica - Atrasados + Futuros)
 router.get('/visao-gerencial-fabrica', async (req, res) => {
-    try {
-        const query = `
-            SELECT
-                TRIM(c5.c5_num) as pedido,
-                TRIM(c5.c5_cliente) as cod_cliente,
-                sa1.a1_nome as nome_cliente,
-                TRIM(c6.c6_item) as item,
-                TRIM(c6.c6_produto) as codigo,
-                sb1.b1_desc as descricao,
-                COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
-                COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
-                (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
-                c6.c6_prcven::numeric(18,2) as valor_unitario,
-                ((COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) * COALESCE(c6.c6_prcven, 0))::numeric(18,2) as valor_saldo,
-                TRIM(c5.c5_emissao) as c5_emissao_raw,
-                TRIM(c6.c6_entreg) as c6_entreg_raw
-            FROM public.sc5010 c5
-            JOIN public.sc6010 c6
-                ON COALESCE(c6.d_e_l_e_t_, '') = ''
-                AND c6.c6_filial = c5.c5_filial
-                AND c6.c6_num = c5.c5_num
-            LEFT JOIN public.sa1010 sa1
-                ON sa1.a1_cod = c5.c5_cliente
-                AND sa1.a1_loja = c5.c5_lojacli
-                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sb1010 sb1
-                ON sb1.b1_cod = c6.c6_produto
-                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-            WHERE COALESCE(c5.d_e_l_e_t_, '') = '' 
-              AND c5.c5_tipo <> 'B'
-              AND (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0
-              AND NULLIF(TRIM(c6.c6_entreg), '') IS NOT NULL
-            ORDER BY c6.c6_entreg ASC, c5.c5_num ASC;
-        `;
-        const result = await db.query(query);
-        
-        const data = result.rows.map(row => {
-            const parseDate = (dStr) => {
-                if (!dStr || dStr.trim() === '' || dStr.length < 8) return '';
-                return `${dStr.substring(6, 8)}/${dStr.substring(4, 6)}/${dStr.substring(2, 4)}`;
-            };
-
-            const parseDiasAtraso = (dStr) => {
-                if (!dStr || dStr.trim() === '' || dStr.length < 8) return 0;
-                const d = parseInt(dStr.substring(6, 8), 10);
-                const m = parseInt(dStr.substring(4, 6), 10) - 1;
-                const y = parseInt(dStr.substring(0, 4), 10);
-                const targetDate = new Date(y, m, d);
-                if (isNaN(targetDate.getTime())) return 0;
-                
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                return Math.floor((today - targetDate) / (1000 * 60 * 60 * 24));
-            };
-
-            return {
-                ...row,
-                emissao_formatada: parseDate(row.c5_emissao_raw),
-                entrega_raw: row.c6_entreg_raw || '',
-                entrega_formatada: parseDate(row.c6_entreg_raw),
-                dias_atraso: parseDiasAtraso(row.c6_entreg_raw),
-                quantidade: parseFloat(row.quantidade || 0),
-                qtd_entreg: parseFloat(row.qtd_entreg || 0),
-                qtd_faturar: parseFloat(row.qtd_faturar || 0),
-                valor_unitario: parseFloat(row.valor_unitario || 0),
-                valor_saldo: parseFloat(row.valor_saldo || 0)
-            };
-        });
-
-        res.json({ data: data });
-    } catch (err) {
-        console.error('Erro na Visão Gerencial Fábrica:', err);
-        res.status(500).json({ error: 'Erro ao processar visão da fábrica.', details: err.message });
-    }
+    return getVisaoGerencial(req, res, false);
 });
 
 // POST /api/pedidos/snapshot-fabrica - Salvar snapshot diário
@@ -976,7 +843,7 @@ router.get('/:id/itens', async (req, res) => {
                 ON COALESCE(sb1.d_e_l_e_t_, '') = ''
                 AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
             LEFT JOIN public.sc2010 c2
-                ON (c2.c2_pedido = c5.c5_num OR (TRIM(COALESCE(c2.c2_pedido, '')) = '' AND c2.c2_obs LIKE c5.c5_num || '%'))
+                ON (c2.c2_pedido = c5.c5_num )
                 AND c2.c2_itempv = c6.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             LEFT JOIN LATERAL (

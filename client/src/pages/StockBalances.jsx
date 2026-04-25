@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import useStickyState from '../hooks/useStickyState';
 import { Search, Filter, Printer, Box, FileText } from 'lucide-react';
 import { getStockMainBalances, getFileUrl } from '../services/api';
 
 export default function StockBalances() {
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
-    const [filters, setFilters] = useState({
+    const [filters, setFilters] = useStickyState({
         empresa: '',
         filial: '',
         almoxarifado: '',
         codigo: '',
         descricao: '',
         grupo: '',
-        tipo: '' // Removed default 'PA' to prevent auto-load error
-    });
+        tipo: ''
+    }, '@metalfisa:stock_filters');
 
     const loadData = async () => {
         setLoading(true);

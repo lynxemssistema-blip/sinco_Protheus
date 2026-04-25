@@ -3,6 +3,7 @@ const router = express.Router();
 console.log('🔄 [DEBUG] Carregando arquivo routes/producao.js');
 const db = require('../db');
 const mysqlPool = require('../services/mysqlService'); // Importar conexão MySQL
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // GET /api/producao/ordens
 router.get('/ordens', async (req, res) => {
@@ -64,6 +65,7 @@ pedido_itens AS (
     AND c5.c5_tipo <> 'B'
     -- Updated Filter: Allow Released (S) but exclude Fully Billed (S + Note)
     AND NOT (c5.c5_liberok = 'S' AND COALESCE(c5.c5_nota, '') <> '')
+    ${await getInactiveOrdersFilter()('c5.c5_num')}
     ${filterClause}
 ),
 
@@ -257,6 +259,7 @@ router.get('/op', async (req, res) => {
                 LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli
                 WHERE c5.d_e_l_e_t_ = ' ' 
                 AND a1.d_e_l_e_t_ = ' '
+                ${await getInactiveOrdersFilter()('c5.c5_num')}
                 AND TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
                 AND (a1.a1_nome ILIKE $${paramCount} OR a1.a1_cod ILIKE $${paramCount})
             )
@@ -461,7 +464,10 @@ router.get('/vertical-pendencias', async (req, res) => {
 
     console.log(`🏭 [VERTICAL-PENDENCIAS] Buscando roteiro completo com Filtros:`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
 
+    const getInactiveFilter = await getInactiveOrdersFilter();
     let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''"];
+    const inactiveSql = getInactiveFilter('c2.c2_pedido');
+    if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
     let paramsArr = [];
     let pCount = 1;
 
@@ -660,7 +666,10 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     console.log(`🏭 [VERTICAL] Buscando fila para recurso: ${operacao} com Filtros`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
 
+    const getInactiveFilter = await getInactiveOrdersFilter();
     let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''", "TRIM(g2.g2_recurso) = $1"];
+    const inactiveSql = getInactiveFilter('c2.c2_pedido');
+    if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
     let paramsArr = [operacao];
     let pCount = 2;
 
@@ -936,6 +945,10 @@ router.get('/search-ops', async (req, res) => {
       params.push(prazo_ate.replace(/-/g, ''));
     }
 
+    const getInactiveFilter = await getInactiveOrdersFilter();
+    const inactiveSql = getInactiveFilter('c2.c2_pedido');
+    if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
+
     const whereSQL = `WHERE ${conditions.join(' AND ')}`;
 
     const sql = `
@@ -959,6 +972,7 @@ router.get('/search-ops', async (req, res) => {
        AND a1.a1_loja = c5.c5_lojacli
        AND COALESCE(a1.d_e_l_e_t_, '') = ''
       ${whereSQL}
+      ${whereSQL ? 'AND' : 'WHERE'} 1=1 ${await getInactiveOrdersFilter()('c5.c5_num', 'AND')}
       ORDER BY c2.c2_datprf DESC, c2.c2_num ASC
       LIMIT $${pCount}
     `;
@@ -1019,6 +1033,7 @@ router.get('/estrutura-routing', async (req, res) => {
        AND COALESCE(a1.d_e_l_e_t_, '') = ''
       WHERE COALESCE(c2.d_e_l_e_t_, '') = ''
         AND TRIM(c2.c2_num) = $1
+        ${await getInactiveOrdersFilter()('c5.c5_num', 'AND')}
       ORDER BY c2.c2_item, c2.c2_sequen
     `;
     const headerResult = await db.query(headerSQL, [opTrim]);

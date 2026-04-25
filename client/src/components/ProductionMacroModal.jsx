@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link } from 'lucide-react';
+import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
+import { generateGanttPDF } from '../services/ganttPdfGenerator';
 
 export default function ProductionMacroModal({ op, operations, onClose, onSaveBatch }) {
 
@@ -23,6 +24,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const [daysMode, setDaysMode] = useState('calendar'); // 'calendar' ou 'business'
     const [includeST, setIncludeST] = useState(false); // Default: don't include ST
     const [includeSaturday, setIncludeSaturday] = useState(false); // Consider Saturday as workday
+    const [includeSunday, setIncludeSunday] = useState(false); // Consider Sunday as workday
     const [viewMode, setViewMode] = useState('list'); // 'list' | 'gantt'
     const [draggingBar, setDraggingBar] = useState(null); // { code, startX, offsetDays }
 
@@ -129,14 +131,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
 
     // 3. Utilitários de Data
-    const subtractDays = (date, days, mode, incSat = false) => {
+    const subtractDays = (date, days, mode, incSat = false, incSun = false) => {
         const result = new Date(date);
         let count = 0;
         while (count < days) {
             result.setDate(result.getDate() - 1);
             if (mode === 'business') {
                 const day = result.getDay();
-                if (day !== 0 && (incSat || day !== 6)) count++;
+                if ((day !== 0 || incSun) && (day !== 6 || incSat)) count++;
             } else {
                 count++;
             }
@@ -144,14 +146,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return result;
     };
 
-    const addDays = (date, days, mode, incSat = false) => {
+    const addDays = (date, days, mode, incSat = false, incSun = false) => {
         const result = new Date(date);
         let count = 0;
         while (count < days) {
             result.setDate(result.getDate() + 1);
             if (mode === 'business') {
                 const day = result.getDay();
-                if (day !== 0 && (incSat || day !== 6)) count++;
+                if ((day !== 0 || incSun) && (day !== 6 || incSat)) count++;
             } else {
                 count++;
             }
@@ -159,20 +161,34 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return result;
     };
 
+    // Converte string ou Date em um objeto Date normalizado (meio-dia para evitar DST)
+    const safeDate = (dateVal) => {
+        if (!dateVal) return new Date();
+        if (dateVal instanceof Date) return new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate(), 12, 0, 0);
+        const str = String(dateVal);
+        const ymd = str.split('T')[0];
+        if (ymd.length === 10) return new Date(ymd + 'T12:00:00');
+        return new Date(dateVal);
+    };
+
     // Normaliza uma data para o dia útil mais próximo (evita domingo/sábado como âncora)
-    const skipToWorkday = (date, forward, incSat) => {
+    const skipToWorkday = (date, forward, incSat, incSun) => {
         const result = new Date(date);
-        const day = result.getDay();
-        if (day === 0) { // Domingo → sempre pula
-            result.setDate(result.getDate() + (forward ? 1 : -2));
-        } else if (!incSat && day === 6) { // Sábado (quando não incluído)
-            result.setDate(result.getDate() + (forward ? 2 : -1));
+        while (true) {
+            const day = result.getDay();
+            if (!incSun && day === 0) { // Domingo
+                result.setDate(result.getDate() + (forward ? 1 : -1));
+            } else if (!incSat && day === 6) { // Sábado
+                result.setDate(result.getDate() + (forward ? 1 : -1));
+            } else {
+                break;
+            }
         }
         return result;
     };
 
     // Conta dias úteis entre duas datas (inclusivo)
-    const countBusinessDays = (startDate, endDate, incSat) => {
+    const countBusinessDays = (startDate, endDate, incSat, incSun) => {
         let count = 0;
         const cur = new Date(startDate);
         cur.setHours(0, 0, 0, 0);
@@ -180,7 +196,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         end.setHours(0, 0, 0, 0);
         while (cur <= end) {
             const day = cur.getDay();
-            if (day !== 0 && (incSat || day !== 6)) count++;
+            if ((day !== 0 || incSun) && (day !== 6 || incSat)) count++;
             cur.setDate(cur.getDate() + 1);
         }
         return count;
@@ -188,7 +204,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     // 4. Lógicas de Cálculo Sequencial
     const calcRoutine = (params) => {
-        const { isForward, anchorDate, plansList, targetGroups, joinedSet, incST, incSat } = params;
+        const { isForward, anchorDate, plansList, targetGroups, joinedSet, incST, incSat, incSun } = params;
         if (!anchorDate) return plansList;
 
         const newPlans = { ...plansList };
@@ -201,8 +217,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
         // Normaliza a data âncora — impede que domingo/sábado seja início/fim de operação
         let currentDate = daysMode === 'business'
-            ? skipToWorkday(new Date(anchorDate), isForward, incSat)
-            : new Date(anchorDate);
+            ? skipToWorkday(safeDate(anchorDate), isForward, incSat, incSun)
+            : safeDate(anchorDate);
         let i = 0;
 
         while (i < indices.length) {
@@ -248,8 +264,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     eDate = blockAnchorDate;
                     nextDate = blockAnchorDate;
                 } else {
-                    eDate = addDays(blockAnchorDate, maxDur - 1, daysMode, incSat);
-                    nextDate = addDays(blockAnchorDate, maxDur, daysMode, incSat);
+                    eDate = addDays(blockAnchorDate, maxDur - 1, daysMode, incSat, incSun);
+                    nextDate = addDays(blockAnchorDate, maxDur, daysMode, incSat, incSun);
                 }
             } else {
                 eDate = blockAnchorDate;
@@ -257,8 +273,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     sDate = blockAnchorDate;
                     nextDate = blockAnchorDate;
                 } else {
-                    sDate = subtractDays(blockAnchorDate, maxDur - 1, daysMode, incSat);
-                    nextDate = subtractDays(blockAnchorDate, maxDur, daysMode, incSat);
+                    sDate = subtractDays(blockAnchorDate, maxDur - 1, daysMode, incSat, incSun);
+                    nextDate = subtractDays(blockAnchorDate, maxDur, daysMode, incSat, incSun);
                 }
             }
 
@@ -268,7 +284,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 if (p && p.selected) {
                     // Se data final cair em fim de semana, avança para próximo dia útil
                     const normalizedEnd = daysMode === 'business'
-                        ? skipToWorkday(new Date(eDate), true, incSat)
+                        ? skipToWorkday(new Date(eDate), true, incSat, incSun)
                         : eDate;
                     p.start = sDate.toISOString().split('T')[0];
                     p.end = normalizedEnd.toISOString().split('T')[0];
@@ -283,11 +299,11 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return newPlans;
     };
 
-    const triggerRecalculation = (currentPlans = operationPlans, customGroups = orderedGroups, dir = calcDirection, incST = includeST, incSat = includeSaturday) => {
+    const triggerRecalculation = (currentPlans = operationPlans, customGroups = orderedGroups, dir = calcDirection, incST = includeST, incSat = includeSaturday, incSun = includeSunday) => {
         if (dir === 'backward') {
-            setOperationPlans(calcRoutine({ isForward: false, anchorDate: targetEndDate, plansList: currentPlans, targetGroups: customGroups, joinedSet: joinedIndices, incST, incSat }));
+            setOperationPlans(calcRoutine({ isForward: false, anchorDate: targetEndDate, plansList: currentPlans, targetGroups: customGroups, joinedSet: joinedIndices, incST, incSat, incSun }));
         } else {
-            setOperationPlans(calcRoutine({ isForward: true, anchorDate: targetStartDate, plansList: currentPlans, targetGroups: customGroups, joinedSet: joinedIndices, incST, incSat }));
+            setOperationPlans(calcRoutine({ isForward: true, anchorDate: targetStartDate, plansList: currentPlans, targetGroups: customGroups, joinedSet: joinedIndices, incST, incSat, incSun }));
         }
     };
 
@@ -407,6 +423,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePrint = () => {
+        generateGanttPDF(op, orderedGroups, operationPlans);
     };
 
     // --- LÓGICA DE DRAG AND DROP DO GANTT ---
@@ -751,20 +771,32 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         >
                             <Briefcase className="w-3 h-3" /> Úteis
                         </button>
-                        {daysMode === 'business' && (
-                            <label className="flex items-center gap-1 cursor-pointer text-[9px] font-bold text-slate-600 uppercase tracking-tight select-none hover:text-blue-600 transition-colors ml-1 pr-1 border-l border-slate-200 pl-1">
-                                <input 
-                                    type="checkbox" 
-                                    checked={includeSaturday} 
-                                    onChange={(e) => {
-                                        setIncludeSaturday(e.target.checked);
-                                        setTimeout(() => triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, e.target.checked), 0);
-                                    }}
-                                    className="w-3 h-3 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
-                                />
-                                Incluir Sábado?
-                            </label>
-                        )}
+                        <label className={`flex items-center gap-1 cursor-pointer text-[9px] font-bold uppercase tracking-tight select-none transition-colors ml-1 pr-1 border-l border-slate-200 pl-1 ${daysMode === 'business' ? 'text-slate-600 hover:text-blue-600' : 'text-slate-300 pointer-events-none'}`}>
+                            <input 
+                                type="checkbox" 
+                                checked={includeSaturday} 
+                                disabled={daysMode !== 'business'}
+                                onChange={(e) => {
+                                    setIncludeSaturday(e.target.checked);
+                                    setTimeout(() => triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, e.target.checked, includeSunday), 0);
+                                }}
+                                className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
+                            />
+                            Incluir Sábado?
+                        </label>
+                        <label className={`flex items-center gap-1 cursor-pointer text-[9px] font-bold uppercase tracking-tight select-none transition-colors pr-1 border-l border-slate-200 pl-1 ${daysMode === 'business' ? 'text-slate-600 hover:text-blue-600' : 'text-slate-300 pointer-events-none'}`}>
+                            <input 
+                                type="checkbox" 
+                                checked={includeSunday} 
+                                disabled={daysMode !== 'business'}
+                                onChange={(e) => {
+                                    setIncludeSunday(e.target.checked);
+                                    setTimeout(() => triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, e.target.checked), 0);
+                                }}
+                                className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
+                            />
+                            Incluir Domingo?
+                        </label>
                     </div>
 
                     {/* ST Services Toggle */}
@@ -937,6 +969,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         <span className="opacity-50">| Mudanças são auto-salvas localmente</span>
                     </div>
                     <div className="flex gap-2">
+                        <button onClick={handlePrint} className="px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold text-white transition-colors flex items-center gap-1.5 border border-slate-500">
+                            <Printer className="w-3 h-3" /> Imprimir
+                        </button>
                         <button onClick={onClose} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] font-bold text-white transition-colors">
                             Cancelar
                         </button>

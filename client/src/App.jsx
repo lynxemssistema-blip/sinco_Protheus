@@ -85,6 +85,10 @@ const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverv
 const EngineeringReleaseReport = React.lazy(() => import('./pages/EngineeringReleaseReport'));
 const PlanejamentoEstruturaRouting = React.lazy(() => import('./pages/pcp/PlanejamentoEstruturaRouting'));
 const EngineeringControlReport = React.lazy(() => import('./pages/EngineeringControlReport'));
+const SetoresCadastro = React.lazy(() => import('./pages/pcp/SetoresCadastro'));
+const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
+const VisaoSetores = React.lazy(() => import('./pages/pcp/VisaoSetores'));
+
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 import { MENU_GROUPS } from './config/menuItems';
@@ -625,7 +629,24 @@ function App() {
                                                 <ProtheusOverview />
                                             </Layout>
                                         } />
+                                        {/* PCP Setor — Cadastro, Recursos e Visão Gerencial */}
+                                        <Route path="/pcp/setores" element={
+                                            <Layout fullWidth={true}>
+                                                <SetoresCadastro />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/setores/recursos" element={
+                                            <Layout fullWidth={true}>
+                                                <SetoresRecursos />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/visao-setores" element={
+                                            <Layout fullWidth={true}>
+                                                <VisaoSetores />
+                                            </Layout>
+                                        } />
                                     </Route>
+
                                 </Routes>
                             </Suspense>
                         </BrowserRouter>

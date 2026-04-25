@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const db = require('../db'); // Postgres Connection
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 router.get('/', async (req, res) => {
     try {
+        const getInactiveFilter = await getInactiveOrdersFilter();
         const { limit = 50, page = 1, pedido, projetista } = req.query;
         const pageParsed = parseInt(page, 10) || 1;
         const limitParsed = parseInt(limit, 10) || 50;
@@ -67,6 +69,7 @@ router.get('/', async (req, res) => {
                 LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND COALESCE(sb1.d_e_l_e_t_, '') = ''
                 WHERE (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${pairs.join(',')})
                 AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                ${getInactiveFilter('c5.c5_num')}
             `;
 
             try {

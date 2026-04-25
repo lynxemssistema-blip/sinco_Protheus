@@ -11,7 +11,7 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
-import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl } from '../services/api';
+import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
 
@@ -23,6 +23,7 @@ export default function ProductionControl() {
     const [loading, setLoading] = useState(false);
     const [planningOp, setPlanningOp] = useState(null);
     const [appointingOp, setAppointingOp] = useState(null);
+    const [appointmentMode, setAppointmentMode] = useState(null);
     const [macroModalOp, setMacroModalOp] = useState(null);
     const [macroOperations, setMacroOperations] = useState([]);
     const [showLegend, setShowLegend] = useState(false);
@@ -80,12 +81,6 @@ export default function ProductionControl() {
     const abortControllerRef = useRef(null);
 
     const loadData = async () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
-            setOps([]);
-            setTotal(0);
-            setLoading(false);
-            return;
-        }
 
         // Cancel any in-flight request
         if (abortControllerRef.current) {
@@ -116,6 +111,9 @@ export default function ProductionControl() {
 
     useEffect(() => {
         loadData();
+        getCompanySettings()
+            .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
+            .catch(() => setAppointmentMode('free'));
     }, []);
 
     // Fetch PDF docs for all visible products (background, cached)
@@ -147,10 +145,6 @@ export default function ProductionControl() {
     }, [ops]);
 
     const handleSearch = () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
-            toast.warning('Por favor, informe um Pedido, Cliente, Produto ou OP para buscar.');
-            return;
-        }
         loadData();
     };
 
@@ -190,19 +184,12 @@ export default function ProductionControl() {
     };
 
     const handleAppointmentSave = async (data) => {
-        try {
-            await saveAppointment(data);
-            setAppointingOp(null);
-            // Incremental refresh - only update the affected operation
-            if (appointingOp) {
-                await refreshOperation(appointingOp);
-            } else {
-                // Fallback to full reload if op info is not available
-                loadData();
-            }
-        } catch (err) {
-            console.error(err);
-            alert('Erro ao registrar apontamento');
+        await saveAppointment(data); // throws on validation error — modal handles display
+        setAppointingOp(null);
+        if (appointingOp) {
+            await refreshOperation(appointingOp);
+        } else {
+            loadData();
         }
     };
 
@@ -295,6 +282,16 @@ export default function ProductionControl() {
                         <p className="text-slate-500">Planejamento e Apontamento de OPs</p>
                     </div>
                     <div className="flex items-center gap-4">
+                        {appointmentMode && (
+                            <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
+                                appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                appointmentMode === 'balance'  ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                  'bg-slate-100 text-slate-500 border-slate-300'
+                            }`}>
+                                Apontamento: {appointmentMode === 'sequence' ? 'Sequencia' :
+                                              appointmentMode === 'balance'  ? 'Saldo' : 'Livre'}
+                            </span>
+                        )}
                         <div className="flex items-center bg-white rounded-lg p-1 border shadow-sm">
                             <button
                                 onClick={() => setCalcType('op_specific')}
@@ -338,7 +335,27 @@ export default function ProductionControl() {
                         </select>
                     </div>
                     <div className="mt-3 flex gap-3">
-                        <input type="text" placeholder="Operação/Recurso" value={filters.operacao} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Operação/Recurso" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        
+                        <div className="flex gap-2 items-center border rounded-lg px-2 bg-slate-50">
+                            <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Planejado:</span>
+                            <input 
+                                type="date" 
+                                value={filters.planned_date_start || ''} 
+                                onChange={(e) => setFilters({ ...filters, planned_date_start: e.target.value })} 
+                                className="px-2 py-1 border rounded bg-white text-sm text-slate-700" 
+                                title="Data Planejada Inicial" 
+                            />
+                            <span className="text-slate-400">até</span>
+                            <input 
+                                type="date" 
+                                value={filters.planned_date_end || ''} 
+                                onChange={(e) => setFilters({ ...filters, planned_date_end: e.target.value })} 
+                                className="px-2 py-1 border rounded bg-white text-sm text-slate-700" 
+                                title="Data Planejada Final" 
+                            />
+                        </div>
+
                         <button onClick={handleSearch} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled={loading}>
                             <Search className="w-4 h-4" />
                             {loading ? 'Buscando...' : 'Buscar'}
@@ -367,37 +384,39 @@ export default function ProductionControl() {
                     </div>
                 )}
 
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <table className="w-full">
-                        <thead className="bg-slate-50 border-b border-slate-200">
-                            <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                <th className="p-3">OP / Item / Seq</th>
-                                <th className="p-3">Pedido</th>
-                                <th className="p-3">Cliente</th>
-                                <th className="p-3">Produto</th>
-                                <th className="p-3 text-center w-10">PDF</th>
-                                <th className="p-3">Operação</th>
-                                <th className="p-3 text-center">Planejamento</th>
-                                <th className="p-3 text-center">Produção</th>
-                                <th className="p-3 text-center">Status</th>
-                                <th className="p-3 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+                    <div className="overflow-auto h-[calc(100vh-310px)]">
+                        <table className="w-full">
+                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                                <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
+                                    <th className="p-3">OP / Item / Seq</th>
+                                    <th className="p-3">Pedido</th>
+                                    <th className="p-3">Cliente</th>
+                                    <th className="p-3">Produto</th>
+                                    <th className="p-3 text-center w-10">PDF</th>
+                                    <th className="p-3">Operação</th>
+                                    <th className="p-3 text-center">Planejamento</th>
+                                    <th className="p-3 text-center">Produção</th>
+                                    <th className="p-3 text-center">Status</th>
+                                    <th className="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                             {loading ? (
                                 <tr><td colSpan="10" className="p-8 text-center text-slate-500">Carregando...</td></tr>
                             ) : ops.length === 0 ? (
                                 <tr>
                                     <td colSpan="10" className="p-8 text-center text-slate-500">
-                                        <div className="font-medium text-slate-700">Nenhuma operação em exibição</div>
-                                        <div className="text-sm mt-1">Por questões de performance, a busca não é automática. <br />Preencha um OP, Pedido, Produto ou Cliente e clique em Buscar.</div>
+                                        <div className="font-medium text-slate-700">Nenhuma operação encontrada</div>
+                                        <div className="text-sm mt-1 text-slate-400">Ajuste os filtros ou clique em Buscar para carregar todas as OPs abertas.</div>
                                     </td>
                                 </tr>
                             ) : (
                                 ops.map((op, idx) => {
                                     const status = getOpStatus(op);
+                                    const isPai = op.sequen === '001';
                                     return (
-                                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                        <tr key={idx} className={`border-b border-slate-100 transition-colors ${isPai ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
                                             <td className="p-3">
                                                 <div className="font-mono text-sm font-bold text-slate-900">{op.op}</div>
                                                 <div className="text-xs text-slate-500">Item: {op.item_op} | Seq: {op.sequen}</div>
@@ -554,12 +573,13 @@ export default function ProductionControl() {
                     )
                 }
 
-            </div >
+            </div>
+            </div>
 
             {/* PRINT COMPONENT - Visible only when printing */}
-            < div className="hidden print:block print:absolute print:top-0 print:left-0 print:w-full print:bg-white print:z-[9999]" >
+            <div className="hidden print:block print:absolute print:top-0 print:left-0 print:w-full print:bg-white print:z-[9999]">
                 <ProductionPrint ops={ops} filters={filters} />
-            </div >
+            </div>
         </>
     );
 }

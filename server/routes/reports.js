@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 // const PdfPrinter = require('pdfmake/src/printer'); // Temporarily disabled due to module issues
 const ExcelJS = require('exceljs');
 const path = require('path');
@@ -29,7 +30,8 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
 
     // 1. Base Query (Postgres - Protheus) - Same logic as Analytics Dashboard
     // We want mainly OPs here.
-    let whereClause = `WHERE c2.d_e_l_e_t_ = ''`;
+    const getInactiveFilter = await getInactiveOrdersFilter();
+    let whereClause = `WHERE c2.d_e_l_e_t_ = ''` + getInactiveFilter('c2.c2_pedido');
     const params = [];
 
     if (op) {
@@ -39,6 +41,18 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
     if (client) {
         whereClause += ` AND (UPPER(a1.a1_nome) LIKE UPPER($${params.length + 1}) OR UPPER(a1.a1_nreduz) LIKE UPPER($${params.length + 1}))`;
         params.push(`%${client}%`);
+    }
+    if (date_start) {
+        whereClause += ` AND c2.c2_datpri >= $${params.length + 1}`;
+        params.push(date_start.replace(/-/g, ''));
+    }
+    if (date_end) {
+        whereClause += ` AND c2.c2_datpri <= $${params.length + 1}`;
+        params.push(date_end.replace(/-/g, ''));
+    }
+    if (filters.pedido) {
+        whereClause += ` AND TRIM(c2.c2_pedido) LIKE $${params.length + 1}`;
+        params.push(`%${filters.pedido}%`);
     }
 
     // PROTHEUS Query (Simplified for Reports)
@@ -86,24 +100,18 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
         const placeholders = opNumbers.map(() => '?').join(',');
         const [mysqlRows] = await mysqlPool.query(`
             SELECT 
-                op_numero,
-                MIN(data_planejada_inicio) as plan_inicio,
-                MAX(data_planejada_fim) as plan_fim,
-                SUM(qtd_produzida_real) as total_produzido
+                p.op_numero,
+                MIN(p.data_planejada_inicio) as plan_inicio,
+                MAX(p.data_planejada_fim) as plan_fim,
+                COALESCE(stats.total_produzido, 0) as total_produzido
             FROM app_production_planning p
             LEFT JOIN (
-                SELECT 
-                    op_numero as op_stats, op_item, op_sequencia, operacao_codigo,
-                    SUM(quantidade) as qtd_produzida_real
+                SELECT op_numero, SUM(quantidade) as total_produzido
                 FROM app_production_appointments
-                GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-            ) stats ON 
-                stats.op_stats = p.op_numero AND 
-                stats.op_item = p.op_item AND 
-                stats.op_sequencia = p.op_sequencia AND 
-                stats.operacao_codigo = p.operacao_codigo
-            WHERE op_numero IN (${placeholders})
-            GROUP BY op_numero
+                GROUP BY op_numero
+            ) stats ON stats.op_numero = p.op_numero
+            WHERE p.op_numero IN (${placeholders})
+            GROUP BY p.op_numero
         `, opNumbers);
 
         mysqlRows.forEach(row => {
@@ -272,7 +280,8 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     const offset = (page - 1) * limit;
 
     const params = [];
-    let whereClause = `WHERE c5.c5_tipo <> 'B' AND COALESCE(c5.d_e_l_e_t_, '') = ''`;
+    const getInactiveFilter = await getInactiveOrdersFilter();
+    let whereClause = `WHERE c5.c5_tipo <> 'B' AND COALESCE(c5.d_e_l_e_t_, '') = ''` + getInactiveFilter('c5.c5_num');
 
     // Active Toggle (Exclude Billed/Deleted) - Updated to consider remaining balance
     if (active_only === 'true') {
@@ -616,6 +625,256 @@ router.get(['/users/excel', '/users/xlsx'], async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Erro ao gerar Excel de usuários: ' + err.message });
+    }
+});
+
+// --- RESOURCE EVOLUTION REPORT LOGIC ---
+
+router.get('/resource-evolution', async (req, res) => {
+    try {
+        const { date_start, date_end, client, pedido, op, product, groupBy = 'pedido' } = req.query;
+
+        // 1. Fetch OPs from Postgres
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        let whereClause = `WHERE COALESCE(c2.d_e_l_e_t_, '') = ''` + getInactiveFilter('c2.c2_pedido');
+        const params = [];
+
+        if (op) {
+            whereClause += ` AND TRIM(c2.c2_num) = $${params.length + 1}`;
+            params.push(op);
+        }
+        if (client) {
+            whereClause += ` AND (UPPER(a1.a1_nome) LIKE UPPER($${params.length + 1}) OR UPPER(a1.a1_nreduz) LIKE UPPER($${params.length + 1}))`;
+            params.push(`%${client}%`);
+        }
+        if (date_start) {
+            whereClause += ` AND c2.c2_datpri >= $${params.length + 1}`;
+            params.push(date_start.replace(/-/g, ''));
+        }
+        if (date_end) {
+            whereClause += ` AND c2.c2_datpri <= $${params.length + 1}`;
+            params.push(date_end.replace(/-/g, ''));
+        }
+        if (pedido) {
+            whereClause += ` AND TRIM(c2.c2_pedido) LIKE $${params.length + 1}`;
+            params.push(`%${pedido}%`);
+        }
+        if (product) {
+            whereClause += ` AND (UPPER(c2.c2_produto) LIKE UPPER($${params.length + 1}) OR UPPER(sb1.b1_desc) LIKE UPPER($${params.length + 1}))`;
+            params.push(`%${product}%`);
+        }
+
+        const opsSql = `
+            SELECT
+                btrim(c2.c2_num) as op,
+                btrim(c2.c2_item) as item,
+                btrim(c2.c2_sequen) as sequen,
+                btrim(c2.c2_pedido) as pedido,
+                btrim(c2.c2_produto) as produto,
+                c2.c2_quant as qtd_plan,
+                btrim(a1.a1_nome) as cliente,
+                btrim(sb1.b1_desc) as descricao,
+                c2.c2_datpri as data_ini_plan
+            FROM sc2010 c2
+            LEFT JOIN sc5010 c5 ON c5.c5_num = c2.c2_pedido AND COALESCE(c5.d_e_l_e_t_, '') = ''
+            LEFT JOIN sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND COALESCE(a1.d_e_l_e_t_, '') = ''
+            LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            ${whereClause}
+        `;
+        const opsRes = await db.query(opsSql, params);
+        
+        if (opsRes.rows.length === 0) {
+            return res.json({ rows: [], columns: [] });
+        }
+
+        const opNumbers = [...new Set(opsRes.rows.map(r => r.op))];
+        const productCodes = [...new Set(opsRes.rows.map(r => r.produto))];
+
+        // 2. Fetch Appointments from MySQL
+        const placeholders = opNumbers.map(() => '?').join(',');
+        const [apptsRows] = await mysqlPool.query(`
+            SELECT 
+                op_numero,
+                op_item,
+                op_sequencia,
+                operacao_codigo,
+                SUM(quantidade) as total_produzido,
+                MIN(data_inicio) as primeiro_apontamento
+            FROM app_production_appointments
+            WHERE op_numero IN (${placeholders})
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+        `, opNumbers);
+
+        // 3. Fetch Resource Mapping from Postgres (sg2010 + sh1010)
+        let resourceMapping = {}; // { produto_operacaoCodigo: { codigo, descri } }
+        let productResources = {}; // { produto: { recurso_codigo: count } }
+
+        if (productCodes.length > 0) {
+            const pgPlaceholders = productCodes.map((_, i) => `$${i + 1}`).join(',');
+            const mapSql = `
+                SELECT 
+                    btrim(g2.g2_produto) as produto, 
+                    btrim(g2.g2_operac) as operacao_codigo, 
+                    btrim(g2.g2_recurso) as h1_codigo, 
+                    btrim(h1.h1_descri) as h1_descri
+                FROM sg2010 g2
+                LEFT JOIN sh1010 h1 ON btrim(h1.h1_codigo) = btrim(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE btrim(g2.g2_produto) IN (${pgPlaceholders}) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            `;
+            const mapRes = await db.query(mapSql, productCodes);
+            mapRes.rows.forEach(r => {
+                const isDesconhecido = !r.h1_descri || r.h1_descri === 'Desconhecido';
+                resourceMapping[`${r.produto}_${r.operacao_codigo}`] = {
+                    codigo: r.h1_codigo || r.operacao_codigo,
+                    descri: isDesconhecido ? 'Desconhecido' : r.h1_descri
+                };
+                
+                if (!isDesconhecido && r.h1_codigo) {
+                    if (!productResources[r.produto]) productResources[r.produto] = {};
+                    if (!productResources[r.produto][r.h1_codigo]) productResources[r.produto][r.h1_codigo] = 0;
+                    productResources[r.produto][r.h1_codigo]++;
+                }
+            });
+        }
+
+        // 4. Group Data
+        const grouped = {};
+        const allResources = new Map(); // Keep track of unique resources for columns: Map<codigo, descri>
+
+        opsRes.rows.forEach(opRow => {
+            let groupId;
+            let groupLabel;
+            let extraLabel;
+
+            if (groupBy === 'pedido') {
+                // Skip OPs that have no sales order (orphan OPs)
+                if (!opRow.pedido || opRow.pedido.trim() === '') return;
+                groupId = opRow.pedido.trim();
+                groupLabel = groupId;
+                extraLabel = opRow.cliente || 'Sem Cliente';
+            } else if (groupBy === 'produto') {
+                groupId = opRow.produto;
+                groupLabel = opRow.produto;
+                extraLabel = opRow.descricao || 'Sem Descrição';
+            } else { // op
+                groupId = `${opRow.op}-${opRow.item}-${opRow.sequen}`;
+                groupLabel = groupId;
+                extraLabel = opRow.produto + (opRow.pedido ? ` (Ped: ${opRow.pedido})` : '');
+            }
+
+            if (!grouped[groupId]) {
+                grouped[groupId] = {
+                    id: groupId,
+                    label: groupLabel,
+                    extra: extraLabel,
+                    qtd_plan: 0,
+                    resources: {} // { resourceCodigo: { produzido, primeiro_apontamento } }
+                };
+            }
+            
+            // Add to total planned quantity for the group
+            const opQtd = parseFloat(opRow.qtd_plan) || 0;
+            grouped[groupId].qtd_plan += opQtd;
+
+            // Increment the planned quantity PER RESOURCE and track min/max plan dates
+            const opResources = productResources[opRow.produto] || {};
+            const opPlanDate = opRow.data_ini_plan
+                ? (() => {
+                    const s = String(opRow.data_ini_plan).trim();
+                    if (s.length === 8 && s !== '00000000') return new Date(`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`);
+                    return null;
+                  })()
+                : null;
+            Object.entries(opResources).forEach(([resKey, count]) => {
+                if (!grouped[groupId].resources[resKey]) {
+                    grouped[groupId].resources[resKey] = { produzido: 0, primeiro_apontamento: null, qtd_plan: 0, plan_date_min: null, plan_date_max: null };
+                }
+                grouped[groupId].resources[resKey].qtd_plan += (opQtd * count);
+                if (opPlanDate) {
+                    const r = grouped[groupId].resources[resKey];
+                    if (!r.plan_date_min || opPlanDate < r.plan_date_min) r.plan_date_min = opPlanDate;
+                    if (!r.plan_date_max || opPlanDate > r.plan_date_max) r.plan_date_max = opPlanDate;
+                }
+            });
+
+            // Find appointments for this OP (matching exact OP, item and sequence if available)
+            const opAppts = apptsRows.filter(a => 
+                a.op_numero === opRow.op && 
+                (!a.op_item || a.op_item === opRow.item) && 
+                (!a.op_sequencia || a.op_sequencia === opRow.sequen)
+            );
+            opAppts.forEach(appt => {
+                const mapKey = `${opRow.produto}_${appt.operacao_codigo}`;
+                const resInfo = resourceMapping[mapKey] || { codigo: appt.operacao_codigo, descri: 'Desconhecido' };
+                
+                // Ignorar apontamentos onde a descrição do recurso é desconhecida
+                if (resInfo.descri === 'Desconhecido') return;
+
+                const resKey = resInfo.codigo; // Use h1_codigo as key
+
+                if (!allResources.has(resKey)) {
+                    allResources.set(resKey, `${resInfo.codigo} - ${resInfo.descri}`);
+                }
+
+                if (!grouped[groupId].resources[resKey]) {
+                    grouped[groupId].resources[resKey] = { produzido: 0, primeiro_apontamento: null, qtd_plan: 0, plan_date_min: null, plan_date_max: null };
+                }
+
+                grouped[groupId].resources[resKey].produzido += parseFloat(appt.total_produzido) || 0;
+                
+                // Propagate plan_date via appointments path too (catches products without full SG2 routing)
+                if (opPlanDate) {
+                    const r = grouped[groupId].resources[resKey];
+                    if (!r.plan_date_min || opPlanDate < r.plan_date_min) r.plan_date_min = opPlanDate;
+                    if (!r.plan_date_max || opPlanDate > r.plan_date_max) r.plan_date_max = opPlanDate;
+                }
+                
+                const apptDate = new Date(appt.primeiro_apontamento);
+                const currentMinDate = grouped[groupId].resources[resKey].primeiro_apontamento;
+                if (!currentMinDate || apptDate < currentMinDate) {
+                    grouped[groupId].resources[resKey].primeiro_apontamento = apptDate;
+                }
+            });
+        });
+
+        // 5. Format Output
+        const columns = Array.from(allResources.keys()).map(k => ({
+            key: k,
+            label: allResources.get(k)
+        })).sort((a, b) => a.key.localeCompare(b.key)); // Sort by code
+
+        const rows = Object.values(grouped).map(g => {
+            const rowData = {
+                id: g.id,
+                label: g.label,
+                extra: g.extra,
+                qtd_plan: g.qtd_plan
+            };
+            
+            // Calculate progress per resource
+            columns.forEach(col => {
+                const resData = g.resources[col.key];
+                if (resData) {
+                    const resQtdPlan = resData.qtd_plan > 0 ? resData.qtd_plan : g.qtd_plan; // fallback
+                    const progress = resQtdPlan > 0 ? (resData.produzido / resQtdPlan) * 100 : 0;
+                    rowData[col.key] = {
+                        progress: Math.min(100, progress),
+                        date: resData.primeiro_apontamento,
+                        plan_date_min: resData.plan_date_min,
+                        plan_date_max: resData.plan_date_max
+                    };
+                } else {
+                    rowData[col.key] = null; // No appointments
+                }
+            });
+            return rowData;
+        });
+
+        res.json({ rows, columns });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Erro ao gerar evolução por recurso: ' + err.message });
     }
 });
 
