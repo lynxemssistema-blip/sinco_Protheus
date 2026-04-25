@@ -367,6 +367,8 @@ const VisaoGerencialProdutos = () => {
                         
                         <div className="ml-auto pr-4 flex-shrink-0">
                             <input 
+                                id="search-product"
+                                name="search-product"
                                 type="text"
                                 placeholder="🔍 Buscar Produto..." 
                                 value={searchTerm}
