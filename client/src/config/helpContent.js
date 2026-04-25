@@ -147,6 +147,7 @@ export const HELP_CONTENT = {
     tips: [
       'OPs em vermelho estão atrasadas em relação à data prevista.',
       'Use o filtro por cliente para visualizar apenas ordens de um determinado cliente.',
+      'Modos de Apontamento (Livre, Sequência ou Saldo): Observe o indicador no topo. "Livre" permite apontar qualquer etapa sem amarras; "Sequência" trava o início até que a operação anterior acabe; "Saldo" limita a quantidade máxima ao saldo disponível da operação anterior.',
     ],
     links: [
       { path: '/producao/op', label: 'Detalhes da OP' },
@@ -170,6 +171,7 @@ export const HELP_CONTENT = {
     ],
     tips: [
       'O histórico de apontamentos fica disponível na aba "Histórico".',
+      'Modos de Apontamento: O indicador no topo dita a regra da fábrica. "Livre" = Sem amarras. "Sequência" = Obriga concluir a anterior. "Saldo" = Não deixa apontar peças que ainda não passaram pela operação anterior.',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
@@ -393,6 +395,7 @@ export const HELP_CONTENT = {
       'Cores de Status: Pílulas verdes indicam conclusão; vermelhas indicam atraso na entrega; laranjas indicam atraso no início; e azuis indicam que a operação já está em andamento no chão de fábrica.',
       'Lembre-se: O planejamento só desce pro "Ind_Factory" ou pro "ERP" quando você aperta o Botão de Salvar verde no final. Arrastar os itens pela tela é apenas Simular Capacidade.',
       'O sistema utiliza DSR Oficial nativo: feriados e finais de semana prolongados na tabela de calendário empurram o lote para a próxima data útil validada.',
+      'Modo de Apontamento (Livre / Sequência / Saldo): Se a etiqueta no topo marcar "Sequência" ou "Saldo", algumas operações ficarão bloqueadas para apontamento até que as etapas anteriores liberem saldo para o PCP.',
     ],
     links: [
       { path: '/producao-matrix', label: 'Carga Máquina Total' },
@@ -461,6 +464,7 @@ export const HELP_CONTENT = {
     ],
     tips: [
       'Apontamentos podem ser feitos diretamente pelo tablet no chão de fábrica.',
+      'Regra de Apontamento: Se a sua fábrica opera em regime "Sequência", você não conseguirá apontar uma etapa 02 se a etapa 01 não estiver finalizada. No regime "Saldo", só poderá apontar a quantidade exata já processada pela etapa anterior. O regime "Livre" não aplica essas travas.',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
