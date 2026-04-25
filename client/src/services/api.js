@@ -70,7 +70,12 @@ export const getPedidos = async (params, config = {}) => {
     return response.data;
 };
 
-export const getKpiFaturar = async (config = {}) => {\n    const response = await api.get('/pedidos/kpi-faturar', config);\n    return response.data;\n};\n\nexport const getPedidosFlat = async (params, config = {}) => {
+export const getKpiFaturar = async (config = {}) => {
+    const response = await api.get('/pedidos/kpi-faturar', config);
+    return response.data;
+};
+
+export const getPedidosFlat = async (params, config = {}) => {
     const response = await api.get('/pedidos/flat', { params, ...config });
     return response.data;
 };
