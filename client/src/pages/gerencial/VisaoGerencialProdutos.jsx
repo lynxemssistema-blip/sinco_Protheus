@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { getVisaoGerencialFabrica, saveSnapshotFabrica } from '../../services/api';
+import { getVisaoGerencialFabrica, saveSnapshotFabrica, getKpiFaturar } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend
 } from 'recharts';
 import { Factory, Calendar, DollarSign, Lock, ChevronDown, ChevronRight, Package, Download, Camera, CheckSquare, Clock, Loader2 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -13,6 +14,7 @@ const VisaoGerencialProdutos = () => {
     
     // Core State
     const [data, setData] = useState([]);
+    const [kpiData, setKpiData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [savingSnapshot, setSavingSnapshot] = useState(false);
@@ -34,8 +36,12 @@ const VisaoGerencialProdutos = () => {
         setLoading(true);
         setError(null);
         try {
-            const resp = await getVisaoGerencialFabrica({});
+            const [resp, kpiResp] = await Promise.all([
+                getVisaoGerencialFabrica({}),
+                getKpiFaturar()
+            ]);
             setData(resp.data || []);
+            setKpiData(kpiResp.data || []);
         } catch (err) {
             console.error(err);
             setError('Falha ao carregar visão da fábrica. Verifique a conexão com o backend.');
@@ -245,36 +251,37 @@ const VisaoGerencialProdutos = () => {
             <div ref={exportRef} className="flex-1 flex flex-col min-h-0 space-y-4 pb-2">
                 
                 {/* KPIs */}
-                <div className="flex-none grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-red-500">
+                {/* KPIs */}
+                <div className="flex-none grid grid-cols-1 xl:grid-cols-6 gap-4 mb-2">
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-red-500 xl:col-span-1">
                          <div className="flex items-center justify-between">
                              <div className="p-2 bg-red-50 text-red-600 rounded-lg"><Clock size={20} /></div>
-                             <span className="text-xs font-bold text-slate-400 uppercase">Em Atraso</span>
+                             <span className="text-[10px] font-bold text-slate-400 uppercase">Em Atraso</span>
                          </div>
                          <div className="mt-4">
-                             <h4 className="text-2xl font-bold text-slate-800">{processedData.metrics.atraso.qtd.toLocaleString()} <span className="text-sm font-normal text-slate-500">pçs</span></h4>
-                             {canViewFinance && <div className="text-sm text-red-600 font-semibold mt-1">R$ {(processedData.metrics.atraso.brl / 1000).toFixed(0)}k</div>}
+                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.atraso.qtd.toLocaleString()} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
+                             {canViewFinance && <div className="text-xs text-red-600 font-semibold mt-1">R$ {(processedData.metrics.atraso.brl / 1000).toFixed(0)}k</div>}
                          </div>
                     </div>
                     
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500">
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500 xl:col-span-1">
                          <div className="flex items-center justify-between">
                              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckSquare size={20} /></div>
-                             <span className="text-xs font-bold text-slate-400 uppercase">No Prazo (Futuro)</span>
+                             <span className="text-[10px] font-bold text-slate-400 uppercase">No Prazo</span>
                          </div>
                          <div className="mt-4">
-                             <h4 className="text-2xl font-bold text-slate-800">{processedData.metrics.futuro.qtd.toLocaleString()} <span className="text-sm font-normal text-slate-500">pçs</span></h4>
-                             {canViewFinance && <div className="text-sm text-emerald-600 font-semibold mt-1">R$ {(processedData.metrics.futuro.brl / 1000).toFixed(0)}k</div>}
+                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.futuro.qtd.toLocaleString()} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
+                             {canViewFinance && <div className="text-xs text-emerald-600 font-semibold mt-1">R$ {(processedData.metrics.futuro.brl / 1000).toFixed(0)}k</div>}
                          </div>
                     </div>
 
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm md:col-span-2">
-                        <h4 className="text-sm font-bold text-slate-600 mb-3">Distribuição de Carga Total</h4>
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm xl:col-span-2">
+                        <h4 className="text-sm font-bold text-slate-600 mb-3">Distribuição de Carga</h4>
                         <div className="h-16">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={processedData.chartData} layout="vertical">
                                     <XAxis type="number" hide />
-                                    <YAxis dataKey="name" type="category" width={100} fontSize={11} tick={{fill: '#64748b'}} />
+                                    <YAxis dataKey="name" type="category" width={90} fontSize={10} tick={{fill: '#64748b'}} />
                                     <RechartsTooltip formatter={(val) => Math.floor(val).toLocaleString() + (isShowingFinance ? ' R$' : ' pçs')} />
                                     <Bar dataKey={isShowingFinance ? 'Valor' : 'Qtd'} barSize={10} radius={[0, 4, 4, 0]}>
                                         {processedData.chartData.map((entry, index) => (
@@ -283,6 +290,43 @@ const VisaoGerencialProdutos = () => {
                                     </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm xl:col-span-2">
+                        <h4 className="text-sm font-bold text-slate-600 mb-1">Status (Itens a Faturar)</h4>
+                        <div className="h-28">
+                            {kpiData && kpiData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={kpiData}
+                                            dataKey="total"
+                                            nameKey="status_tipo_item"
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={30}
+                                            outerRadius={50}
+                                            paddingAngle={2}
+                                        >
+                                            {kpiData.map((entry, index) => {
+                                                const name = entry.status_tipo_item || '';
+                                                let color = '#94a3b8'; // default
+                                                if (name.includes('Restrição')) color = '#ef4444'; // red
+                                                else if (name.includes('Revisão')) color = '#eab308'; // yellow
+                                                else if (name.includes('Novo')) color = '#8b5cf6'; // purple
+                                                else if (name === 'PCP (Com OP)') color = '#3b82f6'; // blue
+                                                else if (name.includes('Sem OP')) color = '#f97316'; // orange/urgent
+                                                return <Cell key={`pie-cell-${index}`} fill={color} />;
+                                            })}
+                                        </Pie>
+                                        <RechartsTooltip formatter={(val) => [Number(val).toLocaleString() + ' pçs', 'Quantidade']} />
+                                        <Legend verticalAlign="middle" align="right" layout="vertical" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-slate-400 text-sm">Sem dados</div>
+                            )}
                         </div>
                     </div>
                 </div>

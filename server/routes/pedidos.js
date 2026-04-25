@@ -738,6 +738,76 @@ router.get('/flat', async (req, res) => {
     }
 });
 
+// GET /api/pedidos/kpi-faturar - Indicadores de Itens a Faturar
+router.get('/kpi-faturar', async (req, res) => {
+    try {
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        const inactiveFilterSql = getInactiveFilter('c5.c5_num');
+
+        const query = `
+            SELECT
+                COUNT(*) as total,
+                CASE
+                    WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_chk.ok IS NOT NULL THEN 'Restrição'
+                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
+                    WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Novo'
+                    WHEN c2_chk.ok IS NOT NULL THEN 'PCP (Com OP)'
+                    ELSE 'PCP (Sem OP) - Urgente Liberação'
+                END AS status_tipo_item
+            FROM public.sc5010 c5
+            JOIN public.sc6010 c6
+                ON COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND c6.c6_filial = c5.c5_filial
+                AND c6.c6_num = c5.c5_num
+            LEFT JOIN public.sb1010 sb1
+                ON sb1.b1_cod = c6.c6_produto
+                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            LEFT JOIN LATERAL (
+                SELECT 1 as ok FROM public.sz0010
+                WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
+                AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P' LIMIT 1
+            ) sz0_chk ON true
+            LEFT JOIN LATERAL (
+                SELECT 1 as ok FROM public.sg1010
+                WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
+                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
+            ) sg1_chk ON true
+            LEFT JOIN LATERAL (
+                SELECT 1 as ok FROM public.sg2010
+                WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
+                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
+            ) sg2_chk ON true
+            LEFT JOIN LATERAL (
+                SELECT 1 as ok FROM public.sc2010
+                WHERE (c2_pedido = c5.c5_num)
+                AND c2_itempv = c6.c6_item
+                AND COALESCE(d_e_l_e_t_, '') = '' LIMIT 1
+            ) c2_chk ON true
+            WHERE COALESCE(c5.d_e_l_e_t_, '') = '' 
+            AND c5.c5_tipo <> 'B'
+            AND (
+                COALESCE(c5.c5_nota, '') = '' 
+                OR EXISTS (
+                    SELECT 1 FROM public.sc6010 c6_ex 
+                    WHERE c6_ex.c6_num = c5.c5_num 
+                    AND c6_ex.c6_filial = c5.c5_filial 
+                    AND COALESCE(c6_ex.d_e_l_e_t_, '') = ''
+                    AND ((c6_ex.c6_qtdven - c6_ex.c6_qtdent) > 0 OR c6_ex.c6_qtdlib > 0)
+                )
+            )
+            AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
+            ${inactiveFilterSql}
+            GROUP BY status_tipo_item
+        `;
+
+        const result = await db.query(query);
+        res.json({ data: result.rows });
+    } catch (err) {
+        console.error('Erro na rota kpi-faturar:', err);
+        res.status(500).json({ error: 'Erro interno.', details: err.message });
+    }
+});
+
 // GET /api/pedidos/visao-gerencial-atrasos - Dashboard Diretor (Só Atrasados)
 router.get('/visao-gerencial-atrasos', async (req, res) => {
     return getVisaoGerencial(req, res, true);
