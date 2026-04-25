@@ -745,29 +745,37 @@ router.get('/kpi-faturar', async (req, res) => {
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
 
         const query = `
-            WITH
-            restricted_prods AS (
-                SELECT DISTINCT TRIM(z0_produto) AS produto
-                FROM public.sz0010
-                WHERE COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
-            ),
-            has_estrutura AS (
-                SELECT TRIM(g1_cod) AS produto FROM public.sg1010 WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-                UNION
-                SELECT TRIM(g2_produto)          FROM public.sg2010 WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-            ),
-            has_op AS (
-                SELECT DISTINCT TRIM(c2_pedido) AS pedido, TRIM(c2_itempv) AS itempv
-                FROM public.sc2010
-                WHERE COALESCE(d_e_l_e_t_, '') = ''
-            )
             SELECT
                 COUNT(*)::integer AS total,
                 CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y') OR rp.produto IS NOT NULL THEN 'Restrição'
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '')      THEN 'Revisão'
-                    WHEN he.produto IS NULL                                             THEN 'Novo'
-                    WHEN hop.pedido IS NOT NULL                                         THEN 'PCP (Com OP)'
+                    WHEN sb1.b1_msblql IN ('1','S','T','Y')
+                      OR EXISTS (
+                            SELECT 1 FROM public.sz0010
+                            WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
+                              AND COALESCE(d_e_l_e_t_, '') <> '*'
+                              AND z0_status = 'P'
+                            LIMIT 1
+                         ) THEN 'Restrição'
+                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
+                    WHEN NOT EXISTS (
+                            SELECT 1 FROM public.sg1010
+                            WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
+                              AND COALESCE(d_e_l_e_t_, '') <> '*'
+                            LIMIT 1
+                         )
+                     AND NOT EXISTS (
+                            SELECT 1 FROM public.sg2010
+                            WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
+                              AND COALESCE(d_e_l_e_t_, '') <> '*'
+                            LIMIT 1
+                         ) THEN 'Novo'
+                    WHEN EXISTS (
+                            SELECT 1 FROM public.sc2010
+                            WHERE TRIM(c2_pedido) = TRIM(c5.c5_num)
+                              AND TRIM(c2_itempv) = TRIM(c6.c6_item)
+                              AND COALESCE(d_e_l_e_t_, '') = ''
+                            LIMIT 1
+                         ) THEN 'PCP (Com OP)'
                     ELSE 'PCP (Sem OP) - Urgente Liberação'
                 END AS status_tipo_item
             FROM public.sc5010 c5
@@ -776,12 +784,8 @@ router.get('/kpi-faturar', async (req, res) => {
                 AND c6.c6_num   = c5.c5_num
                 AND COALESCE(c6.d_e_l_e_t_, '') = ''
             LEFT JOIN public.sb1010 sb1
-                ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
+                ON sb1.b1_cod = c6.c6_produto
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-            LEFT JOIN restricted_prods rp  ON rp.produto  = TRIM(c6.c6_produto)
-            LEFT JOIN has_estrutura    he  ON he.produto  = TRIM(c6.c6_produto)
-            LEFT JOIN has_op           hop ON hop.pedido  = TRIM(c5.c5_num)
-                                          AND hop.itempv  = TRIM(c6.c6_item)
             WHERE COALESCE(c5.d_e_l_e_t_, '') = ''
               AND c5.c5_tipo <> 'B'
               AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
