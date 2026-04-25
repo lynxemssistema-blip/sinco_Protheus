@@ -8,7 +8,7 @@ client/dist/
 linux-deployment/
 
 # Environment variables
-.env
+# .env tracked intentionally (contains non-sensitive deploy config)
 .env.local
 .env.production
 
