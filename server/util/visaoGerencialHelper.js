@@ -41,36 +41,28 @@ async function getVisaoGerencial(req, res, isAtrasos) {
             return res.json({ data: [] });
         }
 
-        // 2. Enrich with Clients (sa1010)
-        const clientPairs = [...new Set(result.rows.map(r => `${r.cod_cliente}|${r.loja_cliente}`))];
-        const clientsQuery = `
-            SELECT TRIM(a1_cod) as a1_cod, a1_loja, a1_nome
-            FROM sa1010
-            WHERE COALESCE(d_e_l_e_t_, '') = ''
-        `;
-        // Since sa1010 isn't extremely huge, we can just fetch the needed ones or all of them.
-        // But for safety, let's fetch only what's needed if possible, or just fetch all clients (fast enough).
-        // Let's use IN with tuples.
+        // 2 + 3. Enrich with Clients (sa1010) and Products (sb1010) — in parallel
         const clientCodes = [...new Set(result.rows.map(r => r.cod_cliente))];
-        const sa1Result = await db.query(`
-            SELECT TRIM(a1_cod) as cod, a1_loja as loja, TRIM(a1_nome) as nome
-            FROM sa1010
-            WHERE a1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
-        `, [clientCodes]);
-        
+        const productCodes = [...new Set(result.rows.map(r => r.codigo))];
+
+        const [sa1Result, sb1Result] = await Promise.all([
+            db.query(`
+                SELECT TRIM(a1_cod) as cod, a1_loja as loja, TRIM(a1_nome) as nome
+                FROM sa1010
+                WHERE a1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
+            `, [clientCodes]),
+            db.query(`
+                SELECT TRIM(b1_cod) as cod, TRIM(b1_desc) as descricao
+                FROM sb1010
+                WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
+            `, [productCodes])
+        ]);
+
         const clientMap = {};
         sa1Result.rows.forEach(c => {
             clientMap[`${c.cod}|${c.loja}`] = c.nome;
         });
 
-        // 3. Enrich with Products (sb1010)
-        const productCodes = [...new Set(result.rows.map(r => r.codigo))];
-        const sb1Result = await db.query(`
-            SELECT TRIM(b1_cod) as cod, TRIM(b1_desc) as descricao
-            FROM sb1010
-            WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
-        `, [productCodes]);
-        
         const productMap = {};
         sb1Result.rows.forEach(p => {
             productMap[p.cod] = p.descricao;

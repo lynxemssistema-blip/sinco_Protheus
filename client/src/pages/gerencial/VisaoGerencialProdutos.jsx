@@ -295,7 +295,7 @@ const VisaoGerencialProdutos = () => {
 
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm xl:col-span-2">
                         <h4 className="text-sm font-bold text-slate-600 mb-1">Status (Itens a Faturar)</h4>
-                        <div className="h-28">
+                        <div className="h-36">
                             {kpiData && kpiData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
@@ -303,25 +303,33 @@ const VisaoGerencialProdutos = () => {
                                             data={kpiData}
                                             dataKey="total"
                                             nameKey="status_tipo_item"
-                                            cx="50%"
+                                            cx="32%"
                                             cy="50%"
-                                            innerRadius={30}
-                                            outerRadius={50}
+                                            innerRadius={32}
+                                            outerRadius={52}
                                             paddingAngle={2}
                                         >
                                             {kpiData.map((entry, index) => {
                                                 const name = entry.status_tipo_item || '';
-                                                let color = '#94a3b8'; // default
-                                                if (name.includes('Restrição')) color = '#ef4444'; // red
-                                                else if (name.includes('Revisão')) color = '#eab308'; // yellow
-                                                else if (name.includes('Novo')) color = '#8b5cf6'; // purple
-                                                else if (name === 'PCP (Com OP)') color = '#3b82f6'; // blue
-                                                else if (name.includes('Sem OP')) color = '#f97316'; // orange/urgent
+                                                let color = '#94a3b8';
+                                                if (name.includes('Restrição')) color = '#ef4444';
+                                                else if (name.includes('Revisão')) color = '#eab308';
+                                                else if (name.includes('Novo')) color = '#8b5cf6';
+                                                else if (name === 'PCP (Com OP)') color = '#3b82f6';
+                                                else if (name.includes('Sem OP')) color = '#f97316';
                                                 return <Cell key={`pie-cell-${index}`} fill={color} />;
                                             })}
                                         </Pie>
-                                        <RechartsTooltip formatter={(val) => [Number(val).toLocaleString() + ' pçs', 'Quantidade']} />
-                                        <Legend verticalAlign="middle" align="right" layout="vertical" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                                        <RechartsTooltip formatter={(val, name) => [`${Number(val).toLocaleString()} itens`, name]} />
+                                        <Legend
+                                            verticalAlign="middle"
+                                            align="right"
+                                            layout="vertical"
+                                            iconSize={8}
+                                            iconType="circle"
+                                            wrapperStyle={{ fontSize: '10px', lineHeight: '18px', paddingLeft: '4px' }}
+                                            formatter={(value, entry) => `${value}: ${Number(entry.payload.total).toLocaleString()}`}
+                                        />
                                     </PieChart>
                                 </ResponsiveContainer>
                             ) : (

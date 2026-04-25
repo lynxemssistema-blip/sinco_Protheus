@@ -389,6 +389,8 @@ export const HELP_CONTENT = {
       'Persistência de Linha Base (Baseline): Antes de comitar a simulação, ative o "Salvar Layout/Simulação". O botão visual mostrará "Tons de cor Ghost/Esmaecido" permitindo analisar o plano Original VS seu plano de simulação arrastado.',
     ],
     tips: [
+      'Cores das Linhas: Operações com fundo azul claro representam a operação "Pai" (sequência 001, a primeira etapa do roteiro). As demais etapas do item ficam com o fundo branco.',
+      'Cores de Status: Pílulas verdes indicam conclusão; vermelhas indicam atraso na entrega; laranjas indicam atraso no início; e azuis indicam que a operação já está em andamento no chão de fábrica.',
       'Lembre-se: O planejamento só desce pro "Ind_Factory" ou pro "ERP" quando você aperta o Botão de Salvar verde no final. Arrastar os itens pela tela é apenas Simular Capacidade.',
       'O sistema utiliza DSR Oficial nativo: feriados e finais de semana prolongados na tabela de calendário empurram o lote para a próxima data útil validada.',
     ],
