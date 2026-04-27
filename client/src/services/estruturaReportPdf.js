@@ -636,25 +636,45 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
     const hasDrawing = root.tem_arquivos && root.primeiro_arquivo;
 
     // Merge logic
+    let targetDocs = [];
+    if (root && root.codigo) {
+      try {
+        const resp = await api.get(`/docs/${encodeURIComponent(root.codigo.trim())}`);
+        const productDocs = resp.data || [];
+        targetDocs = productDocs
+          .filter(d => ['Desenho', 'Gabarito'].includes(d.tipo))
+          .sort((a, b) => {
+            if (a.tipo === 'Desenho' && b.tipo !== 'Desenho') return -1;
+            if (a.tipo !== 'Desenho' && b.tipo === 'Desenho') return 1;
+            if (a.tipo === 'Gabarito' && b.tipo !== 'Gabarito') return -1;
+            if (a.tipo !== 'Gabarito' && b.tipo === 'Gabarito') return 1;
+            return 0;
+          });
+      } catch (e) {
+        console.warn('Falha ao buscar lista de documentos do produto', e);
+      }
+    }
+
     if (isNivel1) {
       const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
       fichaPages.forEach(p => mergedDoc.addPage(p));
-      if (hasDrawing) {
+      
+      for (const docObj of targetDocs) {
         try {
-          const resp = await api.get('/docs/view', { params: { path: root.primeiro_arquivo }, responseType: 'arraybuffer' });
+          const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
           const drawDoc = await PDFDocument.load(resp.data);
           const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
           drawPages.forEach(p => mergedDoc.addPage(p));
-        } catch (e) { console.warn('Falha no desenho', e); }
+        } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
       }
     } else {
-      if (hasDrawing) {
+      for (const docObj of targetDocs) {
         try {
-          const resp = await api.get('/docs/view', { params: { path: root.primeiro_arquivo }, responseType: 'arraybuffer' });
+          const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
           const drawDoc = await PDFDocument.load(resp.data);
           const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
           drawPages.forEach(p => mergedDoc.addPage(p));
-        } catch (e) { console.warn('Falha no desenho', e); }
+        } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
       }
       const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
       fichaPages.forEach(p => mergedDoc.addPage(p));

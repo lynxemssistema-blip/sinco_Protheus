@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Landmark, Plus, Edit2, Trash2, Power, AlertCircle, Loader2,
-    CheckCircle, X, Save, Tag, ChevronRight, Link as LinkIcon
+    CheckCircle, X, Save, Tag, ChevronRight, Link as LinkIcon,
+    ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -150,6 +151,30 @@ export default function SetoresCadastro() {
 
     useEffect(() => { load(); }, [load]);
 
+    const handleReorder = async (index, direction) => {
+        if (direction === 'up' && index === 0) return;
+        if (direction === 'down' && index === setores.length - 1) return;
+
+        const newSetores = [...setores];
+        const swapIndex = direction === 'up' ? index - 1 : index + 1;
+        
+        // Swap locally
+        const temp = newSetores[index];
+        newSetores[index] = newSetores[swapIndex];
+        newSetores[swapIndex] = temp;
+        
+        setSetores(newSetores);
+
+        // Save order to backend
+        try {
+            await api.post('/pcp-setores/reorder', { order: newSetores.map(s => s.id) });
+            // toast.success('Ordem salva.');
+        } catch (err) {
+            toast.error('Erro ao reordenar setores.');
+            load(); // reload on error
+        }
+    };
+
     const handleToggle = async (setor) => {
         try {
             await api.patch(`/pcp-setores/${setor.id}/toggle`);
@@ -243,6 +268,24 @@ export default function SetoresCadastro() {
 
                                     {/* Ações */}
                                     <div className="flex items-center gap-1 shrink-0">
+                                        <div className="flex flex-col gap-0.5 mr-2">
+                                            <button
+                                                onClick={() => handleReorder(setores.indexOf(setor), 'up')}
+                                                disabled={setores.indexOf(setor) === 0}
+                                                className="p-1 rounded bg-slate-100 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                title="Mover para cima"
+                                            >
+                                                <ArrowUp className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleReorder(setores.indexOf(setor), 'down')}
+                                                disabled={setores.indexOf(setor) === setores.length - 1}
+                                                className="p-1 rounded bg-slate-100 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                title="Mover para baixo"
+                                            >
+                                                <ArrowDown className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                         <button
                                             onClick={() => navigate(`/pcp/setores/recursos?setor=${setor.id}`)}
                                             className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 border border-slate-200 hover:border-blue-300 px-3 py-1.5 rounded-lg transition-colors"

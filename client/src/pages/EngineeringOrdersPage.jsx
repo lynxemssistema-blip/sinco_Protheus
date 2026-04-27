@@ -241,6 +241,10 @@ const EngineeringOrdersPage = () => {
     // Engineering Timesheet Active Timer
     const [activeTimer, setActiveTimer] = useState(null);
 
+    // Bulk selection state
+    const [selectedItems, setSelectedItems] = useState(new Set());
+    const [batchModalOpen, setBatchModalOpen] = useState(false);
+
     const fetchActiveTimer = async () => {
         try {
             const res = await api.get('/engineering-timesheets/active');
@@ -316,6 +320,25 @@ const EngineeringOrdersPage = () => {
         const newPage = typeof val === 'function' ? val(page) : val;
         updateOrderFilters({ page: newPage });
     };
+
+    // Bulk selection helpers
+    const toggleItemSelection = (key) => {
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+    };
+    const toggleSelectAll = () => {
+        if (filteredOrders.length > 0 && selectedItems.size === filteredOrders.length) {
+            setSelectedItems(new Set());
+        } else {
+            setSelectedItems(new Set(filteredOrders.map(i => `${i.pedido}-${i.item}`)));
+        }
+    };
+    const getSelectedItemsList = () => filteredOrders
+        .filter(i => selectedItems.has(`${i.pedido}-${i.item}`))
+        .map(i => ({ pedido: i.pedido, item: i.item }));
 
     // Filtered view: chained frontend filters (tipo + emissão)
     const filteredOrders = orders.filter(item => {
@@ -831,6 +854,15 @@ const EngineeringOrdersPage = () => {
                 <table className="w-full text-sm text-left text-gray-500 print:w-full">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-100">
                         <tr>
+                            <th className="px-3 py-3 w-10 print:hidden">
+                                <input
+                                    type="checkbox"
+                                    title="Selecionar todos"
+                                    checked={filteredOrders.length > 0 && selectedItems.size === filteredOrders.length}
+                                    onChange={toggleSelectAll}
+                                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                />
+                            </th>
                             {visibleCols.map(col => (
                                 <th
                                     key={col.key}
@@ -867,21 +899,40 @@ const EngineeringOrdersPage = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredOrders.map((item, idx) => (
-                                <tr
-                                    key={`${item.pedido}-${item.item}-${idx}`}
-                                    className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'}`}
-                                >
-                                    {visibleCols.map(col => (
-                                        <td
-                                            key={col.key}
-                                            className={`px-4 py-2 ${col.key === 'acoes' ? 'text-center print:hidden' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'ref_cliente', 'rev_cliente', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
-                                        >
-                                            {renderCell(col.key, item)}
+                            filteredOrders.map((item, idx) => {
+                                const itemKey = `${item.pedido}-${item.item}`;
+                                const isSelected = selectedItems.has(itemKey);
+                                return (
+                                    <tr
+                                        key={`${item.pedido}-${item.item}-${idx}`}
+                                        className={`transition-colors border-b border-gray-50 last:border-0 ${
+                                            isSelected
+                                                ? 'bg-indigo-50 hover:bg-indigo-100/70'
+                                                : parseFloat(item.qtd_faturar) <= 0
+                                                    ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
+                                                    : 'bg-white hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <td className="px-3 py-2 print:hidden">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleItemSelection(itemKey)}
+                                                onClick={e => e.stopPropagation()}
+                                                className="w-4 h-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                            />
                                         </td>
-                                    ))}
-                                </tr>
-                            ))
+                                        {visibleCols.map(col => (
+                                            <td
+                                                key={col.key}
+                                                className={`px-4 py-2 ${col.key === 'acoes' ? 'text-center print:hidden' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'ref_cliente', 'rev_cliente', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
+                                            >
+                                                {renderCell(col.key, item)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
@@ -995,6 +1046,45 @@ const EngineeringOrdersPage = () => {
                         ));
                     }}
                 />
+            )}
+
+            {/* Batch Lote Modal */}
+            {batchModalOpen && (
+                <EngineeringControlModal
+                    isOpen={batchModalOpen}
+                    onClose={() => { setBatchModalOpen(false); setSelectedItems(new Set()); }}
+                    batchItems={getSelectedItemsList()}
+                    onSave={() => fetchData()}
+                />
+            )}
+
+            {/* Floating Batch Action Bar */}
+            {selectedItems.size > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900 text-white pl-5 pr-3 py-3 rounded-2xl shadow-2xl border border-slate-700/50">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-xs font-bold">
+                            {selectedItems.size}
+                        </div>
+                        <span className="text-sm font-medium">
+                            {selectedItems.size === 1 ? 'item selecionado' : 'itens selecionados'}
+                        </span>
+                    </div>
+                    <div className="w-px h-5 bg-slate-600" />
+                    <button
+                        onClick={() => setBatchModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500 hover:bg-indigo-400 rounded-xl text-sm font-bold transition-all shadow-md"
+                    >
+                        <Settings className="h-4 w-4" />
+                        Controle de Engenharia em Lote
+                    </button>
+                    <button
+                        onClick={() => setSelectedItems(new Set())}
+                        className="p-1.5 hover:bg-slate-700 rounded-lg transition-colors ml-1"
+                        title="Limpar seleção"
+                    >
+                        <X className="h-4 w-4 text-slate-400" />
+                    </button>
+                </div>
             )}
         </div>
     );

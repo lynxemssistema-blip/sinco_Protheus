@@ -578,7 +578,14 @@ router.get('/flat', async (req, res) => {
                 mysqlPool.query(`
                     SELECT TRIM(pedido) as pedido, TRIM(item) as item,
                            pcp_planned_eng_date, pcp_planned_eng_obs,
-                           designer_production_release_date, engineering_start_date, lpf_codigo
+                           designer_production_release_date, engineering_start_date, lpf_codigo,
+                           project_type,
+                           bom_prepared_by, bom_prepared_at, bom_released_at, bom_notes,
+                           designer_name, designer_start_forecast, designer_end_forecast,
+                           designer_start_real, designer_end_real, designer_notes,
+                           pcp_mat_req_date, pcp_mat_req_user,
+                           pcp_mech_start_date, pcp_mech_start_user,
+                           pcp_cut_rel_date, pcp_cut_rel_user, pcp_notes
                     FROM app_sales_order_item_notes
                     WHERE TRIM(pedido) IN (${pedidoPlaceholders})
                 `, uniquePedidos),
@@ -620,7 +627,6 @@ router.get('/flat', async (req, res) => {
                 });
             } else { console.error('Error forecasts:', forecastResult.reason?.message); }
 
-            // Merge Notes
             if (notesResult.status === 'fulfilled') {
                 const notesMap = {};
                 notesResult.value[0].forEach(n => { notesMap[`${n.pedido}-${n.item}`] = n; });
@@ -632,6 +638,27 @@ router.get('/flat', async (req, res) => {
                         row.designer_production_release_date = note.designer_production_release_date;
                         row.engineering_start_date = note.engineering_start_date;
                         row.lpf_codigo_base = note.lpf_codigo;
+                        // Engineering general + BOM
+                        row.project_type = note.project_type;
+                        row.bom_prepared_by = note.bom_prepared_by;
+                        row.bom_prepared_at = note.bom_prepared_at;
+                        row.bom_released_at = note.bom_released_at;
+                        row.bom_notes = note.bom_notes;
+                        // Designer
+                        row.designer_name = note.designer_name;
+                        row.designer_start_forecast = note.designer_start_forecast;
+                        row.designer_end_forecast = note.designer_end_forecast;
+                        row.designer_start_real = note.designer_start_real;
+                        row.designer_end_real = note.designer_end_real;
+                        row.designer_notes = note.designer_notes;
+                        // PCP (Corte)
+                        row.pcp_mat_req_date = note.pcp_mat_req_date;
+                        row.pcp_mat_req_user = note.pcp_mat_req_user;
+                        row.pcp_mech_start_date = note.pcp_mech_start_date;
+                        row.pcp_mech_start_user = note.pcp_mech_start_user;
+                        row.pcp_cut_rel_date = note.pcp_cut_rel_date;
+                        row.pcp_cut_rel_user = note.pcp_cut_rel_user;
+                        row.pcp_notes = note.pcp_notes;
                     }
                 });
             } else { console.error('Error notes:', notesResult.reason?.message); }
@@ -1226,6 +1253,116 @@ async function logHistory(pedido, item, actionType, fieldChanged, oldValue, newV
         console.error('Error logging history:', err);
     }
 }
+
+// ─── Batch Engineering Control Save ──────────────────────────────────────────
+// POST /api/pedidos/batch/items/notes
+// Aplica os mesmos campos de controle em múltiplos itens de uma vez.
+router.post('/batch/items/notes', async (req, res) => {
+    const { items, formData } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Lista de itens é obrigatória.' });
+    }
+    if (!formData || Object.keys(formData).length === 0) {
+        return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+    }
+
+    const userName = req.user?.name || req.user?.username || 'Sistema';
+    const userEmail = req.user?.email || '';
+
+    const trackedFields = [
+        'project_type', 'engineering_start_date',
+        'bom_prepared_by', 'bom_prepared_at', 'bom_released_at', 'bom_notes',
+        'designer_name', 'designer_start_forecast', 'designer_end_forecast',
+        'designer_start_real', 'designer_end_real', 'designer_production_release_date', 'designer_notes',
+        'pcp_mat_req_date', 'pcp_mat_req_user', 'pcp_mech_start_date', 'pcp_mech_start_user',
+        'pcp_cut_rel_date', 'pcp_cut_rel_user', 'pcp_notes',
+        'pcp_planned_eng_date', 'pcp_planned_eng_obs'
+    ];
+
+    const dateFields = new Set([
+        'engineering_start_date', 'bom_prepared_at', 'bom_released_at',
+        'designer_start_forecast', 'designer_end_forecast',
+        'designer_start_real', 'designer_end_real', 'designer_production_release_date',
+        'pcp_mat_req_date', 'pcp_mech_start_date', 'pcp_cut_rel_date', 'pcp_planned_eng_date'
+    ]);
+
+    const isValidDate = (v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const sanitize = (field, val) => {
+        if (val === '' || val === undefined || val === null) return null;
+        if (dateFields.has(field) && !isValidDate(val)) return null;
+        return val;
+    };
+
+    const results = [];
+    const errors = [];
+
+    const conn = await mysqlPool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        for (const { pedido, item } of items) {
+            try {
+                const [existing] = await conn.query(
+                    'SELECT * FROM app_sales_order_item_notes WHERE pedido = ? AND item = ?',
+                    [pedido, item]
+                );
+
+                if (existing.length > 0) {
+                    const oldNote = existing[0];
+                    const updates = [];
+                    const values = [];
+
+                    for (const field of trackedFields) {
+                        if (formData[field] === undefined) continue;
+                        const newVal = sanitize(field, formData[field]);
+                        const oldVal = oldNote[field] ?? null;
+                        const normOld = oldVal instanceof Date ? oldVal.toISOString().split('T')[0] : (oldVal === '' ? null : oldVal);
+                        const normNew = newVal === '' ? null : newVal;
+                        if (normNew !== normOld) {
+                            updates.push(`${field} = ?`);
+                            values.push(newVal);
+                            await logHistory(pedido, item, 'UPDATED', field, normOld, normNew, `${userName} [lote]`, userEmail);
+                        }
+                    }
+
+                    if (updates.length > 0) {
+                        updates.push('updated_by = ?');
+                        values.push(userName);
+                        await conn.query(
+                            `UPDATE app_sales_order_item_notes SET ${updates.join(', ')} WHERE pedido = ? AND item = ?`,
+                            [...values, pedido, item]
+                        );
+                    }
+                    results.push({ pedido, item, action: 'updated' });
+                } else {
+                    const fields = ['pedido', 'item', 'nota', 'status', 'created_by', 'updated_by', ...trackedFields];
+                    const placeholders = fields.map(() => '?').join(', ');
+                    const values = [
+                        pedido, item, '', 'PENDENTE', userName, userName,
+                        ...trackedFields.map(f => sanitize(f, formData[f] ?? null))
+                    ];
+                    await conn.query(
+                        `INSERT INTO app_sales_order_item_notes(${fields.join(', ')}) VALUES(${placeholders})`,
+                        values
+                    );
+                    await logHistory(pedido, item, 'CREATED', null, null, 'Lançamento em lote', `${userName} [lote]`, userEmail);
+                    results.push({ pedido, item, action: 'created' });
+                }
+            } catch (itemErr) {
+                errors.push({ pedido, item, error: itemErr.message });
+            }
+        }
+
+        await conn.commit();
+        res.json({ success: true, results, errors });
+    } catch (err) {
+        await conn.rollback();
+        console.error('❌ [BATCH NOTES]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        conn.release();
+    }
+});
 
 router.get('/:pedido/items/notes', async (req, res) => {
     try {

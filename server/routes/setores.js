@@ -13,10 +13,19 @@ async function ensureTables() {
             descricao   TEXT,
             cor         VARCHAR(20) DEFAULT '#3b82f6',
             ativo       TINYINT(1) DEFAULT 1,
+            ordem       INT DEFAULT 0,
             criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP,
             atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+    
+    // Safety fallback to add column if table already exists
+    try {
+        await mysql.query('ALTER TABLE pcp_setores ADD COLUMN ordem INT DEFAULT 0');
+    } catch (e) {
+        // Ignore if column already exists
+    }
+
     await mysql.query(`
         CREATE TABLE IF NOT EXISTS pcp_setor_recursos (
             id              INT AUTO_INCREMENT PRIMARY KEY,
@@ -41,7 +50,7 @@ router.get('/', async (req, res) => {
             FROM pcp_setores s
             LEFT JOIN pcp_setor_recursos r ON r.setor_id = s.id
             GROUP BY s.id
-            ORDER BY s.nome
+            ORDER BY s.ordem ASC, s.nome ASC
         `);
         res.json(rows);
     } catch (err) {
@@ -55,14 +64,42 @@ router.post('/', async (req, res) => {
     const { nome, descricao, cor } = req.body;
     if (!nome?.trim()) return res.status(400).json({ error: 'Nome e obrigatorio.' });
     try {
+        const [maxRow] = await mysql.query('SELECT MAX(ordem) as maxOrdem FROM pcp_setores');
+        const nextOrdem = (maxRow[0].maxOrdem || 0) + 1;
+        
         const [result] = await mysql.query(
-            `INSERT INTO pcp_setores (nome, descricao, cor) VALUES (?, ?, ?)`,
-            [nome.trim(), descricao || null, cor || '#3b82f6']
+            `INSERT INTO pcp_setores (nome, descricao, cor, ordem) VALUES (?, ?, ?, ?)`,
+            [nome.trim(), descricao || null, cor || '#3b82f6', nextOrdem]
         );
         const [rows] = await mysql.query(`SELECT * FROM pcp_setores WHERE id = ?`, [result.insertId]);
         res.status(201).json(rows[0]);
     } catch (err) {
         console.error('[setores] POST /:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── POST /api/pcp-setores/reorder ────────────────────────────────────────────
+router.post('/reorder', async (req, res) => {
+    const { order } = req.body; // array of IDs
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'Order deve ser um array de IDs.' });
+    try {
+        const connection = await mysql.getConnection();
+        await connection.beginTransaction();
+        try {
+            for (let i = 0; i < order.length; i++) {
+                await connection.query('UPDATE pcp_setores SET ordem = ? WHERE id = ?', [i, order[i]]);
+            }
+            await connection.commit();
+            res.json({ ok: true });
+        } catch (e) {
+            await connection.rollback();
+            throw e;
+        } finally {
+            connection.release();
+        }
+    } catch (err) {
+        console.error('[setores] POST /reorder:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -216,7 +253,7 @@ router.get('/visao', async (req, res) => {
             LEFT JOIN pcp_setor_recursos r ON r.setor_id = s.id
             WHERE s.ativo = 1
             GROUP BY s.id
-            ORDER BY s.nome
+            ORDER BY s.ordem ASC, s.nome ASC
         `);
         const setores = setoresRows.map(s => ({
             ...s,

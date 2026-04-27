@@ -9,7 +9,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
 
     // Form states
     const [isAdding, setIsAdding] = useState(false);
-    const [newDoc, setNewDoc] = useState({ titulo: '', url_arquivo: '', tipo: 'Desenho' });
+    const [newDoc, setNewDoc] = useState({ titulo: 'Desenho', url_arquivo: '', tipo: 'Desenho' });
 
     const fetchDocs = async () => {
         setLoading(true);
@@ -34,7 +34,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
                 produto_codigo: produtoCodigo,
                 ...newDoc
             });
-            setNewDoc({ titulo: '', url_arquivo: '', tipo: 'Desenho' });
+            setNewDoc({ titulo: 'Desenho', url_arquivo: '', tipo: 'Desenho' });
             setIsAdding(false);
             fetchDocs();
         } catch (error) {
@@ -78,10 +78,25 @@ const ProductDocuments = ({ produtoCodigo }) => {
                             <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
                             <select
                                 value={newDoc.tipo}
-                                onChange={e => setNewDoc({ ...newDoc, tipo: e.target.value })}
+                                onChange={e => {
+                                    const tipo = e.target.value;
+                                    const autoTitles = {
+                                        'Desenho': 'Desenho',
+                                        'Manual': 'Manual',
+                                        'Datasheet': 'Datasheet',
+                                        'Gabarito': 'Gabarito'
+                                    };
+                                    // Se o título estiver vazio, ou se for igual a um dos títulos automáticos antigos, atualiza
+                                    let newTitle = newDoc.titulo;
+                                    if (!newTitle || Object.values(autoTitles).includes(newTitle)) {
+                                        newTitle = autoTitles[tipo] || '';
+                                    }
+                                    setNewDoc({ ...newDoc, tipo, titulo: newTitle });
+                                }}
                                 className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none bg-white"
                             >
                                 <option value="Desenho">Desenho 📐</option>
+                                <option value="Gabarito">Gabarito 📏</option>
                                 <option value="Manual">Manual 📖</option>
                                 <option value="Datasheet">Datasheet 📊</option>
                                 <option value="Outro">Outro 📎</option>
@@ -91,7 +106,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
                             <label className="block text-xs font-semibold text-gray-500 mb-1">Título do Documento</label>
                             <input
                                 type="text"
-                                placeholder="Ex: Manual Técnico, Datasheet..."
+                                placeholder="Ex: Manual Técnico, Desenho..."
                                 value={newDoc.titulo}
                                 onChange={e => setNewDoc({ ...newDoc, titulo: e.target.value })}
                                 className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none"
@@ -143,8 +158,9 @@ const ProductDocuments = ({ produtoCodigo }) => {
                         <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-200 transition-all group">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <div className={`p-2 rounded border border-gray-200 ${doc.tipo === 'Desenho' ? 'bg-blue-50 text-blue-600' :
+                                    doc.tipo === 'Gabarito' ? 'bg-purple-50 text-purple-600' :
                                     doc.tipo === 'Manual' ? 'bg-indigo-50 text-indigo-600' :
-                                        'bg-white text-gray-500'
+                                    'bg-white text-gray-500'
                                     }`}>
                                     <FileText className="h-4 w-4" />
                                 </div>
@@ -153,8 +169,9 @@ const ProductDocuments = ({ produtoCodigo }) => {
                                         <h4 className="font-medium text-gray-800 truncate">{doc.titulo}</h4>
                                         {doc.tipo && (
                                             <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold tracking-wider ${doc.tipo === 'Desenho' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                                doc.tipo === 'Gabarito' ? 'bg-purple-100 text-purple-700 border-purple-200' :
                                                 doc.tipo === 'Manual' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
-                                                    'bg-gray-100 text-gray-600 border-gray-200'
+                                                'bg-gray-100 text-gray-600 border-gray-200'
                                                 }`}>
                                                 {doc.tipo}
                                             </span>

@@ -17,6 +17,10 @@ router.get('/ordens', async (req, res) => {
       filterClause = `AND c5.c5_num = $${queryParams.length}`;
     }
 
+    // Resolve filtro de pedidos inativos ANTES do template
+    const getInactiveFilter = await getInactiveOrdersFilter();
+    const inactiveFilterOrdens = getInactiveFilter('c5.c5_num');
+
     const sql = `
 WITH RECURSIVE
 pedido_itens AS (
@@ -65,7 +69,7 @@ pedido_itens AS (
     AND c5.c5_tipo <> 'B'
     -- Updated Filter: Allow Released (S) but exclude Fully Billed (S + Note)
     AND NOT (c5.c5_liberok = 'S' AND COALESCE(c5.c5_nota, '') <> '')
-    ${await getInactiveOrdersFilter()('c5.c5_num')}
+    ${inactiveFilterOrdens}
     ${filterClause}
 ),
 
@@ -220,6 +224,10 @@ router.get('/op', async (req, res) => {
       return res.status(400).json({ error: 'Informe pelo menos um filtro: OP, Item, Cliente (min 3 chars) ou Produto (min 3 chars).' });
     }
 
+    // Resolve filtro de pedidos inativos ANTES de montar whereClause
+    const getInactiveFilterOp = await getInactiveOrdersFilter();
+    const inactiveFilterOp = getInactiveFilterOp('c5.c5_num');
+
     // Dynamic Parameter Building
     const params = [];
     let paramCount = 1;
@@ -259,7 +267,7 @@ router.get('/op', async (req, res) => {
                 LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli
                 WHERE c5.d_e_l_e_t_ = ' ' 
                 AND a1.d_e_l_e_t_ = ' '
-                ${await getInactiveOrdersFilter()('c5.c5_num')}
+                ${inactiveFilterOp}
                 AND TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
                 AND (a1.a1_nome ILIKE $${paramCount} OR a1.a1_cod ILIKE $${paramCount})
             )
@@ -744,9 +752,10 @@ router.get('/vertical/:operacao', async (req, res) => {
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
         TRIM(c2.c2_produto) AS produto,
-        TRIM(c2.c2_pedido) AS raw_pedido,
-        TRIM(c2.c2_obs) AS obs_venda,
-        TRIM(c2.c2_itempv) AS item_pedido,
+        -- Herda pedido/obs/itempv da sequencia 001 (root_op) se a linha atual nao tiver
+        COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS raw_pedido,
+        COALESCE(NULLIF(TRIM(c2.c2_obs), ''),    NULLIF(TRIM(root_op.c2_obs), ''))    AS obs_venda,
+        COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pedido,
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
         CASE
@@ -758,12 +767,21 @@ router.get('/vertical/:operacao', async (req, res) => {
         TRIM(h1.h1_descri) AS operacao_desc,
         TRIM(g2.g2_recurso) AS recurso_codigo
       FROM public.sc2010 c2
+      -- Self-join: busca a linha raiz (sequen=001) da mesma OP/item para herdar pedido e itempv
+      LEFT JOIN public.sc2010 root_op
+        ON  root_op.c2_num    = c2.c2_num
+        AND root_op.c2_item   = c2.c2_item
+        AND root_op.c2_sequen = '001'
+        AND COALESCE(root_op.d_e_l_e_t_, '') = ''
       INNER JOIN public.sg2010 g2
         ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sh1010 h1
         ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+      -- SC6 usa COALESCE para funcionar tanto na seq-001 quanto nas sub-sequencias
       LEFT JOIN public.sc6010 c6
-        ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
+        ON  TRIM(c6.c6_num)  = COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))
+        AND TRIM(c6.c6_item) = COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), ''))
+        AND COALESCE(c6.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sa1010 a1
         ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja) AND COALESCE(a1.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sb1010 b1
@@ -972,7 +990,6 @@ router.get('/search-ops', async (req, res) => {
        AND a1.a1_loja = c5.c5_lojacli
        AND COALESCE(a1.d_e_l_e_t_, '') = ''
       ${whereSQL}
-      ${whereSQL ? 'AND' : 'WHERE'} 1=1 ${await getInactiveOrdersFilter()('c5.c5_num', 'AND')}
       ORDER BY c2.c2_datprf DESC, c2.c2_num ASC
       LIMIT $${pCount}
     `;
@@ -1033,7 +1050,6 @@ router.get('/estrutura-routing', async (req, res) => {
        AND COALESCE(a1.d_e_l_e_t_, '') = ''
       WHERE COALESCE(c2.d_e_l_e_t_, '') = ''
         AND TRIM(c2.c2_num) = $1
-        ${await getInactiveOrdersFilter()('c5.c5_num', 'AND')}
       ORDER BY c2.c2_item, c2.c2_sequen
     `;
     const headerResult = await db.query(headerSQL, [opTrim]);

@@ -8,7 +8,8 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
-const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido, item, onSave }) => {
+const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido, item, onSave, batchItems }) => {
+    const isBatchMode = Array.isArray(batchItems) && batchItems.length > 0;
     const orderId = orderIdProp || pedido;
     const { user } = useAuth();
     const isAdmin = user?.tipo === 'A';
@@ -44,43 +45,58 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
         }).catch(err => console.error('Error loading designers:', err));
     }, []);
 
+    const emptyForm = {
+        project_type: '', engineering_start_date: '',
+        bom_prepared_by: '', bom_prepared_at: '', bom_released_at: '', bom_notes: '',
+        designer_name: '', designer_start_forecast: '', designer_end_forecast: '',
+        designer_start_real: '', designer_end_real: '', designer_production_release_date: '', designer_notes: '',
+        pcp_mat_req_date: '', pcp_mat_req_user: '', pcp_mech_start_date: '', pcp_mech_start_user: '',
+        pcp_cut_rel_date: '', pcp_cut_rel_user: '', pcp_notes: ''
+    };
+
     useEffect(() => {
-        if (isOpen && item) {
-            // Load history
-            api.get(`/pedidos/${orderId}/items/${item.item}/history`)
-                .then(res => setHistory(res.data))
-                .catch(err => console.error('Error loading history:', err));
+        if (!isOpen) return;
 
-            setFormData({
-                project_type: item.project_type || '',
-                engineering_start_date: item.engineering_start_date ? item.engineering_start_date.split('T')[0] : '',
-
-                bom_prepared_by: item.bom_prepared_by || '',
-                bom_prepared_at: item.bom_prepared_at ? item.bom_prepared_at.split('T')[0] : '',
-                bom_released_at: item.bom_released_at ? item.bom_released_at.split('T')[0] : '',
-                bom_notes: item.bom_notes || '',
-
-                designer_name: item.designer_name || '',
-                designer_start_forecast: item.designer_start_forecast ? item.designer_start_forecast.split('T')[0] : '',
-                designer_end_forecast: item.designer_end_forecast ? item.designer_end_forecast.split('T')[0] : '',
-                designer_start_real: item.designer_start_real ? item.designer_start_real.split('T')[0] : '',
-                designer_end_real: item.designer_end_real ? item.designer_end_real.split('T')[0] : '',
-                designer_production_release_date: item.designer_production_release_date ? item.designer_production_release_date.split('T')[0] : '',
-                designer_notes: item.designer_notes || '',
-
-                pcp_mat_req_date: item.pcp_mat_req_date ? item.pcp_mat_req_date.split('T')[0] : '',
-                pcp_mat_req_user: item.pcp_mat_req_user || '',
-                pcp_mech_start_date: item.pcp_mech_start_date ? item.pcp_mech_start_date.split('T')[0] : '',
-                pcp_mech_start_user: item.pcp_mech_start_user || '',
-                pcp_cut_rel_date: item.pcp_cut_rel_date ? item.pcp_cut_rel_date.split('T')[0] : '',
-                pcp_cut_rel_user: item.pcp_cut_rel_user || '',
-                pcp_notes: item.pcp_notes || ''
-            });
-
-            // Load BOM
-            loadBom();
+        if (isBatchMode) {
+            setFormData(emptyForm);
+            setHistory({});
+            setActiveTab('general');
+            return;
         }
-    }, [isOpen, item, orderId]);
+
+        if (!item) return;
+
+        // Load history
+        api.get(`/pedidos/${orderId}/items/${item.item}/history`)
+            .then(res => setHistory(res.data))
+            .catch(err => console.error('Error loading history:', err));
+
+        setFormData({
+            project_type: item.project_type || '',
+            engineering_start_date: item.engineering_start_date ? item.engineering_start_date.split('T')[0] : '',
+            bom_prepared_by: item.bom_prepared_by || '',
+            bom_prepared_at: item.bom_prepared_at ? item.bom_prepared_at.split('T')[0] : '',
+            bom_released_at: item.bom_released_at ? item.bom_released_at.split('T')[0] : '',
+            bom_notes: item.bom_notes || '',
+            designer_name: item.designer_name || '',
+            designer_start_forecast: item.designer_start_forecast ? item.designer_start_forecast.split('T')[0] : '',
+            designer_end_forecast: item.designer_end_forecast ? item.designer_end_forecast.split('T')[0] : '',
+            designer_start_real: item.designer_start_real ? item.designer_start_real.split('T')[0] : '',
+            designer_end_real: item.designer_end_real ? item.designer_end_real.split('T')[0] : '',
+            designer_production_release_date: item.designer_production_release_date ? item.designer_production_release_date.split('T')[0] : '',
+            designer_notes: item.designer_notes || '',
+            pcp_mat_req_date: item.pcp_mat_req_date ? item.pcp_mat_req_date.split('T')[0] : '',
+            pcp_mat_req_user: item.pcp_mat_req_user || '',
+            pcp_mech_start_date: item.pcp_mech_start_date ? item.pcp_mech_start_date.split('T')[0] : '',
+            pcp_mech_start_user: item.pcp_mech_start_user || '',
+            pcp_cut_rel_date: item.pcp_cut_rel_date ? item.pcp_cut_rel_date.split('T')[0] : '',
+            pcp_cut_rel_user: item.pcp_cut_rel_user || '',
+            pcp_notes: item.pcp_notes || ''
+        });
+
+        loadBom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, item, orderId, isBatchMode]);
 
     const loadBom = async () => {
         if (!orderId || !item) return;
@@ -156,14 +172,14 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
     };
 
     useEffect(() => {
+        if (isBatchMode) return;
         if (activeTab === 'bom') {
             loadBom();
-            loadBomHistory();
         } else if (activeTab === 'timesheet') {
             loadTimesheets();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab]);
+    }, [activeTab, isBatchMode]);
 
     const addMaterialToBom = async (product) => {
         const qty = window.prompt(`Adicionar ${product.descricao}. Qual a quantidade?`, "1");
@@ -302,16 +318,35 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
     };
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
         setLoading(true);
         try {
-            await api.post(`/pedidos/${orderId}/items/${item.item}/notes`, formData);
-
-            if (onSave) onSave(orderId, item.item, formData);
-            onClose();
+            if (isBatchMode) {
+                // Only send fields that were actually filled in
+                const batchData = Object.fromEntries(
+                    Object.entries(formData).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+                );
+                if (Object.keys(batchData).length === 0) {
+                    alert('Preencha pelo menos um campo para aplicar em lote.');
+                    setLoading(false);
+                    return;
+                }
+                const res = await api.post('/pedidos/batch/items/notes', { items: batchItems, formData: batchData });
+                const { errors: batchErrors } = res.data;
+                if (batchErrors && batchErrors.length > 0) {
+                    console.error('Batch errors:', batchErrors);
+                    alert(`Salvo com ${batchErrors.length} erro(s). Verifique o console.`);
+                }
+                if (onSave) onSave();
+                onClose();
+            } else {
+                await api.post(`/pedidos/${orderId}/items/${item.item}/notes`, formData);
+                if (onSave) onSave(orderId, item.item, formData);
+                onClose();
+            }
         } catch (error) {
             console.error('Error saving engineering controls:', error);
-            alert('Erro ao salvar dados.');
+            alert('Erro ao salvar: ' + (error.response?.data?.error || error.message));
         } finally {
             setLoading(false);
         }
@@ -324,23 +359,35 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col max-h-[95vh]">
 
                 {/* Header */}
-                <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-start">
+                <div className={`px-6 py-4 border-b flex justify-between items-start ${isBatchMode ? 'bg-indigo-700' : 'bg-gray-50 border-gray-100'}`}>
                     <div>
-                        <h3 className="text-lg font-bold text-gray-800">Controle de engenharia</h3>
-                        <p className="text-sm text-gray-500">
-                            Pedido: <span className="font-mono font-medium text-gray-700">{orderId}</span> |
-                            Item: <span className="font-mono font-medium text-gray-700">{item?.item}</span> |
-                            Prod: <span className="font-mono font-medium text-blue-600">{item?.codigo}</span>
-                        </p>
+                        {isBatchMode ? (
+                            <>
+                                <h3 className="text-lg font-bold text-white">Controle de Engenharia — Modo Lote</h3>
+                                <p className="text-sm text-indigo-200 flex items-center gap-1.5 mt-0.5">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    Preencha apenas os campos que deseja aplicar nos {batchItems.length} itens selecionados
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <h3 className="text-lg font-bold text-gray-800">Controle de engenharia</h3>
+                                <p className="text-sm text-gray-500">
+                                    Pedido: <span className="font-mono font-medium text-gray-700">{orderId}</span> |
+                                    Item: <span className="font-mono font-medium text-gray-700">{item?.item}</span> |
+                                    Prod: <span className="font-mono font-medium text-blue-600">{item?.codigo}</span>
+                                </p>
+                            </>
+                        )}
                     </div>
-                    <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <button onClick={onClose} className={`p-1 rounded-full transition-colors ${isBatchMode ? 'hover:bg-indigo-600 text-white' : 'hover:bg-gray-200 text-gray-500'}`}>
+                        <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* Tabs */}
                 <div className="flex border-b border-gray-100 overflow-x-auto whitespace-nowrap">
-                    {['general', 'bom', 'designer', 'pcp', 'timesheet'].map((tab) => (
+                    {(isBatchMode ? ['general', 'designer', 'pcp'] : ['general', 'bom', 'designer', 'pcp', 'timesheet']).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -907,12 +954,12 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                     <button
                         onClick={handleSubmit}
                         disabled={loading}
-                        className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                        className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         {loading ? 'Salvando...' : (
                             <>
                                 <Save className="w-4 h-4" />
-                                Salvar alterações
+                                {isBatchMode ? `Aplicar em ${batchItems.length} itens` : 'Salvar alterações'}
                             </>
                         )}
                     </button>
