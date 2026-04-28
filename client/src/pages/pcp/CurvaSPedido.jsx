@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Package, Calendar } from 'lucide-react';
+import { Search, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Package, Calendar, Filter } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../../services/api';
 
