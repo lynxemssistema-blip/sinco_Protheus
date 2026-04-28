@@ -92,23 +92,26 @@ export const AuthProvider = ({ children }) => {
     // hasPermission(pageId, action) — action: 'view' | 'create' | 'edit' | 'delete'
     const hasPermission = useCallback((pageId, action = 'view') => {
         if (!user) return false;
-        
-        // Check if user has an isAdmin profile
-        const isUserAdmin = customProfiles.find(p => p.code === user.tipo)?.isAdmin || user.tipo === 'A' || user.tipo === 'SA';
-        
-        // Admin bypass logic: grant full access if no custom permissions differ from the default
-        if (isUserAdmin && Object.keys(permissions).length === 0) {
-            return true;
-        }
+
+        const userTipo = (user.tipo || '').trim();
+
+        // Tipo 'A' e 'SA' têm acesso total, sempre
+        if (userTipo === 'A' || userTipo === 'SA') return true;
+
+        // Perfil customizado com isAdmin também tem acesso total
+        if (customProfiles.find(p => p.code === userTipo)?.isAdmin === true) return true;
 
         const perm = permissions[pageId];
-        if (!perm) return false; // No entry = no access
+        if (!perm) return false;
 
         const key = `can_${action}`;
         return !!perm[key];
     }, [user, permissions, customProfiles]);
 
-    const isAdmin = user && (customProfiles.find(p => p.code === user.tipo)?.isAdmin || user.tipo === 'A' || user.tipo === 'SA');
+    const isAdmin = !!user && (() => {
+        const t = (user.tipo || '').trim();
+        return t === 'A' || t === 'SA' || customProfiles.find(p => p.code === t)?.isAdmin === true;
+    })();
 
     return (
         <AuthContext.Provider value={{ signed: !!user, user, login, logout, loading, permissions, hasPermission, reloadPermissions: loadPermissions, isAdmin: !!isAdmin, customProfiles }}>
