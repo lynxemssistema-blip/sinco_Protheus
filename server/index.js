@@ -180,6 +180,7 @@ app.use('/api/reports', require('./routes/reports'));
 
 // PCP Setores — Cadastro de Setores, Recursos e Visão Gerencial
 app.use('/api/pcp-setores', require('./routes/setores'));
+app.use('/api/pcp/curva-s', require('./routes/curva-s'));
 
 
 // Gestão Global de E-mails / SMTP / IMAP

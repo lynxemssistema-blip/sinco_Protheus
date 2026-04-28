@@ -188,21 +188,45 @@ router.post('/ordem-producao/incluir', async (req, res) => {
         if (!accessToken) throw new Error('Token JWT retornado estava em branco.');
 
         // 2. Montar OPs — layout exato da documentação API Sinco
-        const ordensProducao = items.map(it => ({
-            EMPRESA:   "01",
-            CFILANT:   (it.filial || "01"),
-            NOPER:     3,                                                   // único valor aceito pela API (inclusão)
-            C2_NUM:    "000001",                                            // Protheus auto-gera o número real
-            C2_ITEM:   String(it.itempv || "01").padStart(2, '0'),
-            C2_PRODUTO: (it.produto || "").trim(),
-            C2_QUANT:  Number(it.quant) || 0,
-            C2_DATPRI: it.datpri || "",
-            C2_DATPRF: it.datprf || "",
-            C2_OBS:    (it.obs || "").trim(),
-            C2_ROTEIRO: "01",
-            C2_PEDIDO: String(it.pedido || "").padStart(6, '0'),
-            C2_ITEMPV: String(it.itempv || "01").padStart(2, '0')
-        }));
+        const ordensProducao = [];
+        for (const it of items) {
+            const produto = (it.produto || "").trim();
+            const pedidoStr = String(it.pedido || "").padStart(6, '0');
+            const itemPvStr = String(it.itempv || "01").padStart(2, '0');
+
+            // Busca o último roteiro (maior código) para a peça no SG2010
+            let roteiro = "00";
+            if (produto) {
+                try {
+                    const rotRows = await queryProtheus(
+                        `SELECT g2_codigo FROM public.sg2010 WHERE g2_produto = $1 AND d_e_l_e_t_ = ' ' ORDER BY g2_codigo DESC LIMIT 1`,
+                        [produto]
+                    );
+                    if (rotRows.length > 0 && rotRows[0].g2_codigo) {
+                        roteiro = rotRows[0].g2_codigo.trim();
+                        if (roteiro.length < 2) roteiro = roteiro.padStart(2, '0');
+                    }
+                } catch (dbErr) {
+                    console.error(`Erro ao buscar roteiro para o produto ${produto}:`, dbErr.message);
+                }
+            }
+
+            ordensProducao.push({
+                EMPRESA:   "01",
+                CFILANT:   (it.filial || "01"),
+                NOPER:     3,                                                   // único valor aceito pela API (inclusão)
+                C2_NUM:    pedidoStr,                                           // O.P. recebe o número do Pedido de vendas
+                C2_ITEM:   itemPvStr,                                           // Número do item no pedido de vendas
+                C2_PRODUTO: produto,
+                C2_QUANT:  Number(it.quant) || 0,
+                C2_DATPRI: it.datpri || "",
+                C2_DATPRF: it.datprf || "",
+                C2_OBS:    (it.obs || "").trim(),
+                C2_ROTEIRO: roteiro,
+                C2_PEDIDO: pedidoStr,                                           // Numero do Pedido de Vendas
+                C2_ITEMPV: itemPvStr                                            // Item do Pedido de Vendas
+            });
+        }
 
         // 3. Payload — estrutura exata da documentação
         const payload = { data: { ordensProducao } };

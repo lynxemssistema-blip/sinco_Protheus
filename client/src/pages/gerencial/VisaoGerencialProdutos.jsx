@@ -10,8 +10,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 const VisaoGerencialProdutos = () => {
-    const { user, hasPermission } = useAuth();
-    
+    const { user, hasPermission, isAdmin } = useAuth();
     // Core State
     const [data, setData] = useState([]);
     const [kpiData, setKpiData] = useState([]);
@@ -26,7 +25,7 @@ const VisaoGerencialProdutos = () => {
     const [expandedProducts, setExpandedProducts] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
 
-    const canViewFinance = user?.tipo === 'A' || hasPermission('financeiro', 'view');
+    const canViewFinance = isAdmin || hasPermission('financeiro', 'view');
 
     useEffect(() => {
         fetchData();

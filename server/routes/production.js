@@ -925,7 +925,7 @@ router.get('/', async (req, res) => {
         const {
             op, item, sequencia, produto, cliente, operacao,
             planned_date_start, planned_date_end, date_start, date_end,
-            status, // Comma-separated or array
+            status, setor // Comma-separated or array
         } = req.query;
 
 
@@ -1067,12 +1067,31 @@ router.get('/', async (req, res) => {
             paramCount++;
         }
 
-        if (operacao) {
-            pgQuery += ` AND (g2.g2_operac LIKE $${paramCount} OR g2.g2_descri LIKE $${paramCount} OR g2.g2_recurso LIKE $${paramCount})`;
-            params.push(`%${operacao.toUpperCase()}%`);
-            appliedFilters.push(`OPERACAO/RECURSO LIKE '%${operacao.toUpperCase()}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: OPERACAO/RECURSO LIKE '%${operacao.toUpperCase()}%'`);
-            paramCount++;
+        if (operacao || setor) {
+            let opArray = operacao ? operacao.split(',').map(op => op.trim().toUpperCase()).filter(Boolean) : [];
+            
+            if (setor) {
+                try {
+                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_id FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
+                    if (sectorRecs.length > 0) {
+                        opArray.push(...sectorRecs.map(r => r.recurso_id.toUpperCase()));
+                    } else if (opArray.length === 0) {
+                        // Sector has no resources and no explicit operations passed. Add a dummy to match nothing.
+                        opArray.push('___NO_MATCH___');
+                    }
+                } catch (e) {
+                    console.error('Erro ao buscar recursos do setor:', e);
+                }
+            }
+
+            if (opArray.length > 0) {
+                const opConditions = opArray.map((_, i) => `(g2.g2_operac LIKE $${paramCount + i} OR g2.g2_descri LIKE $${paramCount + i} OR g2.g2_recurso LIKE $${paramCount + i})`);
+                pgQuery += ` AND (${opConditions.join(' OR ')})`;
+                opArray.forEach(opItem => params.push(`%${opItem}%`));
+                paramCount += opArray.length;
+                appliedFilters.push(`OPERACAO/RECURSO/SETOR IN (${opArray.join(', ')})`);
+                console.log(`🔧 [DEBUG] Filter: OPERACAO/RECURSO/SETOR IN (${opArray.join(', ')})`);
+            }
         }
 
         // Default Filter: Pending Delivery (Saldo a Entregar > 0)
@@ -1124,29 +1143,36 @@ router.get('/', async (req, res) => {
         }
 
         // Fetch MySQL Data (Plans & Appointments) filtered to the relevant OPs
-        const relevantOpNums = [...new Set(ops.map(o => o.op).filter(Boolean))].slice(0, 500);
+        const relevantOpNums = [...new Set(ops.map(o => o.op).filter(Boolean))];
         let plans = [], appointments = [];
+        
         if (relevantOpNums.length > 0) {
-            const opPlaceholders = relevantOpNums.map(() => '?').join(',');
-            const [plansRows] = await mysqlPool.execute(
-                `SELECT * FROM app_production_planning WHERE op_numero IN (${opPlaceholders})`,
-                relevantOpNums
-            );
-            plans = plansRows;
-            const [apptRows] = await mysqlPool.execute(`
-                SELECT
-                    op_numero, op_item, op_sequencia, operacao_codigo,
-                    SUM(quantidade) as total_produzido,
-                    COUNT(*) as num_apontamentos,
-                    SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
-                    MIN(data_inicio) as data_real_inicio,
-                    MAX(data_fim) as data_real_fim,
-                    MAX(data_fim) as ultimo_apontamento
-                FROM app_production_appointments
-                WHERE op_numero IN (${opPlaceholders})
-                GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-            `, relevantOpNums);
-            appointments = apptRows;
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < relevantOpNums.length; i += CHUNK_SIZE) {
+                const chunk = relevantOpNums.slice(i, i + CHUNK_SIZE);
+                const opPlaceholders = chunk.map(() => '?').join(',');
+                
+                const [plansRows] = await mysqlPool.execute(
+                    `SELECT * FROM app_production_planning WHERE op_numero IN (${opPlaceholders})`,
+                    chunk
+                );
+                plans.push(...plansRows);
+                
+                const [apptRows] = await mysqlPool.execute(`
+                    SELECT
+                        op_numero, op_item, op_sequencia, operacao_codigo,
+                        SUM(quantidade) as total_produzido,
+                        COUNT(*) as num_apontamentos,
+                        SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
+                        MIN(data_inicio) as data_real_inicio,
+                        MAX(data_fim) as data_real_fim,
+                        MAX(data_fim) as ultimo_apontamento
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${opPlaceholders})
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                `, chunk);
+                appointments.push(...apptRows);
+            }
         }
 
         // 4. Merge Data — build Maps for O(1) lookup instead of O(n²) find()

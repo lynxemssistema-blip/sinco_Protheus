@@ -11,9 +11,16 @@ import 'jspdf-autotable';
 const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido, item, onSave, batchItems }) => {
     const isBatchMode = Array.isArray(batchItems) && batchItems.length > 0;
     const orderId = orderIdProp || pedido;
-    const { user } = useAuth();
-    const isAdmin = user?.tipo === 'A';
-    const [formData, setFormData] = useState({});
+    const { user, isAdmin } = useAuth();
+    const emptyForm = {
+        project_type: '', engineering_start_date: '',
+        bom_prepared_by: '', bom_prepared_at: '', bom_released_at: '', bom_notes: '',
+        designer_name: '', designer_start_forecast: '', designer_end_forecast: '',
+        designer_start_real: '', designer_end_real: '', designer_production_release_date: '', designer_notes: '',
+        pcp_mat_req_date: '', pcp_mat_req_user: '', pcp_mech_start_date: '', pcp_mech_start_user: '',
+        pcp_cut_rel_date: '', pcp_cut_rel_user: '', pcp_notes: ''
+    };
+    const [formData, setFormData] = useState(emptyForm);
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
     const [designers, setDesigners] = useState([]);
@@ -45,14 +52,7 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
         }).catch(err => console.error('Error loading designers:', err));
     }, []);
 
-    const emptyForm = {
-        project_type: '', engineering_start_date: '',
-        bom_prepared_by: '', bom_prepared_at: '', bom_released_at: '', bom_notes: '',
-        designer_name: '', designer_start_forecast: '', designer_end_forecast: '',
-        designer_start_real: '', designer_end_real: '', designer_production_release_date: '', designer_notes: '',
-        pcp_mat_req_date: '', pcp_mat_req_user: '', pcp_mech_start_date: '', pcp_mech_start_user: '',
-        pcp_cut_rel_date: '', pcp_cut_rel_user: '', pcp_notes: ''
-    };
+
 
     useEffect(() => {
         if (!isOpen) return;
@@ -995,7 +995,7 @@ const InputGroup = ({ label, name, type = "text", value, onChange, className = "
         <input
             type={type}
             name={name}
-            value={value}
+            value={value !== undefined ? value : ''}
             onChange={onChange} // Passes the event 'e' directly
             className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
         />
@@ -1008,7 +1008,7 @@ const TextAreaGroup = ({ label, name, value, onChange, className = "", history }
         <label className="text-xs font-semibold text-gray-600 font-medium">{label}</label>
         <textarea
             name={name}
-            value={value}
+            value={value !== undefined ? value : ''}
             onChange={onChange}
             rows={3}
             className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"

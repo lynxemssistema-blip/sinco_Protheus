@@ -352,12 +352,13 @@ router.post('/send-credentials', async (req, res) => {
             }
 
             const tipoLabel = {
+                'SA': 'SuperAdmin',
                 'A': 'Administrador',
                 'U': 'Usuário',
                 'C': 'Conferente',
                 'AP': 'Apontador',
                 'CLI': 'Cliente'
-            }[user.TipoUsuario] || 'Usuário';
+            }[user.TipoUsuario] || user.TipoUsuario;
 
             const emailHtml = `
                 <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Seus Dados de Acesso ao Sistema</h2>

@@ -57,6 +57,7 @@ export const MENU_GROUPS = [
             { id: 'pcp_conferencia', label: 'Conferência de Apont.', path: '/pcp/conferencia', icon: ClipboardCheck },
             { id: 'evolucao_apontamentos', label: 'Evolução dos Apontamentos', path: '/pcp/evolucao-apontamento', icon: TrendingUp },
             { id: 'visao_producao', label: 'Visão de Produção', path: '/visao-producao', icon: Target },
+            { id: 'curva_s_pedido', label: 'Curva S (Pedido)', path: '/pcp/curva-s', icon: TrendingUp },
             { id: 'planejamento_gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
             { id: 'pcp_apontamento_vertical', label: 'Apontamento Vertical', path: '/pcp/apontamento-vertical', icon: ListOrdered },
             { id: 'extrato_op', label: 'Tempo das OP', path: '/pcp/extrato-op', icon: History },

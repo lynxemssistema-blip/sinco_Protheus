@@ -11,7 +11,8 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
-import { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings } from '../services/api';
+import CurvaSPedido from './pcp/CurvaSPedido';
+import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
 
@@ -26,11 +27,18 @@ export default function ProductionControl() {
     const [appointmentMode, setAppointmentMode] = useState(null);
     const [macroModalOp, setMacroModalOp] = useState(null);
     const [macroOperations, setMacroOperations] = useState([]);
+    const [loadingMacro, setLoadingMacro] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
     const [total, setTotal] = useState(0);
     const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
 
-    const VALID_STATUS_VALUES = ['', 'TODOS', 'in_progress', 'done', 'waiting,planned', 'late_start,late_delivery'];
+    const STATUS_OPTIONS = [
+        { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
+        { value: 'done', label: 'Concluídos', color: 'text-green-700 bg-green-100 border-green-300' },
+        { value: 'waiting,planned', label: 'Não Iniciados', color: 'text-slate-700 bg-slate-100 border-slate-300' },
+        { value: 'late_start,late_delivery', label: 'Atrasadas', color: 'text-red-700 bg-red-100 border-red-300' }
+    ];
+
     const [filters, setFilters] = useStickyState({
         op: '',
         pedido: '',
@@ -39,16 +47,28 @@ export default function ProductionControl() {
         produto: '',
         cliente: '',
         operacao: '',
-        status: '',
+        status: [],
         pending_delivery: true // Default: Only show items with balance to deliver
     }, '@metalfisa:prod_filters');
 
     // Migrate stale/invalid status values from localStorage
     useEffect(() => {
-        if (!VALID_STATUS_VALUES.includes(filters.status)) {
-            setFilters(prev => ({ ...prev, status: '' }));
+        if (typeof filters.status === 'string') {
+            const arr = filters.status && filters.status !== 'TODOS' ? [filters.status] : [];
+            setFilters(prev => ({ ...prev, status: arr }));
         }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const toggleStatus = (val) => {
+        setFilters(prev => {
+            const currentStatus = Array.isArray(prev.status) ? prev.status : [];
+            if (currentStatus.includes(val)) {
+                return { ...prev, status: currentStatus.filter(s => s !== val) };
+            } else {
+                return { ...prev, status: [...currentStatus, val] };
+            }
+        });
+    };
 
     const [sortConfig, setSortConfig] = useStickyState(null, '@metalfisa:prod_sortConfig');
     // Map of cod_produto_op -> { hasDoc: bool, url: string|null }
@@ -78,7 +98,17 @@ export default function ProductionControl() {
         setSortConfig({ key, direction });
     };
 
+    const [sectors, setSectors] = useState([]);
+    const [activeTab, setActiveTab] = useStickyState('tabela', '@metalfisa:prod_activeTab');
     const abortControllerRef = useRef(null);
+    const tableContainerRef = useRef(null);
+    const [visibleCount, setVisibleCount] = useState(100);
+
+    useEffect(() => {
+        api.get('/pcp-setores')
+            .then(res => setSectors(res.data.filter(s => s.ativo)))
+            .catch(err => console.error('Erro ao buscar setores:', err));
+    }, []);
 
     const loadData = async () => {
 
@@ -86,26 +116,43 @@ export default function ProductionControl() {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
-        abortControllerRef.current = new AbortController();
+        
+        const currentAbortController = new AbortController();
+        abortControllerRef.current = currentAbortController;
 
         setLoading(true);
         try {
             const params = { ...filters, limit: 5000 };
+            
+            // For status array, join it into a single string for backend if needed, 
+            if (Array.isArray(params.status) && params.status.length > 0) {
+                params.status = params.status.join(',');
+            }
+
             Object.keys(params).forEach(key => {
                 if (params[key] === '' || (Array.isArray(params[key]) && params[key].length === 0) || params[key] === 'TODOS') {
                     delete params[key];
                 }
             });
 
-            const res = await getProductionDashboard(params, abortControllerRef.current.signal);
-            setOps(res.data);
-            setTotal(res.total);
+            const res = await getProductionDashboard(params, currentAbortController.signal);
+            
+            // Only update state if this request wasn't aborted by a newer one
+            if (abortControllerRef.current === currentAbortController) {
+                setOps(res.data);
+                setVisibleCount(100);
+                setTotal(res.total);
+            }
         } catch (error) {
-            if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return; // aborted
+            if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+                return; // aborted
+            }
             console.error(error);
             toast.error('Erro ao carregar operações. Tente novamente.');
         } finally {
-            setLoading(false);
+            if (abortControllerRef.current === currentAbortController) {
+                setLoading(false);
+            }
         }
     };
 
@@ -143,6 +190,23 @@ export default function ProductionControl() {
             }
         });
     }, [ops]);
+
+    // Infinite scroll for performance
+    useEffect(() => {
+        const handleScroll = () => {
+            if (tableContainerRef.current) {
+                const { scrollTop, scrollHeight, clientHeight } = tableContainerRef.current;
+                if (scrollTop + clientHeight >= scrollHeight - 300) {
+                    setVisibleCount(prev => Math.min(prev + 100, ops.length));
+                }
+            }
+        };
+        const el = tableContainerRef.current;
+        if (el) el.addEventListener('scroll', handleScroll);
+        return () => {
+            if (el) el.removeEventListener('scroll', handleScroll);
+        };
+    }, [ops.length]);
 
     const handleSearch = () => {
         loadData();
@@ -195,6 +259,7 @@ export default function ProductionControl() {
 
     const handleOpenMacro = async (op) => {
         try {
+            setLoadingMacro(true);
             console.log('🔍 [MACRO] Loading all operations for OP:', op.op);
             // Request with high limit to get ALL operations for this OP
             const res = await getProductionDashboard({ op: op.op, limit: 1000 });
@@ -205,6 +270,8 @@ export default function ProductionControl() {
         } catch (err) {
             console.error('❌ [MACRO] Error loading operations:', err);
             alert('Erro ao carregar operações');
+        } finally {
+            setLoadingMacro(false);
         }
     };
 
@@ -275,8 +342,16 @@ export default function ProductionControl() {
 
     return (
         <>
-            <div className="space-y-4">
-                <div className="flex justify-between items-center">
+            {loading && (
+                <div className="fixed inset-0 z-[9999] bg-slate-900/30 backdrop-blur-sm flex items-center justify-center pointer-events-auto transition-opacity duration-200">
+                    <div className="bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center gap-3">
+                        <div className="animate-spin rounded-full h-10 w-10 border-4 border-slate-200 border-t-blue-600"></div>
+                        <span className="text-sm font-semibold text-slate-700">Processando pesquisa...</span>
+                    </div>
+                </div>
+            )}
+            <div className={`flex flex-col h-[calc(100vh-100px)] space-y-4 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
+                <div className="flex justify-between items-center shrink-0">
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Controle de Produção</h1>
                         <p className="text-slate-500">Planejamento e Apontamento de OPs</p>
@@ -313,80 +388,137 @@ export default function ProductionControl() {
                     </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
-                        <input type="text" placeholder="OP" value={filters.op} onChange={(e) => setFilters({ ...filters, op: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Pedido" value={filters.pedido} onChange={(e) => setFilters({ ...filters, pedido: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Item" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Seq" value={filters.sequencia} onChange={(e) => setFilters({ ...filters, sequencia: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Produto" value={filters.produto} onChange={(e) => setFilters({ ...filters, produto: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Cliente" value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} className="px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <select
-                            value={filters.status}
-                            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                            className="px-3 py-2 border rounded-lg bg-white"
-                        >
-                            <option value="">Status (Padrão)</option>
-                            <option value="TODOS">Todos (Incl. Antigos)</option>
-                            <option value="in_progress">Em Andamento</option>
-                            <option value="done">Concluídos</option>
-                            <option value="waiting,planned">Não Iniciados</option>
-                            <option value="late_start,late_delivery">Atrasadas</option>
-                        </select>
+                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 shrink-0 flex flex-col gap-4">
+                    {/* Linha 1: Campos básicos */}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                        <input type="text" placeholder="OP" value={filters.op} onChange={(e) => setFilters({ ...filters, op: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Pedido" value={filters.pedido} onChange={(e) => setFilters({ ...filters, pedido: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Item" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Seq" value={filters.sequencia} onChange={(e) => setFilters({ ...filters, sequencia: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Produto" value={filters.produto} onChange={(e) => setFilters({ ...filters, produto: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Cliente" value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
                     </div>
-                    <div className="mt-3 flex gap-3">
-                        <input type="text" placeholder="Operação/Recurso" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+
+                    {/* Linha 2: Operação e Planejado */}
+                    <div className="flex flex-col md:flex-row gap-3">
+                        <div className="flex flex-1 gap-2 relative">
+                            <select
+                                value={filters.setor || ''}
+                                onChange={(e) => setFilters({ ...filters, setor: e.target.value })}
+                                className="w-1/3 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 bg-white"
+                            >
+                                <option value="">Todos os Setores</option>
+                                {sectors.map(s => (
+                                    <option key={s.id} value={s.id}>{s.nome}</option>
+                                ))}
+                            </select>
+                            <div className="w-2/3 relative">
+                                <input type="text" placeholder="Operação ou Recurso (ex: 01, SOLDA)" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                            </div>
+                        </div>
                         
-                        <div className="flex gap-2 items-center border rounded-lg px-2 bg-slate-50">
-                            <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Planejado:</span>
+                        <div className="flex items-center border border-slate-200 rounded-lg px-3 py-1 bg-slate-50 gap-2 shrink-0">
+                            <Calendar className="w-4 h-4 text-slate-500" />
+                            <span className="text-xs text-slate-600 font-medium uppercase tracking-wider">Planejado:</span>
                             <input 
                                 type="date" 
                                 value={filters.planned_date_start || ''} 
                                 onChange={(e) => setFilters({ ...filters, planned_date_start: e.target.value })} 
-                                className="px-2 py-1 border rounded bg-white text-sm text-slate-700" 
-                                title="Data Planejada Inicial" 
+                                className="px-2 py-1 border border-slate-200 rounded bg-white text-sm text-slate-700 outline-none focus:border-blue-500 transition-all" 
                             />
-                            <span className="text-slate-400">até</span>
+                            <span className="text-slate-400 text-sm">até</span>
                             <input 
                                 type="date" 
                                 value={filters.planned_date_end || ''} 
                                 onChange={(e) => setFilters({ ...filters, planned_date_end: e.target.value })} 
-                                className="px-2 py-1 border rounded bg-white text-sm text-slate-700" 
-                                title="Data Planejada Final" 
+                                className="px-2 py-1 border border-slate-200 rounded bg-white text-sm text-slate-700 outline-none focus:border-blue-500 transition-all" 
                             />
                         </div>
+                    </div>
 
-                        <button onClick={handleSearch} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled={loading}>
-                            <Search className="w-4 h-4" />
-                            {loading ? 'Buscando...' : 'Buscar'}
+                    {/* Linha 3: Status, Checkboxes, e Buscar */}
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-slate-700 mr-2 flex items-center gap-1"><Filter className="w-3 h-3"/> Status:</span>
+                            {STATUS_OPTIONS.map(opt => {
+                                const isSelected = Array.isArray(filters.status) && filters.status.includes(opt.value);
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        onClick={() => toggleStatus(opt.value)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                                            isSelected 
+                                            ? opt.color
+                                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex items-center gap-4 shrink-0">
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.pending_delivery}
+                                    onChange={(e) => setFilters({ ...filters, pending_delivery: e.target.checked })}
+                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                                    Apenas Saldo a Entregar (Pendentes)
+                                </span>
+                            </label>
+
+                            <div className="w-px h-6 bg-slate-200 hidden md:block"></div>
+
+                            <button onClick={handleSearch} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm" disabled={loading}>
+                                <Search className="w-4 h-4" />
+                                {loading ? 'Buscando...' : 'Buscar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex border-b border-slate-200 mt-4 px-1 gap-6">
+                        <button onClick={() => setActiveTab('tabela')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'tabela' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Tabela de Operações
+                            {activeTab === 'tabela' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                        </button>
+                        <button onClick={() => setActiveTab('curva_s')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'curva_s' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Curva S (Gráfico)
+                            {activeTab === 'curva_s' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                         </button>
                     </div>
-                    {/* Filter Toggles */}
-                    <div className="mt-3 flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="pending_delivery"
-                                checked={filters.pending_delivery}
-                                onChange={(e) => setFilters({ ...filters, pending_delivery: e.target.checked })}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                            />
-                            <label htmlFor="pending_delivery" className="text-sm font-medium text-slate-700 select-none cursor-pointer">
-                                Apenas Saldo a Entregar (Pendentes)
-                            </label>
-                        </div>
-                    </div>
+
                 </div>
 
-                {total > 0 && (
-                    <div className="text-sm text-slate-600">
-                        {total} operação{total !== 1 ? 'ões' : ''} encontrada{total !== 1 ? 's' : ''}
+                {activeTab === 'tabela' ? (
+                    <>
+                        {total > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-4 shrink-0 px-1">
+                        <div className="text-sm font-medium text-slate-600">
+                            {total} operação{total !== 1 ? 'ões' : ''} encontrada{total !== 1 ? 's' : ''}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {Object.entries(ops.reduce((acc, op) => {
+                                const s = getOpStatus(op).text;
+                                acc[s] = (acc[s] || 0) + Number(op.qtd_planejada_op || 0);
+                                return acc;
+                            }, {})).map(([status, qty]) => (
+                                <div key={status} className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1 rounded-lg shadow-sm">
+                                    <span className="text-xs text-slate-500 font-medium">{status}:</span>
+                                    <span className="text-sm font-bold text-slate-800">{qty.toLocaleString('pt-BR')} <span className="text-[10px] font-normal text-slate-400">pçs</span></span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
-                    <div className="overflow-auto h-[calc(100vh-310px)]">
-                        <table className="w-full">
+                    <div ref={tableContainerRef} className="overflow-auto flex-1">
+                        <table className="w-full relative">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                 <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
                                     <th className="p-3">OP / Item / Seq</th>
@@ -412,7 +544,7 @@ export default function ProductionControl() {
                                     </td>
                                 </tr>
                             ) : (
-                                ops.map((op, idx) => {
+                                sortOps(ops).slice(0, visibleCount).map((op, idx) => {
                                     const status = getOpStatus(op);
                                     const isPai = op.sequen === '001';
                                     return (
@@ -521,10 +653,11 @@ export default function ProductionControl() {
                         </tbody >
                     </table >
                 </div >
+            </div>
 
 
 
-                {/* MODALS */}
+            {/* MODALS */}
                 {
                     selectedOpHistory && (
                         <ProductionHistoryModal
@@ -572,8 +705,22 @@ export default function ProductionControl() {
                         />
                     )
                 }
+                </>
+                ) : (
+                    <CurvaSPedido filters={filters} />
+                )}                {/* Full-screen Loading Overlay */}
+                {(loading || loadingMacro) && (
+                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center pointer-events-auto transition-all">
+                        <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-200">
+                            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                            <div className="text-slate-800 font-bold text-lg">
+                                {loadingMacro ? 'Abrindo Planejamento Macro...' : 'Carregando Produção...'}
+                            </div>
+                            <div className="text-slate-500 text-sm">Aguarde enquanto processamos os dados.</div>
+                        </div>
+                    </div>
+                )}
 
-            </div>
             </div>
 
             {/* PRINT COMPONENT - Visible only when printing */}

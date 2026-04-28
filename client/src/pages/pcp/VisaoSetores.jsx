@@ -260,7 +260,7 @@ export default function VisaoSetores() {
                                                         <td key={setor.id} className="p-4 border-r text-center align-middle">
                                                             <ProgressBar value={prog} color={setor.cor} />
                                                             <div className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                                                                {sData.apontada} / {sData.esperada}
+                                                                {Number(sData.apontada).toFixed(0)} / {Number(sData.esperada).toFixed(0)}
                                                             </div>
                                                         </td>
                                                     );
@@ -268,7 +268,7 @@ export default function VisaoSetores() {
                                                 <td className="p-4 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-1px_0_0_0_#e2e8f0] z-10 align-middle">
                                                     <ProgressBar value={progGeral} color="#475569" />
                                                     <div className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                                                        {totalApt} / {totalEsp}
+                                                        {Number(totalApt).toFixed(0)} / {Number(totalEsp).toFixed(0)}
                                                     </div>
                                                 </td>
                                             </tr>

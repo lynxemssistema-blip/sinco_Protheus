@@ -10,7 +10,7 @@ import './Sidebar.css';
 
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const location = useLocation();
-    const { user, logout, hasPermission } = useAuth();
+    const { user, logout, hasPermission, isAdmin } = useAuth();
     const { toggleHelp } = useHelp();
     const [visibleItems, setVisibleItems] = useState({});
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
@@ -146,7 +146,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
         }
 
         // User-level permissions: Admin sees all, others need can_view
-        if (user?.tipo === 'A') return true;
+        if (isAdmin) return true;
         return hasPermission(itemId, 'view');
     };
 

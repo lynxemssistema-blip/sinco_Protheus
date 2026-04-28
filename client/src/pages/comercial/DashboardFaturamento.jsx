@@ -132,8 +132,8 @@ const CustomTooltip = ({ active, payload, label, isMonetary, canView }) => {
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 export default function DashboardFaturamento() {
-    const { user, hasPermission } = useAuth();
-    const canViewValues = user?.tipo === 'A' || hasPermission('valores_financeiros', 'view');
+    const { user, hasPermission, isAdmin } = useAuth();
+    const canViewValues = isAdmin || hasPermission('valores_financeiros', 'view');
 
     // Estado de filtros
     const [filters, setFilters] = useState({

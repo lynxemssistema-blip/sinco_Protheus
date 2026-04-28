@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 // Reusing safe date format from modal
 const safeDate = (dateVal) => {
@@ -20,7 +21,7 @@ const formatDate = (dateStr) => {
     return `${day}/${m}/${y}`;
 };
 
-export const generateGanttPDF = async (opData, orderedGroups, operationPlans) => {
+export const generateGanttPDF = async (opData, orderedGroups, operationPlans, ganttElement = null) => {
     try {
         const doc = new jsPDF('l', 'mm', 'a4'); // Landscape A4 = 297 × 210 mm
 
@@ -33,69 +34,81 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans) =>
         // ── 1. CABEÇALHO ──────────────────────────────────────────────────────
         const hY = 8;
         const hH = 16;
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.3);
-        doc.rect(ML, hY, usableW, hH);
-
-        // Divisórias verticais
-        const col1 = ML + 52;   // logo → empresa
-        const col2 = ML + 165;  // empresa → info central
-        const col3 = ML + 222;  // info central → nº pedido
-        doc.setLineWidth(0.2);
-        [col1, col2, col3].forEach(x => doc.line(x, hY, x, hY + hH));
-
-        // ── Bloco LOGO
-        doc.setFontSize(13);
-        doc.setFont('helvetica', 'bold');
-        doc.text('METALFISA', ML + 4, hY + 6);
-        doc.setFontSize(5.5);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Transformando metais em excelência', ML + 4, hY + 10);
-
-        // ── Bloco EMPRESA
-        doc.setFontSize(7.5);
-        doc.setFont('helvetica', 'bold');
-        doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        doc.text('R. Américo Santiago Piacenza, 516  —  CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
-        doc.text('PCP - Planejamento e Controle de Produção', col1 + 3, hY + 13.5);
-
-        // ── Bloco INFO CENTRAL
-        doc.setFontSize(6.5);
-        doc.setFont('helvetica', 'bold');
-        doc.text('EMISSÃO:', col2 + 3, hY + 5.5);
-        doc.setFont('helvetica', 'normal');
-        doc.text(formatDate(new Date()), col2 + 20, hY + 5.5);
-
-        const opNumber = opData?.op || opData?.c2_num || 'N/A';
         
-        // ── Bloco Nº PEDIDO / OP
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.text('PLANEJAMENTO SEQUENCIAL', col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
-        doc.setFontSize(8);
-        doc.text(`OP: ${opNumber}`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
+        const drawHeader = (titleText) => {
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.3);
+            doc.rect(ML, hY, usableW, hH);
+
+            // Divisórias verticais
+            const col1 = ML + 52;   // logo → empresa
+            const col2 = ML + 165;  // empresa → info central
+            const col3 = ML + 222;  // info central → nº pedido
+            doc.setLineWidth(0.2);
+            [col1, col2, col3].forEach(x => doc.line(x, hY, x, hY + hH));
+
+            // ── Bloco LOGO
+            doc.setFontSize(13);
+            doc.setFont('helvetica', 'bold');
+            doc.text('METALFISA', ML + 4, hY + 6);
+            doc.setFontSize(5.5);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Transformando metais em excelência', ML + 4, hY + 10);
+
+            // ── Bloco EMPRESA
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'bold');
+            doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6.5);
+            doc.text('R. Américo Santiago Piacenza, 516  —  CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
+            doc.text('PCP - Planejamento e Controle de Produção', col1 + 3, hY + 13.5);
+
+            // ── Bloco INFO CENTRAL
+            doc.setFontSize(6.5);
+            doc.setFont('helvetica', 'bold');
+            doc.text('EMISSÃO:', col2 + 3, hY + 5.5);
+            doc.setFont('helvetica', 'normal');
+            doc.text(formatDate(new Date()), col2 + 20, hY + 5.5);
+
+            const opNumber = opData?.op || opData?.c2_num || 'N/A';
+            
+            // ── Bloco Nº PEDIDO / OP
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text(titleText, col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
+            doc.setFontSize(8);
+            doc.text(`OP: ${opNumber}`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
+            
+            return opNumber;
+        };
+
+        const opNumber = drawHeader('PLANEJAMENTO SEQUENCIAL');
         
         // ── 2. CAIXA CLIENTE / PRODUTO ─────────────────────────────────────────
         const cliY = hY + hH + 2;
         const cliH = 8;
-        doc.setLineWidth(0.3);
-        doc.rect(ML, cliY, usableW, cliH);
+        
+        const drawProductBox = () => {
+            doc.setLineWidth(0.3);
+            doc.rect(ML, cliY, usableW, cliH);
 
-        doc.setFontSize(5.5);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(100, 100, 100);
-        doc.text('PRODUTO / PEÇA', ML + 2, cliY + 3);
-        doc.setTextColor(0, 0, 0);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
+            doc.setFontSize(5.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(100, 100, 100);
+            doc.text('PRODUTO / PEÇA', ML + 2, cliY + 3);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            
+            const productName = opData?.desc_produto || opData?.produto || 'MÚLTIPLOS ITENS';
+            const clientName = opData?.nome_cliente || opData?.cliente || '';
+            const prodClientText = clientName ? `${productName}  |  Cliente: ${clientName}` : productName;
+            
+            doc.text(prodClientText, ML + 2, cliY + 6.5);
+        };
         
-        const productName = opData?.desc_produto || opData?.produto || 'MÚLTIPLOS ITENS';
-        const clientName = opData?.nome_cliente || opData?.cliente || '';
-        const prodClientText = clientName ? `${productName}  |  Cliente: ${clientName}` : productName;
-        
-        doc.text(prodClientText, ML + 2, cliY + 6.5);
+        drawProductBox();
 
         // ── 3. TABELA DE GANTT ────────────────────────────────────────────────
         const tableStartY = cliY + cliH + 4;
@@ -169,6 +182,71 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans) =>
                 doc.setTextColor(0, 0, 0);
             },
         });
+
+        // ── 4. DESENHO DO GANTT EM NOVA PÁGINA (OPCIONAL) ─────────────────────────
+        if (ganttElement) {
+            try {
+                // Temporarily expand element to capture everything without scrollbars
+                const originalOverflow = ganttElement.style.overflow;
+                const originalHeight = ganttElement.style.height;
+                ganttElement.style.overflow = 'visible';
+                ganttElement.style.height = 'max-content';
+
+                // Captura o HTML do Gantt Renderizado
+                const canvas = await html2canvas(ganttElement, {
+                    scale: 2, // Maior resolução
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    windowWidth: ganttElement.scrollWidth,
+                    windowHeight: ganttElement.scrollHeight
+                });
+
+                // Restore styles
+                ganttElement.style.overflow = originalOverflow;
+                ganttElement.style.height = originalHeight;
+                
+                const imgData = canvas.toDataURL('image/png');
+                
+                // Adiciona uma nova página em paisagem
+                doc.addPage('a4', 'l');
+                
+                // Re-desenha cabeçalho
+                drawHeader('GRÁFICO GANTT VISUAL');
+                drawProductBox();
+                
+                // Dimensões para acomodar a imagem
+                const imgProps = doc.getImageProperties(imgData);
+                const pdfWidth = usableW;
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                
+                const startY = cliY + cliH + 4;
+                const maxAvailableHeight = pageHeight - startY - 15; // margin bottom
+
+                let finalWidth = pdfWidth;
+                let finalHeight = pdfHeight;
+                
+                // Fit à altura se necessário (pra não sair cortado)
+                if (pdfHeight > maxAvailableHeight) {
+                    finalHeight = maxAvailableHeight;
+                    finalWidth = (imgProps.width * finalHeight) / imgProps.height;
+                }
+
+                const xOffset = ML + (usableW - finalWidth) / 2;
+
+                doc.addImage(imgData, 'PNG', xOffset, startY, finalWidth, finalHeight);
+
+                // Rodapé da página extra
+                const pgStr2 = `Pág. ${doc.internal.getCurrentPageInfo().pageNumber}`;
+                doc.setFontSize(6);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(120, 120, 120);
+                doc.text(pgStr2, pageWidth - MR, pageHeight - 5, { align: 'right' });
+                doc.setTextColor(0, 0, 0);
+
+            } catch (err) {
+                console.error("Erro ao gerar imagem com html2canvas: ", err);
+            }
+        }
 
         doc.save(`Gantt_Sequencial_OP_${opNumber}.pdf`);
         return true;

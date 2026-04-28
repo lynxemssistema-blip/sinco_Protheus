@@ -6,7 +6,22 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [permissions, setPermissions] = useState({}); // { page_id: { can_view, can_create, can_edit, can_delete } }
+    const [permissions, setPermissions] = useState({});
+    const [customProfiles, setCustomProfiles] = useState([]);
+
+    const loadCompanyConfig = useCallback(async () => {
+        try {
+            const data = await api.get('/company').then(r => r.data);
+            if (data?.general_config) {
+                const gc = typeof data.general_config === 'string' ? JSON.parse(data.general_config) : data.general_config;
+                if (gc.custom_profiles) {
+                    setCustomProfiles(gc.custom_profiles);
+                }
+            }
+        } catch (e) {
+            console.error('Error loading company config', e);
+        }
+    }, []);
 
     const loadPermissions = useCallback(async () => {
         try {
@@ -34,12 +49,12 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.Authorization = `Bearer ${storedToken}`;
             const parsed = JSON.parse(storedUser);
             setUser(parsed);
-            // Load permissions for all users to check for specific overrides
             loadPermissions();
+            loadCompanyConfig();
         }
 
         setLoading(false);
-    }, [loadPermissions]);
+    }, [loadPermissions, loadCompanyConfig]);
 
     const login = async (login, senha) => {
         try {
@@ -52,8 +67,8 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.Authorization = `Bearer ${token}`;
             setUser(user);
 
-            // Load permissions for all users to check for specific overrides
             loadPermissions();
+            loadCompanyConfig();
 
             return { success: true };
         } catch (error) {
@@ -71,15 +86,18 @@ export const AuthProvider = ({ children }) => {
         delete api.defaults.headers.Authorization;
         setUser(null);
         setPermissions({});
+        setCustomProfiles([]);
     };
 
     // hasPermission(pageId, action) — action: 'view' | 'create' | 'edit' | 'delete'
-    // Admin users ALWAYS return true UNLESS they have specific permissions configured
     const hasPermission = useCallback((pageId, action = 'view') => {
         if (!user) return false;
         
+        // Check if user has an isAdmin profile
+        const isUserAdmin = customProfiles.find(p => p.code === user.tipo)?.isAdmin || user.tipo === 'A' || user.tipo === 'SA';
+        
         // Admin bypass logic: grant full access if no custom permissions differ from the default
-        if (user.tipo === 'A' && Object.keys(permissions).length === 0) {
+        if (isUserAdmin && Object.keys(permissions).length === 0) {
             return true;
         }
 
@@ -88,10 +106,12 @@ export const AuthProvider = ({ children }) => {
 
         const key = `can_${action}`;
         return !!perm[key];
-    }, [user, permissions]);
+    }, [user, permissions, customProfiles]);
+
+    const isAdmin = user && (customProfiles.find(p => p.code === user.tipo)?.isAdmin || user.tipo === 'A' || user.tipo === 'SA');
 
     return (
-        <AuthContext.Provider value={{ signed: !!user, user, login, logout, loading, permissions, hasPermission, reloadPermissions: loadPermissions }}>
+        <AuthContext.Provider value={{ signed: !!user, user, login, logout, loading, permissions, hasPermission, reloadPermissions: loadPermissions, isAdmin: !!isAdmin, customProfiles }}>
             {children}
         </AuthContext.Provider>
     );

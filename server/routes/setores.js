@@ -270,7 +270,7 @@ router.get('/visao', async (req, res) => {
 
         if (pedido) {
             params.push(`%${pedido}%`);
-            conditions.push(`(pl.c2_pedido LIKE $${params.length} OR pl.c2_num LIKE $${params.length})`);
+            conditions.push(`(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) LIKE $${params.length} OR pl.c2_num LIKE $${params.length})`);
         }
         let joinSb1 = false;
         let joinSa1Sc5 = false;
@@ -299,19 +299,19 @@ router.get('/visao', async (req, res) => {
         }
 
         const getInactiveFilter = await getInactiveOrdersFilter();
-        const inactiveSql = getInactiveFilter('pl.c2_pedido');
+        const inactiveSql = getInactiveFilter("COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))");
         if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
 
         // Desconsiderar OPs sem pedido (sem cliente associado)
-        conditions.push(`TRIM(COALESCE(pl.c2_pedido, '')) <> ''`);
+        conditions.push(`TRIM(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))) <> ''`);
 
         const opsQuery = `
             SELECT
                 RTRIM(pl.c2_num)       AS op,
                 RTRIM(pl.c2_item)      AS item_op,
                 RTRIM(pl.c2_sequen)    AS sequen,
-                RTRIM(pl.c2_pedido)    AS pedido_venda,
-                RTRIM(pl.c2_itempv)    AS item_pv,
+                COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS pedido_venda,
+                COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
                 TRIM(pl.c2_produto)    AS cod_produto_op_raw,
                 RTRIM(pl.c2_produto)   AS cod_produto_op,
                 COALESCE(pl.c2_quant, 0) AS qtd_total,
@@ -319,8 +319,9 @@ router.get('/visao', async (req, res) => {
                 ${joinSb1 ? ', RTRIM(sb1.b1_desc) AS desc_produto' : ''}
                 ${joinSa1Sc5 ? ', RTRIM(sa1.a1_nome) AS nome_cliente' : ''}
             FROM sc2010 pl
+            LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
             ${joinSb1 ? `LEFT JOIN sb1010 sb1 ON sb1.b1_cod = pl.c2_produto AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '` : ''}
-            ${joinSa1Sc5 ? `LEFT JOIN sc5010 sc5 ON sc5.c5_num = pl.c2_pedido AND COALESCE(sc5.d_e_l_e_t_, ' ') = ' ' LEFT JOIN sa1010 sa1 ON sa1.a1_cod = sc5.c5_cliente AND sa1.a1_loja = sc5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '` : ''}
+            ${joinSa1Sc5 ? `LEFT JOIN sc5010 sc5 ON sc5.c5_num = COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AND COALESCE(sc5.d_e_l_e_t_, ' ') = ' ' LEFT JOIN sa1010 sa1 ON sa1.a1_cod = sc5.c5_cliente AND sa1.a1_loja = sc5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '` : ''}
             WHERE ${conditions.join(' AND ')}
             ORDER BY pl.c2_datpri DESC
             LIMIT 4000
@@ -441,10 +442,14 @@ router.get('/visao', async (req, res) => {
         }
 
         // 6. Agrupa linhas do Protheus por recurso
+        // Chave inclui sequen para garantir granularidade idêntica ao production.js
+        // (cada sequência pode ter qtd diferente e apontamentos próprios)
         const opsPorRecurso = {};
         for (const row of opsRows) {
             const recurso = (row.recurso || '').trim();
-            const key = `${row.op}|${row.item_op}`;
+            // Chave de grupo: op + item + SEQUÊNCIA (não apenas op+item)
+            const key = `${row.op}|${row.item_op}|${row.sequen}`;
+            // Chave de apontamento: mesma lógica do production.js
             const apptKey = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
             const qtd_apontada = apptsMap[apptKey] || 0;
 
@@ -453,13 +458,15 @@ router.get('/visao', async (req, res) => {
                 opsPorRecurso[recurso][key] = { ...row, operacoes: [] };
             }
             opsPorRecurso[recurso][key].operacoes.push({
+                apptKey,                          // chave única para deduplicar depois
                 operacao: row.operacao,
                 desc_operacao: row.desc_operacao,
+                qtd_op: Number(row.qtd_total) || 0,   // qtd desta sequência específica
                 qtd_apontada
             });
         }
 
-        // Helper: status da OP
+        // Helper: status da OP/sequência
         const hoje = new Date().toISOString().split('T')[0].replace(/-/g, '');
         function calcStatus(progresso, prazo) {
             if (progresso >= 100) return 'concluida';
@@ -470,13 +477,27 @@ router.get('/visao', async (req, res) => {
             return 'aguardando';
         }
 
-        // Helper: calcula progresso de uma OP dentro de um conjunto de operações
+        // Helper: calcula progresso de uma sequência de OP
+        // ALINHADO com production.js: denominador = qtd_op por operação (sem multiplicar pelo nº de ops)
         function calcOp(op) {
-            const esperadas = op.qtd_total * op.operacoes.length;
+            // Deduplica operações pela chave apptKey para evitar contar duas vezes o mesmo apontamento
+            const operacoesUnicas = Object.values(
+                op.operacoes.reduce((acc, o) => {
+                    if (!acc[o.apptKey]) acc[o.apptKey] = o;
+                    return acc;
+                }, {})
+            );
+
+            let esperadas = 0;
             let apontadas = 0;
-            for (const o of op.operacoes) {
-                apontadas += Math.min(Number(o.qtd_apontada) || 0, op.qtd_total);
+            for (const o of operacoesUnicas) {
+                const qtd = o.qtd_op || Number(op.qtd_total) || 0;
+                // Cada operação espera a qtd desta sequência (idêntico ao production.js)
+                esperadas += qtd;
+                // Produzido limitado ao teto da qtd planejada
+                apontadas += Math.min(Number(o.qtd_apontada) || 0, qtd);
             }
+
             const progresso = esperadas > 0 ? Math.round((apontadas / esperadas) * 100) : 0;
             return {
                 ...op,
@@ -494,8 +515,17 @@ router.get('/visao', async (req, res) => {
             for (const recurso of setor.recursos) {
                 if (!opsPorRecurso[recurso]) continue;
                 for (const [key, op] of Object.entries(opsPorRecurso[recurso])) {
-                    if (!opMap[key]) opMap[key] = { ...op, operacoes: [...op.operacoes] };
-                    else opMap[key].operacoes.push(...op.operacoes);
+                    if (!opMap[key]) {
+                        opMap[key] = { ...op, operacoes: [...op.operacoes] };
+                    } else {
+                        // Adiciona apenas operações novas (evita duplicar quando OP passa por
+                        // múltiplos recursos do mesmo setor)
+                        for (const oper of op.operacoes) {
+                            if (!opMap[key].operacoes.some(o => o.apptKey === oper.apptKey)) {
+                                opMap[key].operacoes.push(oper);
+                            }
+                        }
+                    }
                 }
             }
 

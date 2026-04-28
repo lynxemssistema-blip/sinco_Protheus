@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2 } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
 
 export default function Settings() {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
 
     const [activeTab, setActiveTab] = useState('general');
 
@@ -15,6 +15,7 @@ export default function Settings() {
         { id: 'general', label: 'Geral', icon: Building2 },
         { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
         { id: 'menu', label: 'Menu & Navegação', icon: Menu },
+        { id: 'profiles', label: 'Perfis de Acesso', icon: Users },
         { id: 'users', label: 'Usuários', icon: UserPlus },
         { id: 'pending', label: 'Aprovações Pendentes', icon: ShieldAlert },
         { id: 'permissions', label: 'Permissões', icon: Shield },
@@ -199,6 +200,15 @@ export default function Settings() {
         }
     };
 
+    const DEFAULT_PROFILES = [
+        { code: 'A', name: 'Administrador (Total)', isAdmin: true },
+        { code: 'SA', name: 'SuperAdmin', isAdmin: true },
+        { code: 'U', name: 'Usuário (Padrão)', isAdmin: false },
+        { code: 'C', name: 'Conferente', isAdmin: false },
+        { code: 'AP', name: 'Apontador de Fábrica', isAdmin: false },
+        { code: 'CLI', name: 'Cliente (Acesso Externo)', isAdmin: false }
+    ];
+
     // Company Form State
     const [companyForm, setCompanyForm] = useState({
         razao_social: '',
@@ -208,6 +218,9 @@ export default function Settings() {
         menu_config: {}, // will hold { itemId: boolean }
         general_config: {} // kv pairs
     });
+
+    // Custom Profiles array from general_config or default
+    const customProfiles = companyForm.general_config?.custom_profiles || DEFAULT_PROFILES;
 
     const [loading, setLoading] = useState(false);
     const [loadingCompany, setLoadingCompany] = useState(false);
@@ -219,10 +232,10 @@ export default function Settings() {
     const [loadingPedidos, setLoadingPedidos] = useState(false);
 
     useEffect(() => {
-        if (user?.tipo === 'A') {
+        if (isAdmin) {
             loadCompany();
         }
-    }, [user]);
+    }, [user, isAdmin]);
 
     const loadCompany = async () => {
         try {
@@ -271,7 +284,7 @@ export default function Settings() {
     };
 
     useEffect(() => {
-        if (!user || user.tipo !== 'A') return;
+        if (!user || !isAdmin) return;
         
         const delayDebounceFn = setTimeout(() => {
             if (activeTab === 'orders_visibility') {
@@ -311,7 +324,7 @@ export default function Settings() {
     };
 
     // ADMIN GUARD
-    if (user?.tipo !== 'A') {
+    if (!isAdmin) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
                 <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
@@ -1034,11 +1047,9 @@ export default function Settings() {
                                                         defaultValue={u.TipoUsuario || 'U'}
                                                         id={`role-${u.idUsuario}`}
                                                     >
-                                                        <option value="U">Usuário (Padrão)</option>
-                                                        <option value="A">Administrador (Total)</option>
-                                                        <option value="C">Conferente</option>
-                                                        <option value="AP">Apontador de Fábrica</option>
-                                                        <option value="CLI">Cliente (Acesso Externo)</option>
+                                                        {customProfiles.map(p => (
+                                                            <option key={p.code} value={p.code}>{p.name}</option>
+                                                        ))}
                                                     </select>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
@@ -1075,6 +1086,122 @@ export default function Settings() {
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                )}
+
+                {/* PROFILES TAB */}
+                {activeTab === 'profiles' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Form */}
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-1 h-fit">
+                            <div className="flex items-center gap-3 mb-6 border-b pb-4">
+                                <Users className="w-6 h-6 text-indigo-600" />
+                                <h2 className="text-lg font-bold text-slate-800">
+                                    Adicionar Perfil
+                                </h2>
+                            </div>
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                const code = e.target.code.value.toUpperCase();
+                                const name = e.target.name.value;
+                                const isAdmin = e.target.isAdmin.checked;
+                                
+                                if (!code || !name) return;
+                                
+                                const newProfiles = [...customProfiles.filter(p => p.code !== code), { code, name, isAdmin }];
+                                const newGeneralConfig = { ...companyForm.general_config, custom_profiles: newProfiles };
+                                
+                                try {
+                                    setLoadingCompany(true);
+                                    await updateGeneralSettings(newGeneralConfig);
+                                    setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+                                    e.target.reset();
+                                    alert('Perfil salvo com sucesso!');
+                                } catch (err) {
+                                    alert('Erro ao salvar perfil: ' + err.message);
+                                } finally {
+                                    setLoadingCompany(false);
+                                }
+                            }} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Código (Ex: VEN)</label>
+                                    <input required name="code" className="w-full p-2 border rounded-lg uppercase" placeholder="Código curto..." />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Perfil</label>
+                                    <input required name="name" className="w-full p-2 border rounded-lg" placeholder="Ex: Vendedor" />
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <input type="checkbox" name="isAdmin" id="isAdmin" className="w-4 h-4 text-indigo-600 rounded border-gray-300" />
+                                    <label htmlFor="isAdmin" className="text-sm text-slate-700">Acesso Total (Admin)</label>
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={loadingCompany}
+                                    className="w-full bg-indigo-600 text-white px-6 py-2 rounded-lg flex justify-center items-center gap-2 font-medium hover:bg-indigo-700 mt-4"
+                                >
+                                    <Plus className="w-4 h-4" /> {loadingCompany ? 'Salvando...' : 'Salvar Perfil'}
+                                </button>
+                            </form>
+                        </div>
+                        
+                        {/* Profiles List */}
+                        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200">
+                            <div className="p-6 border-b border-slate-100">
+                                <h3 className="text-lg font-bold text-slate-800">Perfis de Acesso Cadastrados</h3>
+                                <p className="text-sm text-slate-500">Controle e crie novos níveis de acesso para vincular aos usuários.</p>
+                            </div>
+                            <div className="p-0 overflow-auto">
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50 text-xs uppercase font-semibold text-slate-500">
+                                        <tr>
+                                            <th className="px-6 py-3">Código</th>
+                                            <th className="px-6 py-3">Nome do Perfil</th>
+                                            <th className="px-6 py-3 text-center">Admin?</th>
+                                            <th className="px-6 py-3 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {customProfiles.map(p => (
+                                            <tr key={p.code} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-6 py-3 font-mono font-bold text-slate-700">{p.code}</td>
+                                                <td className="px-6 py-3 font-medium text-slate-900">{p.name}</td>
+                                                <td className="px-6 py-3 text-center">
+                                                    {p.isAdmin ? (
+                                                        <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full font-bold">Sim</span>
+                                                    ) : (
+                                                        <span className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full">Não</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (window.confirm(`Tem certeza que deseja remover o perfil ${p.name}?`)) {
+                                                                const newProfiles = customProfiles.filter(prof => prof.code !== p.code);
+                                                                const newGeneralConfig = { ...companyForm.general_config, custom_profiles: newProfiles };
+                                                                try {
+                                                                    setLoadingCompany(true);
+                                                                    await updateGeneralSettings(newGeneralConfig);
+                                                                    setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+                                                                } catch (err) {
+                                                                    alert('Erro ao excluir: ' + err.message);
+                                                                } finally {
+                                                                    setLoadingCompany(false);
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition-colors"
+                                                        title="Remover perfil"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1184,11 +1311,9 @@ export default function Settings() {
                                         value={userForm.tipo}
                                         onChange={e => setUserForm({ ...userForm, tipo: e.target.value })}
                                     >
-                                        <option value="U">Usuário (Padrão)</option>
-                                        <option value="A">Administrador (Total)</option>
-                                        <option value="C">Conferente (aprova/recusa apontamentos)</option>
-                                        <option value="AP">Apontador (registra produção no chão de fábrica)</option>
-                                        <option value="CLI">Cliente (Acesso Restrito Externo)</option>
+                                        {customProfiles.map(p => (
+                                            <option key={p.code} value={p.code}>{p.name}</option>
+                                        ))}
                                     </select>
                                 </div>
 
@@ -1349,11 +1474,9 @@ export default function Settings() {
                                         onChange={(e) => setTypeFilter(e.target.value)}
                                     >
                                         <option value="all">Tipo (Todos)</option>
-                                        <option value="A">Admin</option>
-                                        <option value="U">Usuário</option>
-                                        <option value="C">Conferente</option>
-                                        <option value="AP">Apontador</option>
-                                        <option value="CLI">Cliente</option>
+                                        {customProfiles.map(p => (
+                                            <option key={p.code} value={p.code}>{p.name}</option>
+                                        ))}
                                     </select>
                                     {(userFilter || pcFilter !== 'all' || typeFilter !== 'all') && (
                                         <button
@@ -1436,16 +1559,9 @@ export default function Settings() {
                                                     }
                                                 </td>
                                                 <td className="px-6 py-3">
-                                                    {u.TipoUsuario === 'A'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Admin</span>
-                                                        : u.TipoUsuario === 'C'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800">Conferente</span>
-                                                        : u.TipoUsuario === 'AP'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Apontador</span>
-                                                        : u.TipoUsuario === 'CLI'
-                                                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Cliente</span>
-                                                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Usuário</span>
-                                                    }
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-800'}`}>
+                                                        {customProfiles.find(p => p.code === u.TipoUsuario)?.name || u.TipoUsuario}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-3 text-right print:hidden">
                                                     <div className="flex justify-end gap-2">
@@ -1549,7 +1665,7 @@ export default function Settings() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                                 <p className="text-sm font-medium text-slate-500">Administradores</p>
-                                <p className="text-2xl font-bold text-indigo-600">{usersList.filter(u => u.TipoUsuario === 'A').length}</p>
+                                <p className="text-2xl font-bold text-indigo-600">{usersList.filter(u => customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin).length}</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                                 <p className="text-sm font-medium text-slate-500">Usuários Padrão</p>
@@ -1605,20 +1721,23 @@ export default function Settings() {
                                     <option value="">-- Selecione --</option>
                                     
                                     <optgroup label="Aplicar a todos de um Perfil (Lote)">
-                                        <option value="PROFILE_U">Todos os Usuários Padrão</option>
-                                        <option value="PROFILE_C">Todos os Conferentes</option>
-                                        <option value="PROFILE_AP">Todos os Apontadores</option>
-                                        <option value="PROFILE_CLI">Todos os Clientes Externos</option>
+                                        {customProfiles.map(p => (
+                                            <option key={`PROFILE_${p.code}`} value={`PROFILE_${p.code}`}>Todos os(as) {p.name}</option>
+                                        ))}
                                     </optgroup>
 
                                     <optgroup label="Usuários Individuais">
-                                    {usersList.filter(u => u.TipoUsuario !== 'A').map(u => (
-                                        <option key={u.idUsuario} value={u.idUsuario}>{u.NomeCompleto} ({u.Login})</option>
+                                    {usersList.filter(u => !(customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA')).map(u => (
+                                        <option key={u.idUsuario} value={u.idUsuario}>
+                                            {u.NomeCompleto} ({u.Login}) - {customProfiles.find(p => p.code === u.TipoUsuario)?.name || u.TipoUsuario}
+                                        </option>
                                     ))}
                                     </optgroup>
                                     <optgroup label="Administradores (acesso total)">
-                                        {usersList.filter(u => u.TipoUsuario === 'A').map(u => (
-                                            <option key={u.idUsuario} value={u.idUsuario}>{u.NomeCompleto} ({u.Login}) — Admin</option>
+                                        {usersList.filter(u => customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA').map(u => (
+                                            <option key={u.idUsuario} value={u.idUsuario}>
+                                                {u.NomeCompleto} ({u.Login}) - {customProfiles.find(p => p.code === u.TipoUsuario)?.name || (u.TipoUsuario === 'SA' ? 'SuperAdmin' : 'Admin')}
+                                            </option>
                                         ))}
                                     </optgroup>
                                 </select>

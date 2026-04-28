@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 import { generateGanttPDF } from '../services/ganttPdfGenerator';
@@ -8,6 +8,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const [operationPlans, setOperationPlans] = useState({}); 
     const [expandedOps, setExpandedOps] = useState({});
     const [loading, setLoading] = useState(false);
+    
+    // Referência para o container visual do Gantt
+    const ganttContainerRef = useRef(null);
     
     // Help Context Injection
     const { setForcedPath } = useHelp();
@@ -115,7 +118,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 baselineStart: existingStart, // Ponto de ancoragem para UI (MS Project Baseline)
                 baselineEnd: existingEnd,
                 duracao: dur,
-                selected: true
+                selected: true,
+                locked: group.items.some(i => Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op))
             };
             initialExpanded[group.code] = false;
         });
@@ -281,7 +285,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             blockIndices.forEach(bIdx => {
                 const g = targetGroups[bIdx];
                 const p = newPlans[g.code];
-                if (p && p.selected) {
+                if (p && p.selected && !p.locked) {
                     // Se data final cair em fim de semana, avança para próximo dia útil
                     const normalizedEnd = daysMode === 'business'
                         ? skipToWorkday(new Date(eDate), true, incSat, incSun)
@@ -372,7 +376,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     const updateOperationDuration = (code, value) => {
-        const val = Math.max(0, parseInt(value) || 0);
+        let val = value;
+        if (value !== '') {
+            val = Math.max(0, parseInt(value) || 0);
+        }
         const updated = { ...operationPlans, [code]: { ...operationPlans[code], duracao: val } };
         triggerRecalculation(updated);
     };
@@ -426,7 +433,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     const handlePrint = () => {
-        generateGanttPDF(op, orderedGroups, operationPlans);
+        generateGanttPDF(op, orderedGroups, operationPlans, ganttContainerRef.current);
     };
 
     // --- LÓGICA DE DRAG AND DROP DO GANTT ---
@@ -477,6 +484,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const handleGanttBarMouseDown = (e, code) => {
         if (e.target.tagName.toLowerCase() === 'input') return; // ignora se for clique no input de duracao
+        if (operationPlans[code]?.locked) return; // Não permite arrastar operações concluídas
         e.preventDefault();
         setDraggingBar({ code, startX: e.clientX, offsetDays: 0 });
     };
@@ -527,8 +535,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
         return (
             <div className="flex-1 overflow-auto bg-slate-50 relative flex flex-col border-y border-slate-200">
-                <div className="flex relative w-max min-w-full">
-                    {/* Header Columns Fixa e Scrollable */}
+                <div ref={ganttContainerRef} className="flex flex-col w-max min-w-full bg-slate-50">
+                    <div className="flex relative w-max min-w-full">
+                        {/* Header Columns Fixa e Scrollable */}
                     <div className="flex sticky top-0 bg-slate-100 z-30 border-b border-slate-200 shadow-sm">
                         {/* Resource Name Sticky Header */}
                         <div className="sticky left-0 bg-slate-100 w-[220px] min-w-[220px] border-r border-slate-200 p-2 flex items-center z-40">
@@ -623,17 +632,27 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                             cur.setDate(cur.getDate() + 1);
                                         }
 
-                                        const solidCls = hasDiff
-                                            ? 'bg-amber-400 border-amber-500'
-                                            : 'bg-blue-500 border-blue-600';
-                                        const dashCls = hasDiff
-                                            ? 'border-amber-400 bg-amber-50/40'
-                                            : 'border-blue-400 bg-blue-50/30';
+                                        const solidCls = plan.locked 
+                                            ? 'bg-green-500 border-green-600'
+                                            : hasDiff
+                                                ? 'bg-amber-400 border-amber-500'
+                                                : 'bg-blue-500 border-blue-600';
+                                        const dashCls = plan.locked
+                                            ? 'border-green-400 bg-green-50/40'
+                                            : hasDiff
+                                                ? 'border-amber-400 bg-amber-50/40'
+                                                : 'border-blue-400 bg-blue-50/30';
+
+                                        const cursorCls = plan.locked 
+                                            ? 'cursor-not-allowed z-10' 
+                                            : isDraggingThis 
+                                                ? 'cursor-grabbing z-50' 
+                                                : 'cursor-grab z-10';
 
                                         return (
                                             <div
                                                 onMouseDown={(e) => handleGanttBarMouseDown(e, group.code)}
-                                                className={`absolute inset-y-0 left-0 right-0 select-none ${isDraggingThis ? 'cursor-grabbing z-50' : 'cursor-grab z-10'}`}
+                                                className={`absolute inset-y-0 left-0 right-0 select-none ${cursorCls}`}
                                             >
                                                 {segments.map((seg, idx) => {
                                                     const isFirst = idx === 0;
@@ -641,14 +660,33 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                     const roundL = isFirst ? 'rounded-l' : '';
                                                     const roundR = isLast ? 'rounded-r' : '';
 
+                                                    const inputEl = isFirst && (
+                                                        <>
+                                                            <input
+                                                                type="text"
+                                                                value={plan.duracao}
+                                                                onChange={e => updateOperationDuration(group.code, e.target.value)}
+                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                                readOnly={plan.locked}
+                                                                className={`w-5 shrink-0 bg-transparent text-center font-bold text-[9px] outline-none appearance-none ${seg.isNonWorking ? 'text-slate-800' : 'text-white'} ${plan.locked ? 'cursor-not-allowed opacity-80' : ''}`}
+                                                                style={{ MozAppearance: 'textfield' }}
+                                                            />
+                                                            {segments.length >= 2 && (
+                                                                <span className={`text-[9px] font-bold pr-0.5 hidden sm:block ${seg.isNonWorking ? 'text-slate-600/80' : 'text-white/80'}`}>d</span>
+                                                            )}
+                                                        </>
+                                                    );
+
                                                     if (seg.isNonWorking) {
                                                         return (
                                                             <div
                                                                 key={idx}
-                                                                className={`absolute top-[16px] h-[16px] border-2 border-dashed ${dashCls} ${roundL} ${roundR}`}
+                                                                className={`absolute top-[16px] h-[16px] border-2 border-dashed ${dashCls} ${roundL} ${roundR} flex items-center justify-center`}
                                                                 style={{ left: `${seg.leftPx}px`, width: `${CELL_WIDTH}px` }}
                                                                 title="Fim de semana — não contabilizado"
-                                                            />
+                                                            >
+                                                                {inputEl}
+                                                            </div>
                                                         );
                                                     }
                                                     return (
@@ -657,21 +695,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                             className={`absolute top-[16px] h-[16px] border flex items-center justify-center shadow-sm ${solidCls} ${roundL} ${roundR} ${isDraggingThis ? 'opacity-90 ring-2 ring-blue-300' : ''}`}
                                                             style={{ left: `${seg.leftPx}px`, width: `${CELL_WIDTH}px` }}
                                                         >
-                                                            {isFirst && (
-                                                                <>
-                                                                    <input
-                                                                        type="number"
-                                                                        value={plan.duracao}
-                                                                        onChange={e => updateOperationDuration(group.code, e.target.value)}
-                                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                                        className="w-5 shrink-0 bg-transparent text-center font-bold text-white text-[9px] outline-none appearance-none"
-                                                                        style={{ MozAppearance: 'textfield' }}
-                                                                    />
-                                                                    {segments.length >= 2 && (
-                                                                        <span className="text-[9px] font-bold text-white/80 pr-0.5 hidden sm:block">d</span>
-                                                                    )}
-                                                                </>
-                                                            )}
+                                                            {inputEl}
                                                         </div>
                                                     );
                                                 })}
@@ -682,6 +706,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             </div>
                         );
                     })}
+                </div>
                 </div>
             </div>
         );

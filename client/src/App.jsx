@@ -88,6 +88,7 @@ const EngineeringControlReport = React.lazy(() => import('./pages/EngineeringCon
 const SetoresCadastro = React.lazy(() => import('./pages/pcp/SetoresCadastro'));
 const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
 const VisaoSetores = React.lazy(() => import('./pages/pcp/VisaoSetores'));
+const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
 
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
@@ -103,7 +104,7 @@ MENU_GROUPS.forEach(group => {
 
 // Private Route Component with permission guard
 const PrivateRoute = () => {
-    const { signed, loading, user, hasPermission } = useAuth();
+    const { signed, loading, user, hasPermission, isAdmin } = useAuth();
     const location = useLocation();
 
     if (loading) {
@@ -116,7 +117,7 @@ const PrivateRoute = () => {
     const pageId = PATH_TO_PAGE_ID[location.pathname];
 
     // If there's a mapped page and user is NOT admin,    // Check permissions
-    if (pageId && pageId !== 'protheus-estudo' && user?.tipo !== 'A' && !hasPermission(pageId, 'view')) {
+    if (pageId && pageId !== 'protheus-estudo' && !isAdmin && !hasPermission(pageId, 'view')) {
         // allow basic access fallback if no specific page found?     
         return (
             <Layout>
@@ -643,6 +644,11 @@ function App() {
                                         <Route path="/pcp/visao-setores" element={
                                             <Layout fullWidth={true}>
                                                 <VisaoSetores />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/curva-s" element={
+                                            <Layout fullWidth={true}>
+                                                <CurvaSPedido />
                                             </Layout>
                                         } />
                                     </Route>
