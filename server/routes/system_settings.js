@@ -12,7 +12,7 @@ const ensureTable = async () => {
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS system_parameters (
                 setting_key VARCHAR(100) PRIMARY KEY,
-                setting_value JSON,
+                setting_value LONGTEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 updated_by VARCHAR(50)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

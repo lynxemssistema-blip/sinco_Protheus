@@ -166,6 +166,11 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                         <div>
                             <p><strong>OP:</strong> {op.op} <span className="text-slate-500">({op.desc_produto})</span></p>
                             <p><strong>Proc:</strong> {op.operacao} <span className="text-slate-500">({op.desc_operacao})</span></p>
+                            {op.produzido_mae > 0 && (
+                                <p className="text-[10px] text-indigo-600 mt-1 font-semibold border border-indigo-200 bg-indigo-50 inline-block px-1 rounded">
+                                    Herdado da OP Mãe: {op.produzido_mae} pçs apontadas.
+                                </p>
+                            )}
                         </div>
                         <div className="text-right">
                             <p className="text-slate-500">Usuário:</p>

@@ -45,17 +45,17 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
     const [timesheets, setTimesheets] = useState([]);
     const [manualEntry, setManualEntry] = useState({ date: new Date().toISOString().split('T')[0], hours: '', obs: '' });
 
-    useEffect(() => {
-        // Load designers
-        getUsers({ setor: 'ENGENHARIA' }).then(users => {
-            setDesigners(users);
-        }).catch(err => console.error('Error loading designers:', err));
-    }, []);
-
-
+    // Designers are now loaded when the modal opens
 
     useEffect(() => {
         if (!isOpen) return;
+
+        // Load designers when modal opens
+        if (designers.length === 0) {
+            getUsers({ setor: 'ENGENHARIA' }).then(users => {
+                setDesigners(users);
+            }).catch(err => console.error('Error loading designers:', err));
+        }
 
         if (isBatchMode) {
             setFormData(emptyForm);

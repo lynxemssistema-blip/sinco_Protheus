@@ -12,7 +12,8 @@ export const getBaseUrl = () => {
 const api = axios.create({
     baseURL: `${getBaseUrl()}/api`,
     maxContentLength: Infinity,
-    maxBodyLength: Infinity
+    maxBodyLength: Infinity,
+    timeout: 60000
 });
 
 // Interceptor to attach JWT token to every request

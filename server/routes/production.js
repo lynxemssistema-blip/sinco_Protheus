@@ -1019,6 +1019,17 @@ router.get('/', async (req, res) => {
         let paramCount = 1;
         const appliedFilters = [];
 
+        // Excluir OPs que foram fracionadas
+        const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa');
+        if (fracOps.length > 0) {
+            const excludeBases = fracOps.map(r => r.op_base);
+            const placeholders = excludeBases.map((_, i) => `$${paramCount + i}`).join(', ');
+            pgQuery += ` AND (c2.c2_num || c2.c2_item) NOT IN (${placeholders})`;
+            params.push(...excludeBases);
+            paramCount += excludeBases.length;
+            console.log(`🔧 [DEBUG] Excluding ${excludeBases.length} fractionated OP bases.`);
+        }
+
         if (op) {
             pgQuery += ` AND c2.c2_num LIKE $${paramCount}`;
             params.push(`%${op}%`);
@@ -1068,29 +1079,38 @@ router.get('/', async (req, res) => {
         }
 
         if (operacao || setor) {
-            let opArray = operacao ? operacao.split(',').map(op => op.trim().toUpperCase()).filter(Boolean) : [];
-            
+            let recursoArray = [];
+            let operacaoArray = operacao ? operacao.split(',').map(op => op.trim().toUpperCase()).filter(Boolean) : [];
+
             if (setor) {
                 try {
                     const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
                     if (sectorRecs.length > 0) {
-                        opArray.push(...sectorRecs.map(r => r.recurso_codigo.toUpperCase()));
-                    } else if (opArray.length === 0) {
-                        // Sector has no resources and no explicit operations passed. Add a dummy to match nothing.
-                        opArray.push('___NO_MATCH___');
+                        recursoArray = sectorRecs.map(r => r.recurso_codigo.trim().toUpperCase());
+                    } else {
+                        recursoArray = ['___NO_MATCH___'];
                     }
                 } catch (e) {
                     console.error('Erro ao buscar recursos do setor:', e);
                 }
             }
 
-            if (opArray.length > 0) {
-                const opConditions = opArray.map((_, i) => `(g2.g2_operac LIKE $${paramCount + i} OR g2.g2_descri LIKE $${paramCount + i} OR g2.g2_recurso LIKE $${paramCount + i})`);
+            // Filtro por recurso: usa = (IN) em vez de LIKE — muito mais eficiente
+            if (recursoArray.length > 0) {
+                const inPlaceholders = recursoArray.map((_, i) => `$${paramCount + i}`).join(',');
+                pgQuery += ` AND TRIM(g2.g2_recurso) IN (${inPlaceholders})`;
+                params.push(...recursoArray);
+                paramCount += recursoArray.length;
+                appliedFilters.push(`RECURSO IN (${recursoArray.join(', ')})`);
+            }
+
+            // Filtro por operação, descrição ou recurso (LIKE só quando explícito pelo usuário)
+            if (operacaoArray.length > 0) {
+                const opConditions = operacaoArray.map((_, i) => `(g2.g2_operac ILIKE $${paramCount + i} OR g2.g2_descri ILIKE $${paramCount + i} OR TRIM(g2.g2_recurso) ILIKE $${paramCount + i})`);
                 pgQuery += ` AND (${opConditions.join(' OR ')})`;
-                opArray.forEach(opItem => params.push(`%${opItem}%`));
-                paramCount += opArray.length;
-                appliedFilters.push(`OPERACAO/RECURSO/SETOR IN (${opArray.join(', ')})`);
-                console.log(`🔧 [DEBUG] Filter: OPERACAO/RECURSO/SETOR IN (${opArray.join(', ')})`);
+                params.push(...operacaoArray.map(op => `%${op}%`));
+                paramCount += operacaoArray.length;
+                appliedFilters.push(`OPERACAO IN (${operacaoArray.join(', ')})`);
             }
         }
 
@@ -1280,10 +1300,14 @@ router.get('/matrix', async (req, res) => {
     try {
         const { op, produto, cliente, pedido, operacao } = req.query;
 
-        console.log('📊 [MATRIX] Fetching matrix view data...');
+        if (!op && !produto && !cliente && !pedido && !operacao) {
+            return res.status(400).json({
+                success: false,
+                error: 'Informe ao menos um filtro (op, produto, cliente, pedido ou operacao) para carregar a matriz.'
+            });
+        }
 
-        // 1. Buscar dados base usando CTE para garantir estrutura completa
-        //    (Filtrar OPs/Itens que atendem aos critérios, depois buscar TODAS as sequências deles)
+        console.log('📊 [MATRIX] Fetching matrix view data...');
 
         let pgQuery = `
             WITH filtered_ops AS (
@@ -1296,6 +1320,7 @@ router.get('/matrix', async (req, res) => {
                 LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
                 WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(c2.c2_num) != ''
+                AND c2.c2_datpri >= '20240101'
         `;
 
         const params = [];
@@ -1950,6 +1975,26 @@ router.post('/appoint', async (req, res) => {
     (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
+
+        // Se houver op_fracionada, grava na tabela de rastreio de lote fracionado
+        if (req.body.op_fracionada) {
+            await mysqlPool.execute(`
+                INSERT INTO app_ind_production_appointments
+                (op_fracionada, op_base, operacao_codigo, operacao_nome, quantidade, data_inicio, data_fim, usuario, materiais_utilizados, observacao)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                req.body.op_fracionada,
+                op_numero + op_item, // ou apenas op_numero dependendo da regra da op_base
+                operacao_codigo,
+                req.body.operacao_nome || '',
+                quantidade,
+                data_inicio,
+                data_fim,
+                usuario,
+                materiaisJson,
+                observacao
+            ]);
+        }
 
         // Se houver materiais com solicitacao_id, marcar solicitação como ENTREGUE (se já não estiver)
         if (materiais_utilizados && Array.isArray(materiais_utilizados)) {

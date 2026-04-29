@@ -15,6 +15,7 @@ import CurvaSPedido from './pcp/CurvaSPedido';
 import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
+import { Link } from 'react-router-dom';
 
 // ... (other imports)
 
@@ -563,7 +564,9 @@ export default function ProductionControl() {
                                             <td className="p-3">
                                                 <div className="flex items-center gap-2">
                                                     <div>
-                                                        <div className="font-mono text-xs text-blue-600 font-semibold">{op.cod_produto_op}</div>
+                                                        <Link to={`/estrutura/${encodeURIComponent(op.cod_produto_op.trim())}`} className="font-mono text-xs text-blue-600 font-semibold hover:underline" title="Ver Árvore do Produto (Estrutura/BOM)">
+                                                            {op.cod_produto_op}
+                                                        </Link>
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-slate-500 truncate max-w-[250px]" title={op.desc_produto}>{op.desc_produto}</div>

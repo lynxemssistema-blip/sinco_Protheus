@@ -177,10 +177,8 @@ router.get('/', async (req, res) => {
     `;
 
         params.push(limitParsed, offset);
+        const paramsCount = params.slice(0, paramCount - 1);
 
-        const result = await db.query(query, params);
-
-        // Contagem total para paginação
         const countQuery = `
         SELECT count(*) as total
         FROM public.sc5010 c5
@@ -189,8 +187,11 @@ router.get('/', async (req, res) => {
         AND COALESCE(sa1.d_e_l_e_t_, '') = ''
         ${whereClause}
     `;
-        const paramsCount = params.slice(0, paramCount - 1);
-        const countResult = await db.query(countQuery, paramsCount);
+
+        const [result, countResult] = await Promise.all([
+            db.query(query, params),
+            db.query(countQuery, paramsCount)
+        ]);
 
         const data = result.rows.map(row => {
             const parseDateStr = (dStr) => {
@@ -545,7 +546,7 @@ router.get('/flat', async (req, res) => {
                 JOIN public.sf2010 f2
                     ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie
                     AND COALESCE(f2.d_e_l_e_t_, '') = ''
-                WHERE d2.d2_pedido = ANY($1) AND COALESCE(d2.d_e_l_e_t_, '') = ''
+                WHERE d2.d2_pedido = ANY($1::varchar[]) AND COALESCE(d2.d_e_l_e_t_, '') = ''
             `, [uniquePedidos]);
 
             // Batch ref_cliente / rev_cliente (PG — única query)
@@ -557,8 +558,8 @@ router.get('/flat', async (req, res) => {
                     STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') as ref_cliente,
                     STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') as rev_cliente
                 FROM public.sz1010 z1
-                WHERE z1.z1_cliente = ANY($1)
-                AND TRIM(z1.z1_produto) = ANY($2)
+                WHERE z1.z1_cliente = ANY($1::varchar[])
+                AND TRIM(z1.z1_produto) = ANY($2::varchar[])
                 AND COALESCE(z1.d_e_l_e_t_, '') = ''
                 GROUP BY z1.z1_cliente, z1.z1_loja, TRIM(z1.z1_produto)
             `, [
@@ -742,6 +743,7 @@ router.get('/flat', async (req, res) => {
         });
 
     } catch (err) {
+        require('fs').writeFileSync('error_log.txt', err.stack + '\\n' + String(errorStep));
         console.error('Erro FLAT VIEW:', err);
         const debugEnabled = String(req.query?.debug || '').toLowerCase() === 'true';
         res.status(500).json({
@@ -1680,8 +1682,8 @@ router.post('/pcp-forecasts', async (req, res) => {
         }
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null]
+            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null]
         );
 
         res.json({ success: true, id: result.insertId });
@@ -1724,6 +1726,22 @@ router.put('/pcp-forecasts/:id', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/pcp-forecasts/:id/op', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { op_protheus } = req.body;
+        
+        await mysqlPool.query(
+            'UPDATE app_pcp_delivery_forecasts SET op_protheus = ? WHERE id = ?',
+            [op_protheus, id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error updating PCP forecast OP:', err);
         res.status(500).json({ error: err.message });
     }
 });

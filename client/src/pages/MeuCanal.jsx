@@ -1,0 +1,392 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import api from '../services/api';
+import {
+    PlayCircle, CheckCircle, User, Users, Info, Mail,
+    Clock, XCircle, Zap, Calendar, ChevronDown, ChevronUp,
+    MessageCircle, TrendingUp
+} from 'lucide-react';
+import { toast } from 'react-toastify';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+    ResponsiveContainer, Legend, Cell
+} from 'recharts';
+
+// ─── Utilitários ────────────────────────────────────────────────────────────
+const getInitials = (name = '') =>
+    name.split(' ').filter(Boolean).slice(0, 2).map(n => n[0].toUpperCase()).join('');
+
+const nivelEmoji = (nivel) => {
+    const map = { 'Excelente': '🟢', 'Bom': '🟡', 'Atenção': '🟠', 'Crítico': '🔴' };
+    return map[nivel] || '⚫';
+};
+
+// ─── Card de Categoria ───────────────────────────────────────────────────────
+function CategoriaCard({ icon: Icon, valor, label, sublabel, bgClass, textClass, iconClass, badgeClass, badge }) {
+    return (
+        <div className={`flex flex-col items-center text-center p-4 rounded-xl border ${bgClass}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${iconClass}`}>
+                <Icon className="w-5 h-5" />
+            </div>
+            <span className={`text-3xl font-black ${textClass}`}>{valor}</span>
+            <span className={`text-xs font-semibold mt-1 leading-tight ${textClass}`}>{label}</span>
+            {badge && <span className={`text-xs font-medium mt-1 ${badgeClass}`}>{badge}</span>}
+            {sublabel && <span className={`text-xs mt-1 opacity-70 ${textClass}`}>{sublabel}</span>}
+        </div>
+    );
+}
+
+// ─── Card de Setor (colapsável) ──────────────────────────────────────────────
+function SetorCard({ setor }) {
+    const [aberto, setAberto] = useState(false);
+
+    const chartData = [
+        { name: 'Planejado', valor: setor.producaoPlanejada ?? 0, fill: '#94a3b8' },
+        { name: 'Realizado', valor: setor.producaoRealizada ?? 0, fill: setor.cor },
+    ];
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            {/* ── Cabeçalho clicável ── */}
+            <button
+                onClick={() => setAberto(v => !v)}
+                className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors"
+            >
+                <div className="flex items-center gap-4 text-left">
+                    {/* Badge nível */}
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${setor.cor}20` }}>
+                        <TrendingUp className="w-6 h-6" style={{ color: setor.cor }} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-base">{setor.nome}</h3>
+                        <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-xs text-slate-500">
+                                {setor.producaoRealizada ?? 0} / {setor.producaoPlanejada ?? 0} peças
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                                style={{ backgroundColor: `${setor.cor}20`, color: setor.cor }}>
+                                {setor.score}% — {setor.nivel}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Mini barra de progresso + seta */}
+                <div className="flex items-center gap-4 shrink-0">
+                    <div className="hidden sm:block w-28 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                        <div className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${Math.min(setor.score, 100)}%`, backgroundColor: setor.cor }} />
+                    </div>
+                    {aberto
+                        ? <ChevronUp className="w-5 h-5 text-slate-400" />
+                        : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                </div>
+            </button>
+
+            {/* ── Detalhe expandido ── */}
+            {aberto && (
+                <div className="border-t border-slate-100 p-5 space-y-6">
+                    {/* Gráfico de barras */}
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                            Planejado vs Realizado (hoje)
+                        </p>
+                        <ResponsiveContainer width="100%" height={160}>
+                            <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
+                                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                                <Tooltip
+                                    formatter={(v) => [`${v} peças`]}
+                                    contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                                />
+                                <Bar dataKey="valor" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                                    {chartData.map((entry, i) => (
+                                        <Cell key={i} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Pendências */}
+                    <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                            Pendências para hoje
+                        </h4>
+                        {setor.pendencias && setor.pendencias.length > 0 ? (
+                            <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left font-medium text-slate-500 text-xs">OP</th>
+                                            <th className="px-4 py-2 text-left font-medium text-slate-500 text-xs">Produto</th>
+                                            <th className="px-4 py-2 text-left font-medium text-slate-500 text-xs">Operação</th>
+                                            <th className="px-4 py-2 text-right font-medium text-slate-500 text-xs">Plan.</th>
+                                            <th className="px-4 py-2 text-right font-medium text-slate-500 text-xs">Feito</th>
+                                            <th className="px-4 py-2 text-right font-bold text-red-500 text-xs">Falta</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-slate-100">
+                                        {setor.pendencias.map((pend, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-2 font-medium text-slate-700">{pend.op}</td>
+                                                <td className="px-4 py-2 text-slate-600 truncate max-w-[160px]" title={pend.produto}>{pend.produto}</td>
+                                                <td className="px-4 py-2 text-slate-600">{pend.operacao}</td>
+                                                <td className="px-4 py-2 text-right text-slate-500">{pend.esperado}</td>
+                                                <td className="px-4 py-2 text-right text-slate-500">{pend.realizado}</td>
+                                                <td className="px-4 py-2 text-right font-bold text-red-500">{pend.esperado - pend.realizado}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
+                                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+                                <p className="text-emerald-700 text-sm font-medium">
+                                    {(setor.producaoPlanejada ?? 0) > 0
+                                        ? 'Nenhuma pendência! Todas as OPs planejadas já foram apontadas.'
+                                        : 'Sem programação para este setor hoje.'}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Componente Principal ────────────────────────────────────────────────────
+export default function MeuCanal() {
+    const [kpiData, setKpiData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const carregarKPI = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await api.get('/meucanal/kpi');
+            setKpiData(res.data);
+            setError(null);
+        } catch (err) {
+            console.error('Erro ao buscar KPI:', err);
+            setError('Não foi possível carregar as informações do seu canal.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { carregarKPI(); }, [carregarKPI]);
+
+    const testarEmail = async () => {
+        try {
+            toast.info('Enviando relatório por e-mail...', { autoClose: 2000 });
+            const res = await api.get('/meucanal/test-email');
+            toast.success(res.data.message || 'E-mail enviado com sucesso!');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Erro ao enviar e-mail.');
+        }
+    };
+
+    const compartilharWhatsApp = async () => {
+        if (!kpiData?.setores?.length) {
+            toast.warning('Nenhum setor disponível para compartilhar.');
+            return;
+        }
+
+        try {
+            toast.info('Enviando via WhatsApp (Evolution API)...', { autoClose: 2000 });
+            // Forçamos o número de teste conforme solicitado
+            const res = await api.post('/meucanal/test-whatsapp', { number: '31995574906' });
+            
+            if (res.data.success) {
+                toast.success('Mensagem de teste enviada com sucesso para 31995574906!');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || 'Erro ao enviar WhatsApp.');
+        }
+    };
+
+    // ── Loading ──
+    if (loading) return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="flex flex-col items-center gap-3">
+                <div className="h-10 w-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
+                <span className="text-sm text-slate-500 font-medium">Calculando sua performance de hoje...</span>
+            </div>
+        </div>
+    );
+
+    if (error) return (
+        <div className="p-6 text-red-500 bg-red-50 rounded-lg m-6 border border-red-100">{error}</div>
+    );
+
+    if (!kpiData) return null;
+
+    const { individual, setores, usuario } = kpiData;
+    // Montar URL correta: pode ser base64 puro, base64 com prefixo, ou URL normal
+    const fotoUrl = (() => {
+        const f = usuario?.foto;
+        if (!f) return null;
+        if (f.startsWith('http') || f.startsWith('/')) return f;
+        if (f.startsWith('data:')) return f;
+        return `data:image/jpeg;base64,${f}`;
+    })();
+    const nomeDisplay = usuario?.nome || 'Usuário';
+    const totalApontamentos = individual.apontamentos?.length ?? 0;
+
+    return (
+        <div className="min-h-screen bg-slate-50 font-sans">
+            {/* ═══ HERO HEADER ══════════════════════════════════════════════════════ */}
+            <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 text-white">
+                <div className="max-w-7xl mx-auto px-6 py-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                        {/* Perfil */}
+                        <div className="flex items-center gap-5">
+                            {fotoUrl ? (
+                                <img src={fotoUrl} alt={nomeDisplay}
+                                    className="w-16 h-16 rounded-2xl object-cover border-2 border-white/20 shadow-lg" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-2xl bg-teal-500/20 border-2 border-teal-400/30 flex items-center justify-center shadow-lg">
+                                    <span className="text-xl font-black text-teal-300">{getInitials(nomeDisplay)}</span>
+                                </div>
+                            )}
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <PlayCircle className="w-5 h-5 text-teal-400" />
+                                    <span className="text-teal-400 text-sm font-semibold tracking-wide">MEU CANAL</span>
+                                </div>
+                                <h1 className="text-2xl font-black text-white leading-tight">{nomeDisplay}</h1>
+                                <p className="text-slate-400 text-sm mt-0.5">Performance individual — hoje</p>
+                            </div>
+                        </div>
+
+                        {/* Ações */}
+                        <div className="flex flex-wrap gap-2">
+                            {setores?.length > 0 && (
+                                <>
+                                    <button onClick={compartilharWhatsApp}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white text-sm font-semibold transition-colors shadow">
+                                        <MessageCircle className="w-4 h-4" />
+                                        WhatsApp
+                                    </button>
+                                    <button onClick={testarEmail}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-sm font-semibold transition-colors border border-white/10">
+                                        <Mail className="w-4 h-4" />
+                                        Receber por E-mail
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ═══ CONTEÚDO ════════════════════════════════════════════════════════ */}
+            <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+                {/* ── PERFORMANCE INDIVIDUAL ─────────────────────────────────────── */}
+                <section>
+                    <div className="flex items-center gap-2 mb-4">
+                        <User className="w-5 h-5 text-slate-500" />
+                        <h2 className="text-lg font-bold text-slate-700">Minha Performance (Hoje)</h2>
+                    </div>
+
+                    {/* Totais */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                            <p className="text-slate-500 text-sm font-medium">Apontamentos Registrados</p>
+                            <h3 className="text-4xl font-black text-slate-800 mt-1">{totalApontamentos}</h3>
+                            <p className="text-xs text-slate-400 mt-2">{individual.apontado} peças processadas</p>
+                        </div>
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                            <p className="text-slate-500 text-sm font-medium flex items-center gap-1">
+                                Bônus Extras (x2) <Info className="w-3.5 h-3.5 text-slate-400" title="Sem planejamento = pontuação dobrada" />
+                            </p>
+                            <h3 className="text-4xl font-black text-amber-500 mt-1">+{individual.pontuacao_bonus}</h3>
+                            <p className="text-xs text-amber-600/80 mt-2">Peças sem data prevista no PCP</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl shadow-sm p-5 text-white">
+                            <p className="text-teal-100 text-sm font-medium">Pontuação Total Diária</p>
+                            <h3 className="text-5xl font-black mt-1">{individual.total_pontos}</h3>
+                            <p className="text-teal-200 text-xs mt-2 flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" /> Apontado + Bônus
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Breakdown por categoria */}
+                    {individual.categorias && (
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
+                                Classificação dos Apontamentos de Hoje
+                            </h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                <CategoriaCard
+                                    icon={Calendar} valor={individual.categorias.sem_planejamento}
+                                    label="Sem Planejamento" badge="Bônus x2 ⚡"
+                                    bgClass="bg-slate-50 border-slate-200"
+                                    textClass="text-slate-600" iconClass="bg-slate-200" badgeClass="text-amber-600 font-semibold"
+                                />
+                                <CategoriaCard
+                                    icon={CheckCircle} valor={individual.categorias.no_prazo}
+                                    label="No Prazo" sublabel="Início e fim ok ✓"
+                                    bgClass="bg-emerald-50 border-emerald-200"
+                                    textClass="text-emerald-700" iconClass="bg-emerald-100 text-emerald-600"
+                                />
+                                <CategoriaCard
+                                    icon={Zap} valor={individual.categorias.iniciado_ok}
+                                    label="Iniciado na Data" sublabel="Início ok, fim atrasou"
+                                    bgClass="bg-blue-50 border-blue-200"
+                                    textClass="text-blue-700" iconClass="bg-blue-100 text-blue-600"
+                                />
+                                <CategoriaCard
+                                    icon={Clock} valor={individual.categorias.finalizado_ok}
+                                    label="Finalizado na Data" sublabel="Início atrasou, fim ok"
+                                    bgClass="bg-yellow-50 border-yellow-200"
+                                    textClass="text-yellow-700" iconClass="bg-yellow-100 text-yellow-600"
+                                />
+                                <CategoriaCard
+                                    icon={XCircle} valor={individual.categorias.fora_data}
+                                    label="Fora da Data" sublabel="Início e fim atrasados"
+                                    bgClass="bg-red-50 border-red-200"
+                                    textClass="text-red-600" iconClass="bg-red-100 text-red-500"
+                                />
+                            </div>
+                        </div>
+                    )}
+                </section>
+
+                {/* ── METAS DOS SETORES ───────────────────────────────────────────── */}
+                {setores && setores.length > 0 && (
+                    <section>
+                        <div className="flex items-center gap-2 mb-4">
+                            <Users className="w-5 h-5 text-slate-500" />
+                            <h2 className="text-lg font-bold text-slate-700">Metas dos Meus Setores (Hoje)</h2>
+                            <span className="text-xs text-slate-400 ml-1">— clique em um setor para ver detalhes</span>
+                        </div>
+                        <div className="space-y-3">
+                            {setores.map(setor => (
+                                <SetorCard key={setor.id} setor={setor} />
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* ── SEM SETORES ─────────────────────────────────────────────────── */}
+                {(!setores || setores.length === 0) && (
+                    <div className="p-6 bg-slate-100 rounded-xl text-center border border-slate-200">
+                        <Info className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                        <p className="text-slate-500 text-sm">
+                            Você não está cadastrado como responsável por nenhum setor.
+                            O painel de metas setoriais não está disponível para o seu perfil.
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

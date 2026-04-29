@@ -16,7 +16,7 @@ const EMPTY_FORM = {
     gerar_op_protheus: true
 };
 
-const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit }) => (
+const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, hasOp }) => (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Data Entrega *</label>
@@ -40,7 +40,8 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                     )}
                 </div>
                 <input type="number" step="0.01" min="0.01" required placeholder="0.00"
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    disabled={hasOp}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none ${hasOp ? 'bg-gray-200 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-50 border-gray-200'}`}
                     value={value.quantidade_pcp}
                     onChange={e => onChange(p => ({ ...p, quantidade_pcp: e.target.value }))} />
             </div>
@@ -94,14 +95,14 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
         </div>
 
         {!isEdit && (
-            <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 flex items-center justify-between">
+            <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 flex items-center justify-between opacity-80">
                 <div>
                     <div className="text-sm font-semibold text-indigo-900">Gerar OP Protheus</div>
                     <div className="text-xs text-indigo-700">Emitir Ordem Prod. automaticamente para a fábrica.</div>
                 </div>
-                <label className="relative flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={value.gerar_op_protheus} onChange={e => onChange(p => ({ ...p, gerar_op_protheus: e.target.checked }))} />
-                    <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                <label className="relative flex items-center cursor-not-allowed">
+                    <input type="checkbox" className="sr-only peer" checked={true} disabled={true} readOnly />
+                    <div className="w-9 h-5 bg-indigo-600 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:translate-x-full after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
                 </label>
             </div>
         )}
@@ -289,7 +290,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
         }
         setSaving(true);
         try {
-            await api.post('/pedidos/pcp-forecasts', {
+            const forecastRes = await api.post('/pedidos/pcp-forecasts', {
                 pedido, item: itemNum,
                 data_entrega_pcp: formData.data_entrega_pcp,
                 quantidade_pcp: novaQtd,
@@ -303,6 +304,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined
             });
 
+            const forecastId = forecastRes.data.id;
+
             if (formData.gerar_op_protheus) {
                 const protheusItems = [{
                     filial: item.filial || '01',
@@ -315,7 +318,12 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     itempv: itemNum
                 }];
                 console.log("🚀 [PROTHEUS PAYLOAD SINGLE] Enviando JSON:", JSON.stringify({ items: protheusItems }, null, 2));
-                await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                
+                if (protheusRes.data.op_number) {
+                    await api.patch(`/pedidos/pcp-forecasts/${forecastId}/op`, { op_protheus: protheusRes.data.op_number });
+                }
+
                 toast.success(`OP gerada com sucesso no Protheus.`);
             }
 
@@ -324,7 +332,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
             await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess();
         } catch (err) {
-            console.error("❌ [ERRO API PROTHEUS/SINGLE] Detalhes:", err.response?.data || err);
+            console.error("❌ [ERRO API PROTHEUS/SINGLE] Detalhes:", JSON.stringify(err.response?.data || err));
             const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao salvar.';
             toast.error(`Falha ao Gerar O.P.: ${errMsg}`, { autoClose: 8000 });
         } finally {
@@ -526,6 +534,11 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                 <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded">
                                                                     {parseFloat(prog.quantidade_pcp).toLocaleString('pt-BR')} un
                                                                 </span>
+                                                                {prog.op_protheus && (
+                                                                    <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded" title="OP Gerada no Protheus">
+                                                                        OP: {prog.op_protheus}
+                                                                    </span>
+                                                                )}
                                                             </>
                                                         )}
                                                         {editingId === prog.id && (
@@ -560,6 +573,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                             qtdTotal={qtdTotal}
                                                             isEdit={true}
                                                             hideOpSwitch={true}
+                                                            hasOp={!!prog.op_protheus}
                                                         />
                                                     </div>
                                                 ) : (

@@ -47,7 +47,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
 
         // Configurar Gemini
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash",
             systemInstruction: `Você é um engenheiro de dados sênior e especialista em ADVPL e banco de dados Protheus da MetalFisa.\\nSeu ÚNICO propósito é explicar, analisar e detalhar as consultas SQL utilizadas no sistema para que outro programador possa consultar e usá-las como referência.\\nVocê DEVE usar estritamente o catálogo de consultas abaixo como base da verdade.\\nNUNCA invente tabelas ou campos que não existam nesse contexto ou no padrão Protheus.\\nNUNCA alucine.\\nResponda apenas perguntas pertinentes ao contexto Protheus ou SQL.\\nAs respostas devem ser instrutivas, claras e precisas em Português do Brasil.\\n\\n${contextText}`
         });
 

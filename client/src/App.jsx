@@ -64,6 +64,7 @@ const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/Si
 const ApontamentoPorUsuarioOpPage = React.lazy(() => import('./pages/pcp/ApontamentoPorUsuarioOpPage'));
 const IndPcpReleasePage = React.lazy(() => import('./pages/sinco/IndPcpReleasePage'));
 const IndFactoryFloorPage = React.lazy(() => import('./pages/sinco/IndFactoryFloorPage'));
+const IndApontamentoPage = React.lazy(() => import('./pages/sinco/IndApontamentoPage'));
 const AvisosHistorico = React.lazy(() => import('./pages/AvisosHistorico'));
 const SINCOProductStructure = React.lazy(() => import('./pages/sinco/SINCOProductStructure'));
 const VMIUploadPage = React.lazy(() => import('./pages/vmi/VMIUploadPage'));
@@ -93,6 +94,7 @@ const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto'));
+const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -227,6 +229,11 @@ function App() {
 
                                     <Route element={<PrivateRoute />}>
                                         <Route path="/" element={
+                                            <Layout fullWidth={true}>
+                                                <MeuCanal />
+                                            </Layout>
+                                        } />
+                                        <Route path="/visao-geral" element={
                                             <Layout fullWidth={true}>
                                                 <OrdersTable />
                                             </Layout>
@@ -620,11 +627,16 @@ function App() {
                                                 <IndPcpReleasePage />
                                             </Layout>
                                         } />
-                                        <Route path="/ind-factory-floor" element={
-                                            <Layout fullWidth={true}>
-                                                <IndFactoryFloorPage />
-                                            </Layout>
-                                        } />
+                                    <Route path="/ind-factory-floor" element={
+                                        <Layout fullWidth={true}>
+                                            <IndFactoryFloorPage />
+                                        </Layout>
+                                    } />
+                                    <Route path="/ind-apontamento" element={
+                                        <Layout fullWidth={true}>
+                                            <IndApontamentoPage />
+                                        </Layout>
+                                    } />
                                         
                                         {/* Protheus Forms */}
                                         <Route path="/protheus" element={

@@ -18,10 +18,9 @@ const SMTP_CONFIG = {
 (async () => {
     try {
         const conn = await mysqlPool.getConnection();
-        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL");
-        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS aprovado TINYINT DEFAULT 1");
-        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL");
-        console.log('✅ [Users Service] Colunas de E-mail/Aprovação/WhatsApp verificadas na tabela usuario.');
+        // MySQL 5.6 does not support IF NOT EXISTS on ADD COLUMN.
+        // The columns have been added manually.
+        console.log('✅ [Users Service] Migration check skipped (MySQL 5.6 compatibility).');
         conn.release();
     } catch (err) { }
 })();

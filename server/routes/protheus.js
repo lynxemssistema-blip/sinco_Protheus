@@ -187,19 +187,52 @@ router.post('/ordem-producao/incluir', async (req, res) => {
         }
         if (!accessToken) throw new Error('Token JWT retornado estava em branco.');
 
+        // Busca proximo numero de OP valido para nao enviar 000000
+        let baseOpNum = 0;
+        try {
+            const resOp = await queryProtheus(`SELECT MAX(c2_num) as max_op FROM public.sc2010 WHERE c2_num ~ '^[0-9]+$' AND c2_num < '900000' AND COALESCE(d_e_l_e_t_, '') = ''`);
+            if (resOp.length > 0 && resOp[0].max_op) {
+                baseOpNum = parseInt(resOp[0].max_op, 10);
+            }
+        } catch (dbErr) {
+            console.error(`Erro ao buscar ultima OP:`, dbErr.message);
+        }
+
         // 2. Montar OPs — layout exato da documentação API Sinco
         const ordensProducao = [];
         for (const it of items) {
-            const produto = (it.produto || "").trim();
             const pedidoStr = String(it.pedido || "").padStart(6, '0');
             const itemPvStr = String(it.itempv || "01").padStart(2, '0');
+            let filial = (it.filial || "01").trim();
+
+            // 1. Nova pesquisa no banco (ignora frontend memory para o Produto)
+            let produto = "";
+            try {
+                const sc6Rows = await queryProtheus(
+                    `SELECT c6_produto, c6_filial FROM public.sc6010 WHERE c6_num = $1 AND c6_item = $2 AND COALESCE(d_e_l_e_t_, '') = '' LIMIT 1`,
+                    [pedidoStr, itemPvStr]
+                );
+                if (sc6Rows.length > 0 && sc6Rows[0].c6_produto) {
+                    produto = sc6Rows[0].c6_produto.trim();
+                    if (sc6Rows[0].c6_filial) filial = sc6Rows[0].c6_filial.trim();
+                } else {
+                    produto = (it.produto || "").trim(); // fallback
+                }
+            } catch (err) {
+                console.error("Erro SC6:", err.message);
+                produto = (it.produto || "").trim();
+            }
+
+            // Incrementa o numero da OP para cada item no array
+            baseOpNum += 1;
+            const nextOpStr = String(baseOpNum).padStart(6, '0');
 
             // Busca o último roteiro (maior código) para a peça no SG2010
             let roteiro = "00";
             if (produto) {
                 try {
                     const rotRows = await queryProtheus(
-                        `SELECT g2_codigo FROM public.sg2010 WHERE g2_produto = $1 AND d_e_l_e_t_ = ' ' ORDER BY g2_codigo DESC LIMIT 1`,
+                        `SELECT g2_codigo FROM public.sg2010 WHERE btrim(g2_produto) = $1 AND COALESCE(d_e_l_e_t_, '') = '' ORDER BY g2_codigo DESC LIMIT 1`,
                         [produto]
                     );
                     if (rotRows.length > 0 && rotRows[0].g2_codigo) {
@@ -211,20 +244,22 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 }
             }
 
+            console.log(`[OP BUILDER] Produto: ${produto} | Roteiro encontrado: ${roteiro}`);
+
             ordensProducao.push({
                 EMPRESA:   "01",
-                CFILANT:   (it.filial || "01"),
-                NOPER:     3,                                                   // único valor aceito pela API (inclusão)
-                C2_NUM:    pedidoStr,                                           // O.P. recebe o número do Pedido de vendas
-                C2_ITEM:   itemPvStr,                                           // Número do item no pedido de vendas
-                C2_PRODUTO: produto,
+                CFILANT:   filial,
+                NOPER:     3,
+                C2_NUM:    nextOpStr,
+                C2_ITEM:   itemPvStr,
+                C2_PRODUTO: produto.padEnd(15, ' '),
                 C2_QUANT:  Number(it.quant) || 0,
                 C2_DATPRI: it.datpri || "",
                 C2_DATPRF: it.datprf || "",
                 C2_OBS:    (it.obs || "").trim(),
                 C2_ROTEIRO: roteiro,
-                C2_PEDIDO: pedidoStr,                                           // Numero do Pedido de Vendas
-                C2_ITEMPV: itemPvStr                                            // Item do Pedido de Vendas
+                C2_PEDIDO: pedidoStr,
+                C2_ITEMPV: itemPvStr
             });
         }
 
@@ -241,7 +276,9 @@ router.post('/ordem-producao/incluir', async (req, res) => {
         );
 
         const protheusResp = protheusRes.data;
-        console.log('📬 [OP] Resposta Protheus →', JSON.stringify(protheusResp, null, 2));
+        console.log('📬 [OP] Resposta Protheus →', protheusResp);
+        
+        require('fs').appendFileSync('protheus_log.txt', new Date().toISOString() + ' RESP: ' + JSON.stringify(protheusResp) + '\n');
 
         // Protheus retorna HTTP 200 mesmo em falha; checar messages[]
         const messages = Array.isArray(protheusResp.message)
@@ -258,7 +295,16 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             });
         }
 
-        res.json({ success: true, message: 'O.P.(s) gerada(s) com sucesso.', details: protheusResp });
+        let opNumber = null;
+        for (const m of messages) {
+            const match = m.match(/ORDEM DE PRODUCAO:\s*([0-9]+)\s*CRIADA/i);
+            if (match) {
+                opNumber = match[1];
+                break;
+            }
+        }
+
+        res.json({ success: true, message: 'O.P.(s) gerada(s) com sucesso.', op_number: opNumber, details: protheusResp });
 
     } catch (error) {
         console.error('[OP] Erro integração:', error.response?.data || error.message);

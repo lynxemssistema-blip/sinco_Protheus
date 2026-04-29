@@ -4,16 +4,23 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart
+    Landmark, Link, PieChart, CheckSquare
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
 
     {
+        id: 'pessoal',
+        label: 'Meu Painel',
+        items: [
+            { id: 'meu_canal', label: 'Meu Canal (KPIs)', path: '/', icon: BarChart2 }
+        ]
+    },
+    {
         id: 'comercial',
         label: 'Comercial',
         items: [
-            { id: 'vendas', label: 'Pedidos de Venda', path: '/', icon: ShoppingCart },
+            { id: 'vendas', label: 'Pedidos de Venda', path: '/visao-geral', icon: ShoppingCart },
             { id: 'itens_faturar', label: 'Itens a Faturar', path: '/vendas/itens-faturar', icon: ListOrdered },
             { id: 'dashboard_faturamento', label: 'Dashboard de Faturamento', path: '/comercial/dashboard-faturamento', icon: BarChart2 },
             { id: 'visao_gerencial', label: 'Visão Gerencial (Atrasos)', path: '/comercial/atrasos', icon: Target },
@@ -84,7 +91,8 @@ export const MENU_GROUPS = [
         label: 'OP Fracionada',
         items: [
             { id: 'ind_pcp_release', label: 'Liberação PCP (Mescla)', path: '/ind-pcp-release', icon: Layers },
-            { id: 'ind_factory_floor', label: 'Apontamento Ativo (Local)', path: '/ind-factory-floor', icon: Factory }
+            { id: 'ind_factory_floor', label: 'Painel da Fábrica (Local)', path: '/ind-factory-floor', icon: Factory },
+            { id: 'ind_apontamento', label: 'Apontamento Fracionado', path: '/ind-apontamento', icon: CheckSquare }
         ]
     },
     {
