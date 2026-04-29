@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const mysqlPool = require('../mysqlService');
+const { sendText: waSend, msgFaturamentoPendente } = require('../whatsapp');
 
 let getCorpEmailType = (html) => html;
 try {
@@ -73,10 +74,19 @@ const runJob = async (isTest = false, testEmail = null) => {
 
             if (emailsConfig && Array.isArray(emailsConfig) && emailsConfig.length > 0) {
                 const [userRows] = await mysqlPool.query(
-                    `SELECT email FROM usuario WHERE idUsuario IN (?) AND email IS NOT NULL AND email != ''`, 
+                    `SELECT email, whatsapp FROM usuario WHERE idUsuario IN (?) AND (email IS NOT NULL OR whatsapp IS NOT NULL)`,
                     [emailsConfig]
                 );
                 recipientList = userRows.map(u => u.email).filter(Boolean);
+
+                // WhatsApp
+                const waNumbers = userRows.map(u => u.whatsapp).filter(Boolean);
+                if (waNumbers.length > 0) {
+                    const waText = msgFaturamentoPendente(sols.length);
+                    waSend(waNumbers, waText, `Faturamentos Pendentes: ${sols.length}`).catch(e =>
+                        console.error('❌ [Agendador] Erro WhatsApp faturamento:', e.message)
+                    );
+                }
             }
         }
 

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2 } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
+import api from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
@@ -22,6 +23,7 @@ export default function Settings() {
         { id: 'reports', label: 'Relatórios', icon: FileText },
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
         { id: 'email', label: 'E-mail Corporativo', icon: Mail },
+        { id: 'whatsapp_logs', label: 'Histórico WhatsApp', icon: MessageSquare },
     ];
 
     const formatPhone = (val) => {
@@ -37,6 +39,7 @@ export default function Settings() {
     const [userForm, setUserForm] = useState({
         nome: '',
         telefone: '',
+        whatsapp: '',
         login: '',
         senha: '',
         tipo: 'U',
@@ -357,7 +360,7 @@ export default function Settings() {
                 await createUser(userForm);
                 alert('Usuário cadastrado com sucesso!');
             }
-            setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
+            setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
             loadUsers();
         } catch (err) {
             alert('Erro: ' + (err.response?.data?.error || err.message));
@@ -393,8 +396,9 @@ export default function Settings() {
         setUserForm({
             nome: u.NomeCompleto,
             telefone: u.telefone || '',
+            whatsapp: u.whatsapp || '',
             login: u.Login,
-            senha: '', // Don't fill password
+            senha: '',
             tipo: u.TipoUsuario,
             setor: u.Setor || '',
             funcao: u.Funcao || '',
@@ -407,7 +411,7 @@ export default function Settings() {
 
     const cancelEditing = () => {
         setEditingUser(null);
-        setUserForm({ nome: '', telefone: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
+        setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
     };
 
     const toggleGeneralConfig = (key) => {
@@ -1005,6 +1009,9 @@ export default function Settings() {
                     </div>
                 )}
 
+                {/* WHATSAPP LOGS TAB */}
+                {activeTab === 'whatsapp_logs' && <WhatsAppLogsTab />}
+
                 {/* PENDING / APROVAÇÕES TAB */}
                 {activeTab === 'pending' && (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -1274,6 +1281,18 @@ export default function Settings() {
                                         className="w-full p-2 border rounded-lg"
                                         value={userForm.telefone}
                                         onChange={e => setUserForm({ ...userForm, telefone: formatPhone(e.target.value) })}
+                                        placeholder="(99) 99999-9999"
+                                        maxLength="15"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp (Alertas automáticos)</label>
+                                    <input
+                                        type="tel"
+                                        className="w-full p-2 border rounded-lg"
+                                        value={userForm.whatsapp}
+                                        onChange={e => setUserForm({ ...userForm, whatsapp: formatPhone(e.target.value) })}
                                         placeholder="(99) 99999-9999"
                                         maxLength="15"
                                     />
@@ -1850,6 +1869,99 @@ export default function Settings() {
                 )}
 
             </div>
+        </div>
+    );
+}
+
+// ──── Histórico de mensagens WhatsApp ────────────────────────────────────────
+function WhatsAppLogsTab() {
+    const [logs, setLogs]       = useState([]);
+    const [total, setTotal]     = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [offset, setOffset]   = useState(0);
+    const LIMIT = 50;
+
+    const load = useCallback(async (off = 0) => {
+        setLoading(true);
+        try {
+            const { data } = await api.get(`/whatsapp/logs?limit=${LIMIT}&offset=${off}`);
+            setLogs(data.rows || []);
+            setTotal(data.total || 0);
+            setOffset(off);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { load(0); }, [load]);
+
+    const statusBadge = (s) => s === 'ok'
+        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">Enviado</span>
+        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Falhou</span>;
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                    <MessageSquare className="w-6 h-6 text-emerald-500" />
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Histórico de Mensagens WhatsApp</h2>
+                        <p className="text-sm text-slate-500">Registro de todos os alertas enviados via Evolution API</p>
+                    </div>
+                </div>
+                <button onClick={() => load(0)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                    <Loader2 className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+                </button>
+            </div>
+
+            {loading && logs.length === 0 ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 text-slate-300 animate-spin" /></div>
+            ) : logs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                    <MessageSquare className="w-12 h-12 text-slate-300 mb-3" />
+                    <p className="text-slate-400">Nenhuma mensagem enviada ainda.</p>
+                </div>
+            ) : (
+                <>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-left">
+                                <tr>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Data/Hora</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Destinatário</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Assunto</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Status</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Mensagem</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {logs.map(log => (
+                                    <tr key={log.id} className="hover:bg-slate-50">
+                                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                                            {new Date(log.sent_at).toLocaleString('pt-BR')}
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-slate-700">{log.recipient}</td>
+                                        <td className="px-4 py-3 text-slate-700">{log.subject || '—'}</td>
+                                        <td className="px-4 py-3">{statusBadge(log.status)}</td>
+                                        <td className="px-4 py-3 text-slate-500 max-w-xs truncate" title={log.message}>{log.message}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+                        <span>{total} registro(s) no total</span>
+                        <div className="flex gap-2">
+                            <button disabled={offset === 0} onClick={() => load(Math.max(0, offset - LIMIT))}
+                                className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-slate-50">← Anterior</button>
+                            <button disabled={offset + LIMIT >= total} onClick={() => load(offset + LIMIT)}
+                                className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-slate-50">Próximo →</button>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }

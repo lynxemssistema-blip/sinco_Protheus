@@ -213,21 +213,30 @@ router.post('/solicitacoes', async (req, res) => {
         // Log Assíncrono fora da transação principal para não bloquear
         registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }).catch(console.error);
 
-        // Disparo de e-mail assíncrono para os usuários configurados
+        // Disparo de e-mail e WhatsApp assíncrono para os usuários configurados
         (async () => {
             try {
                 const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
                 if (configRows.length > 0 && configRows[0].general_config) {
                     const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
                     const emailsConfig = configObj.faturamento_emails;
-                    
+
                     if (emailsConfig && Array.isArray(emailsConfig) && emailsConfig.length > 0) {
-                        // Obter e-mails dos usuários
                         const [userRows] = await mysqlPool.query(
-                            `SELECT email FROM usuario WHERE idUsuario IN (?) AND email IS NOT NULL AND email != ''`, 
+                            `SELECT email, whatsapp FROM usuario WHERE idUsuario IN (?) AND (email IS NOT NULL OR whatsapp IS NOT NULL)`,
                             [emailsConfig]
                         );
                         const recipientList = userRows.map(u => u.email).filter(Boolean);
+
+                        // WhatsApp
+                        const waNumbers = userRows.map(u => u.whatsapp).filter(Boolean);
+                        if (waNumbers.length > 0) {
+                            const { sendText: waSend, msgNovaFaturamento } = require('../services/whatsapp');
+                            const waText = msgNovaFaturamento({ numero_solicitacao, usuario: usuario || 'Sistema', qtd_itens: items.length });
+                            waSend(waNumbers, waText, `Nova Solicitação Faturamento: ${numero_solicitacao}`).catch(e =>
+                                console.error('❌ Erro WhatsApp faturamento:', e.message)
+                            );
+                        }
                         
                         if (recipientList.length > 0) {
                             const nodemailer = require('nodemailer');

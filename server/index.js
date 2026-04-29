@@ -9,6 +9,13 @@ const { authenticateToken } = require('./routes/auth');
 const http = require('http');
 const { Server } = require('socket.io');
 
+const cron = require('node-cron');
+const nodemailer = require('nodemailer');
+const { getCorporateEmailTemplate } = require('./utils/emailTemplate');
+const mysqlService = require('./services/mysqlService');
+const { calcularKPIMeuCanal } = require('./routes/meucanal');
+const { sendText: waSend, msgMeuCanal } = require('./services/whatsapp');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -223,6 +230,12 @@ app.use('/api/settings', require('./routes/system_settings'));
 // PPAPs
 app.use('/api/ppaps', require('./routes/ppaps'));
 
+// Meu Canal & KPIs
+app.use('/api/meucanal', require('./routes/meucanal'));
+
+// WhatsApp Logs
+app.use('/api/whatsapp', require('./routes/whatsapp'));
+
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
 app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
@@ -258,6 +271,111 @@ app.get(/(.*)/, (req, res) => {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+});
+
+
+// ==========================================
+// CRON JOBS AUTOMATIZADOS - MEU CANAL
+// ==========================================
+cron.schedule('0 6,15 * * *', async () => {
+    console.log('[CRON] Iniciando rotina de disparo de e-mails/WhatsApp Meu Canal...');
+    try {
+        const [respRows] = await mysqlService.query(`
+            SELECT DISTINCT u.idUsuario as id, u.Login, u.NomeCompleto, u.email, u.whatsapp
+            FROM pcp_setor_responsaveis sr
+            JOIN usuario u ON u.idUsuario = sr.usuario_id
+        `);
+
+        for (const user of respRows) {
+            if (!user.email && !user.whatsapp) continue;
+
+            try {
+                const kpiData = await calcularKPIMeuCanal(user.id, user.Login, user.NomeCompleto);
+                
+                let bodyHtml = `
+                    <div style="padding: 10px;">
+                        <h2 style="color: #0d9488; margin-bottom: 5px;">Relatório de Performance - Meu Canal</h2>
+                        <p style="color: #475569; font-size: 15px;">Olá, <b>${user.NomeCompleto || user.Login}</b>. Segue o resumo de performance de apontamentos do(s) seu(s) setor(es) para hoje.</p>
+                `;
+
+                for (const setor of kpiData.setores) {
+                    bodyHtml += `
+                        <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin: 15px 0;">
+                            <h3 style="margin: 0 0 10px 0; color: #1e293b;">Setor: ${setor.nome}</h3>
+                            <p><b>Planejado (Hoje):</b> ${setor.planejado} peças</p>
+                            <p><b>Apontado (Hoje):</b> ${setor.apontado} peças</p>
+                            <p><b>Atingimento:</b> <span style="color: ${setor.cor}; font-weight: bold;">${setor.score}% (${setor.nivel})</span></p>
+                    `;
+
+                    if (setor.pendencias && setor.pendencias.length > 0) {
+                        bodyHtml += `
+                            <h4 style="margin: 15px 0 5px 0; color: #ef4444;">Itens Pendentes / Não Executados Completamente:</h4>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <thead>
+                                    <tr style="background-color: #f1f5f9; text-align: left;">
+                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">OP</th>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Produto</th>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Operação</th>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Falta Apontar</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                        `;
+                        for (const pend of setor.pendencias) {
+                            const falta = pend.esperado - pend.realizado;
+                            bodyHtml += `
+                                <tr>
+                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.op}</td>
+                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.produto}</td>
+                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.operacao}</td>
+                                    <td style="padding: 6px; border: 1px solid #cbd5e1; color: #ef4444; font-weight: bold;">${falta}</td>
+                                </tr>
+                            `;
+                        }
+                        bodyHtml += `</tbody></table>`;
+                    } else if (setor.planejado > 0) {
+                        bodyHtml += `<p style="color: #22c55e; margin-top: 10px; font-weight: bold;">✅ Nenhuma pendência! Todas as OPs planejadas para hoje já foram apontadas.</p>`;
+                    }
+                    bodyHtml += `</div>`;
+                }
+
+                bodyHtml += `</div>`;
+
+                const transporter = nodemailer.createTransport({
+                    host: 'smtp.task.com.br',
+                    port: 587,
+                    secure: false,
+                    auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+                    tls: { rejectUnauthorized: false }
+                });
+
+                if (user.email) {
+                    await transporter.sendMail({
+                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                        to: user.email,
+                        subject: 'Meu Canal - Performance Diária do Setor',
+                        html: getCorporateEmailTemplate(bodyHtml)
+                    });
+                }
+
+                if (user.whatsapp) {
+                    const waText = msgMeuCanal({
+                        nome: user.NomeCompleto || user.Login,
+                        setores: kpiData.setores
+                    });
+                    await waSend(user.whatsapp, waText, 'Meu Canal - Performance Diária').catch(e =>
+                        console.error('[CRON Meu Canal] Erro WhatsApp para', user.Login, e.message)
+                    );
+                }
+
+            } catch (err) {
+                console.error('[CRON Meu Canal] Erro ao enviar para', user.Login, err);
+            }
+        }
+        console.log('[CRON] Rotina de Meu Canal finalizada com sucesso.');
+    } catch (err) {
+        console.error('[CRON] Erro geral na rotina:', err);
+    }
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -310,7 +428,7 @@ function printRoutes(app) {
                         .replace(/\\\//g, '/');
 
                     // Cleanup common regex artifacts
-                    prefix = prefix.replace(/\?\$?$/, '');
+                    prefix = prefix.replace(new RegExp('/?$'), '');
 
                     table.push({
                         method: Object.keys(route.methods).join(', ').toUpperCase(),

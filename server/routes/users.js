@@ -20,7 +20,8 @@ const SMTP_CONFIG = {
         const conn = await mysqlPool.getConnection();
         await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL");
         await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS aprovado TINYINT DEFAULT 1");
-        console.log('✅ [Users Service] Colunas de E-mail/Aprovação vidadadas na tabela usuario.');
+        await conn.execute("ALTER TABLE usuario ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL");
+        console.log('✅ [Users Service] Colunas de E-mail/Aprovação/WhatsApp verificadas na tabela usuario.');
         conn.release();
     } catch (err) { }
 })();
@@ -29,7 +30,7 @@ const SMTP_CONFIG = {
 router.get('/', async (req, res) => {
     try {
         const { setor } = req.query;
-        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone FROM usuario';
+        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp FROM usuario';
         const params = [];
         const conditions = [];
 
@@ -60,7 +61,7 @@ router.get('/', async (req, res) => {
 // CREATE USER (POST /)
 router.post('/', async (req, res) => {
     try {
-        const { nome, login, senha, tipo, telefone, email } = req.body;
+        const { nome, login, senha, tipo, telefone, email, whatsapp } = req.body;
 
         if (!nome || !login || !senha || !tipo) {
             return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
@@ -71,7 +72,7 @@ router.post('/', async (req, res) => {
         if (existingLogin.length > 0) {
             return res.status(409).json({ error: 'Login já cadastrado' });
         }
-        
+
         if (email) {
              const [existingEmail] = await mysqlPool.query('SELECT idUsuario FROM usuario WHERE email = ?', [email]);
              if (existingEmail.length > 0) {
@@ -80,8 +81,8 @@ router.post('/', async (req, res) => {
         }
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null]
+            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null]
         );
 
         res.json({ message: 'Usuário cadastrado com sucesso!', id: result.insertId });
@@ -96,7 +97,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { nome, login, senha, tipo, telefone, email } = req.body;
+        const { nome, login, senha, tipo, telefone, email, whatsapp } = req.body;
 
         if (!nome || !login || !tipo) {
             return res.status(400).json({ error: 'Nome, Login e Tipo são obrigatórios' });
@@ -126,14 +127,14 @@ router.put('/:id', async (req, res) => {
         if (senha && senha.trim() !== '') {
             // Update WITH password
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
-                [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ? WHERE idUsuario = ?',
+                [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, id]
             );
         } else {
             // Update WITHOUT password
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ? WHERE idUsuario = ?',
-                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ? WHERE idUsuario = ?',
+                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, id]
             );
         }
 
