@@ -45,6 +45,18 @@ async function logSend({ recipient, subject, message, status, error_info }) {
     } catch (e) { /* silencioso */ }
 }
 
+async function logEmailSent({ recipients, subject, body }) {
+    if (!mysqlPool) return;
+    const recipientStr = Array.isArray(recipients) ? recipients.join(', ') : String(recipients || '');
+    try {
+        await mysqlPool.query(
+            `INSERT INTO app_emails (folder, sender_email, recipient_email, subject, body_html, date)
+             VALUES ('SENT', 'sincometal@metalfisa.com.br', ?, ?, ?, NOW())`,
+            [recipientStr, subject || null, body || null]
+        );
+    } catch (e) { /* silencioso */ }
+}
+
 /**
  * Envia mensagem de texto via Evolution API e registra no log.
  * @param {string|string[]} numbers  Números brutos (serão normalizados)
@@ -121,4 +133,4 @@ function msgMeuCanal({ nome, setores }) {
     );
 }
 
-module.exports = { sendText, normalizePhone, msgNovaFaturamento, msgFaturamentoPendente, msgMeuCanal };
+module.exports = { sendText, normalizePhone, logEmailSent, msgNovaFaturamento, msgFaturamentoPendente, msgMeuCanal };

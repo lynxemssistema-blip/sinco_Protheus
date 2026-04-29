@@ -294,13 +294,15 @@ router.post('/solicitacoes', async (req, res) => {
                                 <p style="font-size: 12px; color: #64748b;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
                             `;
 
+                            const subject = `Nova Solicitacao de Faturamento: ${numero_solicitacao}`;
                             await transporter.sendMail({
                                 from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
                                 to: recipientList.join(','),
-                                subject: `Nova Solicitacao de Faturamento: ${numero_solicitacao}`,
+                                subject,
                                 html: getCorpEmailType(htmlBody)
                             });
-
+                            const { logEmailSent } = require('../services/whatsapp');
+                            logEmailSent({ recipients: recipientList, subject, body: htmlBody }).catch(() => {});
                             console.log(`✅ E-mail de faturamento gerado para: ${recipientList.join(',')}`);
                         }
                     }

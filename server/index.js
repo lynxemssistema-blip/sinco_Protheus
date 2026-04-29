@@ -14,7 +14,7 @@ const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('./utils/emailTemplate');
 const mysqlService = require('./services/mysqlService');
 const { calcularKPIMeuCanal } = require('./routes/meucanal');
-const { sendText: waSend, msgMeuCanal } = require('./services/whatsapp');
+const { sendText: waSend, logEmailSent, msgMeuCanal } = require('./services/whatsapp');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -350,12 +350,14 @@ cron.schedule('0 6,15 * * *', async () => {
                 });
 
                 if (user.email) {
+                    const emailSubject = 'Meu Canal - Performance Diária do Setor';
                     await transporter.sendMail({
                         from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
                         to: user.email,
-                        subject: 'Meu Canal - Performance Diária do Setor',
+                        subject: emailSubject,
                         html: getCorporateEmailTemplate(bodyHtml)
                     });
+                    logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
                 }
 
                 if (user.whatsapp) {

@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const mysqlPool = require('../mysqlService');
-const { sendText: waSend, msgFaturamentoPendente } = require('../whatsapp');
+const { sendText: waSend, logEmailSent, msgFaturamentoPendente } = require('../whatsapp');
 
 let getCorpEmailType = (html) => html;
 try {
@@ -119,13 +119,14 @@ const runJob = async (isTest = false, testEmail = null) => {
             <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO (Agendador Noturno). Por favor, trate as solicitações no "Controle de Faturamento".</p>
         `;
 
+        const subject = `🚨 [Visão Gerencial] Temos ${sols.length} Solicitações de Faturamento Pendentes`;
         await transporter.sendMail({
             from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
             to: recipientList.join(','),
-            subject: `🚨 [Visão Gerencial] Temos ${sols.length} Solicitações de Faturamento Pendentes`,
+            subject,
             html: getCorpEmailType(htmlBody)
         });
-
+        logEmailSent({ recipients: recipientList, subject, body: htmlBody }).catch(() => {});
         console.log(`✅ [Agendador] E-mail gerencial disparado com sucesso para: ${recipientList.join(',')}`);
 
     } catch (e) {

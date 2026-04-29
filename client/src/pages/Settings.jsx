@@ -23,7 +23,7 @@ export default function Settings() {
         { id: 'reports', label: 'Relatórios', icon: FileText },
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
         { id: 'email', label: 'E-mail Corporativo', icon: Mail },
-        { id: 'whatsapp_logs', label: 'Histórico WhatsApp', icon: MessageSquare },
+        { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
     ];
 
     const formatPhone = (val) => {
@@ -1009,8 +1009,8 @@ export default function Settings() {
                     </div>
                 )}
 
-                {/* WHATSAPP LOGS TAB */}
-                {activeTab === 'whatsapp_logs' && <WhatsAppLogsTab />}
+                {/* NOTIFICATIONS HISTORY TAB */}
+                {activeTab === 'notifications' && <NotificationsHistoryTab />}
 
                 {/* PENDING / APROVAÇÕES TAB */}
                 {activeTab === 'pending' && (
@@ -1873,18 +1873,19 @@ export default function Settings() {
     );
 }
 
-// ──── Histórico de mensagens WhatsApp ────────────────────────────────────────
-function WhatsAppLogsTab() {
+// ──── Histórico unificado de notificações (Email + WhatsApp) ─────────────────
+function NotificationsHistoryTab() {
     const [logs, setLogs]       = useState([]);
     const [total, setTotal]     = useState(0);
     const [loading, setLoading] = useState(true);
     const [offset, setOffset]   = useState(0);
-    const LIMIT = 50;
+    const [channel, setChannel] = useState('all');
+    const LIMIT = 100;
 
-    const load = useCallback(async (off = 0) => {
+    const load = useCallback(async (off = 0, ch = channel) => {
         setLoading(true);
         try {
-            const { data } = await api.get(`/whatsapp/logs?limit=${LIMIT}&offset=${off}`);
+            const { data } = await api.get(`/whatsapp/logs?limit=${LIMIT}&offset=${off}&channel=${ch}`);
             setLogs(data.rows || []);
             setTotal(data.total || 0);
             setOffset(off);
@@ -1893,27 +1894,48 @@ function WhatsAppLogsTab() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [channel]);
 
-    useEffect(() => { load(0); }, [load]);
+    useEffect(() => { load(0, channel); }, [channel]);
+
+    const channelBadge = (ch) => ch === 'whatsapp'
+        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">📱 WhatsApp</span>
+        : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">✉️ E-mail</span>;
 
     const statusBadge = (s) => s === 'ok'
-        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">Enviado</span>
+        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">Enviado</span>
         : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Falhou</span>;
+
+    const CHANNELS = [
+        { value: 'all',      label: 'Todos' },
+        { value: 'email',    label: 'E-mail' },
+        { value: 'whatsapp', label: 'WhatsApp' },
+    ];
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+            <div className="p-5 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                    <MessageSquare className="w-6 h-6 text-emerald-500" />
+                    <MessageSquare className="w-6 h-6 text-indigo-500" />
                     <div>
-                        <h2 className="text-lg font-bold text-slate-800">Histórico de Mensagens WhatsApp</h2>
-                        <p className="text-sm text-slate-500">Registro de todos os alertas enviados via Evolution API</p>
+                        <h2 className="text-lg font-bold text-slate-800">Histórico de Notificações</h2>
+                        <p className="text-sm text-slate-500">E-mails automáticos e mensagens WhatsApp enviados pelo sistema</p>
                     </div>
                 </div>
-                <button onClick={() => load(0)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
-                    <Loader2 className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-                </button>
+                <div className="flex items-center gap-2">
+                    <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                        {CHANNELS.map(c => (
+                            <button
+                                key={c.value}
+                                onClick={() => setChannel(c.value)}
+                                className={`px-3 py-1.5 transition-colors ${channel === c.value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                            >{c.label}</button>
+                        ))}
+                    </div>
+                    <button onClick={() => load(0, channel)} className="p-1.5 rounded border border-slate-200 text-slate-500 hover:bg-slate-50">
+                        <Loader2 className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
+                </div>
             </div>
 
             {loading && logs.length === 0 ? (
@@ -1921,31 +1943,33 @@ function WhatsAppLogsTab() {
             ) : logs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16">
                     <MessageSquare className="w-12 h-12 text-slate-300 mb-3" />
-                    <p className="text-slate-400">Nenhuma mensagem enviada ainda.</p>
+                    <p className="text-slate-400">Nenhuma notificação enviada ainda.</p>
                 </div>
             ) : (
                 <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-left">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-left">
                                 <tr>
-                                    <th className="px-4 py-3 font-medium text-slate-600">Data/Hora</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600 whitespace-nowrap">Data/Hora</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Canal</th>
                                     <th className="px-4 py-3 font-medium text-slate-600">Destinatário</th>
                                     <th className="px-4 py-3 font-medium text-slate-600">Assunto</th>
                                     <th className="px-4 py-3 font-medium text-slate-600">Status</th>
-                                    <th className="px-4 py-3 font-medium text-slate-600">Mensagem</th>
+                                    <th className="px-4 py-3 font-medium text-slate-600">Prévia</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {logs.map(log => (
-                                    <tr key={log.id} className="hover:bg-slate-50">
-                                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                                {logs.map((log, i) => (
+                                    <tr key={`${log.channel}-${log.id}-${i}`} className="hover:bg-slate-50">
+                                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
                                             {new Date(log.sent_at).toLocaleString('pt-BR')}
                                         </td>
-                                        <td className="px-4 py-3 font-mono text-slate-700">{log.recipient}</td>
-                                        <td className="px-4 py-3 text-slate-700">{log.subject || '—'}</td>
+                                        <td className="px-4 py-3">{channelBadge(log.channel)}</td>
+                                        <td className="px-4 py-3 text-slate-700 max-w-[180px] truncate" title={log.recipient}>{log.recipient || '—'}</td>
+                                        <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={log.subject}>{log.subject || '—'}</td>
                                         <td className="px-4 py-3">{statusBadge(log.status)}</td>
-                                        <td className="px-4 py-3 text-slate-500 max-w-xs truncate" title={log.message}>{log.message}</td>
+                                        <td className="px-4 py-3 text-slate-400 text-xs max-w-[240px] truncate" title={log.body_preview}>{log.body_preview || '—'}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1954,9 +1978,9 @@ function WhatsAppLogsTab() {
                     <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
                         <span>{total} registro(s) no total</span>
                         <div className="flex gap-2">
-                            <button disabled={offset === 0} onClick={() => load(Math.max(0, offset - LIMIT))}
+                            <button disabled={offset === 0} onClick={() => load(Math.max(0, offset - LIMIT), channel)}
                                 className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-slate-50">← Anterior</button>
-                            <button disabled={offset + LIMIT >= total} onClick={() => load(offset + LIMIT)}
+                            <button disabled={offset + LIMIT >= total} onClick={() => load(offset + LIMIT, channel)}
                                 className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-slate-50">Próximo →</button>
                         </div>
                     </div>
