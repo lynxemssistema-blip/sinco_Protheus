@@ -1072,9 +1072,9 @@ router.get('/', async (req, res) => {
             
             if (setor) {
                 try {
-                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_id FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
+                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
                     if (sectorRecs.length > 0) {
-                        opArray.push(...sectorRecs.map(r => r.recurso_id.toUpperCase()));
+                        opArray.push(...sectorRecs.map(r => r.recurso_codigo.toUpperCase()));
                     } else if (opArray.length === 0) {
                         // Sector has no resources and no explicit operations passed. Add a dummy to match nothing.
                         opArray.push('___NO_MATCH___');
