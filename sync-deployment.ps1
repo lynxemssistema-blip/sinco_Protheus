@@ -13,16 +13,17 @@ $clientDest = Join-Path $root "linux-deployment\client\dist"
 
 # 1. Sync Backend root files (index.js, db.js, package.json, package-lock.json)
 Write-Host "Updating Backend root files..." -ForegroundColor Yellow
-robocopy "$serverSrc" "$serverDest" index.js db.js package.json package-lock.json /NJH /NJS /NDL /NFL /NC /NS
+# /IS = Include Same (força cópia mesmo que pareça igual), /IT = Include Tweaked
+robocopy "$serverSrc" "$serverDest" index.js db.js package.json package-lock.json /IS /IT /NJH /NJS /NDL /NFL /NC /NS
 
-# 2. Mirror code subdirectories — /MIR garante que arquivos novos e deletados ficam em sincronia
+# 2. Mirror code subdirectories — /MIR + /IS + /IT garante sincronia completa de conteúdo
 Write-Host "Mirroring Backend subdirectories..." -ForegroundColor Yellow
 $codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public")
 foreach ($dir in $codeDirs) {
     $srcDir = Join-Path $serverSrc $dir
     $destDir = Join-Path $serverDest $dir
     if (Test-Path $srcDir) {
-        robocopy "$srcDir" "$destDir" /MIR /XF *.log *.txt *.xlsx /NJH /NJS /NDL /NFL /NC /NS
+        robocopy "$srcDir" "$destDir" /MIR /IS /IT /XF *.log *.txt *.xlsx /NJH /NJS /NDL /NFL /NC /NS
     }
 }
 

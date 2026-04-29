@@ -6,7 +6,11 @@ const mysql = require('../services/mysqlService');
 // Rota para curva S do pedido
 router.get('/', async (req, res) => {
     try {
-        const { pedido, op, produto, cliente, operacao, setor } = req.query;
+        const { pedido, op, produto, cliente, operacao, setor, planned_date_start, planned_date_end } = req.query;
+
+        // Converter datas do filtro do usuário (YYYY-MM-DD) para YYYYMMDD
+        const userStartDate = planned_date_start ? planned_date_start.replace(/-/g, '') : null;
+        const userEndDate = planned_date_end ? planned_date_end.replace(/-/g, '') : null;
 
         // Base filters
         let conditions = [`COALESCE(pl.d_e_l_e_t_, ' ') = ' '`];
@@ -140,12 +144,54 @@ router.get('/', async (req, res) => {
         let mapPlanejado = {}; // Data (YYYYMMDD) -> Qtd
         let mapExecutado = {}; // Data (YYYYMMDD) -> Qtd
 
-        // Alocar meta planejada (acumula no fim do prazo)
-        // Obs: agrupa-se a meta de produção usando a data final prevista (c2_datprf) da OP
+        // Helpers para manipulação de datas YYYYMMDD
+        const parseYMD = (s) => new Date(s.slice(0,4) + '-' + s.slice(4,6) + '-' + s.slice(6,8) + 'T12:00:00');
+        const toYMD = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}${m}${dd}`;
+        };
+
+        // Fallback: usar datas do filtro do usuário → menor data global → '20000101'
+        const allStartDates = ops
+            .map(op => (op.data_ini && op.data_ini.trim()) || (op.data_fim && op.data_fim.trim()))
+            .filter(d => d && d !== '20000101');
+        const globalMinDate = allStartDates.length > 0 ? allStartDates.sort()[0] : null;
+        const allEndDates = ops
+            .map(op => (op.data_fim && op.data_fim.trim()) || (op.data_ini && op.data_ini.trim()))
+            .filter(d => d && d !== '20000101');
+        const globalMaxDate = allEndDates.length > 0 ? allEndDates.sort().reverse()[0] : null;
+
+        // Prioridade do fallback: filtro do usuário → data global → '20000101'
+        const fallbackStart = userStartDate || globalMinDate || '20000101';
+        const fallbackEnd = userEndDate || globalMaxDate || fallbackStart;
+
+        // Distribuir quantidade planejada proporcionalmente ao longo dos dias corridos (data_ini → data_fim)
         ops.forEach(op => {
-            const dtFim = op.data_fim || op.data_ini || '20000101';
+            let startDt = op.data_ini && op.data_ini.trim() ? op.data_ini.trim() : null;
+            let endDt = op.data_fim && op.data_fim.trim() ? op.data_fim.trim() : null;
+
+            // Fallback: datas do filtro do usuário quando datas ausentes
+            if (!startDt) startDt = fallbackStart;
+            if (!endDt) endDt = fallbackEnd;
+
+            // Garantir ordem cronológica
+            if (startDt > endDt) { const tmp = startDt; startDt = endDt; endDt = tmp; }
+
             const qtde = Number(op.qtd_planejada);
-            mapPlanejado[dtFim] = (mapPlanejado[dtFim] || 0) + qtde;
+            const startDate = parseYMD(startDt);
+            const endDate = parseYMD(endDt);
+            const totalDays = Math.max(1, Math.round((endDate - startDate) / 86400000) + 1);
+            const qtyPerDay = qtde / totalDays;
+
+            // Espalhar a quantidade uniformemente em cada dia corrido
+            for (let i = 0; i < totalDays; i++) {
+                const d = new Date(startDate);
+                d.setDate(d.getDate() + i);
+                const key = toYMD(d);
+                mapPlanejado[key] = (mapPlanejado[key] || 0) + qtyPerDay;
+            }
         });
 
         // Alocar executado por data real
