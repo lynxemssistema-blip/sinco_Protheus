@@ -1007,7 +1007,7 @@ router.get('/', async (req, res) => {
                 ON c6.c6_filial = c2.c2_filial 
                 AND c6.c6_num = c2.c2_pedido
                 AND c6.c6_item = c2.c2_itempv
-                AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sc5010 c5 ON c5.c5_filial = c2.c2_filial AND c5.c5_num = (CASE WHEN btrim(c2.c2_pedido) <> '' THEN btrim(c2.c2_pedido) ELSE btrim(root_op.c2_pedido) END) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
 
@@ -1291,6 +1291,7 @@ router.get('/', async (req, res) => {
         });
     } catch (err) {
         console.error(err);
+        require('fs').appendFileSync('production_error.log', new Date().toISOString() + '\\n' + err.stack + '\\n');
         res.status(500).json({ error: err.message });
     }
 });
@@ -1689,7 +1690,7 @@ router.get('/operations/:id', async (req, res) => {
                 ON c6.c6_filial = c2.c2_filial 
                 AND c6.c6_num = c2.c2_pedido
                 AND c6.c6_item = c2.c2_itempv
-                AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sc5010 c5 ON c5.c5_filial = c2.c2_filial AND c5.c5_num = (CASE WHEN btrim(c2.c2_pedido) <> '' THEN btrim(c2.c2_pedido) ELSE btrim(root_op.c2_pedido) END) AND COALESCE(c5.d_e_l_e_t_, '') IN('', ' ')
             LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN('', ' ')
 

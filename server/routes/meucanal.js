@@ -132,12 +132,12 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
             WHERE sr.usuario_id = ?
         `, [userId]);
 
-        // Buscar apontamentos do dia UMA ÚNICA VEZ (MySQL) para todos os setores
+        // Buscar apontamentos do dia UMA ÚNICA VEZ (MySQL) para todos os setores, agrupando por usuario
         const [apontRowsGlobal] = await mysql.query(`
-            SELECT op_numero, op_item, op_sequencia, operacao_codigo, SUM(quantidade) as total_apontado
+            SELECT op_numero, op_item, op_sequencia, operacao_codigo, usuario, SUM(quantidade) as total_apontado, COUNT(*) as qtd_acoes
             FROM app_production_appointments
             WHERE DATE(data_fim) = ?
-            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo, usuario
         `, [todaySql]);
 
         // ── Fase 1: buscar recursos de cada setor sequencialmente (evita pool exhaustion) ──
@@ -192,7 +192,8 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
                     score: 0,
                     nivel: 'Crítico',
                     cor: '#ef4444',
-                    pendencias: []
+                    pendencias: [],
+                    usuarios: []
                 };
             }
 
@@ -205,16 +206,49 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
                 (acc, curr) => acc + Number(curr.qtd_planejada), 0
             );
 
-            const planejadosSet = new Set(
-                opsPlanejadas.map(p => `${p.op_numero}|${p.operacao_codigo}`)
-            );
+            const planejadosMap = new Map();
+            opsPlanejadas.forEach(p => {
+                planejadosMap.set(`${p.op_numero}|${p.operacao_codigo}`, Number(p.qtd_planejada));
+            });
+
             let totalApontadoSetor = 0;
+            const usuariosMap = new Map();
+
             for (const ap of apontRowsGlobal) {
                 const chave = `${(ap.op_numero||'').trim()}|${(ap.operacao_codigo||'').trim()}`;
-                if (planejadosSet.has(chave)) {
+                if (planejadosMap.has(chave)) {
                     totalApontadoSetor += Number(ap.total_apontado);
+                    
+                    const userName = ap.usuario || 'Desconhecido';
+                    if (!usuariosMap.has(userName)) {
+                        usuariosMap.set(userName, { 
+                            nome: userName, 
+                            acoes: 0, 
+                            produzido: 0, 
+                            previsto: 0,
+                            ops_tocadas: new Set()
+                        });
+                    }
+                    const uStats = usuariosMap.get(userName);
+                    uStats.acoes += Number(ap.qtd_acoes);
+                    uStats.produzido += Number(ap.total_apontado);
+                    uStats.ops_tocadas.add(chave);
                 }
             }
+
+            // Calculate total planned for the operations each user touched
+            const usuariosList = Array.from(usuariosMap.values()).map(u => {
+                let previstoTotal = 0;
+                u.ops_tocadas.forEach(chave => {
+                    previstoTotal += planejadosMap.get(chave) || 0;
+                });
+                return {
+                    nome: u.nome,
+                    acoes: u.acoes,
+                    produzido: u.produzido,
+                    previsto: previstoTotal
+                };
+            }).sort((a, b) => b.produzido - a.produzido);
 
             let perc = totalPlanejadoSetor > 0 ? (totalApontadoSetor / totalPlanejadoSetor) * 100 : 0;
             if (totalPlanejadoSetor === 0 && totalApontadoSetor > 0) perc = 100;
@@ -226,18 +260,18 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
             else if (perc > 75) { nivel = 'Excelente'; cor = '#22c55e'; }
 
             const pendencias = opsPlanejadas.reduce((acc, plan) => {
-                const match = apontRowsGlobal.find(a =>
-                    (a.op_numero||'').trim() === plan.op_numero &&
-                    (a.operacao_codigo||'').trim() === plan.operacao_codigo
-                );
-                const realizado = match ? Number(match.total_apontado) : 0;
-                if (realizado < Number(plan.qtd_planejada)) {
+                // Sum all user appointments for this planned operation
+                const totalRealizadoPlan = apontRowsGlobal
+                    .filter(a => (a.op_numero||'').trim() === plan.op_numero && (a.operacao_codigo||'').trim() === plan.operacao_codigo)
+                    .reduce((sum, a) => sum + Number(a.total_apontado), 0);
+
+                if (totalRealizadoPlan < Number(plan.qtd_planejada)) {
                     acc.push({
                         op: plan.op_numero,
                         produto: plan.produto,
                         operacao: plan.operacao_nome,
                         esperado: Number(plan.qtd_planejada),
-                        realizado
+                        realizado: totalRealizadoPlan
                     });
                 }
                 return acc;
@@ -251,7 +285,8 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
                 score: Math.round(perc),
                 nivel,
                 cor,
-                pendencias
+                pendencias,
+                usuarios: usuariosList
             };
         });
 

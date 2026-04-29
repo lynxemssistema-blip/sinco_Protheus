@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
+const db = require('../db'); // Protheus PG connection
 
 const toNumber = (value) => {
     if (value === null || value === undefined || value === '') return 0;
@@ -1123,5 +1124,45 @@ router.get('/dashboard/por-usuario', async (req, res) => {
 });
 
 
-module.exports = router;
+// GET /api/sinco-apontamento/pedido/:pedido/bom
+// Retorna a estrutura (BOM) dos itens do pedido baseando-se nas OPs geradas
+router.get('/pedido/:pedido/bom', async (req, res) => {
+    try {
+        const { pedido } = req.params;
+        const paramPedido = String(pedido).trim();
 
+        if (!paramPedido) {
+            return res.status(400).json({ error: 'Pedido não informado.' });
+        }
+
+        const sql = `
+            SELECT 
+                C2.C2_NUM AS "OP",
+                C2.C2_PRODUTO AS "Produto_Final",
+                G1.G1_COMP AS "Cod_Componente",
+                B1_COMP.B1_DESC AS "Descricao_Componente",
+                G1.G1_QUANT AS "Qtd_Por_Unidade",
+                (G1.G1_QUANT * C2.C2_QUANT) AS "Total_Necessario",
+                B1_COMP.B1_UM AS "UM"
+            FROM 
+                public.SC2010 C2
+            INNER JOIN 
+                public.SG1010 G1 ON TRIM(G1.G1_COD) = TRIM(C2.C2_PRODUTO) AND TRIM(COALESCE(G1.D_E_L_E_T_, '')) = ''
+            INNER JOIN 
+                public.SB1010 B1_COMP ON TRIM(B1_COMP.B1_COD) = TRIM(G1.G1_COMP) AND TRIM(COALESCE(B1_COMP.D_E_L_E_T_, '')) = ''
+            WHERE 
+                TRIM(C2.C2_PEDIDO) = $1
+                AND TRIM(COALESCE(C2.D_E_L_E_T_, '')) = ''
+            ORDER BY 
+                C2.C2_NUM, G1.G1_COMP;
+        `;
+
+        const result = await db.query(sql, [paramPedido]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('[SINCO APONTAMENTO] Erro ao buscar BOM do pedido no Protheus:', error);
+        res.status(500).json({ error: error.message || 'Erro interno ao buscar BOM do pedido.' });
+    }
+});
+
+module.exports = router;

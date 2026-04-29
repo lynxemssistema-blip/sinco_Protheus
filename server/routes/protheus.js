@@ -190,7 +190,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
         // Busca proximo numero de OP valido para nao enviar 000000
         let baseOpNum = 0;
         try {
-            const resOp = await queryProtheus(`SELECT MAX(c2_num) as max_op FROM public.sc2010 WHERE c2_num ~ '^[0-9]+$' AND c2_num < '900000' AND COALESCE(d_e_l_e_t_, '') = ''`);
+            const resOp = await queryProtheus(`SELECT MAX(c2_num) as max_op FROM public.sc2010 WHERE c2_num ~ '^[0-9]+$' AND c2_num < '900000' AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''`);
             if (resOp.length > 0 && resOp[0].max_op) {
                 baseOpNum = parseInt(resOp[0].max_op, 10);
             }
@@ -207,20 +207,55 @@ router.post('/ordem-producao/incluir', async (req, res) => {
 
             // 1. Nova pesquisa no banco (ignora frontend memory para o Produto)
             let produto = "";
+            let qtd_venda = 0;
             try {
                 const sc6Rows = await queryProtheus(
-                    `SELECT c6_produto, c6_filial FROM public.sc6010 WHERE c6_num = $1 AND c6_item = $2 AND COALESCE(d_e_l_e_t_, '') = '' LIMIT 1`,
+                    `SELECT c6_produto, c6_filial, c6_qtdven FROM public.sc6010 WHERE c6_num = $1 AND c6_item = $2 AND TRIM(COALESCE(d_e_l_e_t_, '')) = '' LIMIT 1`,
                     [pedidoStr, itemPvStr]
                 );
                 if (sc6Rows.length > 0 && sc6Rows[0].c6_produto) {
                     produto = sc6Rows[0].c6_produto.trim();
                     if (sc6Rows[0].c6_filial) filial = sc6Rows[0].c6_filial.trim();
+                    qtd_venda = parseFloat(sc6Rows[0].c6_qtdven) || 0;
                 } else {
                     produto = (it.produto || "").trim(); // fallback
                 }
             } catch (err) {
                 console.error("Erro SC6:", err.message);
                 produto = (it.produto || "").trim();
+            }
+
+            // BUSCAR QTD JÁ GERADA DE OPs PARA ESTE ITEM NO PROTHEUS
+            let qtd_op_gerada = 0;
+            try {
+                const opRows = await queryProtheus(
+                    `SELECT SUM(c2_quant) as total_gerado FROM public.sc2010 WHERE c2_pedido = $1 AND c2_itempv = $2 AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''`,
+                    [pedidoStr, itemPvStr]
+                );
+                if (opRows.length > 0 && opRows[0].total_gerado) {
+                    qtd_op_gerada = parseFloat(opRows[0].total_gerado) || 0;
+                }
+            } catch (err) {
+                console.error("Erro SC2 sum:", err.message);
+            }
+
+            let quantFinal = Number(it.quant) || 0;
+            
+            // SE A QUANTIDADE DO PEDIDO FOR MAIOR QUE ZERO, LIMITAMOS A QUANTIDADE A SER GERADA
+            if (qtd_venda > 0) {
+                const saldoDisponivel = qtd_venda - qtd_op_gerada;
+                if (saldoDisponivel <= 0) {
+                    console.log(`[OP BUILDER] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: saldo disponivel zero (venda: ${qtd_venda}, op: ${qtd_op_gerada}).`);
+                    continue; // PULA ESTE ITEM, POIS JÁ TEM OP PARA TUDO!
+                }
+                if (quantFinal > saldoDisponivel || quantFinal === 0) {
+                    quantFinal = saldoDisponivel; // CORRIGE PARA NÃO EXTRAPOLAR A QUANTIDADE DO PEDIDO!
+                }
+            }
+
+            if (quantFinal <= 0) {
+                console.log(`[OP BUILDER] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: quantFinal inválida (${quantFinal}).`);
+                continue;
             }
 
             // Incrementa o numero da OP para cada item no array
@@ -232,7 +267,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             if (produto) {
                 try {
                     const rotRows = await queryProtheus(
-                        `SELECT g2_codigo FROM public.sg2010 WHERE btrim(g2_produto) = $1 AND COALESCE(d_e_l_e_t_, '') = '' ORDER BY g2_codigo DESC LIMIT 1`,
+                        `SELECT g2_codigo FROM public.sg2010 WHERE btrim(g2_produto) = $1 AND TRIM(COALESCE(d_e_l_e_t_, '')) = '' ORDER BY g2_codigo DESC LIMIT 1`,
                         [produto]
                     );
                     if (rotRows.length > 0 && rotRows[0].g2_codigo) {
@@ -253,7 +288,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 C2_NUM:    nextOpStr,
                 C2_ITEM:   itemPvStr,
                 C2_PRODUTO: produto.padEnd(15, ' '),
-                C2_QUANT:  Number(it.quant) || 0,
+                C2_QUANT:  quantFinal,
                 C2_DATPRI: it.datpri || "",
                 C2_DATPRF: it.datprf || "",
                 C2_OBS:    (it.obs || "").trim(),
@@ -261,6 +296,11 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 C2_PEDIDO: pedidoStr,
                 C2_ITEMPV: itemPvStr
             });
+        }
+
+        // Se não sobrou nenhum item válido para gerar OP
+        if (ordensProducao.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item com saldo disponível para gerar O.P. Todos os itens já possuem OP gerada ou saldo insuficiente.' });
         }
 
         // 3. Payload — estrutura exata da documentação

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardCheck, RefreshCw, Search, Factory, ListChecks, History, FileText, File, Truck } from 'lucide-react';
+import { ClipboardCheck, RefreshCw, Search, Factory, ListChecks, History, FileText, File, Truck, FileSearch, X } from 'lucide-react';
 import {
     getSincoOsItemsEnriched,
     getSincoItemProcessos,
@@ -7,7 +7,8 @@ import {
     apontarSincoProcesso,
     solicitarSincoMaterial,
     marcarChegadaSincoMaterial,
-    entregarSincoMaterial
+    entregarSincoMaterial,
+    getSincoPedidoBom
 } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -98,6 +99,12 @@ export default function ServiceOrderProductionAppointmentPage() {
     const [materialObs, setMaterialObs] = useState('');
     const [materialSaving, setMaterialSaving] = useState(false);
     const [materialError, setMaterialError] = useState('');
+
+    const [showBomModal, setShowBomModal] = useState(false);
+    const [bomPedido, setBomPedido] = useState('');
+    const [bomData, setBomData] = useState([]);
+    const [bomLoading, setBomLoading] = useState(false);
+    const [bomError, setBomError] = useState('');
 
     const selectedItem = useMemo(
         () => items.find(i => String(i.IdOrdemServicoItem) === String(selectedItemId)) || null,
@@ -343,13 +350,23 @@ export default function ServiceOrderProductionAppointmentPage() {
                                 />
                             </div>
                         </div>
-                        <button
-                            type="submit"
-                            disabled={!osId || itemsLoading}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Buscar itens
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                type="submit"
+                                disabled={!osId || itemsLoading}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Buscar itens
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowBomModal(true)}
+                                className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors shadow-sm flex items-center gap-2"
+                            >
+                                <FileSearch className="w-4 h-4" />
+                                BOM do Pedido
+                            </button>
+                        </div>
                     </form>
                 </div>
 
@@ -728,6 +745,91 @@ export default function ServiceOrderProductionAppointmentPage() {
                     </div>
                 </div>
             </div>
+
+            {showBomModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl">
+                            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <FileSearch className="w-5 h-5 text-blue-600" />
+                                Estrutura do Pedido (BOM)
+                            </h2>
+                            <button
+                                onClick={() => setShowBomModal(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-4 border-b bg-white flex items-center gap-3">
+                            <div className="flex-1 max-w-sm">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Número do Pedido</label>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                                    <input
+                                        value={bomPedido}
+                                        onChange={(e) => setBomPedido(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && fetchBom()}
+                                        placeholder="Ex: 003731"
+                                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                onClick={fetchBom}
+                                disabled={!bomPedido || bomLoading}
+                                className="mt-5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
+                            >
+                                {bomLoading ? 'Buscando...' : 'Buscar BOM'}
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto bg-slate-50 p-4">
+                            {bomError ? (
+                                <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                                    {bomError}
+                                </div>
+                            ) : null}
+
+                            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-slate-100">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">OP</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Produto Final</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Componente</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Descrição</th>
+                                            <th className="px-4 py-3 text-right text-xs font-medium text-slate-600 uppercase">UM</th>
+                                            <th className="px-4 py-3 text-right text-xs font-medium text-slate-600 uppercase">Qtd Unit</th>
+                                            <th className="px-4 py-3 text-right text-xs font-medium text-slate-600 uppercase">Total Nec.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {bomLoading ? (
+                                            <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Buscando estrutura no Protheus...</td></tr>
+                                        ) : bomData.length === 0 ? (
+                                            <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Nenhum componente encontrado ou pedido não informado.</td></tr>
+                                        ) : (
+                                            bomData.map((row, idx) => (
+                                                <tr key={idx} className="hover:bg-slate-50">
+                                                    <td className="px-4 py-2 text-sm font-mono text-slate-800">{row.OP}</td>
+                                                    <td className="px-4 py-2 text-sm font-mono text-slate-600">{row.Produto_Final}</td>
+                                                    <td className="px-4 py-2 text-sm font-mono font-bold text-blue-700">{row.Cod_Componente}</td>
+                                                    <td className="px-4 py-2 text-sm text-slate-700">{row.Descricao_Componente}</td>
+                                                    <td className="px-4 py-2 text-sm text-right text-slate-600">{row.UM}</td>
+                                                    <td className="px-4 py-2 text-sm text-right font-medium text-slate-700">{toNumber(row.Qtd_Por_Unidade)}</td>
+                                                    <td className="px-4 py-2 text-sm text-right font-bold text-emerald-700">{toNumber(row.Total_Necessario)}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

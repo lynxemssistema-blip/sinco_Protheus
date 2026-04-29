@@ -428,6 +428,7 @@ export const updateSincoComentarioEngenhariaStatus = (id, data) => api.put(`/sin
 // SINCO (OS) - Apontamento de Produção
 export const getSincoOsItems = (osId) => api.get(`/sinco/os/${encodeURIComponent(osId)}/items`).then(res => res.data);
 export const getSincoOsItemsEnriched = (osId) => api.get(`/sinco-apontamento/os/${encodeURIComponent(osId)}/items`).then(res => res.data);
+export const getSincoPedidoBom = (pedido) => api.get(`/sinco-apontamento/pedido/${encodeURIComponent(pedido)}/bom`).then(res => res.data);
 export const getSincoItemProcessos = (ordemServicoItemId) => api.get(`/sinco-apontamento/items/${encodeURIComponent(ordemServicoItemId)}/processos`).then(res => res.data);
 export const getSincoProcessoHistorico = (osItemProcessoId) => api.get(`/sinco-apontamento/processos/${encodeURIComponent(osItemProcessoId)}/historico`).then(res => res.data);
 export const apontarSincoProcesso = (osItemProcessoId, payload) => api.post(`/sinco-apontamento/processos/${encodeURIComponent(osItemProcessoId)}/apontar`, payload).then(res => res.data);

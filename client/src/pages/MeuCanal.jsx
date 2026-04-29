@@ -91,7 +91,7 @@ function SetorCard({ setor }) {
                         <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                             Planejado vs Realizado (hoje)
                         </p>
-                        <ResponsiveContainer width="100%" height={160}>
+                        <ResponsiveContainer width="100%" height={160} minWidth={1} minHeight={1}>
                             <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
@@ -152,6 +152,36 @@ function SetorCard({ setor }) {
                             </div>
                         )}
                     </div>
+
+                    {/* Desempenho da Equipe */}
+                    {setor.usuarios && setor.usuarios.length > 0 && (
+                        <div className="pt-4 border-t border-slate-100">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                                <Users className="w-4 h-4" />
+                                Interações da Equipe no Setor (Hoje)
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {setor.usuarios.map((u, idx) => (
+                                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-3 hover:bg-white transition-colors">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="font-bold text-slate-700 text-sm truncate pr-2" title={u.nome}>{u.nome}</span>
+                                            <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" title="Apontamentos Registrados">
+                                                {u.acoes} ações
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-slate-500">Previsto nas OPs:</span>
+                                            <span className="font-medium text-slate-600">{u.previsto} un</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-slate-500">Total Produzido:</span>
+                                            <span className="font-bold text-emerald-600">{u.produzido} un</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -298,9 +328,9 @@ export default function MeuCanal() {
                     {/* Totais */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                            <p className="text-slate-500 text-sm font-medium">Apontamentos Registrados</p>
+                            <p className="text-slate-500 text-sm font-medium">Ações no Sistema (Apontamentos)</p>
                             <h3 className="text-4xl font-black text-slate-800 mt-1">{totalApontamentos}</h3>
-                            <p className="text-xs text-slate-400 mt-2">{individual.apontado} peças processadas</p>
+                            <p className="text-xs text-slate-400 mt-2">{individual.apontado} peças produzidas hoje</p>
                         </div>
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                             <p className="text-slate-500 text-sm font-medium flex items-center gap-1">
