@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Landmark, Plus, Edit2, Trash2, Power, AlertCircle, Loader2,
     CheckCircle, X, Save, Tag, ChevronRight, Link as LinkIcon,
-    ArrowUp, ArrowDown
+    ArrowUp, ArrowDown, Users, Search
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -129,11 +129,157 @@ function SetorModal({ setor, onClose, onSave }) {
     );
 }
 
+// ─── Modal de Responsáveis ───────────────────────────────────────────────────
+function ResponsaveisModal({ setor, onClose, onUpdate }) {
+    const [vinculos, setVinculos] = useState([]);
+    const [usuarios, setUsuarios] = useState([]);
+    const [busca, setBusca] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const resU = await api.get('/users');
+            const validUsers = resU.data.filter(u => u.aprovado === 1 && u.email && u.telefone);
+            setUsuarios(validUsers);
+
+            const resR = await api.get(`/pcp-setores/${setor.id}/responsaveis`);
+            setVinculos(resR.data);
+        } catch (err) {
+            toast.error('Erro ao carregar dados dos responsáveis.');
+        } finally {
+            setLoading(false);
+        }
+    }, [setor.id]);
+
+    useEffect(() => { loadData(); }, [loadData]);
+
+    const handleAdd = async (userId) => {
+        setSaving(true);
+        try {
+            await api.post(`/pcp-setores/${setor.id}/responsaveis`, { usuario_id: userId });
+            toast.success('Responsável adicionado com sucesso!');
+            loadData();
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Erro ao adicionar responsável.');
+        } finally {
+            setSaving(false);
+            setBusca('');
+        }
+    };
+
+    const handleRemove = async (vinculoId) => {
+        try {
+            await api.delete(`/pcp-setores/responsaveis/${vinculoId}`);
+            toast.success('Responsável removido.');
+            loadData();
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            toast.error('Erro ao remover responsável.');
+        }
+    };
+
+    const vinculosIds = vinculos.map(v => v.usuario_id);
+    const availableUsers = usuarios.filter(u => !vinculosIds.includes(u.idUsuario) && u.NomeCompleto.toLowerCase().includes(busca.toLowerCase()));
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+                <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
+                    <div>
+                        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                            <Users className="w-5 h-5 text-blue-600" />
+                            Responsáveis: {setor.nome}
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Usuários vinculados a este setor.
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                    {/* Lista Atual */}
+                    <div>
+                        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Responsáveis Atuais</h3>
+                        {loading ? (
+                            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>
+                        ) : vinculos.length === 0 ? (
+                            <div className="text-center p-6 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                <p className="text-sm text-slate-500">Nenhum responsável vinculado a este setor.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {vinculos.map(v => (
+                                    <div key={v.vinculo_id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-800">{v.NomeCompleto}</p>
+                                            <p className="text-xs text-slate-500">{v.email} • {v.telefone}</p>
+                                        </div>
+                                        <button onClick={() => handleRemove(v.vinculo_id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remover responsável">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Adicionar Novo */}
+                    <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Adicionar Responsável</h3>
+                        <div className="relative mb-3">
+                            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                            <input
+                                value={busca}
+                                onChange={e => setBusca(e.target.value)}
+                                placeholder="Pesquisar por nome..."
+                                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                        {busca.trim() !== '' && (
+                            <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+                                {availableUsers.length === 0 ? (
+                                    <div className="p-3 text-center text-xs text-slate-500">Nenhum usuário apto encontrado.</div>
+                                ) : (
+                                    availableUsers.map(u => (
+                                        <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50">
+                                            <div className="min-w-0 pr-2">
+                                                <p className="text-sm font-semibold text-slate-800 truncate">{u.NomeCompleto}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{u.email} • {u.telefone}</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleAdd(u.idUsuario)}
+                                                disabled={saving}
+                                                className="shrink-0 text-xs font-bold text-blue-600 hover:text-white hover:bg-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors"
+                                            >
+                                                Adicionar
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                        <p className="text-[10px] text-slate-500 mt-2">
+                            Apenas usuários com <strong>Celular</strong> e <strong>E-mail</strong> cadastrados no sistema podem ser vinculados.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Página Principal ────────────────────────────────────────────────────────
 export default function SetoresCadastro() {
     const [setores, setSetores] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modal, setModal] = useState(null); // null | 'new' | setor (edição)
+    const [modalResponsaveis, setModalResponsaveis] = useState(null);
     const [deleting, setDeleting] = useState(null);
     const navigate = useNavigate();
 
@@ -260,6 +406,10 @@ export default function SetoresCadastro() {
                                             <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold">
                                                 {setor.qtd_recursos} recurso{setor.qtd_recursos !== 1 ? 's' : ''}
                                             </span>
+                                            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                                                <Users className="w-3 h-3" />
+                                                {setor.qtd_responsaveis} resp.
+                                            </span>
                                         </div>
                                         {setor.descricao && (
                                             <p className="text-xs text-slate-500 mt-0.5 truncate">{setor.descricao}</p>
@@ -294,6 +444,14 @@ export default function SetoresCadastro() {
                                             <LinkIcon className="w-3.5 h-3.5" />
                                             <span className="hidden sm:inline">Recursos</span>
                                             <ChevronRight className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            onClick={() => setModalResponsaveis(setor)}
+                                            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition-colors"
+                                            title="Gerenciar responsáveis"
+                                        >
+                                            <Users className="w-3.5 h-3.5" />
+                                            <span className="hidden sm:inline">Resp.</span>
                                         </button>
                                         <button
                                             onClick={() => setModal(setor)}
@@ -331,6 +489,15 @@ export default function SetoresCadastro() {
                     setor={modal === 'new' ? null : modal}
                     onClose={() => setModal(null)}
                     onSave={() => { setModal(null); load(); }}
+                />
+            )}
+            
+            {/* Modal de Responsáveis */}
+            {modalResponsaveis && (
+                <ResponsaveisModal
+                    setor={modalResponsaveis}
+                    onClose={() => setModalResponsaveis(null)}
+                    onUpdate={load}
                 />
             )}
         </div>

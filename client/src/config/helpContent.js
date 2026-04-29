@@ -516,6 +516,31 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Onde é Usado (Where-Used) ────────────────────────────────────────────────
+  '/pcp/onde-usado': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Onde é Usado (Where-Used)',
+    icon: 'Network',
+    description: 'Ferramenta de busca reversa para descobrir em quais produtos um determinado componente ou matéria-prima é utilizado. Essencial para análises de impacto de substituição, engenharia reversa e estudos de custo.',
+    steps: [
+      'Insira o código do produto ou componente no campo de busca e pressione Enter (ou clique em Buscar).',
+      'O sistema varrerá a árvore de estruturas (BOM) e apresentará o total de usos encontrados.',
+      'Os resultados são organizados em blocos por Nível, permitindo que você veja quão profundo na estrutura o seu componente está inserido (Nível 1, 2, etc).',
+      'Para cada produto pai listado nos resultados, você tem a opção de acessar diretamente a estrutura daquele produto clicando no botão azul.',
+      'Se o produto pai possuir um desenho técnico (PDF) cadastrado, o botão vermelho de PDF estará disponível para visualização imediata.',
+    ],
+    tips: [
+      'Esta tela é vital antes de descontinuar ou alterar um componente: você saberá exatamente quais produtos finais serão afetados pela mudança técnica.',
+      'Utilize os botões de atalho em cada card para acessar rapidamente os Desenhos ou a Visão de Estrutura (BOM) do produto pai.',
+    ],
+    links: [
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+      { path: '/estrutura/:codigo', label: 'Estrutura do Produto (BOM)' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
+    ],
+  },
+
   // ── Visão de Produção ────────────────────────────────────────────────────────
   '/visao-producao': {
     category: 'PCP',
@@ -1975,5 +2000,105 @@ export const HELP_CONTENT = {
       { path: '/producao', label: 'Ordens de Produção' },
     ],
   },
+
+  // ── BOM (Estrutura Alternativa) ────────────────────────────────────────────────
+  '/bom/:codigo': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Visualização BOM / Estrutura',
+    icon: 'Layers',
+    description: 'Interface alternativa para visualizar a lista técnica de materiais de um produto (BOM). Focada em exportação e análise da explosão de componentes.',
+    steps: [
+      'Navegue pela estrutura em árvore do produto.',
+      'Analise as quantidades necessárias para cada componente no nível filho.',
+      'Exporte os dados ou consulte o estoque disponível.'
+    ],
+    tips: [
+      'Utilize esta visão para conferências rápidas do cadastro técnico do ERP.'
+    ],
+    links: [
+      { path: '/estrutura/:codigo', label: 'Estrutura Completa' }
+    ]
+  },
+
+  // ── Curva S (PCP) ─────────────────────────────────────────────────────────────
+  '/pcp/curva-s': {
+    category: 'PCP / Analytics',
+    categoryColor: '#0ea5e9',
+    title: 'Curva S de Produção',
+    icon: 'LineChart',
+    description: 'Análise gráfica do andamento da produção: compara o volume de peças Planejadas contra o Realizado (apontado) ao longo do tempo. Essencial para controle físico e financeiro da OP.',
+    steps: [
+      'Utilize os filtros superiores para selecionar Operação, Cliente ou Pedido.',
+      'A linha azul (Planejado) demonstra a velocidade ideal de entrega da produção dentro do prazo.',
+      'A linha laranja (Realizado) mostra o apontamento real. Ficar abaixo da linha azul indica atraso de produção.'
+    ],
+    tips: [
+      'Os dados são baseados nas quantidades diárias; a Curva S ideal começa suave, acelera no meio da execução e suaviza perto do fim.',
+      'Ordens sem data de previsão correta no Protheus podem gerar distorções na curva planejada.'
+    ],
+    links: [
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/producao', label: 'Ordens de Produção' }
+    ]
+  },
+
+  // ── Extrato OP ────────────────────────────────────────────────────────────────
+  '/pcp/extrato-op': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Extrato da Ordem de Produção',
+    icon: 'FileText',
+    description: 'Visão microscópica do histórico de apontamentos, paradas e movimentações em uma OP específica.',
+    steps: [
+      'Informe a OP e Item desejados.',
+      'O extrato exibirá toda a vida útil da OP, desde a liberação, movimentação por cada máquina e saldos residuais.'
+    ],
+    tips: [
+      'Use o extrato para auditar perdas (refugos) e encontrar inconsistências de digitação por parte dos operadores.'
+    ],
+    links: [
+      { path: '/producao/op', label: 'Detalhes da OP' }
+    ]
+  },
+
+  // ── Plano de Contas Financeiro ────────────────────────────────────────────────
+  '/financeiro/plano-contas': {
+    category: 'Financeiro',
+    categoryColor: '#10b981',
+    title: 'Plano de Contas',
+    icon: 'Book',
+    description: 'Estrutura hierárquica das contas contábeis e financeiras da empresa, definindo as naturezas de receita e despesa para alocação correta de resultados.',
+    steps: [
+      'Visualize a estrutura em árvore, navegando de contas sintéticas (pai) para analíticas (filhas).',
+      'Analise a classificação de cada nível contábil e seus respectivos saldos no período.'
+    ],
+    tips: [
+      'Contas de receita geralmente começam com prefixos específicos no padrão contábil; certifique-se de não misturar despesas operacionais com despesas fixas.'
+    ],
+    links: [
+      { path: '/financeiro/balancete', label: 'Balancete' }
+    ]
+  },
+
+  // ── Balancete Financeiro ──────────────────────────────────────────────────────
+  '/financeiro/balancete': {
+    category: 'Financeiro',
+    categoryColor: '#10b981',
+    title: 'Balancete Financeiro',
+    icon: 'PieChart',
+    description: 'Relatório sintético de DRE/Balancete que resume as receitas e despesas estruturadas pelo Plano de Contas no período escolhido.',
+    steps: [
+      'Filtre o período fiscal desejado.',
+      'Acompanhe o Resultado Operacional bruto e líquido da fábrica.',
+      'Expanda as contas para investigar onde o custo se concentrou.'
+    ],
+    tips: [
+      'Resultados inconsistentes frequentemente provêm de OPs finalizadas sem apropriação de custo no módulo de PCP. Certifique-se de que a produção e o consumo de matéria-prima estão regulares.'
+    ],
+    links: [
+      { path: '/financeiro/plano-contas', label: 'Plano de Contas' }
+    ]
+  }
 
 };

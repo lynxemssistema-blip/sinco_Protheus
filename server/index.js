@@ -220,6 +220,9 @@ app.use('/api/financeiro', require('./routes/financeiro'));
 // System Settings
 app.use('/api/settings', require('./routes/system_settings'));
 
+// PPAPs
+app.use('/api/ppaps', require('./routes/ppaps'));
+
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
 app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));

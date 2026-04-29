@@ -37,6 +37,17 @@ async function ensureTables() {
             FOREIGN KEY (setor_id) REFERENCES pcp_setores(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+
+    await mysql.query(`
+        CREATE TABLE IF NOT EXISTS pcp_setor_responsaveis (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            setor_id INT NOT NULL,
+            usuario_id INT NOT NULL,
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_setor_usuario (setor_id, usuario_id),
+            FOREIGN KEY (setor_id) REFERENCES pcp_setores(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
 }
 
 ensureTables().catch(err => console.error('[setores] Erro ao criar tabelas:', err.message));
@@ -46,9 +57,11 @@ router.get('/', async (req, res) => {
     try {
         const [rows] = await mysql.query(`
             SELECT s.*,
-                   COUNT(r.id) AS qtd_recursos
+                   COUNT(DISTINCT r.id) AS qtd_recursos,
+                   COUNT(DISTINCT resp.id) AS qtd_responsaveis
             FROM pcp_setores s
             LEFT JOIN pcp_setor_recursos r ON r.setor_id = s.id
+            LEFT JOIN pcp_setor_responsaveis resp ON resp.setor_id = s.id
             GROUP BY s.id
             ORDER BY s.ordem ASC, s.nome ASC
         `);
@@ -233,6 +246,74 @@ router.delete('/recursos/:recursoId', async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         console.error('[setores] DELETE /recursos/:recursoId:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── RESPONSÁVEIS DO SETOR ────────────────────────────────────────────────────
+
+router.get('/:setorId/responsaveis', async (req, res) => {
+    try {
+        const [rows] = await mysql.query(`
+            SELECT r.id as vinculo_id, r.setor_id, r.usuario_id, u.NomeCompleto, u.email, u.telefone
+            FROM pcp_setor_responsaveis r
+            JOIN usuario u ON u.idUsuario = r.usuario_id
+            WHERE r.setor_id = ?
+            ORDER BY u.NomeCompleto ASC
+        `, [req.params.setorId]);
+        res.json(rows);
+    } catch (err) {
+        console.error('[setores] GET /:setorId/responsaveis:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/:setorId/responsaveis', async (req, res) => {
+    const { usuario_id } = req.body;
+    if (!usuario_id) return res.status(400).json({ error: 'usuario_id é obrigatório.' });
+
+    try {
+        // Valida se o usuário existe e se tem telefone e e-mail
+        const [users] = await mysql.query('SELECT NomeCompleto, email, telefone FROM usuario WHERE idUsuario = ?', [usuario_id]);
+        if (users.length === 0) return res.status(404).json({ error: 'Usuário não encontrado.' });
+        
+        const user = users[0];
+        if (!user.email || !user.email.trim()) {
+            return res.status(400).json({ error: `O usuário ${user.NomeCompleto} não possui E-mail cadastrado. Atualize o cadastro do usuário antes de vinculá-lo.` });
+        }
+        if (!user.telefone || !user.telefone.trim()) {
+            return res.status(400).json({ error: `O usuário ${user.NomeCompleto} não possui Celular (telefone) cadastrado. Atualize o cadastro do usuário antes de vinculá-lo.` });
+        }
+
+        // Tenta vincular
+        const [result] = await mysql.query(
+            `INSERT IGNORE INTO pcp_setor_responsaveis (setor_id, usuario_id) VALUES (?, ?)`,
+            [req.params.setorId, usuario_id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(409).json({ error: 'Usuário já é responsável por este setor.' });
+        }
+
+        const [rows] = await mysql.query(`
+            SELECT r.id as vinculo_id, r.setor_id, r.usuario_id, u.NomeCompleto, u.email, u.telefone
+            FROM pcp_setor_responsaveis r
+            JOIN usuario u ON u.idUsuario = r.usuario_id
+            WHERE r.id = ?`, [result.insertId]);
+
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        console.error('[setores] POST /:setorId/responsaveis:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/responsaveis/:vinculoId', async (req, res) => {
+    try {
+        await mysql.query(`DELETE FROM pcp_setor_responsaveis WHERE id=?`, [req.params.vinculoId]);
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[setores] DELETE /responsaveis/:vinculoId:', err.message);
         res.status(500).json({ error: err.message });
     }
 });

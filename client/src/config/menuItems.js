@@ -136,6 +136,7 @@ export const MENU_GROUPS = [
             { id: 'sgq', label: 'Gestão SGQ', path: '/sgq', icon: Building2 },
             { id: 'sgq_mapeamento', label: 'Mapeamento de Processos', path: '/sgq/mapeamento-processos', icon: Network },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
+            { id: 'ppaps_buscar_produto', label: 'Buscar Produto (PPAPs)', path: '/ppaps/buscar-produto', icon: Database },
             { id: 'relatorios', label: 'Relatórios Gerais', path: '/relatorios', icon: FileText }
         ]
     },
@@ -160,6 +161,7 @@ export const MENU_GROUPS = [
             { id: 'vmi_historico', label: 'Histórico & Evolução', path: '/vmi/historico', icon: History }
         ]
     },
+
     {
         id: 'sistema',
         label: 'Sistema',

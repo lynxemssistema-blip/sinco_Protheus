@@ -92,6 +92,8 @@ const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
 
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
+const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto'));
+
 import { MENU_GROUPS } from './config/menuItems';
 
 // Build path → pageId mapping from MENU_GROUPS
@@ -649,6 +651,12 @@ function App() {
                                         <Route path="/pcp/curva-s" element={
                                             <Layout fullWidth={true}>
                                                 <CurvaSPedido />
+                                            </Layout>
+                                        } />
+                                        {/* PPAPs Routes */}
+                                        <Route path="/ppaps/buscar-produto" element={
+                                            <Layout fullWidth={true}>
+                                                <PPAPsBuscarProduto />
                                             </Layout>
                                         } />
                                     </Route>
