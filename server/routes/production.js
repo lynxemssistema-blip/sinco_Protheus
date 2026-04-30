@@ -916,382 +916,347 @@ router.get('/debug-doc/:code', async (req, res) => {
 
 // GET /api/production - List OPs with Planning and Progress
 router.get('/', async (req, res) => {
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('📥 [DEBUG] GET /api/production HIT');
-    console.log('🔍 RAW Query Params:', JSON.stringify(req.query, null, 2));
-    console.log('═══════════════════════════════════════════════════════════');
-
+    const t0 = Date.now();
     try {
-        const {
-            op, item, sequencia, produto, cliente, operacao,
-            planned_date_start, planned_date_end, date_start, date_end,
-            status, setor // Comma-separated or array
-        } = req.query;
-
-
-        console.log('📊 [DEBUG] Extracted Filter Values:');
-        console.log('  - OP:', op || '(empty)');
-        console.log('  - Pedido:', req.query.pedido || '(empty)');
-        console.log('  - Item:', item || '(empty)');
-        console.log('  - Sequencia:', sequencia || '(empty)');
-        console.log('  - Produto:', produto || '(empty)');
-        console.log('  - Cliente:', cliente || '(empty)');
-        console.log('  - Operacao:', operacao || '(empty)');
-
+        const { op, item, sequencia, produto, cliente, operacao, planned_date_start, planned_date_end, setor } = req.query;
+        const pedido = req.query.pedido;
 
         // 0. Pre-filter by Planned Dates (MySQL) if provided
         let plannedOpsFilter = null;
         if (planned_date_start || planned_date_end) {
-            console.log('🗓️ [DEBUG] Filtering by planned dates...');
-            let planSql = `SELECT op_numero, op_item, op_sequencia, operacao_codigo FROM app_production_planning WHERE 1=1 `;
+            let planSql = `SELECT op_numero, op_item, op_sequencia, operacao_codigo FROM app_production_planning WHERE 1=1`;
             const planParams = [];
-            if (planned_date_start) {
-                planSql += ` AND (data_planejada_inicio >= ? OR data_planejada_fim >= ?)`;
-                planParams.push(planned_date_start, planned_date_start);
-            }
-            if (planned_date_end) {
-                planSql += ` AND (data_planejada_inicio <= ? OR data_planejada_fim <= ?)`;
-                planParams.push(planned_date_end, planned_date_end);
-            }
+            if (planned_date_start) { planSql += ` AND (data_planejada_inicio >= ? OR data_planejada_fim >= ?)`; planParams.push(planned_date_start, planned_date_start); }
+            if (planned_date_end)   { planSql += ` AND (data_planejada_inicio <= ? OR data_planejada_fim <= ?)`; planParams.push(planned_date_end, planned_date_end); }
             const [plannedRows] = await mysqlPool.execute(planSql, planParams);
-            console.log(`✅ [DEBUG] Found ${plannedRows.length} planned operations`);
-
-            // If filtering by date and no plans found, return empty early
-            if (plannedRows.length === 0) {
-                console.log('⚠️ [DEBUG] No planned operations found, returning empty');
-                return res.json({ data: [], total: 0 });
-            }
-
+            if (plannedRows.length === 0) return res.json({ data: [], total: 0 });
             plannedOpsFilter = plannedRows;
         }
 
-        // 1. Fetch OPs from Protheus (Base Query)
-        console.log('🔨 [DEBUG] Building SQL Query...');
-        const getInactiveFilterOpList = await getInactiveOrdersFilter();
-        let pgQuery = `
-            SELECT
-                c2.c2_num     AS op,
-                c2.c2_item    AS item_op,
-                c2.c2_sequen  AS sequen,
-                c2.c2_produto AS cod_produto_op,
-                MAX(TRIM(c2.c2_pedido)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS pedido_venda,
-                sb1.b1_desc   AS desc_produto,
-                sb1.b1_tipo   AS tipo_produto,
-                c2.c2_um                     AS um_op,
-                c2.c2_quant::numeric         AS qtd_planejada_op,
-                c2.c2_quje::numeric          AS qtd_apontada_erp,
-                
-                -- Cliente
-                c5.c5_cliente AS cod_cliente,
-                a1.a1_nome    AS nome_cliente,
-                a1.a1_nreduz  AS nome_fantasia,
-                TRIM(c6.c6_pedcli) AS ped_cliente,
+        // 1. Pre-fetch inactive pedidos from MySQL (applied as JS filter later)
+        let inactivePedidosSet = new Set();
+        try {
+            const [settings] = await mysqlPool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'hide_inactive_orders'");
+            const hideInactive = !settings.length || settings[0].setting_value === 'true';
+            if (hideInactive) {
+                const [rows] = await mysqlPool.query("SELECT pedido_numero FROM app_pedidos_inativos");
+                inactivePedidosSet = new Set(rows.map(r => r.pedido_numero.trim()));
+            }
+        } catch (_) {}
 
-                -- Roteiro
-                g2.g2_codigo  AS cod_roteiro,
-                g2.g2_operac  AS operacao,
-                g2.g2_descri  AS desc_operacao,
-                g2.g2_recurso AS recurso,
-                TRIM(h1.h1_descri) AS desc_recurso,
-                LAG(g2.g2_operac) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac) as prev_operacao,
-                LEAD(g2.g2_operac) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac) as next_operacao,
-                TRIM(LAG(g2.g2_descri) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac)) as prev_desc_operacao,
-                TRIM(LEAD(g2.g2_descri) OVER (PARTITION BY c2.c2_num, c2.c2_item, c2.c2_sequen ORDER BY g2.g2_operac)) as next_desc_operacao
-
-            FROM public.sc2010 c2
-            LEFT JOIN public.sc2010 root_op ON root_op.c2_num = c2.c2_num AND root_op.c2_item = c2.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sh1010 h1 ON btrim(h1.h1_codigo) = btrim(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sc6010 c6 
-                ON c6.c6_filial = c2.c2_filial 
-                AND c6.c6_num = c2.c2_pedido
-                AND c6.c6_item = c2.c2_itempv
-                AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sc5010 c5 ON c5.c5_filial = c2.c2_filial AND c5.c5_num = (CASE WHEN btrim(c2.c2_pedido) <> '' THEN btrim(c2.c2_pedido) ELSE btrim(root_op.c2_pedido) END) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
-
-            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-            ${getInactiveFilterOpList('c5.c5_num')}
-        `;
-
+        // 2. Build Stage 1 conditions (SC2010 + root_op + SB1010 only — no SC5/SA1/SC6)
         const params = [];
-        let paramCount = 1;
-        const appliedFilters = [];
+        let pn = 1;
+        const s1Conds = [`COALESCE(c2.d_e_l_e_t_,'') IN ('', ' ')`];
 
-        // Excluir OPs que foram fracionadas
-        const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa');
-        if (fracOps.length > 0) {
-            const excludeBases = fracOps.map(r => r.op_base);
-            const placeholders = excludeBases.map((_, i) => `$${paramCount + i}`).join(', ');
-            pgQuery += ` AND (c2.c2_num || c2.c2_item) NOT IN (${placeholders})`;
-            params.push(...excludeBases);
-            paramCount += excludeBases.length;
-            console.log(`🔧 [DEBUG] Excluding ${excludeBases.length} fractionated OP bases.`);
+        // Excluir OPs fracionadas
+        let fracExclude = '';
+        try {
+            const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa');
+            if (fracOps.length > 0) {
+                const bases = fracOps.map(r => r.op_base);
+                const ph = bases.map((_, i) => `$${pn + i}`).join(',');
+                fracExclude = `AND (c2.c2_num || c2.c2_item) NOT IN (${ph})`;
+                params.push(...bases);
+                pn += bases.length;
+            }
+        } catch (_) {}
+
+        // Date cutoff (18 months) — always applied to keep query bounded
+        // c2_datpri is stored as YYYYMMDD (char), safe to compare without TRIM
+        const cutoffDate = new Date();
+        cutoffDate.setMonth(cutoffDate.getMonth() - 18);
+        const cutoffStr = cutoffDate.toISOString().slice(0, 10).replace(/-/g, '');
+        // Only apply date cutoff when no specific OP/pedido/item filter — those are already selective
+        const hasSelectiveFilter = !!(op || pedido || item);
+        if (!hasSelectiveFilter) {
+            s1Conds.push(`c2.c2_datpri >= '${cutoffStr}'`);
         }
 
-        if (op) {
-            pgQuery += ` AND c2.c2_num LIKE $${paramCount}`;
-            params.push(`%${op}%`);
-            appliedFilters.push(`OP LIKE '%${op}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: OP LIKE '%${op}%'`);
-            paramCount++;
-        }
+        // Simple text filters in Stage 1
+        if (op)       { s1Conds.push(`TRIM(c2.c2_num) ILIKE $${pn++}`);  params.push(`%${op.trim()}%`); }
+        if (pedido)   { s1Conds.push(`(TRIM(c2.c2_pedido) ILIKE $${pn} OR TRIM(root_op.c2_pedido) ILIKE $${pn})`); params.push(`%${pedido.trim()}%`); pn++; }
+        if (item)     { s1Conds.push(`TRIM(c2.c2_item) ILIKE $${pn++}`);  params.push(`%${item.trim()}%`); }
+        if (sequencia){ s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`);params.push(`%${sequencia.trim()}%`); }
+        if (produto)  { s1Conds.push(`(TRIM(c2.c2_produto) ILIKE $${pn} OR sb1.b1_desc ILIKE $${pn})`); params.push(`%${produto.trim().toUpperCase()}%`); pn++; }
 
-        if (req.query.pedido) {
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: PEDIDO = '${req.query.pedido}'`);
-            pgQuery += ` AND (TRIM(c2.c2_pedido) ILIKE $${paramCount} OR TRIM(root_op.c2_pedido) ILIKE $${paramCount})`;
-            params.push(`%${req.query.pedido.trim()}%`);
-            appliedFilters.push(`PEDIDO ILIKE '%${req.query.pedido.trim()}%'`);
-            paramCount++;
-        }
-
-        if (item) {
-            pgQuery += ` AND c2.c2_item LIKE $${paramCount}`;
-            params.push(`%${item}%`);
-            appliedFilters.push(`ITEM LIKE '%${item}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: ITEM LIKE '%${item}%'`);
-            paramCount++;
-        }
-
-        if (sequencia) {
-            pgQuery += ` AND c2.c2_sequen LIKE $${paramCount}`;
-            params.push(`%${sequencia}%`);
-            appliedFilters.push(`SEQUENCIA LIKE '%${sequencia}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: SEQUENCIA LIKE '%${sequencia}%'`);
-            paramCount++;
-        }
-
-        if (produto) {
-            pgQuery += ` AND (c2.c2_produto LIKE $${paramCount} OR sb1.b1_desc LIKE $${paramCount})`;
-            params.push(`%${produto.toUpperCase()}%`);
-            appliedFilters.push(`PRODUTO LIKE '%${produto.toUpperCase()}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: PRODUTO LIKE '%${produto.toUpperCase()}%'`);
-            paramCount++;
-        }
-
-        if (cliente) {
-            pgQuery += ` AND (a1.a1_nome LIKE $${paramCount} OR a1.a1_nreduz LIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
-            params.push(`%${cliente.toUpperCase()}%`);
-            appliedFilters.push(`CLIENTE LIKE '%${cliente.toUpperCase()}%'`);
-            console.log(`🔧 [DEBUG] Filter ${paramCount}: CLIENTE LIKE '%${cliente.toUpperCase()}%'`);
-            paramCount++;
-        }
-
+        // Setor/operação: EXISTS subquery in Stage 1 (avoids SG2010 join explosion)
         if (operacao || setor) {
             let recursoArray = [];
-            let operacaoArray = operacao ? operacao.split(',').map(op => op.trim().toUpperCase()).filter(Boolean) : [];
-
+            const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
             if (setor) {
                 try {
                     const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
-                    if (sectorRecs.length > 0) {
-                        recursoArray = sectorRecs.map(r => r.recurso_codigo.trim().toUpperCase());
-                    } else {
-                        recursoArray = ['___NO_MATCH___'];
-                    }
-                } catch (e) {
-                    console.error('Erro ao buscar recursos do setor:', e);
-                }
+                    recursoArray = sectorRecs.length > 0
+                        ? sectorRecs.map(r => r.recurso_codigo.trim().toUpperCase())
+                        : ['___NO_MATCH___'];
+                } catch (e) { console.error('Erro ao buscar recursos do setor:', e.message); }
             }
-
-            // Filtro por recurso: usa = (IN) em vez de LIKE — muito mais eficiente
+            const existsConds = [];
             if (recursoArray.length > 0) {
-                const inPlaceholders = recursoArray.map((_, i) => `$${paramCount + i}`).join(',');
-                pgQuery += ` AND TRIM(g2.g2_recurso) IN (${inPlaceholders})`;
-                params.push(...recursoArray);
-                paramCount += recursoArray.length;
-                appliedFilters.push(`RECURSO IN (${recursoArray.join(', ')})`);
+                const ph = recursoArray.map((_, i) => `$${pn + i}`).join(',');
+                existsConds.push(`TRIM(g2x.g2_recurso) IN (${ph})`);
+                params.push(...recursoArray); pn += recursoArray.length;
             }
-
-            // Filtro por operação, descrição ou recurso (LIKE só quando explícito pelo usuário)
             if (operacaoArray.length > 0) {
-                const opConditions = operacaoArray.map((_, i) => `(g2.g2_operac ILIKE $${paramCount + i} OR g2.g2_descri ILIKE $${paramCount + i} OR TRIM(g2.g2_recurso) ILIKE $${paramCount + i})`);
-                pgQuery += ` AND (${opConditions.join(' OR ')})`;
-                params.push(...operacaoArray.map(op => `%${op}%`));
-                paramCount += operacaoArray.length;
-                appliedFilters.push(`OPERACAO IN (${operacaoArray.join(', ')})`);
+                const conds = operacaoArray.map((_, i) => `(g2x.g2_operac ILIKE $${pn + i} OR g2x.g2_descri ILIKE $${pn + i} OR TRIM(g2x.g2_recurso) ILIKE $${pn + i})`);
+                existsConds.push(`(${conds.join(' OR ')})`);
+                params.push(...operacaoArray.map(s => `%${s}%`)); pn += operacaoArray.length;
+            }
+            if (existsConds.length > 0) {
+                s1Conds.push(`EXISTS (
+                    SELECT 1 FROM public.sg2010 g2x
+                    WHERE TRIM(g2x.g2_produto) = TRIM(c2.c2_produto)
+                    AND COALESCE(g2x.d_e_l_e_t_,'') IN ('', ' ')
+                    AND (${existsConds.join(' AND ')})
+                )`);
             }
         }
 
-        // Default Filter: Pending Delivery (Saldo a Entregar > 0)
-        // If pending_delivery is explicitly 'true' OR undefined (default behavior requested by user?)
-        // Actually, user asked "by default". So if frontend sends nothing, maybe we should default?
-        // But safer to let frontend control the default state.
-        if (req.query.pending_delivery === 'true') {
-            pgQuery += ` AND (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0`;
-            appliedFilters.push(`PENDING_DELIVERY > 0`);
-            console.log(`🔧 [DEBUG] Filter: PENDING DELIVERY Only`);
+        // Stage 2 filter: cliente (applied after enrichment)
+        let clienteClause = '';
+        if (cliente) {
+            clienteClause = `AND (a1.a1_nome ILIKE $${pn} OR a1.a1_nreduz ILIKE $${pn} OR c5.c5_cliente ILIKE $${pn})`;
+            params.push(`%${cliente.trim().toUpperCase()}%`); pn++;
         }
 
-        pgQuery += ` ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen, g2.g2_operac LIMIT 5000`;
+        // Stage 2 filter: pending_delivery (applied after SC6010 join)
+        const pendingClause = req.query.pending_delivery === 'true'
+            ? `AND (COALESCE(c6.c6_qtdven::numeric, 0) - COALESCE(c6.c6_qtdent::numeric, 0)) > 0`
+            : '';
 
-        console.log('🎯 Applied Filters:', appliedFilters.join(' AND '));
+        // Param index for SB1010 join in Stage 1 (needed for produto filter)
+        const sb1JoinStage1 = produto
+            ? `LEFT JOIN public.sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(sb1.d_e_l_e_t_,'') IN ('', ' ')`
+            : '';
 
-        console.log('⏳ [DEBUG] Executing SQL query...');
+        const s1Where = `WHERE ${s1Conds.join(' AND ')} ${fracExclude}`;
+
+        // 3. Three-stage CTE:
+        //   op_base   : SC2010 + root_op (+ SB1 if needed). Fast. LIMIT 5000.
+        //   op_enrich : join those 5000 rows with SB1/SC5/SA1/SC6. Apply client+pending filter. LIMIT 500.
+        //   final     : join 500 rows with SG2010 + SH1010. Window functions.
+        const pgQuery = `
+WITH op_base AS (
+    SELECT
+        c2.c2_num, c2.c2_item, c2.c2_sequen,
+        TRIM(c2.c2_produto) AS produto,
+        COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS pedido_resolved,
+        COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS itempv_resolved,
+        c2.c2_filial,
+        c2.c2_quant::numeric AS qtd_planejada_op,
+        c2.c2_quje::numeric  AS qtd_apontada_erp,
+        TRIM(c2.c2_um)       AS um_op
+    FROM public.sc2010 c2
+    LEFT JOIN public.sc2010 root_op
+        ON  root_op.c2_num    = c2.c2_num
+        AND root_op.c2_item   = c2.c2_item
+        AND root_op.c2_sequen = '001'
+        AND COALESCE(root_op.d_e_l_e_t_,'') IN ('', ' ')
+    ${sb1JoinStage1}
+    ${s1Where}
+    ORDER BY c2.c2_num DESC, c2.c2_item, c2.c2_sequen
+    LIMIT 5000
+),
+op_enrich AS (
+    SELECT
+        ob.*,
+        TRIM(sb1.b1_desc)    AS desc_produto,
+        TRIM(sb1.b1_tipo)    AS tipo_produto,
+        TRIM(c5.c5_cliente)  AS cod_cliente,
+        TRIM(a1.a1_nome)     AS nome_cliente,
+        TRIM(a1.a1_nreduz)   AS nome_fantasia,
+        TRIM(c6.c6_pedcli)   AS ped_cliente
+    FROM op_base ob
+    LEFT JOIN public.sb1010 sb1
+        ON  TRIM(sb1.b1_cod) = ob.produto
+        AND COALESCE(sb1.d_e_l_e_t_,'') IN ('', ' ')
+    LEFT JOIN public.sc5010 c5
+        ON  c5.c5_filial = ob.c2_filial
+        AND TRIM(c5.c5_num) = ob.pedido_resolved
+        AND COALESCE(c5.d_e_l_e_t_,'') IN ('', ' ')
+    LEFT JOIN public.sa1010 a1
+        ON  a1.a1_cod  = c5.c5_cliente
+        AND a1.a1_loja = c5.c5_lojacli
+        AND COALESCE(a1.d_e_l_e_t_,'') IN ('', ' ')
+    LEFT JOIN public.sc6010 c6
+        ON  c6.c6_filial = ob.c2_filial
+        AND TRIM(c6.c6_num)  = ob.pedido_resolved
+        AND TRIM(c6.c6_item) = ob.itempv_resolved
+        AND COALESCE(c6.d_e_l_e_t_,'') IN ('', ' ')
+    WHERE 1=1
+    ${clienteClause}
+    ${pendingClause}
+    ORDER BY ob.c2_num DESC, ob.c2_item, ob.c2_sequen
+    LIMIT 500
+)
+SELECT
+    oe.c2_num AS op, oe.c2_item AS item_op, oe.c2_sequen AS sequen,
+    oe.produto AS cod_produto_op, oe.pedido_resolved AS pedido_venda,
+    oe.desc_produto, oe.tipo_produto, oe.um_op,
+    oe.qtd_planejada_op, oe.qtd_apontada_erp,
+    oe.cod_cliente, oe.nome_cliente, oe.nome_fantasia, oe.ped_cliente
+FROM op_enrich oe
+ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
+        `;
+
         const pgRes = await db.query(pgQuery, params);
-        let ops = pgRes.rows;
+        const opRows = pgRes.rows;
 
-        console.log(`✅ [DEBUG] SQL executed successfully!`);
-        console.log(`📦 [DEBUG] Raw SQL returned ${ops.length} rows`);
-
-        if (ops.length > 0) {
-            console.log('🔍 [DEBUG] First 3 rows sample:');
-            ops.slice(0, 3).forEach((row, idx) => {
-                console.log(`  Row ${idx + 1}:`, {
-                    op: row.op,
-                    pedido_venda: row.pedido_venda,
-                    item_op: row.item_op,
-                    sequen: row.sequen
+        // Query 2: roteiro dos produtos distintos (IN clause — muito mais rápido que JOIN em 57K rows)
+        let routingByProduto = {};
+        if (opRows.length > 0) {
+            const produtos = [...new Set(opRows.map(r => r.cod_produto_op).filter(Boolean))];
+            if (produtos.length > 0) {
+                const ph2 = produtos.map((_, i) => `$${i + 1}`).join(',');
+                const r2 = await db.query(`
+                    SELECT TRIM(g2.g2_produto) AS produto, g2.g2_codigo AS cod_roteiro,
+                           g2.g2_operac AS operacao, g2.g2_descri AS desc_operacao,
+                           g2.g2_recurso AS recurso, TRIM(h1.h1_descri) AS desc_recurso
+                    FROM public.sg2010 g2
+                    LEFT JOIN public.sh1010 h1
+                        ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                        AND COALESCE(h1.d_e_l_e_t_,'') IN ('', ' ')
+                    WHERE TRIM(g2.g2_produto) IN (${ph2})
+                    AND COALESCE(g2.d_e_l_e_t_,'') IN ('', ' ')
+                    ORDER BY g2.g2_produto, g2.g2_operac
+                `, produtos);
+                r2.rows.forEach(r => {
+                    if (!routingByProduto[r.produto]) routingByProduto[r.produto] = [];
+                    routingByProduto[r.produto].push(r);
                 });
-            });
-        } else {
-            console.log('⚠️ [WARNING] SQL returned 0 rows - no matching records found!');
-            console.log('💡 Tip: Check if filters are too restrictive or data exists in database');
+            }
         }
 
-        // Apply MySQL Pre-Filter (Planned Dates) - Client Side filtering of the Postgres Result set to match MySQL IDs
+        // Expand OP rows × routing (prev/next computed in JS — equivalent to LAG/LEAD)
+        let ops = opRows.flatMap(row => {
+            const routing = routingByProduto[row.cod_produto_op] || [];
+            if (routing.length === 0) {
+                return [{ ...row, cod_roteiro: null, operacao: null, desc_operacao: null, recurso: null, desc_recurso: null, prev_operacao: null, next_operacao: null, prev_desc_operacao: null, next_desc_operacao: null }];
+            }
+            return routing.map((r, idx) => ({
+                ...row,
+                cod_roteiro:         r.cod_roteiro,
+                operacao:            r.operacao,
+                desc_operacao:       r.desc_operacao,
+                recurso:             r.recurso,
+                desc_recurso:        r.desc_recurso,
+                prev_operacao:       idx > 0 ? routing[idx - 1].operacao : null,
+                next_operacao:       idx < routing.length - 1 ? routing[idx + 1].operacao : null,
+                prev_desc_operacao:  idx > 0 ? routing[idx - 1].desc_operacao : null,
+                next_desc_operacao:  idx < routing.length - 1 ? routing[idx + 1].desc_operacao : null,
+            }));
+        });
+
+        console.log(`[production GET /] ${opRows.length} OPs + ${ops.length} rows (c/roteiro) em ${Date.now() - t0}ms`);
+
+        // 3. Apply MySQL pre-filter (planned dates)
         if (plannedOpsFilter) {
-            ops = ops.filter(op => {
-                return plannedOpsFilter.some(p =>
-                    p.op_numero === op.op &&
-                    p.op_item === op.item_op &&
-                    p.op_sequencia === op.sequen &&
-                    (p.operacao_codigo === op.operacao || !p.operacao_codigo) // Loose match if needed, but strict is better
-                );
-            });
+            const plannedSet = new Set(plannedOpsFilter.map(p => `${p.op_numero}|${p.op_item}|${p.op_sequencia}`));
+            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.sequen}`));
         }
 
-        // Fetch MySQL Data (Plans & Appointments) filtered to the relevant OPs
+        // 4. Fetch Plans & Appointments from MySQL
         const relevantOpNums = [...new Set(ops.map(o => o.op).filter(Boolean))];
         let plans = [], appointments = [];
-        
         if (relevantOpNums.length > 0) {
-            const CHUNK_SIZE = 500;
-            for (let i = 0; i < relevantOpNums.length; i += CHUNK_SIZE) {
-                const chunk = relevantOpNums.slice(i, i + CHUNK_SIZE);
-                const opPlaceholders = chunk.map(() => '?').join(',');
-                
-                const [plansRows] = await mysqlPool.execute(
-                    `SELECT * FROM app_production_planning WHERE op_numero IN (${opPlaceholders})`,
-                    chunk
-                );
-                plans.push(...plansRows);
-                
-                const [apptRows] = await mysqlPool.execute(`
-                    SELECT
-                        op_numero, op_item, op_sequencia, operacao_codigo,
-                        SUM(quantidade) as total_produzido,
-                        COUNT(*) as num_apontamentos,
-                        SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
-                        MIN(data_inicio) as data_real_inicio,
-                        MAX(data_fim) as data_real_fim,
-                        MAX(data_fim) as ultimo_apontamento
+            const CHUNK = 500;
+            for (let i = 0; i < relevantOpNums.length; i += CHUNK) {
+                const chunk = relevantOpNums.slice(i, i + CHUNK);
+                const ph = chunk.map(() => '?').join(',');
+                const [pr] = await mysqlPool.execute(`SELECT * FROM app_production_planning WHERE op_numero IN (${ph})`, chunk);
+                plans.push(...pr);
+                const [ar] = await mysqlPool.execute(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                           SUM(quantidade) as total_produzido,
+                           COUNT(*) as num_apontamentos,
+                           SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
+                           MIN(data_inicio) as data_real_inicio,
+                           MAX(data_fim) as data_real_fim,
+                           MAX(data_fim) as ultimo_apontamento
                     FROM app_production_appointments
-                    WHERE op_numero IN (${opPlaceholders})
+                    WHERE op_numero IN (${ph})
                     GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
                 `, chunk);
-                appointments.push(...apptRows);
+                appointments.push(...ar);
             }
         }
 
-        // 4. Merge Data — build Maps for O(1) lookup instead of O(n²) find()
-        const planKey = (o) => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
-        const apptKey = (o) => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
-        const plansMap = new Map(plans.map(p => [planKey(p), p]));
-        const apptMap = new Map(appointments.map(a => [apptKey(a), a]));
+        // 5. Merge Plans & Appointments (O(1) Maps)
+        const mkKey = o => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
+        const plansMap = new Map(plans.map(p => [mkKey(p), p]));
+        const apptMap  = new Map(appointments.map(a => [mkKey(a), a]));
 
         let mergedOps = ops.map(row => {
-            const rowKey = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
-            const plan = plansMap.get(rowKey);
-            const progress = apptMap.get(rowKey);
-
+            const key = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
+            const plan = plansMap.get(key);
+            const prog = apptMap.get(key);
             return {
                 ...row,
                 data_planejada_inicio: plan?.data_planejada_inicio || null,
-                data_planejada_fim: plan?.data_planejada_fim || null,
-                qtd_produzida_real: progress?.total_produzido || 0,
-                tem_pendencia_conferencia: progress ? progress.pendencias_conferencia > 0 : false,
-                ultimo_apontamento: progress?.ultimo_apontamento || null,
-                data_real_fim: progress?.data_real_fim || null
+                data_planejada_fim:    plan?.data_planejada_fim    || null,
+                qtd_produzida_real:    prog?.total_produzido       || 0,
+                tem_pendencia_conferencia: prog ? prog.pendencias_conferencia > 0 : false,
+                ultimo_apontamento: prog?.ultimo_apontamento || null,
+                data_real_fim:      prog?.data_real_fim     || null,
             };
         });
 
-        // 5. Apply Status Filter
+        // 6. Apply inactive pedidos filter (JS-side, avoids SQL NULL issues)
+        if (inactivePedidosSet.size > 0) {
+            mergedOps = mergedOps.filter(row => {
+                const pv = (row.pedido_venda || '').trim();
+                return !pv || !inactivePedidosSet.has(pv);
+            });
+        }
+
+        // 7. Apply Status Filter
         const rawStatus = req.query.status || req.query['status[]'];
         if (rawStatus) {
             const statusArray = Array.isArray(rawStatus) ? rawStatus : rawStatus.split(',');
-            console.log(`🚥 [DEBUG] Filtering by status: ${statusArray.join(', ')}`);
-
+            const now = new Date();
             mergedOps = mergedOps.filter(op => {
-                const now = new Date();
                 const start = op.data_planejada_inicio ? new Date(op.data_planejada_inicio) : null;
-
-                // End date should be End of Day (23:59:59) for "Late" comparison
-                let end = op.data_planejada_fim ? new Date(op.data_planejada_fim) : null;
-                if (end) end.setHours(23, 59, 59, 999);
-
-                const done = Number(op.qtd_produzida_real) >= Number(op.qtd_planejada_op);
+                const end   = op.data_planejada_fim    ? (() => { const d = new Date(op.data_planejada_fim); d.setHours(23,59,59,999); return d; })() : null;
+                const done    = Number(op.qtd_produzida_real) >= Number(op.qtd_planejada_op);
                 const started = Number(op.qtd_produzida_real) > 0;
-
-                let currentStatus = 'waiting'; // default
-                if (done) currentStatus = 'done';
-                else if (end && now > end) currentStatus = 'late_delivery';
-                else if (start && now > start && !started) currentStatus = 'late_start';
-                else if (started) currentStatus = 'in_progress';
-                else if (start && end) currentStatus = 'planned';
-
-                return statusArray.includes(currentStatus);
+                let cur = 'waiting';
+                if (done)                          cur = 'done';
+                else if (end && now > end)         cur = 'late_delivery';
+                else if (start && now > start && !started) cur = 'late_start';
+                else if (started)                  cur = 'in_progress';
+                else if (start && end)             cur = 'planned';
+                return statusArray.includes(cur);
             });
         }
 
         const total = mergedOps.length;
 
-        // Enhance with Documents
-        const productCodes = [...new Set(mergedOps.map(o => (o.cod_produto_op || '').trim().toUpperCase()))];
+        // 7. Enrich with Documents (MySQL)
+        const productCodes = [...new Set(mergedOps.map(o => (o.cod_produto_op || '').trim().toUpperCase()).filter(Boolean))];
         let docsMap = {};
-
         if (productCodes.length > 0) {
-            const placeholders = productCodes.map(() => '?').join(',');
             try {
-                const [docs] = await mysqlPool.execute(`
-                    SELECT produto_codigo, url_arquivo, area_pintura_m2, operacao
-                    FROM produtos_docs 
-                    WHERE produto_codigo IN (${placeholders})
-                `, productCodes);
+                const ph = productCodes.map(() => '?').join(',');
+                const [docs] = await mysqlPool.execute(
+                    `SELECT produto_codigo, url_arquivo, area_pintura_m2, operacao FROM produtos_docs WHERE produto_codigo IN (${ph})`,
+                    productCodes
+                );
                 docs.forEach(d => {
-                    const cleanCode = (d.produto_codigo || '').trim().toUpperCase();
-                    if (!docsMap[cleanCode]) {
-                        docsMap[cleanCode] = {
-                            url: d.url_arquivo,
-                            area: d.area_pintura_m2,
-                            operacao: d.operacao
-                        };
-                    }
+                    const k = (d.produto_codigo || '').trim().toUpperCase();
+                    if (!docsMap[k]) docsMap[k] = { url: d.url_arquivo, area: d.area_pintura_m2, operacao: d.operacao };
                 });
-            } catch (docErr) { console.error('Doc Error:', docErr); }
+            } catch (docErr) { console.error('Doc Error:', docErr.message); }
         }
 
         const finalOps = mergedOps.map(op => {
-            const docInfo = docsMap[(op.cod_produto_op || '').trim().toUpperCase()];
-            // If product has operation defined in docs, override or attach it
-            // Typically we want to show this in the frontend as "Default Operation"
-            return {
-                ...op,
-                doc_url: docInfo?.url || null,
-                tem_arquivos: !!docInfo?.url,
-                area_pintura: docInfo?.area || null,
-                operacao_doc: docInfo?.operacao || null // New field for auto-fill
-            };
+            const doc = docsMap[(op.cod_produto_op || '').trim().toUpperCase()];
+            return { ...op, doc_url: doc?.url || null, tem_arquivos: !!doc?.url, area_pintura: doc?.area || null, operacao_doc: doc?.operacao || null };
         });
 
-        res.json({
-            data: finalOps,
-            total: total,
-        });
+        res.json({ data: finalOps, total });
     } catch (err) {
-        console.error(err);
-        require('fs').appendFileSync('production_error.log', new Date().toISOString() + '\\n' + err.stack + '\\n');
+        console.error('[production GET /] ERROR:', err.message, err.stack);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2466,41 +2431,66 @@ DATE(data_fim) as data,
 
 
 // GET /api/production/processes - Get List of Resources for Legend
+// Cache em memória para evitar hit no PG a cada navegação
+let _processesCache = null;
+let _processesCacheTime = 0;
+const PROCESSES_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+// Fallback estático caso o PG esteja indisponível (recursos conhecidos do roteiro)
+const FALLBACK_RESOURCES = [
+  { codigo: 'MO0001', descricao: 'FABRICAÇÃO' },
+  { codigo: 'MO0002', descricao: 'MONTAGEM' },
+  { codigo: 'MO0003', descricao: 'USINAGEM' },
+  { codigo: 'MO0004', descricao: 'SOLDA' },
+  { codigo: 'MO0005', descricao: 'PINTURA' },
+  { codigo: 'MO0006', descricao: 'EXPEDIÇÃO' },
+  { codigo: 'MO0013', descricao: 'LASER' },
+];
+
 router.get('/processes', async (req, res) => {
+    const force = req.query.force === '1';
+
+    // Retorna cache se válido e não forçado
+    if (!force && _processesCache && (Date.now() - _processesCacheTime) < PROCESSES_CACHE_TTL) {
+        return res.json({ data: _processesCache, source: 'cache' });
+    }
+
     try {
-        // User Provided SQL - EXACTLY AS REQUESTED
+        // Query simplificada: sem EXISTS (mais rápida, mas pode trazer recursos sem OPs)
         const resQuery = `
-SELECT 
-                h1_codigo  AS cod_recurso,
-    h1_descri  AS desc_recurso
-            FROM public.sh1010
-            WHERE d_e_l_e_t_ = ' '
-            ORDER BY h1_codigo
+          SELECT DISTINCT
+            TRIM(h1.h1_codigo) AS cod_recurso,
+            TRIM(h1.h1_descri) AS desc_recurso
+          FROM public.sh1010 h1
+          WHERE COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            AND TRIM(h1.h1_codigo) <> ''
+          ORDER BY TRIM(h1.h1_codigo)
         `;
 
-        console.log('📋 [PROCESSES] Fetching resource list from sh1010 (User SQL)...');
+        console.log('📋 [PROCESSES] Fetching resource list from sh1010...');
         const pgRes = await db.query(resQuery);
+        console.log(`✅ [PROCESSES] Found ${pgRes.rows.length} resources`);
 
-        console.log(`✅[PROCESSES] Found ${pgRes.rows.length} resources`);
+        const mapped = pgRes.rows.map(r => ({
+            codigo: r.cod_recurso ? r.cod_recurso.trim() : '',
+            descricao: r.desc_recurso ? r.desc_recurso.trim() : ''
+        })).filter(r => r.codigo);
 
-        // Map to frontend expected format (codigo, descricao) to NOT break the UI
-        const mapped = pgRes.rows.map(r => {
-            const code = r.cod_recurso ? r.cod_recurso.trim() : '';
-            let desc = r.desc_recurso ? r.desc_recurso.trim() : '';
-            if (code === 'MO0013') desc = 'LASE';
-            return {
-                codigo: code,
-                descricao: desc
-            };
-        });
+        // Armazena no cache
+        _processesCache = mapped;
+        _processesCacheTime = Date.now();
 
-        res.json({
-            data: mapped,
-            debug_sql: resQuery.replace(/\s+/g, ' ').trim()
-        });
+        res.json({ data: mapped, source: 'db' });
     } catch (err) {
-        console.error('❌ [PROCESSES] Error:', err);
-        res.status(500).json({ error: err.message });
+        console.warn('⚠️ [PROCESSES] PG indisponível, usando fallback:', err.code, err.message);
+
+        // Se temos cache antigo, retorna mesmo expirado
+        if (_processesCache) {
+            return res.json({ data: _processesCache, source: 'cache_stale' });
+        }
+
+        // Fallback estático
+        res.json({ data: FALLBACK_RESOURCES, source: 'fallback' });
     }
 });
 

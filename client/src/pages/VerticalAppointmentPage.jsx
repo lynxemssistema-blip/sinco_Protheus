@@ -24,8 +24,10 @@ export default function VerticalAppointmentPage() {
         op: '',
         pedido: '',
         produto: '',
-        cliente: ''
-    }, '@metalfisa:vert_mainFilters_v3');
+        cliente: '',
+        plan_inicio_de: '',
+        plan_inicio_ate: ''
+    }, '@metalfisa:vert_mainFilters_v4');
 
     const [appointingOp, setAppointingOp] = useState(null);
     const [historyTarget, setHistoryTarget] = useState(null);
@@ -54,7 +56,7 @@ export default function VerticalAppointmentPage() {
         if (!selectedOp) return;
 
         // Bloqueio de Performance
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
             setData([]);
             if (showLoader) setLoading(false);
             return;
@@ -76,8 +78,8 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleSearch = () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
-            toast.warning('Por favor, informe um Pedido, Cliente, Produto ou OP para buscar.');
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
+            toast.warning('Por favor, informe ao menos um filtro (ex: OP, Pedido, Cliente, Produto ou Período de Planejamento) para buscar.');
             return;
         }
         loadData();
@@ -146,8 +148,8 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleGeneratePendingReport = async () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente) {
-            toast.warning('Informe um filtro para buscar pendências no relatório.');
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
+            toast.warning('Informe ao menos um filtro para buscar pendências no relatório.');
             return;
         }
 
@@ -216,25 +218,29 @@ export default function VerticalAppointmentPage() {
                 <div className="space-y-4">
                     <div className="flex flex-col md:flex-row gap-4">
                         <div className="w-full md:w-[350px]">
-                            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider flex items-center gap-2">
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider flex items-center gap-2" title="Filtra por código de Recurso do roteiro (ex: MO0003). Cada recurso representa um setor ou máquina.">
                                 <List className="w-3.5 h-3.5 text-blue-500" />
-                                Centro de Custo/Operação <span className="text-red-500">*</span>
+                                Recurso <span className="text-red-500">*</span>
+                                <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">(setor/máquina)</span>
                             </label>
                             <select
                                 className="w-full border-2 border-slate-100 rounded-lg p-2.5 text-sm bg-slate-50 font-bold text-slate-800 focus:border-blue-500 focus:ring-0 transition-all cursor-pointer shadow-sm"
                                 value={selectedOp}
                                 onChange={(e) => setSelectedOp(e.target.value)}
                             >
-                                <option value="">-- Selecione para Iniciar --</option>
+                                <option value="">-- Selecione o Recurso --</option>
                                 {operations.map((op, index) => (
-                                    <option key={op.codigo || index} value={op.codigo}>
-                                        {op.codigo} - {op.descricao || op.processofabricacao}
+                                    <option
+                                        key={op.codigo || index}
+                                        value={op.codigo}
+                                    >
+                                        {op.codigo}{op.descricao ? ` — ${op.descricao}` : ''}
                                     </option>
                                 ))}
                             </select>
                         </div>
 
-                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50/50 p-3 rounded-xl border border-dashed border-slate-200">
+                        <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-50/50 p-3 rounded-xl border border-dashed border-slate-200">
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">OP</label>
                                 <input
@@ -275,6 +281,26 @@ export default function VerticalAppointmentPage() {
                                     placeholder="Razão Social"
                                     value={filters.cliente}
                                     onChange={(e) => setFilters(prev => ({ ...prev, cliente: e.target.value }))}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Plan. Início De</label>
+                                <input
+                                    type="date"
+                                    value={filters.plan_inicio_de}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_inicio_de: e.target.value }))}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Plan. Início Até</label>
+                                <input
+                                    type="date"
+                                    value={filters.plan_inicio_ate}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, plan_inicio_ate: e.target.value }))}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
@@ -320,7 +346,7 @@ export default function VerticalAppointmentPage() {
                     <div className="flex gap-2 items-center w-full md:w-auto mt-2 md:mt-0">
                         <button
                             onClick={() => {
-                                setFilters({ op: '', pedido: '', produto: '', cliente: '' });
+                                setFilters({ op: '', pedido: '', produto: '', cliente: '', plan_inicio_de: '', plan_inicio_ate: '' });
                                 setFilterStatus('ABERTOS');
                                 setData([]);
                             }}
@@ -468,10 +494,18 @@ export default function VerticalAppointmentPage() {
                                             </td>
                                             <td className="px-4 py-3 font-medium text-slate-600">
                                                 {row.planejamento_inicio ? (
-                                                    <span className="flex items-center gap-1.5">
-                                                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                                        {row.planejamento_inicio.substring(0, 10).split('-').reverse().join('/')}
-                                                    </span>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="flex items-center gap-1.5" title="Início Planejado">
+                                                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                                            {row.planejamento_inicio.substring(0, 10).split('-').reverse().join('/')}
+                                                        </span>
+                                                        {row.planejamento_fim && (
+                                                            <span className="flex items-center gap-1.5 text-xs text-slate-500" title="Fim Planejado">
+                                                                <Clock className="w-3 h-3 text-slate-400" />
+                                                                Até {row.planejamento_fim.substring(0, 10).split('-').reverse().join('/')}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 ) : (
                                                     <span className="text-slate-400">-</span>
                                                 )}

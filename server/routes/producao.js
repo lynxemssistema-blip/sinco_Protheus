@@ -2,8 +2,29 @@ const express = require('express');
 const router = express.Router();
 console.log('🔄 [DEBUG] Carregando arquivo routes/producao.js');
 const db = require('../db');
-const mysqlPool = require('../services/mysqlService'); // Importar conexão MySQL
+const mysqlPool = require('../services/mysqlService');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+
+// POST /api/producao/pg-cleanup — libera conexões idle no PostgreSQL
+// Usa a conexão do pool existente para encerrar sessões ociosas > 3 min
+router.post('/pg-cleanup', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT pg_terminate_backend(pid) as terminated, pid, usename, state,
+             now() - state_change AS idle_since
+      FROM pg_stat_activity
+      WHERE state = 'idle'
+        AND now() - state_change > interval '3 minutes'
+        AND pid <> pg_backend_pid()
+    `);
+    const terminated = result.rows.filter(r => r.terminated).length;
+    console.log(`🧹 [PG-CLEANUP] Encerradas ${terminated} sessões idle de ${result.rows.length} candidatas`);
+    res.json({ terminated, candidates: result.rows.length, message: `${terminated} conexões idle encerradas` });
+  } catch (err) {
+    console.error('❌ [PG-CLEANUP] Erro:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/producao/ordens
 router.get('/ordens', async (req, res) => {
@@ -506,7 +527,7 @@ router.get('/vertical-pendencias', async (req, res) => {
       if (plannedOps.length === 0) {
         return res.json([]); // No OPs planned in this date range at all
       }
-      opFilterFromMySQL = plannedOps.map(o => o.op_numero);
+      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim());
     }
 
     if (opFilterFromMySQL) {
@@ -646,22 +667,25 @@ router.get('/vertical-pendencias', async (req, res) => {
 
     let finalList = pendingList;
     if (plan_inicio_de) {
-      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio >= `${plan_inicio_de} 00:00:00`);
+      finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) >= new Date(`${String(plan_inicio_de)}T00:00:00`));
     }
     if (plan_inicio_ate) {
-      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio <= `${plan_inicio_ate} 23:59:59`);
+      finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) <= new Date(`${String(plan_inicio_ate)}T23:59:59`));
     }
     if (plan_fim_de) {
-      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim >= `${plan_fim_de} 00:00:00`);
+      finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) >= new Date(`${String(plan_fim_de)}T00:00:00`));
     }
     if (plan_fim_ate) {
-      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim <= `${plan_fim_ate} 23:59:59`);
+      finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) <= new Date(`${String(plan_fim_ate)}T23:59:59`));
     }
 
     res.json(finalList);
   } catch (err) {
-    console.error('Erro na rota vertical-pendencias:', err);
-    res.status(500).json({ error: 'Erro interno' });
+    console.error('❌ [VERTICAL-PENDENCIAS ERROR] message:', err.message);
+    console.error('❌ [VERTICAL-PENDENCIAS ERROR] code:', err.code);
+    console.error('❌ [VERTICAL-PENDENCIAS ERROR] detail:', err.detail);
+    console.error('❌ [VERTICAL-PENDENCIAS ERROR] stack:', err.stack);
+    res.status(500).json({ error: err.message || String(err) });
   }
 });
 
@@ -675,87 +699,105 @@ router.get('/vertical/:operacao', async (req, res) => {
     console.log(`🏭 [VERTICAL] Buscando fila para recurso: ${operacao} com Filtros`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
 
     const getInactiveFilter = await getInactiveOrdersFilter();
-    let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''", "TRIM(g2.g2_recurso) = $1"];
-    const inactiveSql = getInactiveFilter('c2.c2_pedido');
-    if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
-    let paramsArr = [operacao];
-    let pCount = 2;
+    const getInactiveFilter_ = getInactiveFilter; // alias para uso nas sub-queries
 
-    // PRE-FILTER BY DATE on MySQL
+    // PRE-FILTER BY DATE on MySQL — obtém lista de OPs planejadas no intervalo
     let opFilterFromMySQL = null;
     if (plan_inicio_de || plan_inicio_ate || plan_fim_de || plan_fim_ate) {
       let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE 1=1`;
       let mysqlParams = [];
-
-      if (plan_inicio_de) {
-        mysqlQuery += ` AND data_planejada_inicio >= ?`;
-        mysqlParams.push(`${plan_inicio_de} 00:00:00`);
-      }
-      if (plan_inicio_ate) {
-        mysqlQuery += ` AND data_planejada_inicio <= ?`;
-        mysqlParams.push(`${plan_inicio_ate} 23:59:59`);
-      }
-      if (plan_fim_de) {
-        mysqlQuery += ` AND data_planejada_fim >= ?`;
-        mysqlParams.push(`${plan_fim_de} 00:00:00`);
-      }
-      if (plan_fim_ate) {
-        mysqlQuery += ` AND data_planejada_fim <= ?`;
-        mysqlParams.push(`${plan_fim_ate} 23:59:59`);
-      }
+      if (plan_inicio_de) { mysqlQuery += ` AND data_planejada_inicio >= ?`; mysqlParams.push(`${plan_inicio_de} 00:00:00`); }
+      if (plan_inicio_ate) { mysqlQuery += ` AND data_planejada_inicio <= ?`; mysqlParams.push(`${plan_inicio_ate} 23:59:59`); }
+      if (plan_fim_de) { mysqlQuery += ` AND data_planejada_fim >= ?`;    mysqlParams.push(`${plan_fim_de} 00:00:00`); }
+      if (plan_fim_ate) { mysqlQuery += ` AND data_planejada_fim <= ?`;   mysqlParams.push(`${plan_fim_ate} 23:59:59`); }
 
       const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
-      if (plannedOps.length === 0) {
-        return res.json([]); // No OPs planned in this date range at all
-      }
-      opFilterFromMySQL = plannedOps.map(o => o.op_numero);
+      if (plannedOps.length === 0) return res.json([]);
+      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim()).slice(0, 5000);
     }
 
-    if (opFilterFromMySQL) {
-      if (opFilterFromMySQL.length > 5000) {
-        opFilterFromMySQL = opFilterFromMySQL.slice(0, 5000);
-      }
-      const inPlaceholders = opFilterFromMySQL.map((_, i) => `$${pCount + i}`).join(',');
-      conditions.push(`TRIM(c2.c2_num) IN (${inPlaceholders})`);
-      paramsArr.push(...opFilterFromMySQL);
-      pCount += opFilterFromMySQL.length;
+    // ── ETAPA 1: buscar produtos e operações do roteiro para este RECURSO ──────
+    // sg2010 filtrada por recurso é pequena (~50 produtos) — muito mais rápido que JOIN direto
+    const sgQuery = `
+      SELECT
+        TRIM(g2.g2_produto)  AS produto,
+        TRIM(g2.g2_operac)   AS operacao_codigo,
+        TRIM(g2.g2_recurso)  AS recurso_codigo,
+        TRIM(h1.h1_descri)   AS operacao_desc
+      FROM public.sg2010 g2
+      LEFT JOIN public.sh1010 h1
+        ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+        AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+      WHERE TRIM(g2.g2_recurso) = $1
+        AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+    `;
+    const sgResult = await db.query(sgQuery, [operacao]);
+
+    if (sgResult.rows.length === 0) {
+      console.log(`⚠️ [VERTICAL] Nenhum produto encontrado no roteiro para o recurso ${operacao}`);
+      return res.json([]);
     }
+
+    // Mapa produto → { operacao_codigo, recurso_codigo, operacao_desc }
+    const routingMap = {};
+    sgResult.rows.forEach(r => {
+      if (!routingMap[r.produto]) routingMap[r.produto] = [];
+      routingMap[r.produto].push(r);
+    });
+    const produtosDoRecurso = Object.keys(routingMap); // array de códigos de produto
+
+    console.log(`📋 [VERTICAL] Recurso ${operacao} → ${produtosDoRecurso.length} produtos no roteiro: ${produtosDoRecurso.slice(0,5).join(', ')}...`);
+
+    // ── ETAPA 2: buscar OPs em sc2010 usando = ANY() — evita o JOIN lento ────
+    let sc2Conditions = [
+      `COALESCE(c2.d_e_l_e_t_, '') = ''`,
+      `TRIM(c2.c2_produto) = ANY($1)`  // usa array — muito mais eficiente que JOIN
+    ];
+    let sc2Params = [produtosDoRecurso];
+    let sc2Count = 2;
+
+    const inactiveSqlSC2 = getInactiveFilter('c2.c2_pedido');
+    if (inactiveSqlSC2) sc2Conditions.push(inactiveSqlSC2.replace(/^\s*AND\s+/i, ''));
 
     if (op) {
-      conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
-      paramsArr.push(`%${op.trim()}%`);
+      sc2Conditions.push(`TRIM(c2.c2_num) ILIKE $${sc2Count++}`);
+      sc2Params.push(`%${op.trim()}%`);
     }
     if (pedido) {
-      conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${pCount} OR TRIM(c2.c2_obs) ILIKE $${pCount})`);
-      paramsArr.push(`%${pedido.trim()}%`);
-      pCount++;
+      sc2Conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${sc2Count} OR TRIM(c2.c2_obs) ILIKE $${sc2Count})`);
+      sc2Params.push(`%${pedido.trim()}%`);
+      sc2Count++;
     }
     if (produto) {
-      conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
-      paramsArr.push(`%${produto.trim()}%`);
-      pCount++;
+      sc2Conditions.push(`TRIM(c2.c2_produto) ILIKE $${sc2Count++}`);
+      sc2Params.push(`%${produto.trim()}%`);
     }
+
+    // Filtro de cliente precisa de JOIN extra — só inclui se o filtro foi passado
+    const needsClienteJoin = !!cliente;
     if (cliente) {
-      conditions.push(`(TRIM(c6.c6_cli) ILIKE $${pCount} OR TRIM(a1.a1_nome) ILIKE $${pCount})`);
-      paramsArr.push(`%${cliente.trim()}%`);
-      pCount++;
+      sc2Conditions.push(`(TRIM(a1.a1_nome) ILIKE $${sc2Count} OR TRIM(a1.a1_nreduz) ILIKE $${sc2Count})`);
+      sc2Params.push(`%${cliente.trim()}%`);
+      sc2Count++;
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    // Filtro de datas planejadas (MySQL → lista de OPs)
+    if (opFilterFromMySQL && opFilterFromMySQL.length > 0) {
+      sc2Conditions.push(`TRIM(c2.c2_num) = ANY($${sc2Count++})`);
+      sc2Params.push(opFilterFromMySQL);
+    }
 
-    // Query Protheus: Busca todas as OPs ativas que passam por este RECURSO (g2_recurso)
-    // O dropdown é populado com recursos (SH1010 → MO0004), por isso filtramos por g2_recurso,
-    // não por g2_operac (que é o código numérico da operação).
+    const sc2Where = `WHERE ${sc2Conditions.join(' AND ')}`;
+
     const pgQuery = `
       SELECT
-        TRIM(c2.c2_num) AS op,
+        TRIM(c2.c2_num)  AS op,
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
         TRIM(c2.c2_produto) AS produto,
-        -- Herda pedido/obs/itempv da sequencia 001 (root_op) se a linha atual nao tiver
-        COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS raw_pedido,
-        COALESCE(NULLIF(TRIM(c2.c2_obs), ''),    NULLIF(TRIM(root_op.c2_obs), ''))    AS obs_venda,
-        COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pedido,
+        COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS raw_pedido,
+        COALESCE(NULLIF(TRIM(c2.c2_obs),''),    NULLIF(TRIM(root_op.c2_obs),''))    AS obs_venda,
+        COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS item_pedido,
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
         CASE
@@ -763,34 +805,42 @@ router.get('/vertical/:operacao', async (req, res) => {
           THEN TO_CHAR(TO_DATE(c6.c6_entreg, 'YYYYMMDD'), 'YYYY-MM-DD')
           ELSE NULL
         END AS data_entrega,
-        TRIM(g2.g2_operac) AS operacao_codigo,
-        TRIM(h1.h1_descri) AS operacao_desc,
-        TRIM(g2.g2_recurso) AS recurso_codigo
+        TRIM(c6.c6_cli)  AS c6_cli,
+        TRIM(a1.a1_nome) AS nome_cliente
       FROM public.sc2010 c2
-      -- Self-join: busca a linha raiz (sequen=001) da mesma OP/item para herdar pedido e itempv
       LEFT JOIN public.sc2010 root_op
         ON  root_op.c2_num    = c2.c2_num
         AND root_op.c2_item   = c2.c2_item
         AND root_op.c2_sequen = '001'
         AND COALESCE(root_op.d_e_l_e_t_, '') = ''
-      INNER JOIN public.sg2010 g2
-        ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
-      LEFT JOIN public.sh1010 h1
-        ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-      -- SC6 usa COALESCE para funcionar tanto na seq-001 quanto nas sub-sequencias
       LEFT JOIN public.sc6010 c6
-        ON  TRIM(c6.c6_num)  = COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))
-        AND TRIM(c6.c6_item) = COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), ''))
+        ON  TRIM(c6.c6_num)  = COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''))
+        AND TRIM(c6.c6_item) = COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),''))
         AND COALESCE(c6.d_e_l_e_t_, '') = ''
-      LEFT JOIN public.sa1010 a1
-        ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja) AND COALESCE(a1.d_e_l_e_t_, '') = ''
+      ${needsClienteJoin ? `LEFT JOIN public.sa1010 a1
+        ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja)
+        AND COALESCE(a1.d_e_l_e_t_, '') = ''` : `LEFT JOIN public.sa1010 a1
+        ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja)
+        AND COALESCE(a1.d_e_l_e_t_, '') = ''`}
       LEFT JOIN public.sb1010 b1
         ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
-      ${whereClause}
+      ${sc2Where}
       ORDER BY c6.c6_entreg ASC NULLS LAST, c2.c2_pedido ASC, c2.c2_num ASC
+      LIMIT 500
     `;
 
-    const pgResult = await db.query(pgQuery, paramsArr);
+    const pgResult = await db.query(pgQuery, sc2Params);
+
+    // Enriquecer cada linha com os dados do roteiro (operacao, recurso, desc) do routingMap
+    pgResult.rows.forEach(row => {
+      const routes = routingMap[row.produto] || [];
+      // Pega a primeira operação do roteiro para esse produto neste recurso
+      const route = routes[0] || {};
+      row.operacao_codigo = route.operacao_codigo || null;
+      row.operacao_desc   = route.operacao_desc   || null;
+      row.recurso_codigo  = route.recurso_codigo  || operacao;
+    });
+
     const opsList = pgResult.rows;
 
     console.log(`📋 [VERTICAL] Encontradas ${opsList.length} OPs na estrutura para a operação ${operacao}.`);
@@ -901,23 +951,33 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     let finalList = enrichedList;
     if (plan_inicio_de) {
-      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio >= `${plan_inicio_de} 00:00:00`);
+      finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) >= new Date(`${String(plan_inicio_de)}T00:00:00`));
     }
     if (plan_inicio_ate) {
-      finalList = finalList.filter(r => r.planejamento_inicio && r.planejamento_inicio <= `${plan_inicio_ate} 23:59:59`);
+      finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) <= new Date(`${String(plan_inicio_ate)}T23:59:59`));
     }
     if (plan_fim_de) {
-      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim >= `${plan_fim_de} 00:00:00`);
+      finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) >= new Date(`${String(plan_fim_de)}T00:00:00`));
     }
     if (plan_fim_ate) {
-      finalList = finalList.filter(r => r.planejamento_fim && r.planejamento_fim <= `${plan_fim_ate} 23:59:59`);
+      finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) <= new Date(`${String(plan_fim_ate)}T23:59:59`));
     }
 
     res.json(finalList);
 
   } catch (err) {
-    console.error('❌ [VERTICAL ROUTE ERROR]', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('❌ [VERTICAL ROUTE ERROR] message:', err.message);
+    console.error('❌ [VERTICAL ROUTE ERROR] code:', err.code);
+
+    // Erro de saturação do PG (too many clients / connection slots reserved)
+    if (err.code === '53300' || err.code === '53100') {
+      return res.status(503).json({
+        error: 'Banco de dados temporariamente indisponível (muitas conexões ativas). Aguarde alguns segundos e tente novamente.',
+        code: err.code
+      });
+    }
+
+    res.status(500).json({ error: err.message || String(err) });
   }
 });
 
