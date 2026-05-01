@@ -420,13 +420,21 @@ router.post('/test-whatsapp', authenticateToken, async (req, res) => {
     try {
         const { sendText, msgMeuCanal } = require('../services/whatsapp');
         
-        const userId = req.user?.id || req.user?.idUsuario;
-        const userLogin = req.user?.login || req.user?.Login;
-        const userName = req.user?.nome || req.user?.NomeCompleto || userLogin;
+        const userLogin = req.user?.username || req.user?.login || req.user?.Login;
         
-        const targetNumber = req.body.number || '5531995574906'; // número de teste fornecido
+        // 1. Tentar resgatar o telefone real do usuário do banco MySQL
+        const [uRows] = await mysql.query('SELECT telefone, idUsuario, NomeCompleto FROM usuario WHERE Login = ?', [userLogin]);
+        const userTelefone = uRows[0]?.telefone;
+        const userId = uRows[0]?.idUsuario;
+        const userName = uRows[0]?.NomeCompleto || userLogin;
 
-        // 1. Calcular o KPI para o usuário atual
+        const targetNumber = req.body.number || userTelefone;
+
+        if (!targetNumber) {
+            return res.status(400).json({ error: 'Seu usuário não possui um telefone (celular) cadastrado no sistema.' });
+        }
+
+        // 2. Calcular o KPI para o usuário atual
         const kpiData = await calcularKPIMeuCanal(userId, userLogin, userName);
 
         // 2. Usar o template do whatsapp

@@ -148,15 +148,15 @@ router.get('/tracking-comparison', async (req, res) => {
 
         if (data_inicio) {
             appointmentFilters.push(`a.data_fim >= ?`);
-            appointmentParams.push(data_inicio);
+            appointmentParams.push(`${data_inicio} 00:00:00`);
         }
         if (data_fim) {
             appointmentFilters.push(`a.data_fim <= ?`);
             appointmentParams.push(`${data_fim} 23:59:59`);
         }
         if (op) {
-            appointmentFilters.push(`a.op_numero LIKE ?`);
-            appointmentParams.push(`%${op}%`);
+            appointmentFilters.push(`a.op_numero = ?`);
+            appointmentParams.push(String(op).trim().padStart(6, '0'));
         }
 
         const appointmentWhere = appointmentFilters.length > 0
@@ -425,8 +425,8 @@ router.get('/tracking-comparison', async (req, res) => {
             appointmentParams.push(`${data_fim} 23:59:59`);
         }
         if (op) {
-            appointmentFilters.push(`a.op_numero LIKE ?`);
-            appointmentParams.push(`%${op}%`);
+            appointmentFilters.push(`a.op_numero = ?`);
+            appointmentParams.push(String(op).trim().padStart(6, '0'));
         }
 
         const appointmentWhere = appointmentFilters.length > 0
@@ -606,6 +606,12 @@ router.get('/analytics-dashboard', async (req, res) => {
             paramCount += 2;
         }
 
+        if (data_inicio) {
+            whereClause += ` AND c2.c2_datpri >= $${paramCount}`;
+            params.push(data_inicio.replace(/-/g, ''));
+            paramCount++;
+        }
+
         if (clienteFilter) {
             whereClause += ` AND (sa1.a1_nome ILIKE $${paramCount} OR sa1.a1_nreduz ILIKE $${paramCount})`;
             params.push(`%${clienteFilter}%`);
@@ -656,23 +662,17 @@ router.get('/analytics-dashboard', async (req, res) => {
                 c2.c2_num AS op,
                 c2.c2_item AS item_op,
                 c2.c2_sequen AS sequen,
-                c2.c2_produto AS cod_produto_op,
+                TRIM(c2.c2_produto) AS cod_produto_op,
                 c2.c2_quant::numeric AS qtd_planejada_op,
-                g2.g2_operac AS operacao,
-                TRIM(g2.g2_recurso) AS recurso,
-                TRIM(g2.g2_descri) AS desc_operacao,
                 sc5.c5_cliente AS cod_cliente,
                 sa1.a1_nome AS nome_cliente,
-                (TRIM(parent.c2_pedido) || ' ') || TRIM(parent.c2_obs) AS raw_pedido_obs, -- FETCH RAW FOR JS FALLBACK
-                parent.c2_itempv AS item_pedido,        -- INHERIT FROM PARENT
+                (TRIM(parent.c2_pedido) || ' ') || TRIM(parent.c2_obs) AS raw_pedido_obs,
+                parent.c2_itempv AS item_pedido,
                 sc6.c6_produto AS produto_item,
                 TRIM(sc6.c6_descri) AS desc_produto,
                 sc6.c6_entreg AS data_entrega_item
             FROM public.sc2010 c2
             INNER JOIN ParentOPs parent ON parent.c2_num = c2.c2_num
-            LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto) 
-                AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-            -- Join Metadata based on PARENT info
             LEFT JOIN public.sc5010 sc5 ON sc5.c5_num = TRIM(parent.c2_pedido) 
                 AND COALESCE(sc5.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sc6010 sc6 ON sc6.c6_num = TRIM(parent.c2_pedido)
@@ -682,12 +682,58 @@ router.get('/analytics-dashboard', async (req, res) => {
                 AND sa1.a1_loja = sc5.c5_lojacli 
                 AND COALESCE(sa1.d_e_l_e_t_, '') IN ('', ' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-            ORDER BY parent.c2_itempv, c2.c2_num, c2.c2_sequen, g2.g2_operac
+            ORDER BY parent.c2_itempv, c2.c2_num, c2.c2_sequen
             LIMIT 500
         `;
 
         const pgRes = await db.query(pgQuery, params);
-        const operations = pgRes.rows;
+        const rawOps = pgRes.rows;
+
+        // 1B. Fetch Routing Data (sg2010) safely using array lookup
+        const productList = [...new Set(rawOps.map(op => op.cod_produto_op))].filter(Boolean);
+        let routingMap = {};
+        
+        if (productList.length > 0) {
+            const sgQuery = `
+                SELECT 
+                    TRIM(g2.g2_produto) as produto,
+                    TRIM(g2.g2_operac) as operacao,
+                    TRIM(g2.g2_recurso) as recurso,
+                    TRIM(g2.g2_descri) as desc_operacao
+                FROM public.sg2010 g2
+                WHERE TRIM(g2.g2_produto) = ANY($1)
+                  AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            `;
+            const sgRes = await db.query(sgQuery, [productList]);
+            
+            sgRes.rows.forEach(r => {
+                if (!routingMap[r.produto]) routingMap[r.produto] = [];
+                routingMap[r.produto].push(r);
+            });
+        }
+
+        // Expand OPs with their routing (simulating the JOIN in memory)
+        const operations = [];
+        rawOps.forEach(op => {
+            const routes = routingMap[op.cod_produto_op] || [];
+            if (routes.length === 0) {
+                operations.push({
+                    ...op,
+                    operacao: null,
+                    recurso: null,
+                    desc_operacao: null
+                });
+            } else {
+                routes.forEach(rt => {
+                    operations.push({
+                        ...op,
+                        operacao: rt.operacao,
+                        recurso: rt.recurso,
+                        desc_operacao: rt.desc_operacao
+                    });
+                });
+            }
+        });
 
         console.log(`📦 [ANALYTICS] Found ${operations.length} operations`);
 
@@ -974,13 +1020,36 @@ router.get('/', async (req, res) => {
         }
 
         // Simple text filters in Stage 1
-        if (op)       { s1Conds.push(`TRIM(c2.c2_num) ILIKE $${pn++}`);  params.push(`%${op.trim()}%`); }
+        if (op) {
+            const opArr = op.split(',').map(s => s.trim()).filter(Boolean);
+            if (opArr.length === 1) {
+                // If single OP, use ILIKE (no index, but it's what they expect for partial search)
+                s1Conds.push(`TRIM(c2.c2_num) ILIKE $${pn++}`);
+                params.push(`%${opArr[0]}%`);
+            } else if (opArr.length > 1) {
+                // If multiple OPs, pad exactly to 6 chars and use IN without TRIM so the index is used!
+                const paddedOps = opArr.map(s => s.padEnd(6, ' '));
+                const ph = paddedOps.map((_, i) => `$${pn + i}`).join(',');
+                s1Conds.push(`c2.c2_num IN (${ph})`);
+                params.push(...paddedOps);
+                pn += paddedOps.length;
+            }
+        }
         if (pedido)   { s1Conds.push(`(TRIM(c2.c2_pedido) ILIKE $${pn} OR TRIM(root_op.c2_pedido) ILIKE $${pn})`); params.push(`%${pedido.trim()}%`); pn++; }
         if (item)     { s1Conds.push(`TRIM(c2.c2_item) ILIKE $${pn++}`);  params.push(`%${item.trim()}%`); }
         if (sequencia){ s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`);params.push(`%${sequencia.trim()}%`); }
-        if (produto)  { s1Conds.push(`(TRIM(c2.c2_produto) ILIKE $${pn} OR sb1.b1_desc ILIKE $${pn})`); params.push(`%${produto.trim().toUpperCase()}%`); pn++; }
+        if (produto) {
+            s1Conds.push(`TRIM(c2.c2_produto) IN (
+                SELECT DISTINCT TRIM(b1_cod)
+                FROM public.sb1010
+                WHERE (b1_cod ILIKE $${pn} OR b1_desc ILIKE $${pn})
+                AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+            )`);
+            params.push(`%${produto.trim().toUpperCase()}%`);
+            pn++;
+        }
 
-        // Setor/operação: EXISTS subquery in Stage 1 (avoids SG2010 join explosion)
+        // Setor/operação: pre-filter SG2010 to avoid slow EXISTS in Stage 1
         if (operacao || setor) {
             let recursoArray = [];
             const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
@@ -988,28 +1057,40 @@ router.get('/', async (req, res) => {
                 try {
                     const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
                     recursoArray = sectorRecs.length > 0
-                        ? sectorRecs.map(r => r.recurso_codigo.trim().toUpperCase())
+                        ? sectorRecs.map(r => r.recurso_codigo?.trim()?.toUpperCase()).filter(Boolean)
                         : ['___NO_MATCH___'];
                 } catch (e) { console.error('Erro ao buscar recursos do setor:', e.message); }
             }
+            
             const existsConds = [];
+            let sgParams = [];
+            let sgPn = 1;
+
             if (recursoArray.length > 0) {
-                const ph = recursoArray.map((_, i) => `$${pn + i}`).join(',');
-                existsConds.push(`TRIM(g2x.g2_recurso) IN (${ph})`);
-                params.push(...recursoArray); pn += recursoArray.length;
+                const ph = recursoArray.map((_, i) => `$${sgPn + i}`).join(',');
+                existsConds.push(`TRIM(g2_recurso) IN (${ph})`);
+                sgParams.push(...recursoArray);
+                sgPn += recursoArray.length;
             }
             if (operacaoArray.length > 0) {
-                const conds = operacaoArray.map((_, i) => `(g2x.g2_operac ILIKE $${pn + i} OR g2x.g2_descri ILIKE $${pn + i} OR TRIM(g2x.g2_recurso) ILIKE $${pn + i})`);
+                const conds = operacaoArray.map((_, i) => `(g2_operac ILIKE $${sgPn + i} OR g2_descri ILIKE $${sgPn + i} OR TRIM(g2_recurso) ILIKE $${sgPn + i})`);
                 existsConds.push(`(${conds.join(' OR ')})`);
-                params.push(...operacaoArray.map(s => `%${s}%`)); pn += operacaoArray.length;
+                sgParams.push(...operacaoArray.map(s => `%${s}%`));
+                sgPn += operacaoArray.length;
             }
+
             if (existsConds.length > 0) {
-                s1Conds.push(`EXISTS (
-                    SELECT 1 FROM public.sg2010 g2x
-                    WHERE TRIM(g2x.g2_produto) = TRIM(c2.c2_produto)
-                    AND COALESCE(g2x.d_e_l_e_t_,'') IN ('', ' ')
-                    AND (${existsConds.join(' AND ')})
-                )`);
+                // Ao invés de trafegar milhares de códigos de produto para o Node.js e enviar de volta, 
+                // delegamos o filtro diretamente para o PostgreSQL via subquery:
+                const subquerySql = `TRIM(c2.c2_produto) IN (
+                    SELECT DISTINCT TRIM(g2_produto)
+                    FROM public.sg2010
+                    WHERE COALESCE(d_e_l_e_t_,'') IN ('', ' ')
+                    AND (${existsConds.map(c => c.replace(/\$(\d+)/g, (match, num) => `$${parseInt(num) + pn - 1}`)).join(' AND ')})
+                )`;
+                s1Conds.push(subquerySql);
+                params.push(...sgParams);
+                pn += sgParams.length;
             }
         }
 
@@ -1025,10 +1106,6 @@ router.get('/', async (req, res) => {
             ? `AND (COALESCE(c6.c6_qtdven::numeric, 0) - COALESCE(c6.c6_qtdent::numeric, 0)) > 0`
             : '';
 
-        // Param index for SB1010 join in Stage 1 (needed for produto filter)
-        const sb1JoinStage1 = produto
-            ? `LEFT JOIN public.sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(sb1.d_e_l_e_t_,'') IN ('', ' ')`
-            : '';
 
         const s1Where = `WHERE ${s1Conds.join(' AND ')} ${fracExclude}`;
 
@@ -1053,7 +1130,6 @@ WITH op_base AS (
         AND root_op.c2_item   = c2.c2_item
         AND root_op.c2_sequen = '001'
         AND COALESCE(root_op.d_e_l_e_t_,'') IN ('', ' ')
-    ${sb1JoinStage1}
     ${s1Where}
     ORDER BY c2.c2_num DESC, c2.c2_item, c2.c2_sequen
     LIMIT 5000
@@ -1150,6 +1226,43 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
 
         console.log(`[production GET /] ${opRows.length} OPs + ${ops.length} rows (c/roteiro) em ${Date.now() - t0}ms`);
 
+        // Apply specific operation/recurso filter to the expanded rows
+        if (operacao || setor) {
+            let recursoArray = [];
+            const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+            
+            if (setor) {
+                try {
+                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
+                    if (sectorRecs.length > 0) {
+                        recursoArray = sectorRecs.map(r => r.recurso_codigo?.trim()?.toUpperCase()).filter(Boolean);
+                    } else {
+                        recursoArray = ['___NO_MATCH___'];
+                    }
+                } catch(e) { console.error(e); }
+            }
+
+            if (recursoArray.length > 0 || operacaoArray.length > 0) {
+                ops = ops.filter(row => {
+                    const opName = (row.operacao || '').trim().toUpperCase();
+                    const recName = (row.recurso || '').trim().toUpperCase();
+                    const descName = (row.desc_operacao || '').trim().toUpperCase();
+                    
+                    let matchRecurso = recursoArray.length === 0 || recursoArray.includes(recName);
+                    
+                    let matchOperacao = operacaoArray.length === 0 || operacaoArray.some(val => 
+                        opName.includes(val) || descName.includes(val) || recName.includes(val)
+                    );
+
+                    if (setor && operacao) {
+                        return matchRecurso && matchOperacao;
+                    }
+                    if (setor) return matchRecurso;
+                    if (operacao) return matchOperacao;
+                    return true;
+                });
+            }
+        }
         // 3. Apply MySQL pre-filter (planned dates)
         if (plannedOpsFilter) {
             const plannedSet = new Set(plannedOpsFilter.map(p => `${p.op_numero}|${p.op_item}|${p.op_sequencia}`));
@@ -1264,9 +1377,9 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
 // GET /api/production/matrix - Matrix View (Items as Rows, Operations as Columns)
 router.get('/matrix', async (req, res) => {
     try {
-        const { op, produto, cliente, pedido, operacao } = req.query;
+        const { op, produto, cliente, pedido, operacao, data_inicio, data_fim } = req.query;
 
-        if (!op && !produto && !cliente && !pedido && !operacao) {
+        if (!op && !produto && !cliente && !pedido && !operacao && !data_inicio && !data_fim) {
             return res.status(400).json({
                 success: false,
                 error: 'Informe ao menos um filtro (op, produto, cliente, pedido ou operacao) para carregar a matriz.'
@@ -1275,32 +1388,78 @@ router.get('/matrix', async (req, res) => {
 
         console.log('📊 [MATRIX] Fetching matrix view data...');
 
+        const params = [];
+        let paramCount = 1;
+
+        // Pre-filter by produto
+        let prodCond = '';
+        if (produto) {
+            try {
+                const prodMatchRes = await db.query(`
+                    SELECT TRIM(b1_cod) as cod
+                    FROM public.sb1010
+                    WHERE (b1_cod ILIKE $1 OR b1_desc ILIKE $1)
+                    AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                `, [`%${produto.trim().toUpperCase()}%`]);
+                const matchingProdCodes = prodMatchRes.rows.map(r => r.cod).filter(Boolean);
+                if (matchingProdCodes.length > 0) {
+                    prodCond = `AND TRIM(c2.c2_produto) = ANY($${paramCount++})`;
+                    params.push(matchingProdCodes);
+                } else {
+                    prodCond = `AND 1=0`;
+                }
+            } catch (err) {
+                console.error('Erro ao pré-filtrar produtos matrix:', err);
+            }
+        }
+
+        // Pre-filter by operacao
+        let opCond = '';
+        if (operacao) {
+            try {
+                const sgRes = await db.query(`
+                    SELECT DISTINCT TRIM(g2_produto) as cod
+                    FROM public.sg2010
+                    WHERE COALESCE(d_e_l_e_t_,'') IN ('', ' ')
+                    AND (TRIM(g2_operac) = $1 OR TRIM(g2_recurso) ILIKE $1 OR g2_descri ILIKE $1)
+                `, [operacao.trim()]);
+                const matchingOpsCodes = sgRes.rows.map(r => r.cod).filter(Boolean);
+                if (matchingOpsCodes.length > 0) {
+                    opCond = `AND TRIM(c2.c2_produto) = ANY($${paramCount++})`;
+                    params.push(matchingOpsCodes);
+                } else {
+                    opCond = `AND 1=0`;
+                }
+            } catch (err) {
+                console.error('Erro ao pré-filtrar operacoes matrix:', err);
+            }
+        }
+
         let pgQuery = `
             WITH filtered_ops AS (
                 SELECT DISTINCT
                     c2.c2_num,
                     c2.c2_item
                 FROM public.sc2010 c2
-                LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
-                LEFT JOIN public.sc5010 c5 ON c5.c5_num = TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
-                LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
                 WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(c2.c2_num) != ''
                 AND c2.c2_datpri >= '20240101'
         `;
 
-        const params = [];
-        let paramCount = 1;
-
+        if (data_inicio) {
+            pgQuery += ` AND c2.c2_datpri >= $${paramCount++}`;
+            params.push(data_inicio.replace(/-/g, ''));
+        }
+        if (data_fim) {
+            pgQuery += ` AND c2.c2_datpri <= $${paramCount++}`;
+            params.push(data_fim.replace(/-/g, ''));
+        }
         if (op) {
-            pgQuery += ` AND c2.c2_num LIKE $${paramCount}`;
+            pgQuery += ` AND c2.c2_num LIKE $${paramCount++}`;
             params.push(`%${op}%`);
-            paramCount++;
         }
         if (produto) {
-            pgQuery += ` AND (c2.c2_produto LIKE $${paramCount} OR sb1.b1_desc LIKE $${paramCount})`;
-            params.push(`%${produto.toUpperCase()}%`);
-            paramCount++;
+            pgQuery += ` ${prodCond}`;
         }
         if (cliente) {
             pgQuery += ` AND (a1.a1_nome LIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
@@ -1308,28 +1467,11 @@ router.get('/matrix', async (req, res) => {
             paramCount++;
         }
         if (pedido) {
-            pgQuery += ` AND TRIM(c2.c2_pedido) ILIKE $${paramCount}`;
+            pgQuery += ` AND TRIM(c2.c2_pedido) ILIKE $${paramCount++}`;
             params.push(`%${pedido.trim()}%`);
-            paramCount++;
         }
         if (operacao) {
-            pgQuery += ` AND EXISTS (
-                SELECT 1 FROM public.sc2010 op_seq 
-                LEFT JOIN public.sg2010 g2_seq ON
-                    btrim(g2_seq.g2_produto) = btrim(op_seq.c2_produto)
-                    AND btrim(g2_seq.g2_filial) = btrim(op_seq.c2_filial)
-                    AND COALESCE(g2_seq.d_e_l_e_t_, '') IN ('', ' ')
-                WHERE op_seq.c2_num = c2.c2_num 
-                AND op_seq.c2_item = c2.c2_item
-                AND (
-                    TRIM(g2_seq.g2_operac) = $${paramCount} 
-                    OR 
-                    TRIM(g2_seq.g2_recurso) ILIKE $${paramCount}
-                )
-                AND COALESCE(op_seq.d_e_l_e_t_, '') IN ('', ' ')
-            )`;
-            params.push(operacao.trim());
-            paramCount++;
+            pgQuery += ` ${opCond}`;
         }
 
         // Fechar CTE e limitar resultados (paginação)
@@ -1791,20 +1933,21 @@ router.post('/plan-batch', async (req, res) => {
                 if (chunk.length === 0) continue;
 
                 // Build Bulk Insert Query
-                const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+                const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
                 const sql = `
                     INSERT INTO app_production_planning
-    (op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim)
+    (op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim, lote_id)
                     VALUES ${placeholders}
                     ON DUPLICATE KEY UPDATE 
                         data_planejada_inicio = VALUES(data_planejada_inicio),
-    data_planejada_fim = VALUES(data_planejada_fim)
+    data_planejada_fim = VALUES(data_planejada_fim),
+    lote_id = VALUES(lote_id)
         `;
 
                 // Flatten values
                 const values = [];
                 chunk.forEach(p => {
-                    values.push(p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo, p.data_inicio, p.data_fim);
+                    values.push(p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo, p.data_inicio, p.data_fim, p.lote_id || null);
                 });
 
                 await connection.execute(sql, values);
@@ -2207,17 +2350,17 @@ router.get('/pendentes', async (req, res) => {
         }
 
         if (data_inicio) {
-            sql += ` AND DATE(a.data_fim) >= ?`;
-            params.push(data_inicio);
+            sql += ` AND a.data_fim >= ?`;
+            params.push(`${data_inicio} 00:00:00`);
         }
         if (data_fim) {
-            sql += ` AND DATE(a.data_fim) <= ?`;
-            params.push(data_fim);
+            sql += ` AND a.data_fim <= ?`;
+            params.push(`${data_fim} 23:59:59`);
         }
 
         if (op) {
-            sql += ` AND a.op_numero LIKE ?`;
-            params.push(`%${op}%`);
+            sql += ` AND a.op_numero = ?`;
+            params.push(String(op).trim().padStart(6, '0'));
         }
         if (apontador) {
             sql += ` AND a.usuario LIKE ?`;
@@ -2897,8 +3040,8 @@ router.get('/tracking-evolution', async (req, res) => {
             params.push(`% ${colaborador}% `);
         }
         if (op) {
-            whereConditions.push(`a.op_numero LIKE ? `);
-            params.push(`% ${op}% `);
+            whereConditions.push(`a.op_numero = ? `);
+            params.push(String(op).trim().padStart(6, '0'));
         }
         if (operacao) {
             whereConditions.push(`a.operacao_codigo LIKE ? `);
@@ -3099,8 +3242,8 @@ router.get('/tracking-comparison', async (req, res) => {
             appointmentParams.push(`${data_fim} 23: 59: 59`);
         }
         if (op) {
-            appointmentFilters.push(`a.op_numero LIKE ? `);
-            appointmentParams.push(`% ${op}% `);
+            appointmentFilters.push(`a.op_numero = ? `);
+            appointmentParams.push(String(op).trim().padStart(6, '0'));
         }
 
         const appointmentWhere = appointmentFilters.length > 0
