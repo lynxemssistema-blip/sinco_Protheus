@@ -192,7 +192,7 @@ export default function ProductionEvolution() {
                             className="w-full px-3 py-2 border rounded-lg bg-white"
                         >
                             <option value="">Todos os Setores</option>
-                            {sectors.map(s => <option key={s} value={s}>{s}</option>)}
+                            {sectors.map((s, idx) => <option key={s.id || idx} value={s.id || s}>{s.nome || s}</option>)}
                         </select>
                     </div>
                     <div>

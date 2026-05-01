@@ -24,99 +24,125 @@ router.get('/analytics/evolution', async (req, res) => {
         const { startDate, endDate, sector, user } = req.query;
         console.log('📈 [EVOLUTION] Filters:', { startDate, endDate, sector, user });
 
-        let whereClauses = [];
+        let whereClauses = [`a.data_fim IS NOT NULL`];
         let params = [];
 
         if (startDate) {
             whereClauses.push(`a.data_fim >= ?`);
-            params.push(startDate);
+            params.push(`${startDate} 00:00:00`);
         }
         if (endDate) {
             whereClauses.push(`a.data_fim <= ?`);
             params.push(`${endDate} 23:59:59`);
         }
-
-        // Note: 'user' in filters corresponds to who MADE the appointment.
-        // The table `app_production_appointments` has `usuario`.
         if (user) {
             whereClauses.push(`a.usuario = ?`);
             params.push(user);
         }
 
-        // Sector is trickier. It usually comes from the User's metadata OR the Resource/Machine's sector.
-        // IF the appointment table doesn't have sector, we might need to join with `usuario` table or `recurso`.
-        // Let's assume for now we filter by User's sector if `usuario` table has it.
-        // Or if the frontend passes sector, we look up users in that sector?
-        // Let's try to join with `usuario` table if sector is present.
-
-        let joinUser = '';
-        if (sector) {
-            joinUser = `JOIN usuario u ON u.Login = a.usuario`; // Assuming 'usuario' col in appointment is the Login
-            whereClauses.push(`u.Setor = ?`);
-            params.push(sector);
-        } else {
-            // Optional join just to get sector for grouping
-            joinUser = `LEFT JOIN usuario u ON u.Login = a.usuario`;
-        }
-
         const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-        // Query for Chart: Group by Date
-        const chartQuery = `
-            SELECT 
-                DATE(a.data_fim) as date,
-                SUM(a.quantidade) as total
-            FROM app_production_appointments a
-            ${joinUser}
-            ${whereSQL}
-            GROUP BY DATE(a.data_fim)
-            ORDER BY date ASC
-        `;
-
-        const [chartData] = await mysqlPool.query(chartQuery, params);
-
-        // Query for Details/Grid: Detailed list
-        const gridQuery = `
+        // 1. Fetch ALL matching appointments
+        const appsQuery = `
             SELECT 
                 DATE(a.data_fim) as date,
                 a.usuario,
-                u.Setor as setor,
+                a.op_numero,
+                a.operacao_codigo,
                 SUM(a.quantidade) as qtd,
                 COUNT(*) as count
             FROM app_production_appointments a
-            ${joinUser}
             ${whereSQL}
-            GROUP BY DATE(a.data_fim), a.usuario, u.Setor
-            ORDER BY date DESC, qtd DESC
-            LIMIT 500
+            GROUP BY DATE(a.data_fim), a.usuario, a.op_numero, a.operacao_codigo
         `;
+        const [rawApps] = await mysqlPool.query(appsQuery, params);
 
-        const [gridData] = await mysqlPool.query(gridQuery, params);
+        // 2. Fetch Postgres Routing Data for these OPs
+        const opNumbers = [...new Set(rawApps.map(a => a.op_numero))].filter(Boolean);
+        const opRoutingMap = {}; // KEY: op_numero_codigo -> recurso_codigo
 
-        // Fetch Lists for Filters
-        const [sectorsData] = await mysqlPool.query(`SELECT DISTINCT Setor FROM usuario WHERE Setor IS NOT NULL AND Setor != '' ORDER BY Setor`);
-        const [usersData] = await mysqlPool.query(`SELECT DISTINCT Login FROM usuario ORDER BY Login`);
+        if (opNumbers.length > 0) {
+            const pgQuery = `
+                SELECT 
+                    TRIM(c2.c2_num) as op,
+                    TRIM(g2.g2_operac) as codigo_operacao,
+                    TRIM(g2.g2_recurso) as recurso_codigo
+                FROM public.sc2010 c2
+                JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto)
+                WHERE TRIM(c2.c2_num) = ANY($1)
+                AND COALESCE(c2.d_e_l_e_t_,'') IN ('', ' ')
+                AND COALESCE(g2.d_e_l_e_t_,'') IN ('', ' ')
+            `;
+            const pgRes = await db.query(pgQuery, [opNumbers.map(o => String(o).padStart(6, '0'))]);
+            
+            for (const r of pgRes.rows) {
+                opRoutingMap[`${r.op}_${r.codigo_operacao}`] = r.recurso_codigo;
+            }
+        }
 
-        const formattedChartData = chartData.map(d => {
-            const dateStr = d.date.toISOString().split('T')[0];
+        // 3. Fetch MySQL Sectors Data
+        const [setores] = await mysqlPool.query(`SELECT id, nome FROM pcp_setores ORDER BY nome`);
+        const [recursos] = await mysqlPool.query(`SELECT setor_id, recurso_codigo FROM pcp_setor_recursos`);
+        
+        const recToSector = {}; 
+        const sectorDict = {}; 
+        for (const s of setores) sectorDict[s.id] = s.nome;
+        for (const r of recursos) {
+            recToSector[r.recurso_codigo?.trim()?.toUpperCase()] = {
+                id: String(r.setor_id),
+                nome: sectorDict[r.setor_id] || 'Desconhecido'
+            };
+        }
+
+        // 4. Enrich, Filter and Aggregate
+        const aggregatedByDate = {}; 
+        const aggregatedGrid = {}; 
+
+        for (const app of rawApps) {
+            const opPad = String(app.op_numero).padStart(6, '0');
+            const rec = opRoutingMap[`${opPad}_${app.operacao_codigo}`];
+            const sectorObj = rec ? recToSector[rec.toUpperCase()] : null;
+            
+            const appSetorId = sectorObj ? sectorObj.id : null;
+            const appSetorNome = sectorObj ? sectorObj.nome : 'Sem Setor';
+
+            // Apply Sector Filter
+            if (sector && appSetorId !== String(sector)) {
+                continue;
+            }
+
+            const dateStr = app.date instanceof Date ? app.date.toISOString().split('T')[0] : app.date;
+
+            if (!aggregatedByDate[dateStr]) aggregatedByDate[dateStr] = 0;
+            aggregatedByDate[dateStr] += Number(app.qtd);
+
+            const gridKey = `${dateStr}_${app.usuario}_${appSetorNome}`;
+            if (!aggregatedGrid[gridKey]) {
+                aggregatedGrid[gridKey] = {
+                    date: dateStr,
+                    usuario: app.usuario,
+                    setor: appSetorNome,
+                    qtd: 0,
+                    count: 0
+                };
+            }
+            aggregatedGrid[gridKey].qtd += Number(app.qtd);
+            aggregatedGrid[gridKey].count += Number(app.count);
+        }
+
+        const chartDataArray = Object.keys(aggregatedByDate).sort().map(d => {
             return {
-                date: dateStr,
-                total: d.total,
-                details: gridData.filter(g => {
-                    const gDate = g.date instanceof Date ? g.date.toISOString().split('T')[0] : g.date;
-                    return gDate === dateStr;
-                }).map(g => ({
-                    usuario: g.usuario,
-                    setor: g.setor,
-                    qtd: g.qtd,
-                    count: g.count
-                }))
+                date: d,
+                total: aggregatedByDate[d],
+                details: Object.values(aggregatedGrid).filter(g => g.date === d)
             };
         });
 
+        const [usersData] = await mysqlPool.query(`SELECT DISTINCT Login FROM usuario ORDER BY Login`);
+
         res.json({
-            chartData: formattedChartData,
-            sectors: sectorsData.map(s => s.Setor),
+            chartData: chartDataArray,
+            sectors: setores, // Pass objects {id, nome}
             users: usersData.map(u => u.Login)
         });
 
