@@ -35,7 +35,10 @@ const mysqlPool = require('../services/mysqlService'); // Importar conexão MySQ
 // GET /api/produtos - Listagem com busca e paginação
 router.get('/', async (req, res) => {
     try {
-        const { page = 1, limit = 20, search = '', code = '', type = '' } = req.query;
+        let { page = 1, limit = 20, search = '', code = '', type = '' } = req.query;
+        if (Array.isArray(search)) search = search[0];
+        if (Array.isArray(code)) code = code[0];
+        if (Array.isArray(type)) type = type[0];
         const offset = (page - 1) * limit;
 
         // Definição da Query Base e Colunas
@@ -109,7 +112,8 @@ router.get('/', async (req, res) => {
         // Normaliza o termo buscado e o campo z1_codcli (remove caracteres não-alfanuméricos)
         // para que "33.11.10572" encontre "33111057204" e vice-versa
         if (req.query.client_code) {
-            const cleanedTerm = req.query.client_code.replace(/[^a-zA-Z0-9]/g, '');
+            const clientCodeStr = Array.isArray(req.query.client_code) ? req.query.client_code[0] : req.query.client_code;
+            const cleanedTerm = String(clientCodeStr).replace(/[^a-zA-Z0-9]/g, '');
             if (cleanedTerm.length > 0) {
                 baseQuery += ` AND EXISTS (
                     SELECT 1 FROM public.sz1010 z1
@@ -124,8 +128,9 @@ router.get('/', async (req, res) => {
         // 6. File Path Filter (Multi-word search in MySQL produtos_docs)
         if (req.query.file_path) {
             console.log('🔍 Filtro por endereço recebido:', req.query.file_path);
+            const filePathStr = Array.isArray(req.query.file_path) ? req.query.file_path[0] : req.query.file_path;
             // Split by space to support multi-word search
-            const pathTerms = req.query.file_path.trim().split(/\s+/).filter(t => t.length > 0);
+            const pathTerms = String(filePathStr).trim().split(/\s+/).filter(t => t.length > 0);
 
             if (pathTerms.length > 0) {
                 console.log('📝 Termos de busca:', pathTerms);

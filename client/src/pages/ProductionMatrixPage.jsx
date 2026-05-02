@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import useStickyState from '../hooks/useStickyState';
+import { toast } from 'react-toastify';
 import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History } from 'lucide-react';
-import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl, getCompanySettings } from '../services/api';
+import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
@@ -16,13 +18,14 @@ const formatDate = (dateStr) => {
 };
 
 export default function ProductionMatrixPage() {
-    const [data, setData] = useState({ operations: [], items: [] });
+    const [data, setData] = useStickyState({ operations: [], items: [] }, '@metalfisa:matrix_data');
     const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useStickyState({ op: '', produto: '', cliente: '', pedido: '', operacao: '' }, '@metalfisa:matrix_filters');
+    const [filters, setFilters] = useStickyState({ op: '', produto: '', cliente: '', pedido: '', operacao: '', data_inicio: '', data_fim: '' }, '@metalfisa:matrix_filters');
     const [appointingOp, setAppointingOp] = useState(null);
     const [appointmentMode, setAppointmentMode] = useState(null);
     const [showProcessLegend, setShowProcessLegend] = useState(false);
     const [historyTarget, setHistoryTarget] = useState(null); // For completed item history
+    const [apiError, setApiError] = useState(null);
 
     // Global Timer Integration (lightweight — no intervals)
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
@@ -37,20 +40,14 @@ export default function ProductionMatrixPage() {
 
     const loadData = async () => {
         setLoading(true);
+        setApiError(null);
         try {
             const result = await getProductionMatrix(filters);
             setData(result);
         } catch (err) {
             console.error('Error loading matrix:', err);
-            // Tentar extrair detalhes do erro
-            if (err.response) {
-                console.error('SERVER ERROR DATA:', err.response.data);
-                console.error('SERVER ERROR STATUS:', err.response.status);
-            } else if (err.request) {
-                console.error('NO RESPONSE:', err.request);
-            } else {
-                console.error('REQUEST SETUP ERROR:', err.message);
-            }
+            setApiError(err.message || 'Erro desconhecido');
+            reportSystemError('Matriz de Produção', err, filters);
         } finally {
             setLoading(false);
         }
@@ -58,6 +55,10 @@ export default function ProductionMatrixPage() {
 
 
     const handleSearch = () => {
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.operacao && !filters.data_inicio && !filters.data_fim) {
+            toast.warning('Por favor, preencha ao menos um filtro antes de buscar.');
+            return;
+        }
         loadData();
     };
 
@@ -246,7 +247,25 @@ export default function ProductionMatrixPage() {
 
             {/* Filtros */}
             <div className="bg-white rounded-lg shadow-sm border p-4">
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Abertura Inicial</label>
+                        <input
+                            type="date"
+                            className="w-full border rounded p-2 text-sm"
+                            value={filters.data_inicio}
+                            onChange={(e) => setFilters({ ...filters, data_inicio: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Abertura Final</label>
+                        <input
+                            type="date"
+                            className="w-full border rounded p-2 text-sm"
+                            value={filters.data_fim}
+                            onChange={(e) => setFilters({ ...filters, data_fim: e.target.value })}
+                        />
+                    </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">OP</label>
                         <input
@@ -318,9 +337,14 @@ export default function ProductionMatrixPage() {
                 </div>
             </div>
 
+            {/* Error Message */}
+            <div className="mt-4">
+                <ErrorStateOverlay error={apiError} onRetry={loadData} />
+            </div>
+
             {/* Matrix Grid */}
-            {loading ? (
-                <div className="bg-white rounded-lg shadow-sm border p-8 text-center flex-1 flex items-center justify-center">
+            {!apiError && (loading ? (
+                <div className="bg-white rounded-lg shadow-sm border p-8 text-center flex-1 flex items-center justify-center mt-4">
                     <div className="animate-pulse text-slate-500">Carregando...</div>
                 </div>
             ) : data.items.length === 0 ? (
@@ -530,8 +554,7 @@ export default function ProductionMatrixPage() {
                         </table>
                     </div>
                 </div>
-            )
-            }
+            ))}
 
             {/* Legenda */}
             <div className="bg-white rounded-lg shadow-sm border p-4">

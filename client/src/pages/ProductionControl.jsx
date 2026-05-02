@@ -11,8 +11,9 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import CurvaSPedido from './pcp/CurvaSPedido';
-import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings } from '../services/api';
+import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
@@ -20,9 +21,11 @@ import { Link } from 'react-router-dom';
 // ... (other imports)
 
 export default function ProductionControl() {
-    const [ops, setOps] = useState([]);
+    const [ops, setOps] = useStickyState([], '@metalfisa:prod_control_ops');
+    const [total, setTotal] = useStickyState(0, '@metalfisa:prod_control_total');
     const [selectedOpHistory, setSelectedOpHistory] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [apiError, setApiError] = useState(null);
     const [planningOp, setPlanningOp] = useState(null);
     const [appointingOp, setAppointingOp] = useState(null);
     const [appointmentMode, setAppointmentMode] = useState(null);
@@ -30,7 +33,6 @@ export default function ProductionControl() {
     const [macroOperations, setMacroOperations] = useState([]);
     const [loadingMacro, setLoadingMacro] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
-    const [total, setTotal] = useState(0);
     const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
 
     const STATUS_OPTIONS = [
@@ -104,6 +106,22 @@ export default function ProductionControl() {
     const abortControllerRef = useRef(null);
     const tableContainerRef = useRef(null);
     const [visibleCount, setVisibleCount] = useState(100);
+    const [selectedOps, setSelectedOps] = useState([]);
+
+    const toggleOpSelection = (op) => {
+        const id = op.op + op.item_op;
+        setSelectedOps(prev => prev.some(p => p.op + p.item_op === id)
+            ? prev.filter(p => p.op + p.item_op !== id)
+            : [...prev, op]);
+    };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedOps(ops);
+        } else {
+            setSelectedOps([]);
+        }
+    };
 
     useEffect(() => {
         api.get('/pcp-setores')
@@ -122,6 +140,7 @@ export default function ProductionControl() {
         abortControllerRef.current = currentAbortController;
 
         setLoading(true);
+        setApiError(null);
         try {
             const params = { ...filters, limit: 5000 };
             
@@ -149,7 +168,8 @@ export default function ProductionControl() {
                 return; // aborted
             }
             console.error(error);
-            toast.error('Erro ao carregar operações. Tente novamente.');
+            setApiError(error.message || 'Erro desconhecido');
+            reportSystemError('Controle de Produção', error, filters);
         } finally {
             if (abortControllerRef.current === currentAbortController) {
                 setLoading(false);
@@ -158,7 +178,7 @@ export default function ProductionControl() {
     };
 
     useEffect(() => {
-        loadData();
+        // loadData(); // Lazy load: busca apenas quando o usuário utilizar os filtros
         getCompanySettings()
             .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
             .catch(() => setAppointmentMode('free'));
@@ -210,17 +230,22 @@ export default function ProductionControl() {
     }, [ops.length]);
 
     const handleSearch = () => {
+        if (!filters.op && !filters.pedido && !filters.item && !filters.produto && !filters.cliente && !filters.operacao && !filters.planned_date_start && !filters.planned_date_end) {
+            toast.warning('Por favor, preencha ao menos um filtro antes de buscar.');
+            return;
+        }
         loadData();
     };
 
     const handlePlanSave = async (data) => {
         try {
-            await saveProductionPlan(data);
+            await saveProductionPlanBatch(data);
             setPlanningOp(null);
+            setSelectedOps([]); // Clear selection after planning
             loadData();
         } catch (err) {
             console.error(err);
-            alert('Erro ao salvar planejamento');
+            alert('Erro ao salvar planejamento em lote');
         }
     };
 
@@ -258,16 +283,24 @@ export default function ProductionControl() {
         }
     };
 
-    const handleOpenMacro = async (op) => {
+    const handleOpenMacro = async (clickedOp) => {
         try {
             setLoadingMacro(true);
-            console.log('🔍 [MACRO] Loading all operations for OP:', op.op);
-            // Request with high limit to get ALL operations for this OP
-            const res = await getProductionDashboard({ op: op.op, limit: 1000 });
+            
+            let opsToFetch = [clickedOp.op];
+            const isSelected = selectedOps.some(s => s.op === clickedOp.op && s.item_op === clickedOp.item_op);
+            if (isSelected && selectedOps.length > 0) {
+                opsToFetch = [...new Set(selectedOps.map(s => s.op))];
+            }
+
+            console.log('🔍 [MACRO] Loading all operations for OPs:', opsToFetch);
+            // Request with high limit to get ALL operations for these OPs
+            const res = await getProductionDashboard({ op: opsToFetch.join(','), limit: 5000 });
             console.log('✅ [MACRO] Loaded', res.data.length, 'operations');
             console.log('📊 [MACRO] Unique operation codes:', [...new Set(res.data.map(o => o.operacao))]);
+            
             setMacroOperations(res.data);
-            setMacroModalOp(op);
+            setMacroModalOp(opsToFetch.length > 1 ? { op: `LOTE (${opsToFetch.length} OPs)` } : clickedOp);
         } catch (err) {
             console.error('❌ [MACRO] Error loading operations:', err);
             alert('Erro ao carregar operações');
@@ -298,12 +331,9 @@ export default function ProductionControl() {
     const handleMacroSaveBatch = async (plans) => {
         try {
             await saveProductionPlanBatch(plans);
-            setMacroModalOp(null);
-            setMacroOperations([]);
-            loadData();
         } catch (err) {
             console.error(err);
-            alert('Erro ao salvar planejamento em lote');
+            throw err;
         }
     };
 
@@ -495,7 +525,9 @@ export default function ProductionControl() {
 
                 </div>
 
-                {activeTab === 'tabela' ? (
+                <ErrorStateOverlay error={apiError} onRetry={loadData} />
+
+                {!apiError && (activeTab === 'tabela' ? (
                     <>
                         {total > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-4 shrink-0 px-1">
@@ -518,16 +550,33 @@ export default function ProductionControl() {
                 )}
 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+                    {selectedOps.length > 0 && (
+                        <div className="bg-blue-50 p-3 border-b border-blue-100 flex items-center justify-between">
+                            <span className="text-sm font-medium text-blue-800">
+                                {selectedOps.length} ordens selecionadas
+                            </span>
+                            <button 
+                                onClick={() => setPlanningOp(selectedOps)}
+                                className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                            >
+                                <Calendar className="w-4 h-4" />
+                                Planejar Lote
+                            </button>
+                        </div>
+                    )}
                     <div ref={tableContainerRef} className="overflow-auto flex-1">
                         <table className="w-full relative">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                 <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
-                                    <th className="p-3">OP / Item / Seq</th>
+                                    <th className="p-3 w-10 text-center">
+                                        <input type="checkbox" onChange={handleSelectAll} checked={selectedOps.length === ops.length && ops.length > 0} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                                    </th>
+                                    <th className="p-3">Ordem de Produção</th>
                                     <th className="p-3">Pedido</th>
                                     <th className="p-3">Cliente</th>
                                     <th className="p-3">Produto</th>
                                     <th className="p-3 text-center w-10">PDF</th>
-                                    <th className="p-3">Operação</th>
+                                    <th className="p-3">Recurso</th>
                                     <th className="p-3 text-center">Planejamento</th>
                                     <th className="p-3 text-center">Produção</th>
                                     <th className="p-3 text-center">Status</th>
@@ -550,9 +599,16 @@ export default function ProductionControl() {
                                     const isPai = op.sequen === '001';
                                     return (
                                         <tr key={idx} className={`border-b border-slate-100 transition-colors ${isPai ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
+                                            <td className="p-3 text-center">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={selectedOps.some(p => p.op === op.op && p.item_op === op.item_op)}
+                                                    onChange={() => toggleOpSelection(op)}
+                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" 
+                                                />
+                                            </td>
                                             <td className="p-3">
-                                                <div className="font-mono text-sm font-bold text-slate-900">{op.op}</div>
-                                                <div className="text-xs text-slate-500">Item: {op.item_op} | Seq: {op.sequen}</div>
+                                                <div className="font-mono text-sm font-bold text-slate-900">{op.op} - Item {op.item_op}</div>
                                             </td>
                                             <td className="p-3">
                                                 <div className="font-semibold text-slate-700">{op.pedido_venda || '-'}</div>
@@ -593,10 +649,9 @@ export default function ProductionControl() {
                                             </td>
                                             <td className="p-3">
                                                 <div className="bg-blue-50 text-blue-700 inline-block px-2 py-0.5 rounded text-xs font-bold border border-blue-100 mb-1">
-                                                    {op.operacao}
+                                                    {op.recurso || op.operacao}
                                                 </div>
-                                                <div className="text-xs text-slate-600 truncate max-w-[150px]" title={op.desc_operacao}>{op.desc_operacao}</div>
-                                                <div className="text-xs text-slate-400">{op.recurso}</div>
+                                                <div className="text-xs text-slate-600 truncate max-w-[150px]" title={op.desc_recurso || op.desc_operacao}>{op.desc_recurso || op.desc_operacao}</div>
                                             </td>
                                             <td className="p-3 text-center">
                                                 {op.data_planejada_inicio ? (
@@ -635,7 +690,10 @@ export default function ProductionControl() {
                                             </td>
                                             <td className="p-3 text-right">
                                                 <div className="flex justify-end gap-1">
-                                                    <button onClick={() => setPlanningOp(op)}
+                                                    <button onClick={() => {
+                                                        const isSelected = selectedOps.some(s => s.op === op.op && s.item_op === op.item_op);
+                                                        setPlanningOp(isSelected && selectedOps.length > 0 ? selectedOps : [op]);
+                                                    }}
                                                         className="p-1.5 hover:bg-white border border-transparent hover:border-slate-200 hover:shadow-sm rounded text-slate-600 transition-all" title="Planejar Operação">
                                                         <Calendar className="w-4 h-4" />
                                                     </button>
@@ -672,7 +730,7 @@ export default function ProductionControl() {
                 {
                     planningOp && (
                         <ProductionPlanningModal
-                            op={planningOp}
+                            ops={planningOp}
                             onClose={() => setPlanningOp(null)}
                             onSave={handlePlanSave}
                         />
@@ -692,7 +750,11 @@ export default function ProductionControl() {
                         <ProductionMacroModal
                             op={macroModalOp}
                             operations={macroOperations}
-                            onClose={() => setMacroModalOp(null)}
+                            onClose={(shouldRefresh = false) => {
+                                setMacroModalOp(null);
+                                setMacroOperations([]);
+                                if (shouldRefresh) loadData();
+                            }}
                             onSaveBatch={handleMacroSaveBatch}
                         />
                     )
@@ -711,7 +773,9 @@ export default function ProductionControl() {
                 </>
                 ) : (
                     <CurvaSPedido filters={filters} />
-                )}                {/* Full-screen Loading Overlay */}
+                ))}
+                
+                {/* Full-screen Loading Overlay */}
                 {(loading || loadingMacro) && (
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center pointer-events-auto transition-all">
                         <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-200">

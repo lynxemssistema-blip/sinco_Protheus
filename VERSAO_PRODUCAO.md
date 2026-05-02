@@ -119,5 +119,14 @@ Em caso de problemas:
 
 ---
 
-**Versão**: 1.3.10 (Reforço no Filtro Pedido)  
-**Build**: 17/01/2026 15:43
+**Versão**: 1.3.11 (Status Firme/Prevista OP e Autopreenchimento PCP)  
+**Build**: 01/05/2026 15:31
+
+**Comando de Publicação no servidor**
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa -r ./linux-deployment/* sinco@192.168.1.77:/var/www/metalfisa/
+
+
+**Comando para Reiniciar o servidor**
+ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa sinco@192.168.1.77 "cd /var/www/metalfisa/server && npm install && pm2 restart all"
+
+

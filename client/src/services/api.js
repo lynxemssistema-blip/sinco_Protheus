@@ -536,5 +536,28 @@ export const saveSystemSetting = async (key, value) => {
     return response.data;
 };
 
+// Error Reporting Helper
+export const reportSystemError = async (moduleName, error, filters = {}) => {
+    try {
+        const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+        await api.post('/email/send', {
+            to: 'edsonmanoel2012@gmail.com',
+            subject: `⚠️ ERRO NO SISTEMA - ${moduleName}`,
+            html: `
+                <h2>Erro Reportado pelo Sistema MetalFisa</h2>
+                <p><strong>Usuário:</strong> ${user?.nome || 'Desconhecido'} (${user?.login || 'N/A'})</p>
+                <p><strong>Data/Hora:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+                <p><strong>Módulo:</strong> ${moduleName}</p>
+                <p><strong>Filtros Utilizados:</strong> ${JSON.stringify(filters)}</p>
+                <p><strong>Mensagem do Erro:</strong> ${error?.message || error}</p>
+                <p><strong>Stack Trace:</strong></p>
+                <pre>${error?.stack || 'Não disponível'}</pre>
+            `
+        });
+    } catch (emailErr) {
+        console.error('Falha ao enviar log de erro por email', emailErr);
+    }
+};
+
 export { api };
 export default api;

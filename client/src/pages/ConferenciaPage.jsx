@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter, Clock, User, ClipboardList, Camera, ImagePlus, Trash2, History, FileText, ChevronDown, ChevronRight, Users, Package } from 'lucide-react';
-import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico, getFileUrl } from '../services/api';
+import { getPendentesConferencia, submitConferencia, submitConferenciaBulk, getConferenciaHistorico, getFileUrl, reportSystemError } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
+import useStickyState from '../hooks/useStickyState';
 
 const STATUS_LABELS = {
     PENDENTE: { label: 'Pendente', color: 'bg-orange-100 text-orange-700 border-orange-200' },
@@ -48,26 +50,27 @@ function OperacaoCell({ codigo, nome }) {
 
 export default function ConferenciaPage() {
     const { user: loggedUser, hasPermission } = useAuth();
-    const [rows, setRows] = useState([]);
+    const [rows, setRows] = useStickyState([], '@metalfisa:conf_rows');
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState(null);
     const [toast, setToast] = useState(null);
+    const isMounted = useRef(false);
 
     // Filtros — inputs (digitação livre)
-    const [statusFiltro, setStatusFiltro] = useState('PENDENTE');
-    const [dataInicio, setDataInicio] = useState('');
-    const [dataFim, setDataFim] = useState('');
-    const [filtroOP, setFiltroOP] = useState('');
-    const [filtroPedido, setFiltroPedido] = useState('');
-    const [filtroCliente, setFiltroCliente] = useState('');
-    const [filtroProduto, setFiltroProduto] = useState('');
-    const [filtroApontador, setFiltroApontador] = useState('');
-    const [filtroOperacao, setFiltroOperacao] = useState('');
+    const [statusFiltro, setStatusFiltro] = useStickyState('PENDENTE', '@metalfisa:conf_status');
+    const [dataInicio, setDataInicio] = useStickyState('', '@metalfisa:conf_dataInicio');
+    const [dataFim, setDataFim] = useStickyState('', '@metalfisa:conf_dataFim');
+    const [filtroOP, setFiltroOP] = useStickyState('', '@metalfisa:conf_filtroOP');
+    const [filtroPedido, setFiltroPedido] = useStickyState('', '@metalfisa:conf_filtroPedido');
+    const [filtroCliente, setFiltroCliente] = useStickyState('', '@metalfisa:conf_filtroCliente');
+    const [filtroProduto, setFiltroProduto] = useStickyState('', '@metalfisa:conf_filtroProduto');
+    const [filtroApontador, setFiltroApontador] = useStickyState('', '@metalfisa:conf_filtroApontador');
+    const [filtroOperacao, setFiltroOperacao] = useStickyState('', '@metalfisa:conf_filtroOperacao');
 
     // Filtros aplicados — só mudam ao clicar "Filtrar"
-    const [aplicados, setAplicados] = useState({
+    const [aplicados, setAplicados] = useStickyState({
         op: '', pedido: '', cliente: '', produto: '', apontador: '', operacao: ''
-    });
+    }, '@metalfisa:conf_aplicados');
 
     // Modal unificado: { id, acao: 'OK' | 'DIVERGENTE' }
     const [acaoModal, setAcaoModal] = useState(null);
@@ -85,9 +88,11 @@ export default function ConferenciaPage() {
     const [historicoModal, setHistoricoModal] = useState(null);
     const [loadingHistorico, setLoadingHistorico] = useState(false);
 
+    const [apiError, setApiError] = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setApiError(null);
         try {
             const params = { 
                 status: statusFiltro,
@@ -101,12 +106,21 @@ export default function ConferenciaPage() {
             setExpandedGroups(new Set());
         } catch (err) {
             console.error('Erro ao buscar apontamentos:', err);
+            setApiError(err.message || 'Erro desconhecido');
+            reportSystemError('Conferência de Produção', err, { status: statusFiltro, dataInicio, dataFim, ...aplicados });
         } finally {
             setLoading(false);
         }
     }, [statusFiltro, dataInicio, dataFim, aplicados]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { 
+        if (!isMounted.current) {
+            isMounted.current = true;
+            setLoading(false);
+            return;
+        }
+        fetchData(); 
+    }, [fetchData]);
 
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type });
@@ -622,9 +636,13 @@ export default function ConferenciaPage() {
                 )}
             </div>
 
+            {/* Error Message */}
+            <ErrorStateOverlay error={apiError} onRetry={fetchData} />
+
             {/* Tabela */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                {loading ? (
+            {!apiError && (
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    {loading ? (
                     <div className="flex justify-center items-center h-48">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
                     </div>
@@ -833,6 +851,7 @@ export default function ConferenciaPage() {
                     </div>
                 )}
             </div>
+            )}
 
             {/* Modal unificado (single + bulk) */}
             {renderModalContent()}

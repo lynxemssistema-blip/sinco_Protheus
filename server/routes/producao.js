@@ -256,8 +256,9 @@ router.get('/op', async (req, res) => {
     let whereClause = "WHERE c2.d_e_l_e_t_ = ' ' ";
 
     if (op) {
-      params.push(`%${op}%`);
-      whereClause += `AND (c2.c2_num LIKE $${paramCount} OR c2.c2_pedido LIKE $${paramCount} OR c2.c2_obs LIKE $${paramCount}) `;
+      const formattedOp = String(op).trim().padStart(6, '0');
+      params.push(formattedOp);
+      whereClause += `AND (TRIM(c2.c2_num) = $${paramCount} OR TRIM(c2.c2_pedido) = $${paramCount} OR TRIM(c2.c2_obs) LIKE '%' || $${paramCount} || '%') `;
       paramCount++;
     }
 
@@ -541,12 +542,12 @@ router.get('/vertical-pendencias', async (req, res) => {
     }
 
     if (op) {
-      conditions.push(`TRIM(c2.c2_num) ILIKE $${pCount++}`);
-      paramsArr.push(`%${op.trim()}%`);
+      conditions.push(`TRIM(c2.c2_num) = $${pCount++}`);
+      paramsArr.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${pCount} OR TRIM(c2.c2_obs) ILIKE $${pCount})`);
-      paramsArr.push(`%${pedido.trim()}%`);
+      conditions.push(`(TRIM(c2.c2_pedido) = $${pCount} OR TRIM(c2.c2_obs) ILIKE '%' || $${pCount} || '%')`);
+      paramsArr.push(String(pedido).trim().padStart(6, '0'));
       pCount++;
     }
     if (produto) {
@@ -760,12 +761,12 @@ router.get('/vertical/:operacao', async (req, res) => {
     if (inactiveSqlSC2) sc2Conditions.push(inactiveSqlSC2.replace(/^\s*AND\s+/i, ''));
 
     if (op) {
-      sc2Conditions.push(`TRIM(c2.c2_num) ILIKE $${sc2Count++}`);
-      sc2Params.push(`%${op.trim()}%`);
+      sc2Conditions.push(`TRIM(c2.c2_num) = $${sc2Count++}`);
+      sc2Params.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      sc2Conditions.push(`(TRIM(c2.c2_pedido) ILIKE $${sc2Count} OR TRIM(c2.c2_obs) ILIKE $${sc2Count})`);
-      sc2Params.push(`%${pedido.trim()}%`);
+      sc2Conditions.push(`(TRIM(c2.c2_pedido) = $${sc2Count} OR TRIM(c2.c2_obs) ILIKE '%' || $${sc2Count} || '%')`);
+      sc2Params.push(String(pedido).trim().padStart(6, '0'));
       sc2Count++;
     }
     if (produto) {

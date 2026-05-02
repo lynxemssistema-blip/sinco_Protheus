@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock } from 'lucide-react';
-import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
+import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl, reportSystemError } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
@@ -16,6 +16,7 @@ import ProductionComparison from '../components/ProductionComparison';
 import PCPForecastModal from '../components/PCPForecastModal';
 import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator'; // Import new PDF service
@@ -253,6 +254,7 @@ const GestaoOPsPage = () => {
                 : err.message;
 
             setError(`Erro ao carregar dados: ${errorMsg}`);
+            reportSystemError('Gestão OPs', err, { filters: searchFilters, page: searchPage, viewMode: searchViewMode });
         } finally {
             setLoading(false);
         }
@@ -1215,11 +1217,8 @@ const GestaoOPsPage = () => {
                                     </tr>
                                 ) : error ? (
                                     <tr>
-                                        <td colSpan={colSpanCount} className="px-6 py-12 text-center text-red-500">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <AlertCircle className="h-8 w-8" />
-                                                <span className="font-semibold">{error}</span>
-                                            </div>
+                                        <td colSpan={colSpanCount} className="px-6 py-6 text-center">
+                                            <ErrorStateOverlay error={error} onRetry={() => fetchData()} />
                                         </td>
                                     </tr>
                                 ) : requiresFilter ? (

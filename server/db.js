@@ -7,8 +7,8 @@ const pool = new Pool({
     database: process.env.PGDATABASE,
     password: process.env.PGPASSWORD,
     port: process.env.PGPORT,
-    max: 3,                          // Reduzido: PG tem muitos clientes de outros sistemas
-    idleTimeoutMillis: 3000,         // Libera conexões ociosas rapidamente
+    max: 20,                         // Otimizado: aumentado para o máximo viável sem comprometer o PG
+    idleTimeoutMillis: 30000,        // Mantém conexões quentes por 30 segundos
     connectionTimeoutMillis: 10000,
     statement_timeout: 45000,
 });

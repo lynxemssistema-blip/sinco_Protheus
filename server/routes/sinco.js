@@ -672,22 +672,11 @@ router.get('/integrated-product-view', async (req, res) => {
 // SINCO Formulário Web — integração Solid Edge Desktop → Página Web
 // =========================================================================
 
-const { Client } = require('pg');
-
-const pgProtheus = {
-    host: '192.168.1.61', port: 5432,
-    user: 'sinco2', password: 'sinco25', database: 'p12prd'
-};
+const protheusDB = require('../services/protheusDB');
 
 async function queryProtheus(sql, params) {
-    const client = new Client(pgProtheus);
-    await client.connect();
-    try {
-        const res = await client.query(sql, params);
-        return res.rows;
-    } finally {
-        await client.end();
-    }
+    const res = await protheusDB.query(sql, params);
+    return res.rows;
 }
 
 // GET /api/sinco/arvore/:codigo — estrutura do produto (BOM) via Protheus (SG1010)

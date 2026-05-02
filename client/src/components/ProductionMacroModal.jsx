@@ -394,18 +394,22 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         setLoading(true);
         try {
             const plansToSave = [];
+            const lote_id = `LOTE-${Date.now()}`;
             Object.entries(operationPlans).forEach(([code, plan]) => {
                 if (plan.selected && plan.start && plan.end) {
                     const group = orderedGroups.find(g => g.code === code);
                     if (group) {
                         group.items.forEach(item => {
+                            // Ignora itens "Sem Recurso" que não possuem operação válida
+                            if (!item.operacao) return;
                             plansToSave.push({
                                 op_numero: item.op,
                                 op_item: item.item_op,
                                 op_sequencia: item.sequen,
                                 operacao_codigo: item.operacao,
                                 data_inicio: plan.start.includes('T') ? plan.start : `${plan.start} 00:00:00`,
-                                data_fim: plan.end.includes('T') ? plan.end : `${plan.end} 23:59:59`
+                                data_fim: plan.end.includes('T') ? plan.end : `${plan.end} 23:59:59`,
+                                lote_id: lote_id
                             });
                         });
                     }
@@ -413,7 +417,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             });
 
             if (plansToSave.length === 0) {
-                alert('Nenhuma operação selecionada com datas definidas.');
+                alert('Nenhuma operação válida selecionada com datas definidas (itens Sem Recurso/S.R. são ignorados).');
                 setLoading(false); return;
             }
 
@@ -423,7 +427,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             for (let i = 0; i < chunks.length; i++) await onSaveBatch(chunks[i]);
 
             alert(`✅ ${plansToSave.length} operações salvas com sucesso!`);
-            onClose();
+            onClose(true);
         } catch (error) {
             console.error('Erro:', error);
             alert(`Erro ao salvar: ${error.message}`);

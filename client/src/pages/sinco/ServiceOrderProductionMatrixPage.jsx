@@ -5,9 +5,14 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
-    apontarSincoProcesso, getSincoOsMatrix, getSincoProcessoHistorico,
-    getSincoOsProcessosPlanejamento, saveSincoOsProcessosPlanejamento
+    getSincoOsMatrix,
+    apontarSincoProcesso,
+    getSincoProcessoHistorico,
+    getSincoOsProcessosPlanejamento,
+    saveSincoOsProcessosPlanejamento,
+    reportSystemError
 } from '../../services/api';
+import ErrorStateOverlay from '../../components/ErrorStateOverlay';
 import { useAuth } from '../../contexts/AuthContext';
 
 const toNumber = (value) => {
@@ -613,6 +618,7 @@ export default function ServiceOrderProductionMatrixPage() {
             console.error(e);
             setData({ operations: [], items: [] });
             setError(e?.response?.data?.error || e?.message || 'Falha ao carregar matriz da OS.');
+            reportSystemError('Apontamento Matriz OS', e, { osId, q, projeto, tag });
         } finally {
             setLoading(false);
         }
@@ -849,7 +855,9 @@ export default function ServiceOrderProductionMatrixPage() {
                 {loading ? (
                     <div className="p-10 text-center text-gray-500">Carregando...</div>
                 ) : error ? (
-                    <div className="p-10 text-center text-red-600 font-medium">{error}</div>
+                    <div className="p-4">
+                        <ErrorStateOverlay error={error} onRetry={loadData} />
+                    </div>
                 ) : items.length === 0 ? (
                     <div className="p-10 text-center text-gray-400">Nenhum item encontrado.</div>
                 ) : (

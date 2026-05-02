@@ -4,7 +4,8 @@ import { LayoutDashboard, ShoppingCart, Settings as SettingsIcon, Menu, Package,
 import { FilterProvider } from './contexts/FilterContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TimerProvider } from './contexts/TimerContext';
-import { HelpProvider, useHelp } from './contexts/HelpContext';
+import { useHelp } from './contexts/HelpContext';
+import { HelpProvider } from './contexts/HelpProvider';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -627,17 +628,17 @@ function App() {
                                                 <IndPcpReleasePage />
                                             </Layout>
                                         } />
-                                    <Route path="/ind-factory-floor" element={
-                                        <Layout fullWidth={true}>
-                                            <IndFactoryFloorPage />
-                                        </Layout>
-                                    } />
-                                    <Route path="/ind-apontamento" element={
-                                        <Layout fullWidth={true}>
-                                            <IndApontamentoPage />
-                                        </Layout>
-                                    } />
-                                        
+                                        <Route path="/ind-factory-floor" element={
+                                            <Layout fullWidth={true}>
+                                                <IndFactoryFloorPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/ind-apontamento" element={
+                                            <Layout fullWidth={true}>
+                                                <IndApontamentoPage />
+                                            </Layout>
+                                        } />
+
                                         {/* Protheus Forms */}
                                         <Route path="/protheus" element={
                                             <Layout>
@@ -679,7 +680,7 @@ function App() {
                     </HelpProvider>
                 </TimerProvider>
             </FilterProvider>
-            <ToastContainer 
+            <ToastContainer
                 position="bottom-right"
                 autoClose={4000}
                 hideProgressBar={false}

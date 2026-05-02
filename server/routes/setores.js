@@ -324,7 +324,10 @@ router.delete('/responsaveis/:vinculoId', async (req, res) => {
 // - Apontamentos vem do MySQL: app_production_appointments
 // - NÃO usa SH6 (Protheus) por incompatibilidade de schema
 router.get('/visao', async (req, res) => {
-    const { pedido, cliente, produto, data_inicio, data_fim, status, apenas_pendentes } = req.query;
+    let { pedido, cliente, produto, data_inicio, data_fim, status, apenas_pendentes } = req.query;
+    if (Array.isArray(pedido)) pedido = pedido[0];
+    if (Array.isArray(cliente)) cliente = cliente[0];
+    if (Array.isArray(produto)) produto = produto[0];
     try {
         // 1. Setores ativos e seus recursos (MySQL)
         const [setoresRows] = await mysql.query(`
@@ -462,13 +465,15 @@ router.get('/visao', async (req, res) => {
                         const chunk = uniqueProducts.slice(i, i + chunkSize);
                         const sg2Result = await db.query(`
                             SELECT 
-                                TRIM(g2_produto) as cod_produto_op_raw,
-                                RTRIM(g2_recurso) as recurso,
-                                RTRIM(g2_descri)  as desc_operacao,
-                                RTRIM(g2_operac)  as operacao
-                            FROM sg2010
-                            WHERE g2_produto = ANY($1)
-                              AND COALESCE(d_e_l_e_t_, ' ') = ' '
+                                TRIM(g2.g2_produto) as cod_produto_op_raw,
+                                RTRIM(g2.g2_recurso) as recurso,
+                                RTRIM(g2.g2_descri)  as desc_operacao,
+                                RTRIM(h1.h1_descri)  as desc_recurso,
+                                RTRIM(g2.g2_operac)  as operacao
+                            FROM sg2010 g2
+                            LEFT JOIN sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, ' ') = ' '
+                            WHERE g2.g2_produto = ANY($1)
+                              AND COALESCE(g2.d_e_l_e_t_, ' ') = ' '
                         `, [chunk]);
 
                         sg2Result.rows.forEach(r => {

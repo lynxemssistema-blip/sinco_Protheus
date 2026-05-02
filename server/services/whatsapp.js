@@ -122,8 +122,7 @@ function msgFaturamentoPendente(qtd) {
 function msgMeuCanal({ nome, setores }) {
     const linhas = setores.map(s => {
         const emoji = s.score >= 90 ? '✅' : s.score >= 60 ? '⚠️' : '❌';
-        const pend = s.pendencias?.length || 0;
-        return `• *${s.nome}*: ${s.apontado}/${s.planejado} pçs — ${s.score}% ${emoji}${pend > 0 ? ` (${pend} OP(s) pendente)` : ''}`;
+        return `• *${s.nome}*: ${s.producaoRealizada ?? 0}/${s.producaoPlanejada ?? 0} pçs — ${s.score}% ${emoji}`;
     }).join('\n');
 
     return (

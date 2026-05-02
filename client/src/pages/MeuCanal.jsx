@@ -10,6 +10,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Legend, Cell
 } from 'recharts';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
 
 // ─── Utilitários ────────────────────────────────────────────────────────────
 const getInitials = (name = '') =>
@@ -228,15 +229,15 @@ export default function MeuCanal() {
 
         try {
             toast.info('Enviando via WhatsApp (Evolution API)...', { autoClose: 2000 });
-            // Forçamos o número de teste conforme solicitado
-            const res = await api.post('/meucanal/test-whatsapp', { number: '31995574906' });
+            // Envia sem forçar o número para que o backend use o telefone do próprio usuário logado
+            const res = await api.post('/meucanal/test-whatsapp', {});
             
             if (res.data.success) {
-                toast.success('Mensagem de teste enviada com sucesso para 31995574906!');
+                toast.success('Mensagem enviada com sucesso para o seu WhatsApp!');
             }
         } catch (err) {
             console.error(err);
-            toast.error(err.response?.data?.error || 'Erro ao enviar WhatsApp.');
+            toast.error(err.response?.data?.error || 'Erro ao enviar WhatsApp. Verifique se você tem telefone cadastrado no seu perfil.');
         }
     };
 
@@ -251,7 +252,7 @@ export default function MeuCanal() {
     );
 
     if (error) return (
-        <div className="p-6 text-red-500 bg-red-50 rounded-lg m-6 border border-red-100">{error}</div>
+        <div className="m-6"><ErrorStateOverlay error={error} onRetry={carregarKPI} /></div>
     );
 
     if (!kpiData) return null;

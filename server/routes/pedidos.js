@@ -48,8 +48,8 @@ router.get('/', async (req, res) => {
         }
 
         if (pedido) {
-            whereClause += ` AND c5.c5_num LIKE '%' || $${paramCount} || '%'`;
-            params.push(pedido);
+            whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+            params.push(String(pedido).trim().padStart(6, '0'));
             paramCount++;
         }
 
@@ -263,8 +263,8 @@ router.get('/flat', async (req, res) => {
         }
 
         if (pedido) {
-            whereClause += ` AND c5.c5_num LIKE '%' || $${paramCount} || '%'`;
-            params.push(pedido);
+            whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+            params.push(String(pedido).trim().padStart(6, '0'));
             paramCount++;
         }
 
@@ -395,79 +395,90 @@ router.get('/flat', async (req, res) => {
         // 1. ref_cliente / rev_cliente removidos do SQL (subqueries correlacionadas) → batch PG após
         // 2. notas_fiscais removido do SQL (json_agg corr.) → batch PG após
         // 3. LATERAL JOINs substituem EXISTS duplicados nos dois blocos CASE → avaliados 1x por linha
+        // CTE pattern: paged_items limita paginação a nível de (pedido, item).
+        // O JOIN externo com sc2010 sem LIMIT expande cada item para todas as suas OPs.
+        // Isso garante que múltiplas OPs do mesmo item sejam todas visíveis com seus
+        // respectivos saldos produzidos e programações PCP.
         query = `
+            WITH paged_items AS (
+                SELECT
+                    TRIM(c5.c5_num) as pedido,
+                    TRIM(c5.c5_cliente) as cod_cliente,
+                    TRIM(c5.c5_lojacli) as loja_cliente,
+                    NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
+                    sa1.a1_nome as nome_cliente,
+                    c5.c5_emissao as emissao,
+                    c5.c5_orcres as orcamento,
+                    TRIM(c6.c6_item) as item,
+                    TRIM(c6.c6_produto) as codigo,
+                    TRIM(c6.c6_xrevm) as rev_codigo,
+                    TRIM(c6.c6_xrevc) as c6_rev_cliente,
+                    sb1.b1_desc as descricao,
+                    c6.c6_um as unidade,
+                    COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
+                    COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
+                    (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
+                    c6.c6_prcven::numeric(18,2) as valor_unitario,
+                    c6.c6_valor::numeric(18,2) as valor_total,
+                    TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
+                    c6.c6_pedcli as ped_cliente,
+                    c5.c5_liberok as status_cor,
+                    CASE
+                        WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_chk.ok IS NOT NULL THEN 'Restrição'
+                        WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
+                        WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Novo'
+                        ELSE 'PCP'
+                    END AS status_tipo_item,
+                    CASE
+                        WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
+                        WHEN sz0_chk.ok IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
+                        WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
+                        WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
+                        ELSE 'Item com estrutura existente, liberado para PCP.'
+                    END AS status_tipo_detalhe
+                FROM public.sc5010 c5
+                JOIN public.sc6010 c6
+                    ON COALESCE(c6.d_e_l_e_t_, '') = ''
+                    AND c6.c6_filial = c5.c5_filial
+                    AND c6.c6_num = c5.c5_num
+                LEFT JOIN public.sa1010 sa1
+                    ON sa1.a1_cod = c5.c5_cliente
+                    AND sa1.a1_loja = c5.c5_lojacli
+                    AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                LEFT JOIN public.sb1010 sb1
+                    ON sb1.b1_cod = c6.c6_produto
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                LEFT JOIN LATERAL (
+                    SELECT 1 as ok FROM public.sz0010
+                    WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
+                    AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P' LIMIT 1
+                ) sz0_chk ON true
+                LEFT JOIN LATERAL (
+                    SELECT 1 as ok FROM public.sg1010
+                    WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
+                    AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
+                ) sg1_chk ON true
+                LEFT JOIN LATERAL (
+                    SELECT 1 as ok FROM public.sg2010
+                    WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
+                    AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
+                ) sg2_chk ON true
+                ${whereClause}
+                ORDER BY c5.c5_num DESC, c6.c6_item ASC
+                LIMIT $${paramCount} OFFSET $${paramCount + 1}
+            )
             SELECT
-                TRIM(c5.c5_num) as pedido,
-                TRIM(c5.c5_cliente) as cod_cliente,
-                TRIM(c5.c5_lojacli) as loja_cliente,
-                NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
-                sa1.a1_nome as nome_cliente,
-                c5.c5_emissao as emissao,
-                c5.c5_orcres as orcamento,
-                TRIM(c6.c6_item) as item,
-                TRIM(c6.c6_produto) as codigo,
-                TRIM(c6.c6_xrevm) as rev_codigo,
-                TRIM(c6.c6_xrevc) as c6_rev_cliente,
-                sb1.b1_desc as descricao,
-                c6.c6_um as unidade,
-                COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
-                COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
-                (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
-                c6.c6_prcven::numeric(18,2) as valor_unitario,
-                c6.c6_valor::numeric(18,2) as valor_total,
-                TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
-                c6.c6_pedcli as ped_cliente,
-                TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num,
-                c2.c2_quant as op_qtd,
-                c5.c5_liberok as status_cor,
-                -- CASE unificado usando resultados dos LATERAL JOINs (avaliado 1x por linha)
-                CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_chk.ok IS NOT NULL THEN 'Restrição'
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                    WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Novo'
-                    ELSE 'PCP'
-                END AS status_tipo_item,
-                CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN sz0_chk.ok IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
-                    ELSE 'Item com estrutura existente, liberado para PCP.'
-                END AS status_tipo_detalhe
-            FROM public.sc5010 c5
-            JOIN public.sc6010 c6
-                ON COALESCE(c6.d_e_l_e_t_, '') = ''
-                AND c6.c6_filial = c5.c5_filial
-                AND c6.c6_num = c5.c5_num
-            LEFT JOIN public.sa1010 sa1
-                ON sa1.a1_cod = c5.c5_cliente
-                AND sa1.a1_loja = c5.c5_lojacli
-                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sb1010 sb1
-                ON sb1.b1_cod = c6.c6_produto
-                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                pi.*,
+                TRIM(c2.c2_num) AS op_num,
+                TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num_completa,
+                TRIM(c2.c2_tpop) AS op_tipo,
+                c2.c2_quant::numeric(18,6) AS op_qtd
+            FROM paged_items pi
             LEFT JOIN public.sc2010 c2
-                ON (c2.c2_pedido = c5.c5_num )
-                AND c2.c2_itempv = c6.c6_item
+                ON TRIM(c2.c2_pedido) = pi.pedido
+                AND TRIM(c2.c2_itempv) = pi.item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sz0010
-                WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P' LIMIT 1
-            ) sz0_chk ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sg1010
-                WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-            ) sg1_chk ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sg2010
-                WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-            ) sg2_chk ON true
-            ${whereClause}
-            ORDER BY c5.c5_num DESC, c6.c6_item ASC
-            LIMIT $${paramCount} OFFSET $${paramCount + 1}
+            ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC
         `;
 
         params.push(limitParsed, offset);
@@ -567,7 +578,40 @@ router.get('/flat', async (req, res) => {
                 productCodes
             ]);
 
-            const [forecastResult, notesResult, docsResult, faturasResult, notasResult, sz1Result] = await Promise.allSettled([
+            // Last Operation Enrichment (Protheus sg2010)
+            let lastOpEnrichment = null;
+            if (productCodes.length > 0) {
+                lastOpEnrichment = db.query(`
+                    SELECT
+                        TRIM(g2.g2_produto) as produto,
+                        TRIM(g2.g2_recurso) as operacao_final
+                    FROM public.sg2010 g2
+                    WHERE TRIM(g2.g2_produto) = ANY($1::varchar[])
+                    AND COALESCE(g2.d_e_l_e_t_, '') = ''
+                    AND TRIM(g2.g2_codigo) = (
+                        SELECT MAX(TRIM(g2_sub.g2_codigo))
+                        FROM public.sg2010 g2_sub
+                        WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
+                        AND COALESCE(g2_sub.d_e_l_e_t_, '') = ''
+                    )
+                `, [productCodes]);
+            }
+
+            // Saldo Produzido Enrichment (MySQL app_production_appointments)
+            const uniqueOpsArr = [...new Set(result.rows.map(r => String(r.op_num || '').trim()).filter(Boolean))];
+            let saldoProduzidoEnrichment = null;
+            if (uniqueOpsArr.length > 0) {
+                const opPlaceholders = uniqueOpsArr.map(() => '?').join(',');
+                saldoProduzidoEnrichment = mysqlPool.query(`
+                    SELECT op_numero, operacao_codigo, SUM(quantidade) as produzido
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${opPlaceholders})
+                    AND conferencia_status != 'CANCELADO'
+                    GROUP BY op_numero, operacao_codigo
+                `, uniqueOpsArr);
+            }
+
+            const [forecastResult, notesResult, docsResult, faturasResult, notasResult, sz1Result, lastOpResult, saldoProdResult] = await Promise.allSettled([
                 // 1. PCP Forecasts
                 mysqlPool.query(`
                     SELECT *, TRIM(pedido) as p_trim, TRIM(item) as i_trim
@@ -604,8 +648,28 @@ router.get('/flat', async (req, res) => {
                 // 5. Notas Fiscais (batch PG)
                 notasFiscaisEnrichment,
                 // 6. Ref/Rev cliente (batch PG)
-                sz1Enrichment
+                sz1Enrichment,
+                // 7. Last Operation Code (Protheus)
+                lastOpEnrichment,
+                // 8. Saldo Produzido (MySQL)
+                saldoProduzidoEnrichment
             ]);
+
+            // Map Last Ops
+            const lastOpMap = {};
+            if (lastOpResult && lastOpResult.status === 'fulfilled' && lastOpResult.value) {
+                lastOpResult.value.rows.forEach(r => {
+                    lastOpMap[r.produto] = r.operacao_final;
+                });
+            }
+
+            // Map Saldo Produzido
+            const saldoProdMap = {}; // { '005959-MO0013': 10 }
+            if (saldoProdResult && saldoProdResult.status === 'fulfilled' && saldoProdResult.value) {
+                saldoProdResult.value[0].forEach(r => {
+                    saldoProdMap[`${r.op_numero}-${r.operacao_codigo}`] = parseFloat(r.produzido) || 0;
+                });
+            }
 
             // Merge Forecasts
             if (forecastResult.status === 'fulfilled') {
@@ -617,14 +681,42 @@ router.get('/flat', async (req, res) => {
                 });
                 result.rows.forEach(row => {
                     const forecasts = forecastMap[`${String(row.pedido).trim()}-${String(row.item).trim()}`] || [];
-                    row.pcp_programacoes = forecasts;
                     if (forecasts.length > 0) {
-                        const last = forecasts[forecasts.length - 1];
-                        row.pcp_delivery_forecast_date = last.data_entrega_pcp;
-                        row.pcp_delivery_forecast_qtd = last.quantidade_pcp;
-                        row.pcp_delivery_forecast_user = last.usuario;
-                        row.pcp_delivery_forecast_at = last.created_at;
+                        let matchedForecast = forecasts[forecasts.length - 1]; // fallback to last
+
+                        if (row.op_num) {
+                            const cleanOpNum = String(row.op_num).replace(/\s+/g, '');
+                            const exactMatch = forecasts.find(f => f.op_protheus && cleanOpNum.startsWith(String(f.op_protheus).replace(/\s+/g, '')));
+                            if (exactMatch) {
+                                matchedForecast = exactMatch;
+                            } else {
+                                const seqStr = cleanOpNum.slice(-3);
+                                const seqInt = parseInt(seqStr, 10);
+                                if (!isNaN(seqInt) && seqInt > 0 && seqInt <= forecasts.length) {
+                                    matchedForecast = forecasts[seqInt - 1];
+                                }
+                            }
+                        }
+
+                        row.pcp_delivery_forecast_date = matchedForecast.data_entrega_pcp;
+                        row.pcp_delivery_forecast_qtd = matchedForecast.quantidade_pcp;
+                        row.pcp_delivery_forecast_user = matchedForecast.usuario;
+                        row.pcp_delivery_forecast_at = matchedForecast.created_at;
+                        row.pcp_programacoes = [matchedForecast];
+                    } else {
+                        row.pcp_programacoes = [];
                     }
+                    
+                    // Saldo Produzido injection
+                    row.saldo_produzido = 0;
+                    const finalOp = lastOpMap[String(row.codigo).trim()];
+                    if (row.op_num && finalOp) {
+                        const sKey = `${String(row.op_num).trim()}-${finalOp}`;
+                        if (saldoProdMap[sKey] !== undefined) {
+                            row.saldo_produzido = saldoProdMap[sKey];
+                        }
+                    }
+
                 });
             } else { console.error('Error forecasts:', forecastResult.reason?.message); }
 
@@ -743,7 +835,7 @@ router.get('/flat', async (req, res) => {
         });
 
     } catch (err) {
-        require('fs').writeFileSync('error_log.txt', err.stack + '\\n' + String(errorStep));
+        require('fs').writeFileSync('error_log.txt', err.stack + '\n' + String(errorStep));
         console.error('Erro FLAT VIEW:', err);
         const debugEnabled = String(req.query?.debug || '').toLowerCase() === 'true';
         res.status(500).json({
@@ -909,7 +1001,9 @@ router.get('/:id/itens', async (req, res) => {
                 COALESCE(c6.c6_qtdven, 0)::numeric(18,6)  AS quantidade,
                 TRIM(c6.c6_entreg) AS entrega_raw,
                 TRIM(c6.c6_pedcli) AS ped_cliente,
-                TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num,
+                TRIM(c2.c2_num) AS op_num,
+                TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num_completa,
+                TRIM(c2.c2_tpop) AS op_tipo,
                 c2.c2_quant   AS op_qtd,
                 COALESCE(c6.c6_qtdent, 0)::numeric(18,6) AS qtd_entreg,
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) AS qtd_faturar,
@@ -1008,7 +1102,7 @@ router.get('/:id/itens', async (req, res) => {
                         STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') as rev_cliente
                     FROM public.sz1010 z1
                     WHERE z1.z1_cliente = $1 AND z1.z1_loja = $2
-                    AND TRIM(z1.z1_produto) = ANY($3)
+                    AND TRIM(z1.z1_produto) = ANY($3::varchar[])
                     AND COALESCE(z1.d_e_l_e_t_, '') = ''
                     GROUP BY TRIM(z1.z1_produto)
                 `, [codCliente, lojaCliente, productCodes]) : Promise.resolve({ rows: [] })
@@ -1098,29 +1192,52 @@ router.get('/:id/itens', async (req, res) => {
             } else {
                 console.error('Error merging SZ1 (items):', sz1Result.reason?.message);
             }
-            // Fetch Latest PCP Forecasts for this pedido
+            // Fetch All PCP Forecasts for this pedido
             try {
                 const [forecasts] = await mysqlPool.query(`
-                        SELECT f1.*, TRIM(f1.item) as item_trim
-                        FROM app_pcp_delivery_forecasts f1
-                        INNER JOIN (
-                            SELECT pedido, item, MAX(id) as max_id
-                            FROM app_pcp_delivery_forecasts
-                            WHERE TRIM(pedido) = ?
-                            GROUP BY pedido, item
-                        ) f2 ON f1.id = f2.max_id
+                        SELECT *, TRIM(pedido) as p_trim, TRIM(item) as item_trim
+                        FROM app_pcp_delivery_forecasts
+                        WHERE TRIM(pedido) = ?
+                        ORDER BY id ASC
                     `, [id]);
 
                 const forecastMap = {};
-                forecasts.forEach(f => forecastMap[f.item_trim] = f);
+                forecasts.forEach(f => {
+                    const key = f.item_trim;
+                    if (!forecastMap[key]) forecastMap[key] = [];
+                    forecastMap[key].push(f);
+                });
 
                 items.forEach(item => {
-                    const forecast = forecastMap[item.item];
-                    if (forecast) {
-                        item.pcp_delivery_forecast_date = forecast.data_entrega_pcp;
-                        item.pcp_delivery_forecast_qtd = forecast.quantidade_pcp;
-                        item.pcp_delivery_forecast_user = forecast.usuario;
-                        item.pcp_delivery_forecast_at = forecast.created_at;
+                    const itemForecasts = forecastMap[item.item] || [];
+                    if (itemForecasts.length > 0) {
+                        let matchedForecast = itemForecasts[itemForecasts.length - 1]; // fallback to last
+
+                        if (item.op_num) {
+                            const cleanOpNum = String(item.op_num).replace(/\s+/g, '');
+                            const exactMatch = itemForecasts.find(f => f.op_protheus && cleanOpNum.startsWith(String(f.op_protheus).replace(/\s+/g, '')));
+                            if (exactMatch) {
+                                matchedForecast = exactMatch;
+                            } else {
+                                const seqStr = cleanOpNum.slice(-3);
+                                const seqInt = parseInt(seqStr, 10);
+                                if (!isNaN(seqInt) && seqInt > 0 && seqInt <= itemForecasts.length) {
+                                    matchedForecast = itemForecasts[seqInt - 1];
+                                }
+                            }
+                        }
+
+                        item.pcp_delivery_forecast_date = matchedForecast.data_entrega_pcp;
+                        item.pcp_delivery_forecast_qtd = matchedForecast.quantidade_pcp;
+                        item.pcp_delivery_forecast_user = matchedForecast.usuario;
+                        item.pcp_delivery_forecast_at = matchedForecast.created_at;
+                        item.pcp_programacoes = [matchedForecast];
+                    } else {
+                        item.pcp_delivery_forecast_date = null;
+                        item.pcp_delivery_forecast_qtd = null;
+                        item.pcp_delivery_forecast_user = null;
+                        item.pcp_delivery_forecast_at = null;
+                        item.pcp_programacoes = [];
                     }
                 });
             } catch (err) {
@@ -1635,12 +1752,12 @@ router.post('/pcp-forecasts/batch', async (req, res) => {
                     }
                 }
 
-                await connection.query(
+                const [result] = await connection.query(
                     'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null]
                 );
 
-                savedItems.push({ pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
+                savedItems.push({ id: result.insertId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
             }
             await connection.commit();
             res.json({ success: true, message: 'Lote programado com sucesso', savedItems });
@@ -1748,6 +1865,11 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
 
 router.delete('/pcp-forecasts/:id', async (req, res) => {
     try {
+        const [rows] = await mysqlPool.query('SELECT op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        const opVal = rows.length > 0 ? rows[0].op_protheus : null;
+        if (opVal && String(opVal).trim().length > 0 && String(opVal).trim() !== '-') {
+            return res.status(400).json({ error: 'Não é possível remover uma programação que já possui Ordem de Produção (O.P.) vinculada.' });
+        }
         await mysqlPool.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
@@ -1824,7 +1946,8 @@ router.get('/op-mirror/:id', async (req, res) => {
                     COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0) AS qtd_venda,
                     TRIM(c6.c6_um) as unid_venda,
                     TRIM(c6.c6_xrevm) as rev_metalfisa,
-                    COALESCE(TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen), TRIM(c6.c6_numop)) AS op_num
+                    COALESCE(TRIM(c2.c2_num), SUBSTRING(TRIM(c6.c6_numop), 1, 6)) AS op_num,
+                    TRIM(c2.c2_tpop) AS op_tipo
                 FROM sc6010 c6
                 LEFT JOIN sc2010 c2 ON c2.c2_filial = c6.c6_filial AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num) AND c2.c2_itempv = c6.c6_item AND c2.c2_sequen = '001' AND COALESCE(c2.d_e_l_e_t_, '') = ''
                 LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
@@ -1847,7 +1970,8 @@ router.get('/op-mirror/:id', async (req, res) => {
                     pv.rev_metalfisa AS revisao,
                     1::numeric AS qtd_base,
                     pv.qtd_venda AS qtd_necessaria,
-                    pv.op_num AS op_relacionada
+                    pv.op_num AS op_relacionada,
+                    pv.op_tipo AS op_tipo_relacionada
                 FROM pv_itens pv
 
                 UNION ALL
@@ -1865,7 +1989,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                     g1.g1_quant::numeric AS qtd_base,
                     (e.qtd_necessaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria,
                     COALESCE(
-                        (SELECT TRIM(c2_sub.c2_num) || c2_sub.c2_item || c2_sub.c2_sequen
+                        (SELECT TRIM(c2_sub.c2_num)
                          FROM sc2010 c2_sub 
                          WHERE TRIM(c2_sub.c2_pedido) = $1 
                            AND c2_sub.c2_itempv = e.item_pedido 
@@ -1955,6 +2079,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                     unidade: row.unidade,
                     quantidade_venda: parseFloat(row.qtd_necessaria),
                     op_num: row.op_relacionada,
+                    op_tipo: row.op_tipo_relacionada,
                     operacoes: row.operacoes
                 };
             } else {
@@ -1968,6 +2093,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                     unidade: row.unidade,
                     quantidade_calculada: parseFloat(row.qtd_necessaria),
                     op_num: row.op_relacionada,
+                    op_tipo: row.op_tipo_relacionada,
                     operacoes: row.operacoes
                 });
             }

@@ -54,6 +54,9 @@ async function deploy() {
         const localDir = path.join(__dirname, 'linux-deployment');
         const remoteDir = '/var/www/metalfisa';
 
+        console.log('🧹 Cleaning remote dist folder...');
+        await ssh.execCommand('rm -rf /var/www/metalfisa/client/dist', { cwd: '/var/www' });
+
         console.log('📤 Uploading from', localDir, 'to', remoteDir);
         
         // Put Directory

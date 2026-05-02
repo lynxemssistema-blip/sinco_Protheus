@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import api from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
+import MonitoringDashboard from '../components/MonitoringDashboard';
 
 export default function Settings() {
     const { user, isAdmin } = useAuth();
@@ -24,6 +25,7 @@ export default function Settings() {
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
         { id: 'email', label: 'E-mail Corporativo', icon: Mail },
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
+        { id: 'monitoring', label: 'Monitoramento', icon: Activity },
     ];
 
     const formatPhone = (val) => {
@@ -636,6 +638,11 @@ export default function Settings() {
 
             {/* TAB CONTENT */}
             <div className="mt-6">
+
+                {/* MONITORING TAB */}
+                {activeTab === 'monitoring' && (
+                    <MonitoringDashboard />
+                )}
 
                 {/* GENERAL TAB */}
                 {activeTab === 'general' && (

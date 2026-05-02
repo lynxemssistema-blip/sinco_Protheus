@@ -246,12 +246,19 @@ const OrdersTable = () => {
         }
     };
 
+    const [hasSearched, setHasSearched] = useState(false);
+
+    const hasAnyFilter = () => {
+        return !!(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
+    };
+
     // Fetch on filter/page change — cleanup aborts stale requests
     useEffect(() => {
+        if (!hasSearched) return;
         fetchData();
         return () => { if (abortRef.current) abortRef.current.abort(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, viewMode, filters.only_active]);
+    }, [page, viewMode, filters.only_active, hasSearched]);
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
@@ -260,6 +267,11 @@ const OrdersTable = () => {
 
     const handleSearch = (e) => {
         e.preventDefault();
+        if (!hasAnyFilter()) {
+            alert('Por favor, informe pelo menos um filtro (Cliente, Pedido, Produto, Datas, etc) antes de buscar.');
+            return;
+        }
+        setHasSearched(true);
         // Set context page to 1
         setPage(1);
         // Execute fetch immediately with page 1 override to avoid closure lag
@@ -643,7 +655,7 @@ const OrdersTable = () => {
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
             {/* Global Overlay for PDF Generation */}
             {printingOrderId && (
                 <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900/50 backdrop-blur-sm">
@@ -943,9 +955,9 @@ const OrdersTable = () => {
             {activeTab === 'evolucao' && (
                 <>
                     {/* Tabela */}
-                    <div className="overflow-x-scroll min-h-[400px] print:overflow-visible print:min-h-0">
+                    <div className="flex-1 overflow-auto min-h-0 print:overflow-visible print:min-h-0">
                         <table className="w-full text-sm text-left text-gray-500 print:w-full">
-                            <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-100">
+                            <thead className="sticky top-0 z-10 text-xs text-gray-700 uppercase bg-gray-50 outline outline-1 outline-gray-200">
                                 {viewMode === 'tree' ? (
                                     <tr>
                                         <th scope="col" className="w-12 px-4 py-3"></th>
@@ -958,11 +970,11 @@ const OrdersTable = () => {
                                     </tr>
                                 ) : (
                                     <tr>
-                                        <th className="px-4 py-3 font-semibold text-center w-8">
+                                        <th className="px-4 py-3 border-b border-slate-700 w-10 text-center">
                                             <input 
                                                 type="checkbox" 
-                                                onChange={handleSelectAll} 
                                                 checked={orders.length > 0 && selectedItems.length === orders.length}
+                                                onChange={handleSelectAll}
                                                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                             />
                                         </th>
@@ -1232,7 +1244,20 @@ const OrdersTable = () => {
                                                                                             .map((item, i) => (
                                                                                                 <tr key={`${order.pedido}-${item.item}-${i}`} className={`border-b border-gray-50 last:border-0 transition-colors ${parseFloat(item.qtd_faturar || 0) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'hover:bg-gray-50/50'}`}>
                                                                                                     <td className="px-4 py-2">{item.item}</td>
-                                                                                                    <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.op_num || '-'}</td>
+                                                                                                    <td className="px-4 py-2 text-center">
+                                                                                                        <div className="flex items-center justify-center gap-1.5">
+                                                                                                            <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${String(item.op_tipo || '').trim().toUpperCase() === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
+                                                                                                                {item.op_num || '-'}
+                                                                                                            </span>
+                                                                                                            {item.op_num && item.op_num !== '-' && (
+                                                                                                                String(item.op_tipo || '').trim().toUpperCase() === 'F' ? (
+                                                                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded shadow-sm border border-emerald-200" title="OP Firme">F</span>
+                                                                                                                ) : String(item.op_tipo || '').trim().toUpperCase() === 'P' ? (
+                                                                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-800 rounded shadow-sm border border-orange-200" title="OP Prevista">P</span>
+                                                                                                                ) : null
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    </td>
                                                                                                     <td className="px-4 py-2 font-mono text-xs">
                                                                                                         <Link
                                                                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}`}
@@ -1581,7 +1606,20 @@ const OrdersTable = () => {
                                                         {item.ped_cliente || '-'}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-xs font-mono text-gray-500">{item.item}</td>
-                                                    <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.op_num || '-'}</td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        <div className="flex items-center justify-center gap-1.5">
+                                                            <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
+                                                                {item.op_num || '-'}
+                                                            </span>
+                                                            {item.op_num && item.op_num !== '-' && (
+                                                                item.op_tipo === 'F' ? (
+                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded shadow-sm border border-emerald-200" title="OP Firme">F</span>
+                                                                ) : item.op_tipo === 'P' ? (
+                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-800 rounded shadow-sm border border-orange-200" title="OP Prevista">P</span>
+                                                                ) : null
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">
                                                         <Link
                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}`}
@@ -1797,7 +1835,7 @@ const OrdersTable = () => {
             {/* Exportação Materiais PCP */}
             {
                 activeTab === 'pcp-export' && (
-                    <div className="p-4">
+                    <div className="flex-1 overflow-auto min-h-0 p-4">
                         <PCPExportTab />
                     </div>
                 )
@@ -1866,22 +1904,67 @@ const OrdersTable = () => {
                 pcpForecastTarget && (
                     <PCPForecastModal
                         isOpen={true}
-                        onClose={() => setPcpForecastTarget(null)}
-                        item={pcpForecastTarget}
-                        onSaveSuccess={async () => {
-                            // Refresh appropriate view
-                            if (viewMode === 'tree') {
-                                if (expandedRow) {
-                                    try {
-                                        const updatedItems = await getItensPedido(expandedRow);
-                                        setOrderItems(prev => ({ ...prev, [expandedRow]: updatedItems }));
-                                    } catch (error) {
-                                        console.error('Erro ao atualizar itens:', error);
-                                    }
-                                }
+                        onClose={async () => {
+                            const target = pcpForecastTarget;
+                            setPcpForecastTarget(null);
+                            
+                            // Atualiza apenas a linha específica (sem piscar a tela inteira)
+                            if (!target) return;
+                            const isBatch = Array.isArray(target);
+                            if (isBatch) {
                                 fetchData();
                             } else {
+                                try {
+                                    // Aguarda 1 segundo para garantir que o Protheus salvou no banco
+                                    await new Promise(r => setTimeout(r, 1000));
+                                    const updatedItems = await getItensPedido(target.pedido);
+                                    if (viewMode === 'tree' && expandedRow === target.pedido) {
+                                        setOrderItems(prev => ({ ...prev, [target.pedido]: updatedItems }));
+                                    }
+                                    if (viewMode === 'flat') {
+                                        setOrders(prev => prev.map(o => {
+                                            if (o.pedido === target.pedido) {
+                                                const updated = updatedItems.find(u => u.item === o.item);
+                                                // Devemos mesclar os objetos para não perder campos exclusivos do modo flat (como cliente, emissão, etc)
+                                                return updated ? { ...o, ...updated } : o;
+                                            }
+                                            return o;
+                                        }));
+                                    }
+                                } catch (err) {
+                                    console.error('Erro ao atualizar linha individual:', err);
+                                }
+                            }
+                        }}
+                        item={pcpForecastTarget}
+                        onSaveSuccess={async () => {
+                            // Mesma lógica de atualização individual para não dar reload full
+                            const target = pcpForecastTarget;
+                            if (!target) return;
+                            const isBatch = Array.isArray(target);
+                            if (isBatch) {
                                 fetchData();
+                            } else {
+                                try {
+                                    // Aguarda 1 segundo para garantir que o Protheus salvou no banco
+                                    await new Promise(r => setTimeout(r, 1000));
+                                    const updatedItems = await getItensPedido(target.pedido);
+                                    if (viewMode === 'tree' && expandedRow === target.pedido) {
+                                        setOrderItems(prev => ({ ...prev, [target.pedido]: updatedItems }));
+                                    }
+                                    if (viewMode === 'flat') {
+                                        setOrders(prev => prev.map(o => {
+                                            if (o.pedido === target.pedido) {
+                                                const updated = updatedItems.find(u => u.item === o.item);
+                                                // Mesclar
+                                                return updated ? { ...o, ...updated } : o;
+                                            }
+                                            return o;
+                                        }));
+                                    }
+                                } catch (err) {
+                                    console.error('Erro ao atualizar linha individual:', err);
+                                }
                             }
                         }}
                     />

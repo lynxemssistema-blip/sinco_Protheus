@@ -230,6 +230,11 @@ app.use('/api/settings', require('./routes/system_settings'));
 // PPAPs
 app.use('/api/ppaps', require('./routes/ppaps'));
 
+// Monitoramento de Sistema (Métricas)
+app.use('/api/monitoramento', require('./routes/monitoramento'));
+const systemMonitor = require('./services/systemMonitor');
+systemMonitor.startMonitoring(app);
+
 // Meu Canal & KPIs
 app.use('/api/meucanal', require('./routes/meucanal'));
 
@@ -293,51 +298,36 @@ cron.schedule('0 6,15 * * *', async () => {
                 const kpiData = await calcularKPIMeuCanal(user.id, user.Login, user.NomeCompleto);
                 
                 let bodyHtml = `
-                    <div style="padding: 10px;">
-                        <h2 style="color: #0d9488; margin-bottom: 5px;">Relatório de Performance - Meu Canal</h2>
-                        <p style="color: #475569; font-size: 15px;">Olá, <b>${user.NomeCompleto || user.Login}</b>. Segue o resumo de performance de apontamentos do(s) seu(s) setor(es) para hoje.</p>
+                    <div style="padding: 10px; font-family: sans-serif;">
+                        <h2 style="color: #0d9488; margin-bottom: 5px;">Performance do Setor</h2>
+                        <p style="color: #475569; font-size: 14px;">Olá, <b>${user.NomeCompleto || user.Login}</b>. Resumo de hoje:</p>
+                        <table style="width: 100%; max-width: 600px; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background-color: #f1f5f9; text-align: left;">
+                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1;">Setor</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Evolução</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                 `;
 
                 for (const setor of kpiData.setores) {
+                    const emoji = setor.score >= 90 ? '✅' : setor.score >= 60 ? '⚠️' : '❌';
                     bodyHtml += `
-                        <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin: 15px 0;">
-                            <h3 style="margin: 0 0 10px 0; color: #1e293b;">Setor: ${setor.nome}</h3>
-                            <p><b>Planejado (Hoje):</b> ${setor.planejado} peças</p>
-                            <p><b>Apontado (Hoje):</b> ${setor.apontado} peças</p>
-                            <p><b>Atingimento:</b> <span style="color: ${setor.cor}; font-weight: bold;">${setor.score}% (${setor.nivel})</span></p>
-                    `;
-
-                    if (setor.pendencias && setor.pendencias.length > 0) {
-                        bodyHtml += `
-                            <h4 style="margin: 15px 0 5px 0; color: #ef4444;">Itens Pendentes / Não Executados Completamente:</h4>
-                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                                <thead>
-                                    <tr style="background-color: #f1f5f9; text-align: left;">
-                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">OP</th>
-                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Produto</th>
-                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Operação</th>
-                                        <th style="padding: 8px; border: 1px solid #cbd5e1;">Falta Apontar</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                        `;
-                        for (const pend of setor.pendencias) {
-                            const falta = pend.esperado - pend.realizado;
-                            bodyHtml += `
                                 <tr>
-                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.op}</td>
-                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.produto}</td>
-                                    <td style="padding: 6px; border: 1px solid #cbd5e1;">${pend.operacao}</td>
-                                    <td style="padding: 6px; border: 1px solid #cbd5e1; color: #ef4444; font-weight: bold;">${falta}</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${emoji} ${setor.nome}</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${setor.producaoRealizada ?? 0} / ${setor.producaoPlanejada ?? 0}</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${setor.cor};">${setor.score}%</td>
                                 </tr>
-                            `;
-                        }
-                        bodyHtml += `</tbody></table>`;
-                    } else if (setor.planejado > 0) {
-                        bodyHtml += `<p style="color: #22c55e; margin-top: 10px; font-weight: bold;">✅ Nenhuma pendência! Todas as OPs planejadas para hoje já foram apontadas.</p>`;
-                    }
-                    bodyHtml += `</div>`;
+                    `;
                 }
+
+                bodyHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
 
                 bodyHtml += `</div>`;
 

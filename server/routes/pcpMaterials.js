@@ -38,13 +38,18 @@ router.get('/orders', async (req, res) => {
             paramCount++;
         }
 
-        if (pedido) {
-            whereExtra += ` AND c5.c5_num LIKE '%' || $${paramCount} || '%'`;
-            params.push(pedido);
+        if (pedido && typeof pedido === 'string') {
+            whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+            params.push(pedido.trim());
+            paramCount++;
+        } else if (Array.isArray(pedido)) {
+            // Em caso de query string repetida (pedido=x&pedido=y) pega só o primeiro por segurança
+            whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+            params.push(pedido[0].trim());
             paramCount++;
         }
 
-        if (produto) {
+        if (produto && typeof produto === 'string') {
             whereExtra += ` AND c6.c6_produto ILIKE '%' || $${paramCount} || '%'`;
             params.push(produto);
             paramCount++;

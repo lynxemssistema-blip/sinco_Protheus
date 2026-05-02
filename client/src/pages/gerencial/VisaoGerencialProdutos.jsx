@@ -8,6 +8,7 @@ import {
 import { Factory, Calendar, DollarSign, Lock, ChevronDown, ChevronRight, Package, Download, Camera, CheckSquare, Clock, Loader2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import ErrorStateOverlay from '../../components/ErrorStateOverlay';
 
 const VisaoGerencialProdutos = () => {
     const { user, hasPermission, isAdmin } = useAuth();
@@ -212,7 +213,7 @@ const VisaoGerencialProdutos = () => {
     }
 
     if (error) {
-        return <div className="p-6 text-red-500 bg-red-50 border border-red-200 rounded-lg m-6">{error}</div>;
+        return <div className="m-6"><ErrorStateOverlay error={error} onRetry={fetchData} /></div>;
     }
 
     // Dynamic Variables based on Tab

@@ -4,6 +4,8 @@ console.log('🔄 [DEBUG] Carregando arquivo routes/production.js');
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+const nodemailer = require('nodemailer');
+const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
 // GET /api/production/analytics-dashboard - Production Analytics Dashboard
 // DEBUG MIDDLEWARE
@@ -2016,6 +2018,7 @@ const uploadConferencia = multer({
 
 // POST /api/production/appoint - Save Appointment
 router.post('/appoint', async (req, res) => {
+    let connection;
     try {
         const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados } = req.body;
 
@@ -2024,8 +2027,11 @@ router.post('/appoint', async (req, res) => {
             return res.status(400).json({ error: 'Quantidade deve ser maior que zero.' });
         }
 
+        connection = await mysqlPool.getConnection();
+        await connection.beginTransaction();
+
         // --- LEITURA DE CONFIG ---
-        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        const [configRows] = await connection.query('SELECT general_config FROM app_company_settings WHERE id = 1');
         let appointmentMode = 'free';
         let enableVerification = false;
         if (configRows.length > 0 && configRows[0].general_config) {
@@ -2050,13 +2056,14 @@ router.post('/appoint', async (req, res) => {
             if (pgRes.rows.length > 0) {
                 qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
                 if (qtdPlanejada > 0) {
-                    const [appRows] = await mysqlPool.execute(
+                    const [appRows] = await connection.execute(
                         `SELECT SUM(quantidade) AS total FROM app_production_appointments
                          WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
                         [op_numero, op_item, op_sequencia, operacao_codigo]
                     );
                     const produzido = Number(appRows[0].total) || 0;
                     if (produzido + qtyNum > qtdPlanejada + 0.001) {
+                        await connection.rollback();
                         return res.status(400).json({
                             error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
                         });
@@ -2087,13 +2094,14 @@ router.post('/appoint', async (req, res) => {
 
             if (prevRes.rows.length > 0 && prevRes.rows[0].prev_operacao && qtdPlanejada > 0) {
                 const prevOp = prevRes.rows[0].prev_operacao;
-                const [prevAppRows] = await mysqlPool.execute(
+                const [prevAppRows] = await connection.execute(
                     `SELECT SUM(quantidade) AS total FROM app_production_appointments
                      WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
                     [op_numero, op_item, op_sequencia, prevOp]
                 );
                 const prevProduzido = Number(prevAppRows[0].total) || 0;
                 if (prevProduzido < qtdPlanejada - 0.001) {
+                    await connection.rollback();
                     return res.status(400).json({
                         error: `Operação anterior (${prevOp}) não foi concluída. Produzido: ${prevProduzido} / Planejado: ${qtdPlanejada}`
                     });
@@ -2105,21 +2113,24 @@ router.post('/appoint', async (req, res) => {
         const materiaisJson = materiais_utilizados ? JSON.stringify(materiais_utilizados) : null;
         const initialStatus = enableVerification ? 'PENDENTE' : 'OK';
 
-        await mysqlPool.execute(`
+        await connection.execute(`
             INSERT INTO app_production_appointments
     (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
 
+        // CASCATA (Baixa Automática) - Recursive BOM Explosion and Appointment
+        await processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_codigo, usuario, data_inicio, data_fim, initialStatus);
+
         // Se houver op_fracionada, grava na tabela de rastreio de lote fracionado
         if (req.body.op_fracionada) {
-            await mysqlPool.execute(`
+            await connection.execute(`
                 INSERT INTO app_ind_production_appointments
                 (op_fracionada, op_base, operacao_codigo, operacao_nome, quantidade, data_inicio, data_fim, usuario, materiais_utilizados, observacao)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 req.body.op_fracionada,
-                op_numero + op_item, // ou apenas op_numero dependendo da regra da op_base
+                op_numero + op_item,
                 operacao_codigo,
                 req.body.operacao_nome || '',
                 quantidade,
@@ -2131,25 +2142,34 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ]);
         }
 
-        // Se houver materiais com solicitacao_id, marcar solicitação como ENTREGUE (se já não estiver)
+        // Se houver materiais com solicitacao_id, marcar solicitação como ENTREGUE
         if (materiais_utilizados && Array.isArray(materiais_utilizados)) {
             const solicitacoesIds = [...new Set(materiais_utilizados.map(m => m.solicitacao_id).filter(id => id))];
 
             if (solicitacoesIds.length > 0) {
-                // Atualizar status das solicitações vinculadas
                 const placeholders = solicitacoesIds.map(() => '?').join(',');
-                await mysqlPool.execute(`
+                await connection.execute(`
                     UPDATE app_solicitacoes_almoxarifado 
                     SET status = 'ENTREGUE', data_entregue = NOW(), usuario_entrega = 'APONTAMENTO_AUTO'
                     WHERE id IN(${placeholders}) AND status != 'ENTREGUE'
-    `, solicitacoesIds);
+                `, solicitacoesIds);
             }
         }
 
-        res.json({ message: 'Apontamento registrado com consumo de materiais' });
+        await connection.commit();
+        res.json({ message: 'Apontamento registrado com sucesso.' });
     } catch (err) {
         console.error('[APPOINT ERROR]', err);
+        if (connection) await connection.rollback();
+        
+        if (err.isCascataError) {
+            await sendCascataErrorEmail(req.body.usuario, req.body.op_numero, err.cascataItems || [], err.message);
+            return res.status(400).json({ error: 'Falha no Apontamento em Cascata. Um email foi enviado com os detalhes.', details: err.message });
+        }
+        
         res.status(500).json({ error: err.message });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -3820,8 +3840,6 @@ TRIM(z1_produto) as produto,
     }
 });
 
-module.exports = router;
-
 
 // GET /api/production/analytics/apontamento-usuario - Appoints by User/Process for OP
 router.get('/analytics/apontamento-usuario', async (req, res) => {
@@ -3953,4 +3971,198 @@ UPPER(TRIM(usuario)),
         res.status(500).json({ error: err.message });
     }
 });
+
+// ==========================================
+// FUNÇÕES AUXILIARES DE CASCATA
+// ==========================================
+
+async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, usuario_original, data_inicio, data_fim, initialStatus) {
+    let cascataItems = [];
+    try {
+        const pgRes = await db.query(
+            `SELECT TRIM(c2_produto) as produto_pai 
+             FROM sc2010 
+             WHERE c2_num = $1 AND c2_item = $2 AND c2_sequen = $3
+             AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
+            [op_numero, op_item, op_sequencia]
+        );
+        
+        if (pgRes.rows.length === 0) return;
+        
+        const produtoPai = pgRes.rows[0].produto_pai;
+
+        // 1. Obter a Quantidade TOTAL já apontada para a operação gatilho do Produto Pai
+        const [gatilhoRows] = await connection.execute(`
+            SELECT COALESCE(SUM(quantidade), 0) as total_apontado
+            FROM app_production_appointments
+            WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+        `, [op_numero, op_item, op_sequencia, operacao_gatilho]);
+        const quantidade_total_pai = Number(gatilhoRows[0].total_apontado);
+
+        // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai
+        const parentOpsRes = await db.query(`
+            SELECT TRIM(g2.g2_operac) as operacao
+            FROM public.sg2010 g2
+            WHERE btrim(g2.g2_produto) = $1
+            AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+        `, [produtoPai]);
+
+        for (const popRow of parentOpsRes.rows) {
+            if (!popRow.operacao) continue;
+
+            const [pAppRows] = await connection.execute(`
+                SELECT COALESCE(SUM(quantidade), 0) as total_apontado
+                FROM app_production_appointments
+                WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+            `, [op_numero, op_item, op_sequencia, popRow.operacao]);
+            
+            const apontadoPai = Number(pAppRows[0].total_apontado);
+            const faltantePai = quantidade_total_pai - apontadoPai;
+
+            if (faltantePai > 0) {
+                cascataItems.push({ componente: produtoPai, operacao: popRow.operacao, faltante: faltantePai });
+                
+                const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
+                const obsFantasma = `Apontamento automático (Mesmo Produto). Ref: Operação Pendente`;
+                
+                await connection.execute(`
+                    INSERT INTO app_production_appointments
+                    (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                `, [op_numero, op_item, op_sequencia, popRow.operacao, fantasmaUser, faltantePai, data_inicio, data_fim, obsFantasma, initialStatus]);
+            }
+        }
+        
+        // 2. Explosão de Estrutura (BOM) recursiva
+        const bomRes = await db.query(`
+            WITH RECURSIVE bom_tree AS (
+                SELECT 
+                    TRIM(g1.g1_cod) AS pai,
+                    TRIM(g1.g1_comp) AS componente,
+                    g1.g1_quant::numeric AS qtde_necessaria,
+                    1 AS nivel,
+                    ARRAY[TRIM(g1.g1_comp)] as path
+                FROM public.sg1010 g1
+                WHERE TRIM(g1.g1_cod) = $1 AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
+                
+                UNION ALL
+                
+                SELECT 
+                    TRIM(g1.g1_cod),
+                    TRIM(g1.g1_comp),
+                    (bt.qtde_necessaria * g1.g1_quant::numeric)::numeric,
+                    bt.nivel + 1,
+                    bt.path || TRIM(g1.g1_comp)
+                FROM public.sg1010 g1
+                INNER JOIN bom_tree bt ON TRIM(g1.g1_cod) = bt.componente
+                WHERE COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
+                AND NOT (TRIM(g1.g1_comp) = ANY(bt.path))
+            )
+            SELECT componente, qtde_necessaria, nivel FROM bom_tree ORDER BY nivel;
+        `, [produtoPai]);
+
+        if (bomRes.rows.length === 0) return;
+
+        for (const row of bomRes.rows) {
+            const qtdRequeridaTotal = Number(row.qtde_necessaria) * quantidade_total_pai;
+            
+            const opRes = await db.query(`
+                SELECT 
+                    TRIM(c2.c2_item) as item_op, 
+                    TRIM(c2.c2_sequen) as sequen_op,
+                    TRIM(g2.g2_operac) as operacao
+                FROM public.sc2010 c2
+                LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE c2.c2_num = $1 AND TRIM(c2.c2_produto) = $2
+                AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+            `, [op_numero, row.componente]);
+
+            if (opRes.rows.length === 0) continue;
+
+            for (const opRow of opRes.rows) {
+                if (!opRow.operacao) continue; 
+
+                const [appRows] = await connection.execute(`
+                    SELECT COALESCE(SUM(quantidade), 0) as total_apontado
+                    FROM app_production_appointments
+                    WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+                `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao]);
+                
+                const apontado = Number(appRows[0].total_apontado);
+                const faltante = qtdRequeridaTotal - apontado;
+                
+                if (faltante > 0) {
+                    cascataItems.push({ componente: row.componente, operacao: opRow.operacao, faltante });
+                    
+                    const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
+                    const obsFantasma = `Apontamento automático (Cascata). Ref: Produto Pai ${produtoPai}`;
+                    
+                    await connection.execute(`
+                        INSERT INTO app_production_appointments
+                        (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                    `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao, fantasmaUser, faltante, data_inicio, data_fim, obsFantasma, initialStatus]);
+                }
+            }
+        }
+    } catch(err) {
+        console.error('[CASCATA] Erro interno de execução:', err);
+        err.isCascataError = true;
+        err.cascataItems = cascataItems;
+        throw err;
+    }
+}
+
+async function sendCascataErrorEmail(usuario, op_numero, missingDetails, errorMsg) {
+    try {
+        const [rows] = await mysqlPool.query('SELECT Email FROM usuario WHERE NomeCompleto = ? OR Login = ?', [usuario, usuario]);
+        if (rows.length === 0 || !rows[0].Email) return;
+
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.task.com.br',
+            port: 587,
+            secure: false,
+            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+            tls: { rejectUnauthorized: false }
+        });
+
+        const html = `
+            <h2>Falha no Apontamento em Cascata</h2>
+            <p>A tentativa de apontamento automático para a OP <strong>${op_numero}</strong> falhou. A transação foi desfeita (Rollback).</p>
+            <p><strong>Motivo/Erro:</strong> ${errorMsg}</p>
+            <h3>Tentativa de compensação nas seguintes operações (Faltantes):</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background-color: #f2f2f2;">
+                        <th style="border: 1px solid #ddd; padding: 8px;">Componente</th>
+                        <th style="border: 1px solid #ddd; padding: 8px;">Operação</th>
+                        <th style="border: 1px solid #ddd; padding: 8px;">Qtd Faltante Tentada</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${missingDetails.length > 0 ? missingDetails.map(d => `
+                    <tr>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${d.componente}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${d.operacao}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${d.faltante}</td>
+                    </tr>
+                    `).join('') : '<tr><td colspan="3" style="text-align: center; padding: 8px;">Nenhuma operação listada.</td></tr>'}
+                </tbody>
+            </table>
+            <br/>
+            <p>Por favor, avise o setor de TI ou PCP sobre este erro sistêmico.</p>
+        `;
+
+        await transporter.sendMail({
+            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            to: rows[0].Email,
+            subject: `⚠️ ERRO: Baixa Automática Cascata - OP ${op_numero}`,
+            html: getCorporateEmailTemplate ? getCorporateEmailTemplate(html) : html
+        });
+    } catch(err) {
+        console.error('[CASCATA EMAIL ERROR]', err);
+    }
+}
+
+module.exports = router;
 

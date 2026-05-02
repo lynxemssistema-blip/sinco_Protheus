@@ -19,12 +19,12 @@ router.get('/solicitacoes', async (req, res) => {
             params.push(status);
         }
         if (op) {
-            query += ' AND op LIKE ?';
-            params.push(`%${op}%`);
+            query += ' AND op = ?';
+            params.push(String(op).trim().padStart(6, '0'));
         }
         if (pedido) {
-            query += ' AND pedido LIKE ?';
-            params.push(`%${pedido}%`);
+            query += ' AND pedido = ?';
+            params.push(String(pedido).trim().padStart(6, '0'));
         }
 
         query += ' ORDER BY created_at DESC LIMIT 100';

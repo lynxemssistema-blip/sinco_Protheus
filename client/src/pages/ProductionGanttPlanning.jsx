@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Search } from 'lucide-react';
-import { getProductionAnalyticsDashboard } from '../services/api';
+import { BarChart3, Search, AlertTriangle, RefreshCw } from 'lucide-react';
+import { getProductionAnalyticsDashboard, reportSystemError } from '../services/api';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
+import useStickyState from '../hooks/useStickyState';
+import { toast } from 'react-toastify';
 
 export default function ProductionGanttPlanning() {
-    const [pedido, setPedido] = useState('');
-    const [filters, setFilters] = useState({
+    const [pedido, setPedido] = useStickyState('', '@metalfisa:gantt_pedido');
+    const [filters, setFilters] = useStickyState({
         cliente: '',
         pedCliente: '',
         op: '',
         produto: '',
         dataInicio: '',
         dateType: 'planejada' // 'planejada' or 'apontada'
-    });
-    const [data, setData] = useState(null);
+    }, '@metalfisa:gantt_filters');
+    const [data, setData] = useStickyState(null, '@metalfisa:gantt_data');
     const [loading, setLoading] = useState(false);
+    const [apiError, setApiError] = useState(null);
 
     useEffect(() => {
-        fetchData(); // Initial load on mount
+        setLoading(false);
     }, []);
+
+    const handleSearch = () => {
+        if (!pedido && !filters.cliente && !filters.op && !filters.produto && !filters.pedCliente && !filters.dataInicio) {
+            toast.warning('Por favor, preencha ao menos um filtro antes de buscar.');
+            return;
+        }
+        fetchData();
+    };
 
     const fetchData = async () => {
         setLoading(true);
+        setApiError(null);
         try {
             const params = new URLSearchParams();
             if (pedido) params.append('pedido_venda', pedido);
@@ -36,7 +49,8 @@ export default function ProductionGanttPlanning() {
             setData(res);
         } catch (err) {
             console.error('❌ [DEBUG] API Error:', err);
-            alert('Erro ao carregar dados: ' + err.message);
+            setApiError(err.message || 'Erro desconhecido de comunicação');
+            reportSystemError('Análise de Produção (Gantt)', err, Object.fromEntries(params));
         } finally {
             setLoading(false);
         }
@@ -126,7 +140,7 @@ export default function ProductionGanttPlanning() {
                         </div>
 
                         <button
-                            onClick={fetchData}
+                            onClick={handleSearch}
                             disabled={loading}
                             className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded flex items-center justify-center gap-2 disabled:opacity-50"
                         >
@@ -137,8 +151,13 @@ export default function ProductionGanttPlanning() {
                 </div>
             </div>
 
+            {/* Error Message */}
+            <div className="px-6 pb-6 mt-4">
+                <ErrorStateOverlay error={apiError} onRetry={fetchData} />
+            </div>
+
             {/* Results */}
-            {data && (
+            {!apiError && data && (
                 <div className="px-6 pb-6 space-y-6">
                     {/* Header Info (Only show if single order selected or returned) */}
                     {data.pedido && (

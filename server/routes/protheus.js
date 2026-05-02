@@ -1,32 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { Client } = require('pg');
+const protheusDB = require('../services/protheusDB');
 const axios = require('axios');
 const https = require('https');
-
-// Configuração estática do PostgreSQL de Leitura (Protheus Mirror / p12prd)
-const pgConfig = {
-    host: '192.168.1.61',
-    port: 5432,
-    user: 'sinco2',
-    password: 'sinco25',
-    database: 'p12prd'
-};
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
- * Utilitário para rodar Queries no PostgreSQL do Protheus
+ * Utilitário para rodar Queries no PostgreSQL do Protheus (Otimizado via Pool Central)
  */
 async function queryProtheus(sql, params = []) {
-    const client = new Client(pgConfig);
-    await client.connect();
-    try {
-        const res = await client.query(sql, params);
-        return res.rows;
-    } finally {
-        await client.end();
-    }
+    const res = await protheusDB.query(sql, params);
+    return res.rows;
 }
 
 // =========================================================================
@@ -205,7 +190,42 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             const itemPvStr = String(it.itempv || "01").padStart(2, '0');
             let filial = (it.filial || "01").trim();
 
-            // 1. Nova pesquisa no banco (ignora frontend memory para o Produto)
+            // 1. VERIFICAÇÃO DE SEGURANÇA: Status do Item deve ser 'PCP'
+            let isPCP = true;
+            try {
+                const statusQuery = `
+                    SELECT 
+                        CASE
+                            WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0.ok IS NOT NULL THEN 'Restrição'
+                            WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
+                            WHEN sg1.ok IS NULL AND sg2.ok IS NULL THEN 'Novo'
+                            ELSE 'PCP'
+                        END AS status_tipo_item
+                    FROM public.sc6010 c6
+                    LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND TRIM(COALESCE(sb1.d_e_l_e_t_, '')) = ''
+                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sz0010 s WHERE s.z0_produto = c6.c6_produto AND s.z0_status = 'P' AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sz0 ON true
+                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sg1010 s WHERE s.g1_cod = c6.c6_produto AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sg1 ON true
+                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sg2010 s WHERE s.g2_produto = c6.c6_produto AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sg2 ON true
+                    WHERE c6.c6_num = $1 AND c6.c6_item = $2 AND TRIM(COALESCE(c6.d_e_l_e_t_, '')) = ''
+                    LIMIT 1
+                `;
+                const statusRes = await queryProtheus(statusQuery, [pedidoStr, itemPvStr]);
+                if (statusRes.length > 0) {
+                    const statusVal = statusRes[0].status_tipo_item;
+                    if (statusVal !== 'PCP') {
+                        isPCP = false;
+                        console.log(`[OP BUILDER] Bloqueio Segurança: Pedido ${pedidoStr} Item ${itemPvStr} não está liberado (Status: ${statusVal}).`);
+                    }
+                }
+            } catch (err) {
+                console.error("Erro ao validar status_tipo_item na OP:", err.message);
+            }
+
+            if (!isPCP) {
+                return res.status(403).json({ error: `Bloqueio de Segurança: O item ${itemPvStr} do pedido ${pedidoStr} não possui status "PCP" (está em Revisão, Restrição ou Novo). A geração de O.P. não é permitida.` });
+            }
+
+            // 2. Nova pesquisa no banco (ignora frontend memory para o Produto)
             let produto = "";
             let qtd_venda = 0;
             try {
@@ -344,7 +364,17 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             }
         }
 
-        res.json({ success: true, message: 'O.P.(s) gerada(s) com sucesso.', op_number: opNumber, details: protheusResp });
+        res.json({ 
+            success: true, 
+            message: 'O.P.(s) gerada(s) com sucesso.', 
+            op_number: opNumber, 
+            generated_ops: ordensProducao.map(op => ({
+                pedido: String(op.C2_PEDIDO).trim(),
+                item: String(op.C2_ITEMPV).trim(),
+                op_num: String(op.C2_NUM).trim()
+            })),
+            details: protheusResp 
+        });
 
     } catch (error) {
         console.error('[OP] Erro integração:', error.response?.data || error.message);

@@ -31,6 +31,7 @@ const ItensAFaturar = () => {
         dataFinal: '',
         dateType: 'pedido',
         only_active: 'true',
+        somente_prontos: 'false',
         pcpDataInicial: '',
         pcpDataFinal: ''
     }, '@metalfisa:itensFat_filters');
@@ -50,7 +51,7 @@ const ItensAFaturar = () => {
         setLoading(true);
         setError(null);
         try {
-            const searchFilters = { ...filters, ...overrides };
+            const searchFilters = { ...filters, op_status: 'com_op', ...overrides };
             const searchPage = overrides.page || page;
             const searchLimit = searchFilters.pedido ? 5000 : limit;
 
@@ -130,7 +131,17 @@ const ItensAFaturar = () => {
         }
     };
 
-    // Expande orders em rows: 1 linha por programação PCP, ou 1 linha normal se sem programação
+    // Calcula maxQtd por linha: quando op_qtd está disponível, limita ao planejado da OP
+    // para evitar que múltiplas OPs do mesmo item somem mais do que o saldo total do SC6.
+    const calcMaxQtd = (row) => {
+        const opQtd = parseFloat(row.op_qtd || 0);
+        const saldo = parseFloat(row.qtd_faturar || 0);
+        return opQtd > 0 ? Math.min(opQtd, saldo) : saldo;
+    };
+
+    // Expande orders em rows: 1 linha por programação PCP, ou 1 linha normal se sem programação.
+    // O backend agora retorna 1 row por OP (múltiplas OPs = múltiplas rows por item).
+    // A chave inclui op_num para garantir unicidade mesmo sem forecast.
     const rows = React.useMemo(() => {
         const result = [];
         orders.forEach(order => {
@@ -143,15 +154,35 @@ const ItensAFaturar = () => {
                         ...order,
                         _row_key: `${order.pedido}-${order.item}-${prog.id}`,
                         _pcp_prog: prog,
-                        qtd_faturar: prog.quantidade_pcp  // quantidade desta programação
+                        qtd_pcp_programada: prog.quantidade_pcp,
                     });
                 });
             } else {
-                result.push({ ...order, _row_key: `${order.pedido}-${order.item}`, _pcp_prog: null });
+                // Inclui op_num na chave para evitar colisão quando múltiplas OPs não têm forecast
+                result.push({
+                    ...order,
+                    _row_key: `${order.pedido}-${order.item}-op${order.op_num || '0'}`,
+                    _pcp_prog: null,
+                    qtd_pcp_programada: null,
+                });
             }
         });
         return result;
     }, [orders]);
+
+    // "Pronto" = última operação do roteiro com quantidade apontada >= quantidade planejada da OP.
+    // Mesma regra usada em producao.js: CONCLUIDO quando qtd_apontada >= qtd_planejada > 0.
+    const isLastOpConcluido = (row) => {
+        const prod = Number(row.saldo_produzido || 0);
+        const planned = Number(row.op_qtd || 0);
+        return planned > 0 && prod >= planned;
+    };
+
+    // Filtro local "Apenas Prontos": mostra somente OPs com última operação CONCLUÍDA.
+    const filteredRows = React.useMemo(() => {
+        if (filters.somente_prontos !== 'true') return rows;
+        return rows.filter(r => isLastOpConcluido(r));
+    }, [rows, filters.somente_prontos]);
 
     // --- FATURAMENTO LOGIC ---
     const handleSelectItem = (row) => {
@@ -164,14 +195,15 @@ const ItensAFaturar = () => {
                 delete copy[key];
             } else {
                 copy[key] = row;
-                setCartQuantities(qPrev => ({ ...qPrev, [key]: row.qtd_faturar }));
+                // Pré-preenche com a quantidade máxima correta por OP para não ultrapassar o saldo
+                setCartQuantities(qPrev => ({ ...qPrev, [key]: calcMaxQtd(row) }));
             }
             return copy;
         });
     };
 
     const handleSelectAllOnPage = () => {
-        const availableRows = rows.filter(r => parseFloat(r.qtd_faturar) > 0);
+        const availableRows = filteredRows.filter(r => parseFloat(r.qtd_faturar) > 0);
         const allSelected = availableRows.every(r => !!selectedItems[r._row_key]);
 
         if (allSelected) {
@@ -185,7 +217,7 @@ const ItensAFaturar = () => {
                 const copy = { ...prev };
                 availableRows.forEach(r => {
                     copy[r._row_key] = r;
-                    setCartQuantities(qPrev => ({ ...qPrev, [r._row_key]: r.qtd_faturar }));
+                    setCartQuantities(qPrev => ({ ...qPrev, [r._row_key]: calcMaxQtd(r) }));
                 });
                 return copy;
             });
@@ -220,6 +252,25 @@ const ItensAFaturar = () => {
 
         if (itemsToSubmit.length === 0) {
             return toast.warning('Defina uma quantidade maior que zero para pelo menos um item.');
+        }
+
+        // Validação de integridade: a soma das quantidades de todas as OPs do mesmo
+        // (pedido, item) não pode exceder o saldo total do SC6 (qtd_faturar).
+        // Isso previne over-billing quando múltiplas OPs do mesmo item são selecionadas.
+        const itemSaldoMap = {};
+        for (const row of itemsToSubmit) {
+            const k = `${String(row.pedido).trim()}-${String(row.item).trim()}`;
+            if (!itemSaldoMap[k]) {
+                itemSaldoMap[k] = { qtd_faturar: parseFloat(row.qtd_faturar), total: 0, pedido: row.pedido, item: row.item };
+            }
+            itemSaldoMap[k].total += parseFloat(row.quantidade_solicitada);
+        }
+        for (const v of Object.values(itemSaldoMap)) {
+            if (v.total > v.qtd_faturar + 0.001) {
+                return toast.error(
+                    `Pedido ${v.pedido} / Item ${v.item}: total solicitado (${v.total.toLocaleString('pt-BR')}) excede o saldo disponível (${v.qtd_faturar.toLocaleString('pt-BR')}). Ajuste as quantidades.`
+                );
+            }
         }
 
         setIsSubmitting(true);
@@ -303,6 +354,7 @@ const ItensAFaturar = () => {
                                     <thead className="bg-gray-50 text-gray-600 text-xs uppercase border-b border-gray-200">
                                         <tr>
                                             <th className="px-4 py-3 font-semibold">Pedido/Item</th>
+                                            <th className="px-4 py-3 font-semibold text-center">OP Original</th>
                                             <th className="px-4 py-3 font-semibold">Produto</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
@@ -318,11 +370,14 @@ const ItensAFaturar = () => {
                                     <tbody className="divide-y divide-gray-100">
                                         {Object.values(selectedItems).map(order => {
                                             const key = order._row_key;
-                                            const maxQtd = parseFloat(order.qtd_faturar);
+                                            const maxQtd = calcMaxQtd(order);
                                             const val = cartQuantities[key] ?? '';
                                             return (
                                                 <tr key={key} className="hover:bg-blue-50/30 transition-colors group">
                                                     <td className="px-4 py-2 font-mono text-gray-900">{order.pedido} <span className="text-blue-500 font-bold mx-1">-</span> {order.item}</td>
+                                                    <td className="px-4 py-2 font-mono text-xs text-purple-700 font-bold text-center whitespace-nowrap">
+                                                        {order.op_num_completa || '-'}
+                                                    </td>
                                                     <td className="px-4 py-2">
                                                         <div className="font-mono text-blue-700 font-semibold">{order.codigo}</div>
                                                         <div className="text-xs text-gray-500 truncate max-w-[200px]">{order.descricao}</div>
@@ -503,7 +558,7 @@ const ItensAFaturar = () => {
                         </div>
 
                         <div className="md:col-span-7 flex flex-col gap-3 mt-1 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                            <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex flex-wrap items-center gap-6">
                                 <label className="relative inline-flex items-center cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -512,7 +567,17 @@ const ItensAFaturar = () => {
                                         className="sr-only peer"
                                     />
                                     <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                                    <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Esconde que já foi faturado 100%)</span>
+                                    <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Esconde o que j&aacute; foi faturado)</span>
+                                </label>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.somente_prontos === 'true'}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, somente_prontos: e.target.checked ? 'true' : 'false' }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                                    <span className="ml-3 text-sm font-medium text-green-700">Mostrar Apenas Prontos (Produzidos)</span>
                                 </label>
                             </div>
                             {/* Filtro de Data PCP */}
@@ -558,14 +623,15 @@ const ItensAFaturar = () => {
                                             type="checkbox"
                                             className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer"
                                             onChange={handleSelectAllOnPage}
-                                            checked={rows.length > 0 && rows.filter(r => parseFloat(r.qtd_faturar) > 0).every(r => !!selectedItems[r._row_key])}
-                                            disabled={rows.length === 0}
+                                            checked={filteredRows.length > 0 && filteredRows.filter(r => parseFloat(r.qtd_faturar) > 0).every(r => !!selectedItems[r._row_key])}
+                                            disabled={filteredRows.length === 0}
                                         />
                                     </div>
                                 </th>
                                 <th className="px-3 py-3 font-semibold text-center w-8">PDF</th>
                                 <th className="px-3 py-3 font-semibold">Pedido.</th>
                                 <th className="px-3 py-3 font-semibold">Item</th>
+                                <th className="px-3 py-3 font-semibold text-center">OP Original</th>
                                 <th className="px-3 py-3 font-semibold">Cód. Produto</th>
                                 <th className="px-3 py-3 font-semibold">Descrição</th>
                                 <th className="px-3 py-3 font-semibold">Cliente</th>
@@ -606,23 +672,26 @@ const ItensAFaturar = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : rows.length === 0 ? (
+                            ) : filteredRows.length === 0 ? (
                                 <tr>
                                     <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center text-gray-400">
-                                        Nenhum item encontrado com os filtros selecionados.
+                                        {rows.length > 0
+                                            ? 'Nenhum item com Saldo Produzido > 0. Desative o filtro "Mostrar Apenas Prontos" para ver todos.'
+                                            : 'Nenhum item encontrado com os filtros selecionados.'}
                                     </td>
                                 </tr>
                             ) : (
-                                rows.map((order, idx) => {
+                                filteredRows.map((order, idx) => {
                                     const key = order._row_key;
                                     const isSelected = !!selectedItems[key];
                                     const isFechado = parseFloat(order.qtd_faturar) <= 0;
                                     const prog = order._pcp_prog;
+                                    const concluido = isLastOpConcluido(order);
 
                                     return (
                                         <tr
                                             key={`${key}-${idx}`}
-                                            className={`${isSelected ? 'bg-blue-50/70 border-l-2 border-l-blue-500' : 'bg-white hover:bg-gray-50/50'} ${isFechado ? 'opacity-60' : ''} transition-all cursor-pointer`}
+                                            className={`${isSelected ? 'bg-blue-50/70 border-l-2 border-l-blue-500' : concluido ? 'bg-green-50/40 border-l-2 border-l-green-500 hover:bg-green-50/70' : 'bg-white hover:bg-gray-50/50'} ${isFechado ? 'opacity-60' : ''} transition-all cursor-pointer`}
                                             onClick={() => handleSelectItem(order)}
                                         >
                                             <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
@@ -647,6 +716,9 @@ const ItensAFaturar = () => {
                                             </td>
                                             <td className="px-3 py-2 font-medium text-gray-900">{order.pedido}</td>
                                             <td className="px-3 py-2 font-mono text-xs">{order.item}</td>
+                                            <td className="px-3 py-2 font-mono text-xs text-purple-700 font-bold text-center whitespace-nowrap">
+                                                {order.op_num_completa || '-'}
+                                            </td>
                                             <td className="px-3 py-2 font-mono text-xs text-blue-700 font-semibold">{order.codigo}</td>
                                             <td className="px-3 py-2">
                                                 <div className="truncate max-w-[200px]" title={order.descricao}>{order.descricao}</div>
@@ -688,13 +760,20 @@ const ItensAFaturar = () => {
                                                 ) : <span className="text-gray-300 text-[10px]">—</span>}
                                             </td>
                                             <td className="px-2 py-2 text-center text-xs" onClick={(e) => e.stopPropagation()}>
-                                                {parseFloat(order.qtd_faturar) <= 0 ? (
-                                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Faturado 100%</span>
-                                                ) : parseFloat(order.qtd_entreg) > 0 ? (
-                                                    <span className="bg-orange-100 text-orange-800 border border-orange-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Fat. Parcial</span>
-                                                ) : (
-                                                    <span className="bg-gray-100 text-gray-600 border border-gray-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">A Faturar</span>
-                                                )}
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {parseFloat(order.qtd_faturar) <= 0 ? (
+                                                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Faturado 100%</span>
+                                                    ) : parseFloat(order.qtd_entreg) > 0 ? (
+                                                        <span className="bg-orange-100 text-orange-800 border border-orange-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">Fat. Parcial</span>
+                                                    ) : (
+                                                        <span className="bg-gray-100 text-gray-600 border border-gray-200 text-[10px] uppercase font-bold py-1 px-1.5 rounded shadow-sm whitespace-nowrap">A Faturar</span>
+                                                    )}
+                                                    {concluido && (
+                                                        <span className="bg-green-100 text-green-800 border border-green-300 text-[9px] font-bold py-0.5 px-1.5 rounded-full whitespace-nowrap">
+                                                            ✓ Pronto
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex flex-col gap-1 items-center max-w-[150px]">

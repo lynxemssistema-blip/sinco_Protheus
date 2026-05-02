@@ -24,8 +24,8 @@ router.get('/tracking-comparison', async (req, res) => {
             appointmentParams.push(`${data_fim} 23:59:59`);
         }
         if (op) {
-            appointmentFilters.push(`a.op_numero LIKE ?`);
-            appointmentParams.push(`%${op}%`);
+            appointmentFilters.push(`a.op_numero = ?`);
+            appointmentParams.push(String(op).trim().padStart(6, '0'));
         }
 
         const appointmentWhere = appointmentFilters.length > 0
@@ -56,12 +56,12 @@ router.get('/tracking-comparison', async (req, res) => {
             protheusParams.push(data_fim.replace(/-/g, ''));
         }
         if (pedido) {
-            protheusFilters.push(`(c2.c2_pedido LIKE ? OR c2.c2_obs LIKE ?)`);
-            protheusParams.push(`%${pedido}%`, `%${pedido}%`);
+            protheusFilters.push(`(c2.c2_pedido = ? OR c2.c2_obs LIKE ?)`);
+            protheusParams.push(String(pedido).trim().padStart(6, '0'), `%${pedido}%`);
         }
         if (op) {
-            protheusFilters.push(`c2.c2_num LIKE ?`);
-            protheusParams.push(`%${op}%`);
+            protheusFilters.push(`c2.c2_num = ?`);
+            protheusParams.push(String(op).trim().padStart(6, '0'));
         }
         if (produto) {
             protheusFilters.push(`(c2.c2_produto LIKE ? OR c2.c2_descri LIKE ?)`);

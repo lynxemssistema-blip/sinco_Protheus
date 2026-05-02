@@ -158,8 +158,8 @@ router.get('/', async (req, res) => {
             params.push(`%${user}%`);
         }
         if (pedido) {
-            whereClauses.push(`pedido LIKE ?`);
-            params.push(`%${pedido}%`);
+            whereClauses.push(`pedido = ?`);
+            params.push(String(pedido).trim().padStart(6, '0'));
         }
         if (item) {
             whereClauses.push(`item LIKE ?`);

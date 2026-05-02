@@ -27,6 +27,174 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Faturamento e Comercial ──────────────────────────────────────────────────
+  // Nota: entrada principal detalhada definida abaixo (linha ~1139). Esta é uma referência simplificada.
+  '/vendas/itens-faturar-ref': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Itens a Faturar (Referência)',
+    icon: 'ListOrdered',
+    description: 'Consulte a entrada principal desta página para documentação completa das regras de saldo, programações PCP e fluxo de solicitação de faturamento.',
+    steps: [],
+    tips: [],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Ver documentação completa' },
+    ],
+  },
+
+  '/comercial/faturamento': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Controle de Faturamento',
+    icon: 'FileText',
+    description: 'Painel operacional para expedidores e faturistas tratarem as solicitações criadas pela equipe comercial.',
+    steps: [
+      'No painel esquerdo, navegue entre as abas "Pendente" (aguardando emissão da Nota) e "Faturado".',
+      'Selecione uma solicitação para carregar os detalhes (itens, quantidades, valores e desenhos) no painel principal.',
+      'Preencha o campo "Nota Fiscal (Macro / Cabeçalho)" e clique em "Salvar NF". Sem este campo, o sistema bloqueia a transição para Faturado.',
+      'Faça o Check (✅) em cada item da lista (obrigatório) para confirmar a separação física.',
+      'Clique no botão "Faturado" no cabeçalho para finalizar e travar a edição da remessa.',
+      'Use a aba "Diário de Auditoria" no rodapé para visualizar a rastreabilidade completa (quem criou, alterou quantidades ou vinculou NF).'
+    ],
+    tips: [
+      'Para exportar uma romaneio, utilize os botões "Excel" ou "PDF" no canto superior direito do painel da solicitação.',
+      'Você pode despachar os XMLs/PDFs técnicos automaticamente marcando as faturas e clicando no botão flutuante "E-mail em Lote".',
+      'Somente o usuário que faturou a nota (ou um Administrador) pode reverter o status ou editar quantidades após o faturamento.'
+    ],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
+
+  '/comercial/dashboard-faturamento': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Dashboard de Faturamento',
+    icon: 'BarChart2',
+    description: 'Visão executiva (Analytics) do faturamento da empresa, consolidando as notas emitidas e as metas financeiras mensais.',
+    steps: [
+      'Acompanhe o velocímetro de "Meta Atingida" e os KPIs principais: Faturamento do Mês, Ticket Médio e Comparativo com mês anterior.',
+      'O gráfico "Evolução do Faturamento" plota o faturamento diário contra a Linha de Meta Diária.',
+      'O gráfico "Top Clientes" ajuda a identificar concentração de receita (Pareto).',
+      'Use o filtro de "Mês/Ano" no topo para analisar o histórico passado do sistema.'
+    ],
+    tips: [
+      'A meta mensal é configurável. Clique no botão de engrenagem próximo ao velocímetro para ajustá-la.',
+      'A tabela de "Últimos Faturamentos" na parte inferior permite auditar quais OPs/Pedidos geraram a receita do dia.'
+    ],
+    links: [
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
+
+  '/comercial/atrasos': {
+    category: 'Comercial / PCP',
+    categoryColor: '#ef4444',
+    title: 'Visão Gerencial (Atrasos)',
+    icon: 'Target',
+    description: 'Espelho dinâmico da fábrica, focado 100% em itens pendentes com data de entrega inferior a hoje.',
+    steps: [
+      'Escolha a perspectiva no topo: "Logística & Qtds" (foco em peças físicas) ou "Dashboard Financeiro" (foco no Risco em R$).',
+      'O painel resume o Total de Itens Atrasados, Quantidade Física Pendente, e a Média de Atraso em dias.',
+      'Os gráficos (Top 5 Clientes e Atrasos por Mês) refletem dinamicamente a perspectiva escolhida (Volume vs. Dinheiro).',
+      'A tabela "Espelho Dinâmico" agrupa os gargalos em uma hierarquia de: Cliente > Mês de Atraso > Itens Individuais.'
+    ],
+    tips: [
+      'O botão "Gerar PDF (Resumo)" exporta um snapshot da tela para ser usado em reuniões de diretoria.',
+      'Você pode abrir e fechar as "pastas" na tabela clicando nas setas (Chevron) ao lado dos clientes e meses para detalhar pedidos e operações paradas.',
+      'A visualização "Dashboard Financeiro" é restrita apenas a usuários com permissão "valores_financeiros".'
+    ],
+    links: [
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+    ],
+  },
+
+  '/visao-geral': {
+    category: 'Comercial',
+    categoryColor: '#3b82f6',
+    title: 'Pedidos de Venda (Visão Geral)',
+    icon: 'ShoppingCart',
+    description: 'Interface de listagem e acompanhamento global dos pedidos de venda abertos ou encerrados no sistema.',
+    steps: [
+      'Busque pedidos específicos utilizando a barra de pesquisa superior.',
+      'Utilize os filtros de status para alternar entre pedidos abertos, faturados parcialmente ou totalmente encerrados.',
+      'Clique sobre um pedido para visualizar os itens atrelados a ele e seu status de atendimento.',
+      'Exporte a listagem atual clicando no botão Excel no cabeçalho.'
+    ],
+    tips: [
+      'Esta tela oferece uma visão mais "limpa" focada estritamente no financeiro e no comercial, diferente da Gestão de OPs que foca na produção.'
+    ],
+    links: [
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
+      { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
+
+  '/pcp/analytics': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Analytics da Fábrica',
+    icon: 'BarChart',
+    description: 'Painel gerencial de indicadores de produção, OEE (Overall Equipment Effectiveness) e capacidade instalada.',
+    steps: [
+      'Acompanhe o painel superior para ver o OEE consolidado da fábrica no período selecionado.',
+      'O gráfico de carga máquina mostra os recursos que estão sobrecarregados (gargalos) ou ociosos.',
+      'Utilize os filtros de Setor e Data para refinar os gráficos.',
+      'Acompanhe a tabela de "Top Rejeições" para entender onde ocorrem as maiores perdas de qualidade.'
+    ],
+    tips: [
+      'O Analytics é atualizado a cada 1 hora com base nos apontamentos de produção e encerramentos de OPs.'
+    ],
+    links: [
+      { path: '/pcp/visao-fabrica', label: 'Visão Global (Fábrica)' },
+      { path: '/pcp/evolucao-apontamento', label: 'Evolução dos Apontamentos' },
+    ],
+  },
+
+  '/ind-apontamento': {
+    category: 'Chão de Fábrica',
+    categoryColor: '#8b5cf6',
+    title: 'Apontamento Fracionado',
+    icon: 'CheckSquare',
+    description: 'Tela simplificada e otimizada para operadores de máquina realizarem apontamentos de produção em terminais (tablets/monitores).',
+    steps: [
+      'O operador deve digitar ou bipar o código de barras da OP Fracionada.',
+      'O sistema exibirá apenas a operação em que a peça se encontra atualmente.',
+      'Informe a Quantidade Produzida, Quantidade Rejeitada (se houver, com motivo), e clique em Registrar.',
+      'O registro é imediato e atualiza o saldo da OP na matriz.'
+    ],
+    tips: [
+      'Esta interface tem fontes maiores e botões expandidos para facilitar o uso com luvas ou telas touch.',
+      'O sistema impede que o operador aponte uma quantidade superior ao saldo liberado pela operação anterior.'
+    ],
+    links: [
+      { path: '/ind-pcp-release', label: 'Liberação PCP' },
+      { path: '/ind-factory-floor', label: 'Painel da Fábrica (Local)' },
+    ],
+  },
+
+  '/ppaps/buscar-produto': {
+    category: 'Qualidade',
+    categoryColor: '#ec4899',
+    title: 'Buscar Produto (PPAPs)',
+    icon: 'Database',
+    description: 'Central de busca de Processos de Aprovação de Peças de Produção (PPAP) associados aos produtos.',
+    steps: [
+      'Digite o código do produto ou referência do cliente.',
+      'O sistema retornará o histórico de submissões de PPAP para aquele item.',
+      'Visualize o status de aprovação (Aprovado, Reprovado, Aprovado com Desvio) e acesse os documentos atrelados.',
+      'Caso não exista um PPAP ativo, inicie uma nova submissão a partir do botão Novo PPAP.'
+    ],
+    tips: [
+      'Produtos que possuem PPAPs expirados ou com desvios vencidos aparecerão com um alerta em vermelho.'
+    ],
+    links: [
+      { path: '/sgq', label: 'Gestão SGQ' },
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+    ],
+  },
+
   // ── Gestão de OPs / Pedidos de Venda ─────────────────────────────────────────
   '/comercial/gestao-ops': {
     category: 'Comercial / PCP',
@@ -176,6 +344,52 @@ export const HELP_CONTENT = {
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
       { path: '/controle-producao', label: 'Controle de Produção' },
+    ],
+  },
+
+  // ── Controle de Produção e Lote de Planejamento ────────────────────────────
+  '/controle-producao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Controle de Produção',
+    icon: 'LayoutDashboard',
+    description: 'Interface principal para acompanhamento de produção e programação de fábrica em lotes de planejamento. Foque no Recurso (Máquina) e defina pacotes de trabalho.',
+    steps: [
+      'Visão por Recurso: A tabela mudou sua âncora de planejamento da operação genérica para o Recurso Real, mostrando exatamente a máquina onde o trabalho vai ocorrer.',
+      'Planejamento em Lote: Use os checkboxes na esquerda para selecionar múltiplas OPs (normalmente aquelas com o mesmo recurso). Em seguida clique no botão "Planejar Lote" no cabeçalho.',
+      'Data de Planejamento (Lote): O sistema associa automaticamente as OPs programadas num mesmo momento dentro de um Lote único, facilitando revisões futuras e a retirada/inclusão de OPs do pacote.',
+      'Limpeza de Dados: A interface esconde a quebra de sequência da OP na tela principal para um visual limpo, focando exclusivamente na OP e Item raízes.',
+    ],
+    tips: [
+      'Crie lotes para otimizar setups. Se o Torno CNC tem 5 OPs do mesmo material, planeje-as juntas para reduzir perda de tempo.',
+      'Diferença entre Operação e Recurso: "Operação" é a ação (ex: FURAR), enquanto "Recurso" é o equipamento (ex: FURADEIRA DE BANCADA 01). O planejamento deve espelhar o tempo e capacidade do recurso físico.',
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+    ],
+  },
+
+  // ── Exportação de Lista de Materiais (PCP) ───────────────────────────────────
+  '/pcp/exportacao-materiais': {
+    category: 'PCP / Engenharia',
+    categoryColor: '#6366f1',
+    title: 'Exportação de Lista de Materiais',
+    icon: 'FileSpreadsheet',
+    description: 'Esta ferramenta permite compilar todas as matérias-primas necessárias para produzir uma determinada seleção de itens de pedido, agrupando itens idênticos e somando quantidades para enviar a compras e ao almoxarifado.',
+    steps: [
+      'Filtrar Pedidos Pendentes: Utilize a barra de filtros no topo para buscar os pedidos. Por padrão, ele lista apenas os pedidos com saldo pendente (chave Pendentes). Ao preencher os filtros, clique no botão Buscar.',
+      'Selecionar Itens na Tabela: Marque as caixas de seleção na primeira coluna para os produtos que você deseja produzir. Você pode selecionar um por um, ou usar o botão Selecionar todos no cabeçalho da tabela.',
+      'Processar e Exportar: Assim que selecionar pelo menos 1 item, uma barra flutuante azul aparecerá na parte inferior da tela. Clique em Gerar Lista de Materiais.',
+      'O Resultado Automático (Excel): O sistema fará a "explosão" de toda a árvore de produtos em segundo plano, até o último nível (matéria-prima final). Então fará a multiplicação pela quantidade a faturar do pedido e consolidará todas as matérias-primas unificando pela descrição e código. Um arquivo Excel pronto será baixado automaticamente!',
+    ],
+    tips: [
+      'Atenção aos itens destacados em vermelho e com a marcação "Sem estrutura". Itens sem estrutura não gerarão consumo de matéria-prima na exportação, pois a engenharia não cadastrou seus componentes no sistema.',
+      'Exemplo Prático de Agrupamento: Se você selecionou Item A (Qtd: 10) que possui 4 Un de Parafuso e Item B (Qtd: 5) que possui 2 Un do mesmo Parafuso, a planilha listará apenas uma linha para o "Parafuso" com a quantidade total igual a 50 (10x4 + 5x2).',
+    ],
+    links: [
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais' },
     ],
   },
 
@@ -682,19 +896,38 @@ export const HELP_CONTENT = {
   '/configuracoes': {
     category: 'Administração Core',
     categoryColor: '#64748b', // slate-500
-    title: 'Configurações de Instância ERP',
+    title: 'Painel de Configurações Master',
     icon: 'Settings',
-    description: 'Painel Master de governança. Daqui nascem todas as macros que controlam disparos automáticos, travas de edição de Comercial/Faturamento e emails gerenciais de apontamentos diários.',
+    description: 'Central de controle absoluto do MetalFisa PCP. Aqui o administrador gerencia desde a identidade visual da empresa até o monitoramento de desempenho dos servidores em tempo real, organizados em abas de fácil acesso.',
     steps: [
-      'Configuração de Email Base: Na guia de Sistema, defina os emails destino que receberão o extrato de Relatórios Diários às 18:01 de faturamento (Automação Node-Cron).',
-      'Painel de Usuários (Auth): Edite senhas via bcrypt, adicione novos funcionários às permissões do sistema.',
-      'Auditoria de Alterações: Abaixo da tela, cheque o monitor Master Logs, listando quem modificou o quê (Ex: Quem reverteu o Lote "Faturado Parcial").',
+      '── GERAL ──',
+      'Configura a identidade da empresa (Nome, CNPJ, Endereço, Telefones e Logo) que sairá nos cabeçalhos dos relatórios em PDF. Aqui também se define a numeração de base para criar os próximos Romaneios.',
+      '── VISIBILIDADE DE PEDIDOS ──',
+      'Permite ligar ou desligar a visualização de status específicos de pedidos (ex: "Faturado", "Aguardando Produção"). O interruptor global Master pode ocultar instantaneamente lotes encerrados das tabelas de todo o sistema.',
+      '── MENU & NAVEGAÇÃO ──',
+      'Controle modular da plataforma. Ative ou oculte módulos e ferramentas do sistema (ex: VMI, Produção, Compras, Almoxarifado) no menu lateral para otimizar a visão de todos.',
+      '── PERFIS DE ACESSO & USUÁRIOS ──',
+      'Em "Perfis de Acesso", crie agrupamentos de cargos (Ex: Operador, Comercial, PCP). Na aba "Usuários", você cadastra novos funcionários, gera senhas de entrada, bloqueia contas e edita dados básicos.',
+      '── APROVAÇÕES PENDENTES ──',
+      'Lista de usuários que solicitaram cadastro via tela de login e estão bloqueados aguardando a liberação oficial do Administrador para acessar o chão de fábrica.',
+      '── PERMISSÕES ──',
+      'Matriz fina de segurança. Permite ligar chaves de acesso a nível microscópico ("Visualizar", "Editar", "Excluir") tela a tela, de acordo com cada perfil da empresa.',
+      '── RELATÓRIOS ──',
+      'Configura o motor de envio automático e regras do PCP. Defina os e-mails da diretoria que receberão o resumo de faturamentos e acompanhamentos da fábrica automaticamente no fim do dia.',
+      '── INTELIGÊNCIA ARTIFICIAL ──',
+      'Ajustes do agente autônomo e do orquestrador de automações sistêmicas integrados para suporte inteligente aos colaboradores.',
+      '── E-MAIL CORPORATIVO & NOTIFICAÇÕES ──',
+      'Na aba "E-mail Corporativo", configure a conta SMTP de envio. Na aba "Notificações", você ganha um log de auditoria detalhado de todos os alertas disparados no dia.',
+      '── MONITORAMENTO ──',
+      'Painel avançado de Observabilidade. Traz dados vitais do servidor como Usuários Conectados (Socket), carga de processador (CPU), Memória RAM, sobrecarga do Banco de Dados (Consultas Hora) e tráfego de Rede. O histórico retém a progressão e permite avaliar gargalos.'
     ],
     tips: [
-      'A aba Configurações de Servidor é sensível e mapeada via WebSocket. Alterá-la derruba conexões falsas.',
+      'As alterações de Permissões ou Menu de Navegação entram em vigor imediatamente na próxima requisição do funcionário afetado.',
+      'A aba de "Monitoramento" acumula amostras a cada hora. Use-a ativamente para auditar se o seu servidor não está sendo sobrecarregado no horário de pico do PCP.'
     ],
     links: [
       { path: '/ajuda', label: 'Central de Ajuda Master' },
+      { path: '/sgq/mapeamento-processos', label: 'Gerenciar Ajuda do Sistema' },
     ],
   },
 
@@ -897,25 +1130,32 @@ export const HELP_CONTENT = {
   '/vendas/itens-faturar': {
     category: 'Comercial',
     categoryColor: '#3b82f6',
-    title: 'Monitor de Itens a Faturar (Romaneios)',
+    title: 'Itens a Faturar',
     icon: 'DollarSign',
-    description: 'Interface tática do almoxarifado e do faturamento para despachar blocos faturáveis oriundos da balança comercial e ordens do PCP. Substitui planilhas offline gerando lotes 100% integrados à fila de carregamento.',
+    description: 'Visão consolidada de todos os saldos pendentes de faturamento. Cada linha representa uma programação PCP vinculada a uma OP de produção — permitindo selecionar itens prontos, ajustar quantidades e gerar solicitações formais de faturamento com rastreabilidade completa.',
     steps: [
-      'Geração de Requisição: Marque (checkbox) os itens que você quer faturar, coloque a Quantidade Solicitada, e clique no botão azul no rodapé "Solicitar Faturamento". Isso criará um Pacote na fila de controle.',
-      'Semaforização (Status): A coluna Status exibirá a realidade do ERP instantaneamente: 🟢 FATURADO 100% (cargas sem saldo), 🟠 FAT. PARCIAL (quando se emitiu faturamento menor que o total comprado pelo cliente) ou ⚪ A FATURAR.',
-      'Rastreio de Qtd e Saldo: Acompanhe as quantidades Totais de PV, o que já foi efetivamente entregue no ERP e o Saldo Remanescente disponível. O sistema impede solicitar saldo negativo fisicamente.',
-      'Empenho Duplo (Prevenção): Na coluna "Fat. Solicitados", observe se algum parceiro de setor já solicitou faturamento para aquela mesma linha (mesmo id). Você não mandará uma mesma linha se ela já tiver sido pendurada.',
-      'Filtro de Ruído: Utilize "Apenas Pendentes" ou "Ocultar Faturados 100%" para focar exclusivamente nos romaneios pendurados ou que o caminhão ainda precisa faturar.',
-      'Histórico de NFs: A bateria de notas fiscais lançadas pro item é mapeada e unificada no botão "Ver NFs".',
+      'Entendendo o Saldo a Faturar: A coluna "Saldo" exibe o saldo real do ERP (SC6010: quantidade total do pedido menos o que já foi faturado/entregue). Apenas itens com Saldo > 0 podem ser selecionados. Por padrão a tela já filtra somente esses itens (toggle "Apenas Pendentes" ativo).',
+      'Linhas por Programação PCP: Quando um item de pedido possui uma programação PCP registrada, ele aparece como uma linha individual com data de entrega, série do cliente, série MetalFisa, nº de série, lote e nº lote. Isso significa que um mesmo item pode gerar múltiplas linhas se tiver múltiplas programações — cada uma representando um lote ou série distinto a ser faturado.',
+      'Filtro "Mostrar Apenas Prontos (Produzidos)": Filtra client-side, exibindo somente linhas onde o Saldo Produzido (quantidade já fabricada pela produção) seja maior que zero. Use esse filtro para identificar o que pode ser faturado IMEDIATAMENTE pois já saiu da fábrica.',
+      'Filtro por Data PCP: Use os campos "De/Até" da seção roxa para filtrar por data de entrega programada pelo PCP, independente da data do pedido de venda.',
+      'Selecionando Itens: Clique na linha ou no checkbox para selecionar. Uma barra flutuante aparecerá no rodapé mostrando quantos itens estão selecionados e o valor total acumulado. Clique em "Avançar e Revisar" para abrir o modal de confirmação.',
+      'Revisando no Modal: No modal de revisão, cada item exibe seu Saldo Faturar (máximo permitido) e um campo "Qtd. Solicitada" editável. O sistema bloqueia quantidades maiores que o saldo disponível. Preencha uma observação opcional e clique em "Gerar Solicitação de Faturamento".',
+      'Semaforização (Status): ⚪ A FATURAR = nenhuma entrega ainda. 🟠 FAT. PARCIAL = já houve faturamento anterior mas ainda resta saldo. 🟢 FATURADO 100% = saldo zerado no ERP (normalmente oculto pelo toggle "Apenas Pendentes").',
+      'Coluna "Fat. Solicitados": Exibe as solicitações de faturamento já abertas para aquela linha. Use isso para evitar duplicidade: se outro setor já gerou uma solicitação para o mesmo item/programação, você verá o número aqui antes de criar uma nova.',
+      'Coluna "NFs Anteriores": Mostra os números das Notas Fiscais já emitidas para esse item no ERP. Clique no botão da NF para ver os detalhes completos (série, chave, datas, valores).',
+      'Visualização de Desenho Técnico: Se houver PDF cadastrado na nuvem para o produto, o ícone de documento (vermelho) na coluna PDF estará ativo. Clique para abrir o arquivo.',
     ],
     tips: [
-      'Pedidos fragmentados em N datas de entrega pelo cronograma fabril terão os IDs perfeitamente espelhados aqui em linhas separadas.',
-      'Gatilho bloqueador: Caso haja saldo excedido (tentando enviar 200 pro faturamento de um pedido que só tinha 100 de saldo líquido da embalagem), o sistema disparará Toast de erro bloqueando a ação na raiz.',
+      'O Saldo a Faturar vem direto do Protheus (SC6010): é a diferença entre c6_qtdven (qtd pedida) e c6_qtdent (qtd já entregue/faturada no ERP). Ele só cai após a emissão efetiva da Nota Fiscal no Protheus — gerar uma solicitação aqui NÃO reduz o saldo imediatamente.',
+      'Um pedido com produção fracionada em várias OPs aparecerá em linhas separadas, uma por OP/programação. Cada linha tem seu próprio conjunto de dados PCP (série, lote, data de entrega), refletindo exatamente o que o PCP planejou para aquela fração.',
+      'Use o filtro por Nº do Pedido com busca manual (botão "Buscar Dados") para carregar todos os itens de um pedido específico de uma vez — o sistema remove a paginação e traz até 5.000 registros quando o campo Pedido está preenchido.',
+      'Para saber se um item já está pronto para faturar: ative "Mostrar Apenas Prontos" e filtre por data PCP. Isso cruza produção já executada com a programação comercial, mostrando o que pode sair hoje.',
     ],
     links: [
       { path: '/comercial/faturamento', label: 'Monitor de NFs (Controle)' },
       { path: '/romaneios', label: 'Romaneios Embalagem' },
-      { path: '/comercial/dashboard-faturamento', label: 'Dashboard Gerencial' },
+      { path: '/comercial/dashboard-faturamento', label: 'Dashboard Gerencial de Faturamento' },
+      { path: '/vendas/faturamento-historico', label: 'Histórico de Solicitações' },
     ],
   },
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Save, Trash2, Plus, AlertCircle, Package, Pencil, XCircle, CheckCircle } from 'lucide-react';
+import { X, Calendar, Save, Trash2, Plus, AlertCircle, Package, Pencil, XCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -16,7 +16,7 @@ const EMPTY_FORM = {
     gerar_op_protheus: true
 };
 
-const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, hasOp }) => (
+const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, hasOp, canGenerateOp, hideOpSwitch }) => (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Data Entrega *</label>
@@ -94,15 +94,20 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                 onChange={e => onChange(p => ({ ...p, observacao: e.target.value }))} />
         </div>
 
-        {!isEdit && (
-            <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 flex items-center justify-between opacity-80">
+        {!hideOpSwitch && (
+            <div className={`p-3 rounded-lg border flex items-center justify-between opacity-80 ${canGenerateOp ? 'bg-indigo-50 border-indigo-100' : 'bg-red-50 border-red-100'}`}>
                 <div>
-                    <div className="text-sm font-semibold text-indigo-900">Gerar OP Protheus</div>
-                    <div className="text-xs text-indigo-700">Emitir Ordem Prod. automaticamente para a fábrica.</div>
+                    <div className={`text-sm font-semibold ${canGenerateOp ? 'text-indigo-900' : 'text-red-900'}`}>Gerar OP Protheus</div>
+                    <div className={`text-xs ${canGenerateOp ? 'text-indigo-700' : 'text-red-700'}`}>
+                        {canGenerateOp 
+                            ? "Emitir Ordem Prod. automaticamente para a fábrica." 
+                            : "Bloqueado: Item(ns) não liberados para PCP."}
+                    </div>
                 </div>
-                <label className="relative flex items-center cursor-not-allowed">
-                    <input type="checkbox" className="sr-only peer" checked={true} disabled={true} readOnly />
-                    <div className="w-9 h-5 bg-indigo-600 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:translate-x-full after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                <label className={`relative flex items-center ${canGenerateOp ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                    <input type="checkbox" className="sr-only peer" checked={canGenerateOp && value.gerar_op_protheus} disabled={!canGenerateOp} 
+                        onChange={(e) => onChange(p => ({ ...p, gerar_op_protheus: e.target.checked }))} />
+                    <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${canGenerateOp && value.gerar_op_protheus ? 'bg-indigo-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
                 </label>
             </div>
         )}
@@ -131,9 +136,27 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const [formData, setFormData] = useState(EMPTY_FORM);
     const [editingId, setEditingId] = useState(null);   // id da prog em edição
     const [editForm, setEditForm] = useState(EMPTY_FORM);
+    const [localBatchOps, setLocalBatchOps] = useState({}); // Armazena as OPs geradas no lote
+    const [processingItems, setProcessingItems] = useState([]); // Lista de chaves pedido_item sendo processadas no momento
 
     const isBatch = Array.isArray(item);
     const targetItems = isBatch ? item : [item];
+
+    const getOpEligibility = (t) => {
+        if (!t) return { valid: false, reason: 'Inválido' };
+        if (String(t?.status_tipo_item || '').trim() !== 'PCP') return { valid: false, reason: 'Não liberado (PCP)' };
+        if (parseFloat(t.qtd_faturar || 0) <= 0) return { valid: false, reason: 'Já 100% faturado' };
+        
+        const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
+        const qtdPedida = parseFloat(t.quantidade || 0);
+        const qtdOp = parseFloat(t.op_qtd || 0);
+        
+        if (hasOp && qtdOp >= qtdPedida) return { valid: false, reason: 'Sem saldo para OP' };
+        return { valid: true, reason: '' };
+    };
+
+    const validItemsForOp = targetItems.filter(t => getOpEligibility(t).valid);
+    const canGenerateOp = validItemsForOp.length > 0;
 
     const pedido = isBatch ? 'Lote' : (item?.pedido || item?.pedido_id);
     const itemNum = isBatch ? `${targetItems.length} Itens` : item?.item;
@@ -152,7 +175,22 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
     useEffect(() => {
         if (isOpen && item) {
-            setFormData({ ...EMPTY_FORM, isBatch, gerar_op_protheus: isBatch });
+            const tItem = isBatch ? item[0] : item;
+            
+            const parseEntregaToInput = (raw, formatted) => {
+                if (raw && typeof raw === 'string' && raw.length === 8 && !raw.includes('-')) {
+                    return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`;
+                }
+                if (raw && typeof raw === 'string' && raw.includes('-')) return raw.split('T')[0];
+                if (formatted && typeof formatted === 'string' && formatted.length === 10 && formatted.includes('/')) {
+                    const p = formatted.split('/');
+                    return `${p[2]}-${p[1]}-${p[0]}`;
+                }
+                return '';
+            };
+            const defaultDate = parseEntregaToInput(tItem?.entrega_raw || tItem?.entrega, tItem?.entrega_formatada || tItem?.entrega);
+
+            setFormData({ ...EMPTY_FORM, isBatch, data_entrega_pcp: defaultDate });
             setEditingId(null);
             if (!isBatch && pedido && itemNum) {
                 loadProgramacoes(true);
@@ -231,14 +269,14 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 });
 
                 // 3. Criar OPs no Protheus — quantidade = o que foi efetivamente salvo no PCP
-                if (formData.gerar_op_protheus) {
+                if (canGenerateOp && formData.gerar_op_protheus) {
                     // savedItems contém a quantidade real após ajuste de saldo pelo backend
                     const savedItems = batchResp.data?.savedItems || [];
                     const savedMap = Object.fromEntries(
                         savedItems.map(s => [`${s.pedido}_${s.item}`, s.quantidade_pcp])
                     );
 
-                    const protheusItems = targetItems
+                    const protheusItems = validItemsForOp
                         .map(t => {
                             const chave = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
                             const qtdSalva = savedMap[chave];
@@ -258,14 +296,66 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                         .filter(Boolean); // remove itens pulados
 
                     if (protheusItems.length > 0) {
-                        const resp = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
-                        if (resp.data?.details) console.log('🚀 [PROTHEUS RETORNO]:', resp.data.details);
-                        toast.success('Ordem de Produção gerada com sucesso no Protheus!');
+                        const chunkSize = 5;
+                        const chunks = [];
+                        for (let i = 0; i < protheusItems.length; i += chunkSize) {
+                            chunks.push(protheusItems.slice(i, i + chunkSize));
+                        }
+
+                        for (let i = 0; i < chunks.length; i++) {
+                            const chunk = chunks[i];
+                            
+                            // Highlight currently processing items and auto-scroll to the first one
+                            const processingKeys = chunk.map(c => `${String(c.pedido).trim()}_${String(c.itempv).trim()}`);
+                            setProcessingItems(processingKeys);
+                            
+                            const firstKey = processingKeys[0];
+                            const elId = `batch-item-${firstKey}`;
+                            const el = document.getElementById(elId);
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+
+                            try {
+                                const resp = await api.post('/protheus/ordem-producao/incluir', { items: chunk });
+                                if (resp.data?.generated_ops) {
+                                    const newOps = {};
+                                    for (const op of resp.data.generated_ops) {
+                                        newOps[`${String(op.pedido).trim()}_${String(op.item).trim()}`] = op.op_num;
+                                        
+                                        // Update database with the generated OP
+                                        const savedItem = savedItems.find(s => s.pedido === String(op.pedido).trim() && s.item === String(op.item).trim());
+                                        if (savedItem && savedItem.id) {
+                                            try {
+                                                await api.put(`/pedidos/pcp-forecasts/${savedItem.id}`, { op_protheus: op.op_num });
+                                            } catch (updateErr) {
+                                                console.error(`Falha ao vincular OP ${op.op_num} no banco para o ID: ${savedItem.id}`, updateErr);
+                                            }
+                                        }
+                                    }
+                                    setLocalBatchOps(prev => ({ ...prev, ...newOps }));
+                                }
+                                if (resp.data?.details) console.log(`🚀 [PROTHEUS CHUNK ${i+1}/${chunks.length}]:`, resp.data.details);
+                            } catch (chunkErr) {
+                                console.error(`❌ [ERRO API PROTHEUS CHUNK ${i+1}] Detalhes:`, chunkErr.response?.data || chunkErr);
+                                const errMsg = chunkErr.response?.data?.details || chunkErr.response?.data?.error || chunkErr.message || 'Erro no processamento.';
+                                toast.error(`Lote ${i+1}: ${errMsg}`, { autoClose: 8000 });
+                            }
+
+                            // Sleep between chunks to let DB breathe, except after the last chunk
+                            if (i < chunks.length - 1) {
+                                await new Promise(r => setTimeout(r, 2000));
+                            }
+                        }
+                        
+                        setProcessingItems([]);
+                        toast.success('Geração de O.P. em Lote concluída!');
                     }
                 }
 
                 toast.success('Programação Lote adicionada!');
-                onClose();
+                // onClose(); // Removido para que o usuário veja as OPs geradas na tela!
+                setFormData(EMPTY_FORM);
                 if (onSaveSuccess) onSaveSuccess();
             } catch (err) {
                 console.error("❌ [ERRO API PROTHEUS/LOTE] Detalhes:", err.response?.data || err);
@@ -306,7 +396,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
             const forecastId = forecastRes.data.id;
 
-            if (formData.gerar_op_protheus) {
+            if (canGenerateOp && formData.gerar_op_protheus) {
                 const protheusItems = [{
                     filial: item.filial || '01',
                     produto: item.codigo,
@@ -351,6 +441,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
             serie_metalfisa: prog.serie_metalfisa || '',
             lote: prog.lote || '',
             numero_lote: prog.numero_lote || '',
+            gerar_op_protheus: false
         });
     };
 
@@ -386,7 +477,38 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 usuario: user?.nome || user?.name || user?.login || 'Usuário',
                 qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined
             });
-            toast.success('Programação atualizada!');
+
+            const progHasOp = prog.op_protheus && String(prog.op_protheus).trim() !== '-' && String(prog.op_protheus).trim().length > 0;
+            
+            if (canGenerateOp && editForm.gerar_op_protheus && !progHasOp) {
+                try {
+                    const protheusPayload = {
+                        items: [{
+                            filial: item.filial || '01',
+                            produto: item.codigo,
+                            quant: novaQtd,
+                            datpri: editForm.data_entrega_pcp.replace(/-/g, ''),
+                            datprf: editForm.data_entrega_pcp.replace(/-/g, ''),
+                            obs: editForm.observacao,
+                            pedido: item.pedido,
+                            itempv: item.item
+                        }]
+                    };
+                    const resp = await api.post('/protheus/ordem-producao/incluir', protheusPayload);
+                    if (resp.data?.generated_ops && resp.data.generated_ops.length > 0) {
+                        const newOpNum = resp.data.generated_ops[0].op_num;
+                        await api.put(`/pedidos/pcp-forecasts/${prog.id}`, { op_protheus: newOpNum });
+                        toast.success('Ordem de Produção gerada no Protheus e vinculada!');
+                    }
+                } catch (err) {
+                    console.error("❌ [ERRO API PROTHEUS/EDICAO] Detalhes:", err.response?.data || err);
+                    const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao gerar OP no Protheus.';
+                    toast.error(`A programação foi atualizada, mas falhou ao gerar O.P. Protheus: ${errMsg}`, { autoClose: 8000 });
+                }
+            } else {
+                toast.success('Programação atualizada!');
+            }
+
             cancelEdit();
             await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess();
@@ -397,16 +519,23 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (e, id) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (!window.confirm('Remover esta programação?')) return;
         try {
-            await api.delete(`/pedidos/pcp-forecasts/${id}`);
-            toast.success('Removido.');
-            if (editingId === id) cancelEdit();
-            await loadProgramacoes();
-            if (onSaveSuccess) onSaveSuccess();
-        } catch {
-            toast.error('Erro ao remover.');
+            const res = await api.delete(`/pedidos/pcp-forecasts/${id}`);
+            if (res.data?.success) {
+                toast.success('Programação removida com sucesso!');
+                if (editingId === id) cancelEdit();
+                await loadProgramacoes();
+                if (onSaveSuccess) onSaveSuccess();
+            } else {
+                toast.error(res.data?.error || 'Erro desconhecido ao remover.');
+            }
+        } catch (err) {
+            console.error('Delete error:', err);
+            toast.error(err.response?.data?.error || err.message || 'Falha na comunicação com o servidor ao remover.');
         }
     };
 
@@ -468,6 +597,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                 qtdDisponivel={qtdDisponivel}
                                 qtdTotal={qtdTotal}
                                 isEdit={false}
+                                canGenerateOp={canGenerateOp}
                             />
                         </div>
                         {!isBatch && qtdDisponivel <= 0 && programacoes.length > 0 && (
@@ -489,19 +619,45 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                     <Package className="h-4 w-4 text-indigo-600" />
                                     Itens Selecionados ({targetItems.length})
                                 </h3>
-                                <div className="space-y-2">
-                                    {targetItems.map((t, idx) => (
-                                        <div key={`${t.pedido}-${t.item}-${idx}`} className="rounded bg-gray-50 border border-gray-200 p-3 flex justify-between items-center text-sm">
-                                            <div>
-                                                <span className="font-bold text-gray-800">Pedido: {t.pedido}</span> <span className="text-gray-500 mx-1">/</span>
-                                                <span className="font-bold text-gray-800">Item: {t.item}</span>
-                                                <div className="text-xs text-gray-600 mt-0.5">{t.codigo} - {t.descricao}</div>
+                                <div className="space-y-3 mb-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {targetItems.map((t, idx) => {
+                                        const itemKey = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
+                                        const eligibility = getOpEligibility(t);
+                                        const localOp = localBatchOps[itemKey];
+                                        const isProcessing = processingItems.includes(itemKey);
+
+                                        return (
+                                            <div id={`batch-item-${itemKey}`} key={itemKey} className={`rounded p-3 flex justify-between items-center text-sm transition-all duration-300 ${isProcessing ? 'bg-indigo-50 border border-indigo-300 shadow' : 'bg-gray-50 border border-gray-200'}`}>
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <div className="font-bold text-gray-800 flex items-center gap-2">
+                                                        <span>#{String(t.pedido).trim()} - Item {String(t.item).trim()}</span>
+                                                        {eligibility.valid && !localOp && formData.gerar_op_protheus && !isProcessing && (
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Na Fila OP</span>
+                                                        )}
+                                                        {isProcessing && (
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-200 text-indigo-800 flex items-center gap-1">
+                                                                <Loader2 className="w-3 h-3 animate-spin" /> Gerando OP...
+                                                            </span>
+                                                        )}
+                                                        {localOp && (
+                                                            <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded">OP: {localOp}</span>
+                                                        )}
+                                                        {!eligibility.valid && !localOp && (
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                                                                Bloqueado OP: {eligibility.reason}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-gray-500 text-xs truncate mt-1" title={t.produto_descricao}>
+                                                        {t.codigo} - {t.produto_descricao}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                                    <div className="text-gray-600 font-medium">Qtd: {t.qtd_faturar} un</div>
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <div className="text-xs text-indigo-600 font-bold block bg-indigo-50 px-2 py-1 rounded">Qtd: {parseFloat(t.quantidade || 0).toLocaleString('pt-BR')}</div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </>
                         ) : (
@@ -534,8 +690,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                 <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded">
                                                                     {parseFloat(prog.quantidade_pcp).toLocaleString('pt-BR')} un
                                                                 </span>
-                                                                {prog.op_protheus && (
-                                                                    <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded" title="OP Gerada no Protheus">
+                                                                {(prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') && (
+                                                                    <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded" title="OP Vinculada">
                                                                         OP: {prog.op_protheus}
                                                                     </span>
                                                                 )}
@@ -553,8 +709,9 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                 <Pencil className="h-3.5 w-3.5" />
                                                             </button>
                                                         )}
-                                                        <button onClick={() => handleDelete(prog.id)} disabled={editingId === prog.id}
-                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30">
+                                                        <button onClick={(e) => handleDelete(e, prog.id)} disabled={editingId === prog.id || (prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-')}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                                            title={(prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') ? "Não é possível excluir programação com O.P. vinculada" : "Remover programação"}>
                                                             <Trash2 className="h-3.5 w-3.5" />
                                                         </button>
                                                     </div>
@@ -572,8 +729,9 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                             qtdDisponivel={qtdDisponivelEdit(prog)}
                                                             qtdTotal={qtdTotal}
                                                             isEdit={true}
-                                                            hideOpSwitch={true}
-                                                            hasOp={!!prog.op_protheus}
+                                                            hideOpSwitch={!!((prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') || (!isBatch && item?.op_num && String(item.op_num).trim().length > 0 && String(item.op_num).trim() !== '-'))}
+                                                            canGenerateOp={canGenerateOp}
+                                                            hasOp={!!((prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') || (!isBatch && item?.op_num && String(item.op_num).trim().length > 0 && String(item.op_num).trim() !== '-'))}
                                                         />
                                                     </div>
                                                 ) : (

@@ -5,6 +5,7 @@ import {
     X, Loader2, ChevronDown, Package, HelpCircle
 } from 'lucide-react';
 import { useFilters } from '../../contexts/FilterContext';
+import { useHelp } from '../../contexts/HelpContext';
 
 // Use a relative path for the API to ensure it works in both dev and production
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,7 +31,8 @@ const PCPExportTab = () => {
     const [exporting, setExporting] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState(null);
-    const [showHelp, setShowHelp] = useState(false);
+
+    const { openHelp } = useHelp();
 
     // ── Pre-fetch on mount if filters exist ──────────────────────────────
     useEffect(() => {
@@ -271,7 +273,7 @@ const PCPExportTab = () => {
                     <div className="flex-1"></div>
 
                     <button
-                        onClick={() => setShowHelp(true)}
+                        onClick={() => openHelp('/pcp/exportacao-materiais')}
                         className="flex items-center gap-1.5 text-gray-500 hover:text-indigo-600 px-3 py-2 rounded-lg text-sm font-medium transition-colors self-end"
                         title="Como usar esta tela?"
                     >
@@ -460,96 +462,6 @@ const PCPExportTab = () => {
                     >
                         <X className="h-4 w-4" />
                     </button>
-                </div>
-            )}
-
-            {/* ── Modal de Ajuda ────────────────────────────────────────────── */}
-            {showHelp && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-                        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                                <HelpCircle className="text-indigo-600 h-6 w-6" />
-                                Como Exportar a Lista de Materiais?
-                            </h3>
-                            <button
-                                onClick={() => setShowHelp(false)}
-                                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-                        <div className="p-6 overflow-y-auto space-y-6 text-gray-700">
-                            <p className="text-sm">
-                                Esta ferramenta permite compilar todas as matérias-primas necessárias para produzir uma determinada seleção de itens de pedido, agrupando itens idênticos e somando quantidades.
-                            </p>
-
-                            <div className="space-y-4">
-                                <div className="flex gap-4">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">1</div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900 mb-1">Filtrar Pedidos Pendentes</h4>
-                                        <p className="text-sm text-gray-600">
-                                            Utilize a barra de filtros no topo para buscar os pedidos. Por padrão, ele lista apenas os pedidos com saldo pendente (chave <strong>Pendentes</strong>). Ao preencher os filtros, clique no botão <strong>Buscar</strong>.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">2</div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900 mb-1">Selecionar Itens na Tabela</h4>
-                                        <p className="text-sm text-gray-600">
-                                            Marque as caixas de seleção na primeira coluna para os produtos que você deseja produzir. Você pode selecionar um por um, ou usar o botão <strong>Selecionar todos</strong> no cabeçalho da tabela.
-                                        </p>
-                                        <div className="mt-2 bg-yellow-50 border border-yellow-200 p-3 rounded-lg text-xs text-yellow-800 flex items-start gap-2">
-                                            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-yellow-600" />
-                                            <p>Atenção aos itens destacados em vermelho e com a marcação "Sem estrutura". Itens sem estrutura não gerarão consumo de matéria-prima na exportação, pois a engenharia não cadastrou seus componentes no sistema.</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">3</div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900 mb-1">Processar e Exportar</h4>
-                                        <p className="text-sm text-gray-600">
-                                            Assim que enviar pelo menos 1 item, uma barra flutuante azul aparecerá na parte inferior da tela. Clique em <strong>Gerar Lista de Materiais</strong>.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-green-100 text-green-700 rounded-full flex items-center justify-center font-bold">4</div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900 mb-1">O Resultado Automático (Excel)</h4>
-                                        <p className="text-sm text-gray-600">
-                                            O sistema fará a "explosão" de toda a árvore de produtos em segundo plano, até o último nível (matéria-prima final). Então fará a multiplicação pela quantidade a faturar do pedido e consolidará todas as matérias-primas unificando pela descrição e código. Um arquivo Excel pronto para envio a compras e ao almoxarifado será baixado automaticamente!
-                                        </p>
-                                        <div className="mt-2 bg-gray-50 border border-gray-200 p-4 rounded-lg text-sm">
-                                            <h5 className="font-bold text-indigo-700 mb-2">💡 Exemplo Prático de Agrupamento</h5>
-                                            <p className="text-gray-600 mb-2">Se você selecionou:</p>
-                                            <ul className="list-disc list-inside text-gray-600 ml-2 mb-2">
-                                                <li>Item A (Qtd: 10) que tem na sua estrutura: 4 Un de Parafuso M6.</li>
-                                                <li>Item B (Qtd: 5) que também tem na sua estrutura: 2 Un de Parafuso M6.</li>
-                                            </ul>
-                                            <p className="text-gray-600">
-                                                A planilha listará <strong>apenas uma linha</strong> para "Parafuso M6", com a <strong>quantidade total igual a 50</strong> <span className="text-xs text-gray-400">(10x4 + 5x2)</span>.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end">
-                            <button
-                                onClick={() => setShowHelp(false)}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                            >
-                                Entendi
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
         </div>

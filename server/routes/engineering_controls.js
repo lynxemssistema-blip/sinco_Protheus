@@ -26,9 +26,9 @@ router.get('/', async (req, res) => {
         const params = [];
 
         if (pedido) {
-            query += ' AND n.pedido LIKE ?';
-            countQuery += ' AND n.pedido LIKE ?';
-            params.push(`%${pedido}%`);
+            query += ' AND n.pedido = ?';
+            countQuery += ' AND n.pedido = ?';
+            params.push(String(pedido).trim().padStart(6, '0'));
         }
 
         if (projetista) {

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Search, List, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer } from 'lucide-react';
-import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl, getCompanySettings } from '../services/api';
+import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
 import { toast } from 'react-toastify';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
+import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import useStickyState from '../hooks/useStickyState';
 import { generateVerticalPendingPdf } from '../services/verticalPendingPdfGenerator';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,8 +16,9 @@ export default function VerticalAppointmentPage() {
     const [groupByResource, setGroupByResource] = useState(false);
     const [operations, setOperations] = useState([]);
     const [selectedOp, setSelectedOp] = useStickyState('', '@metalfisa:vert_selectedOp');
-    const [data, setData] = useState([]);
+    const [data, setData] = useStickyState([], '@metalfisa:vertical_data');
     const [loading, setLoading] = useState(false);
+    const [apiError, setApiError] = useState(null);
 
     // Filtros rápidos
     const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
@@ -63,6 +65,7 @@ export default function VerticalAppointmentPage() {
         }
 
         if (showLoader) setLoading(true);
+        setApiError(null);
         try {
             const params = { ...filters };
             Object.keys(params).forEach(key => !params[key] && delete params[key]);
@@ -72,6 +75,8 @@ export default function VerticalAppointmentPage() {
             setDraftPlans({});
         } catch (err) {
             console.error('Erro ao carregar fila vertical', err);
+            setApiError(err.message || 'Erro desconhecido');
+            reportSystemError('Apontamento Vertical', err, { op: selectedOp, ...filters });
         } finally {
             if (showLoader) setLoading(false);
         }
@@ -383,8 +388,11 @@ export default function VerticalAppointmentPage() {
                 </div>
             </div>
 
+            {/* Error Message */}
+            <ErrorStateOverlay error={apiError} onRetry={loadData} />
+
             {/* Grid */}
-            {loading ? (
+            {!apiError && (loading ? (
                 <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
                     <div className="animate-pulse text-slate-500 font-medium">Carregando fila de trabalho...</div>
                 </div>
@@ -567,7 +575,7 @@ export default function VerticalAppointmentPage() {
                         </table>
                     </div>
                 </div>
-            ) : null}
+            ) : null)}
 
             {/* Modals reutilizados da Matrix */}
             {appointingOp && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Printer, ClipboardList, Filter, Calendar } from 'lucide-react';
+import { Search, Printer, ClipboardList, Filter, Calendar, History } from 'lucide-react';
 import { getInternalRequests } from '../services/api';
 
 export default function InternalRequestsPage() {
