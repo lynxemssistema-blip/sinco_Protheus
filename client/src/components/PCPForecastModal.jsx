@@ -246,11 +246,13 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     const tQtdTotal = parseFloat(t.quantidade || 0);
                     const tQtdFaturar = parseFloat(t.qtd_faturar || 0);
                     const quantidade_pcp = tQtdFaturar > 0 ? tQtdFaturar : tQtdTotal;
+                    const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
                     return {
                         pedido: t.pedido,
                         item: t.item,
                         quantidade_pcp: quantidade_pcp,
-                        qtd_total_item: tQtdTotal
+                        qtd_total_item: tQtdTotal,
+                        op_protheus: hasOp ? t.op_num : null
                     };
                 });
                 
@@ -380,6 +382,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
         }
         setSaving(true);
         try {
+            const hasOp = !!(item.op_num && String(item.op_num).trim() !== '-' && String(item.op_num).trim() !== '');
             const forecastRes = await api.post('/pedidos/pcp-forecasts', {
                 pedido, item: itemNum,
                 data_entrega_pcp: formData.data_entrega_pcp,
@@ -391,7 +394,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 serie_metalfisa: formData.serie_metalfisa || null,
                 lote: formData.lote || null,
                 numero_lote: formData.numero_lote || null,
-                qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined
+                qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
+                op_protheus: hasOp ? item.op_num : null
             });
 
             const forecastId = forecastRes.data.id;

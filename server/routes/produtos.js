@@ -47,7 +47,8 @@ router.get('/', async (req, res) => {
             sb1.b1_desc AS descricao,
             sb1.b1_tipo AS tipo,
             sb1.b1_um AS unidade,
-            sb1.b1_grupo AS grupo
+            sb1.b1_grupo AS grupo,
+            sb1.b1_custd AS custo_padrao
         `;
 
         let baseQuery = "FROM public.sb1010 sb1 WHERE TRIM(COALESCE(sb1.d_e_l_e_t_, '')) <> '*'";

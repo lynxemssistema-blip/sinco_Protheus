@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import api from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
@@ -17,6 +17,7 @@ export default function Settings() {
         { id: 'general', label: 'Geral', icon: Building2 },
         { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
         { id: 'menu', label: 'Menu & Navegação', icon: Menu },
+        { id: 'modules', label: 'Módulos', icon: Package },
         { id: 'profiles', label: 'Perfis de Acesso', icon: Users },
         { id: 'users', label: 'Usuários', icon: UserPlus },
         { id: 'pending', label: 'Aprovações Pendentes', icon: ShieldAlert },
@@ -951,6 +952,67 @@ export default function Settings() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MÓDULOS TAB */}
+                {activeTab === 'modules' && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                        <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
+                            <div className="flex items-center gap-3">
+                                <Package className="w-6 h-6 text-indigo-600" />
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">Gestão de Módulos</h2>
+                                    <p className="text-sm text-slate-500">Ative ou desative módulos inteiros do sistema. Oculta menus, rotas e interfaces de todos os usuários.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            {/* Módulo de Manutenção */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Manutenção</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Gerenciamento de ordens de manutenção preventivas e corretivas, checklists diários por máquina e controle de operadores.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={loadingCompany}
+                                        onClick={async () => {
+                                            const newValue = !companyForm.general_config?.module_maintenance_active;
+                                            const newGeneralConfig = { ...companyForm.general_config, module_maintenance_active: newValue };
+                                            try {
+                                                setLoadingCompany(true);
+                                                await updateGeneralSettings({ general_config: newGeneralConfig });
+                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+                                                // Alerting that the page will reload so Sidebar and Routes re-evaluate
+                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
+                                                    window.location.reload();
+                                                }
+                                            } catch (err) {
+                                                alert('Erro ao alterar status do módulo: ' + err.message);
+                                            } finally {
+                                                setLoadingCompany(false);
+                                            }
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_maintenance_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        title={companyForm.general_config?.module_maintenance_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_maintenance_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-4 flex gap-2">
+                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_maintenance_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+                                        Status: {companyForm.general_config?.module_maintenance_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            {/* Pode adicionar novos módulos aqui no futuro */}
                         </div>
                     </div>
                 )}

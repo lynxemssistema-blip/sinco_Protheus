@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare
+    Landmark, Link, PieChart, CheckSquare, Wrench
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -170,6 +170,19 @@ export const MENU_GROUPS = [
         ]
     },
 
+    {
+        id: 'manutencao',
+        label: 'Manutenção de Equip.',
+        items: [
+            { id: 'manutencao_dashboard', label: 'Gestão Manutenção', path: '/manutencao/dashboard', icon: BarChart },
+            { id: 'manutencao_maquinas', label: 'Máquinas & Equips.', path: '/manutencao/maquinas', icon: Factory },
+            { id: 'manutencao_checklists', label: 'Checklists Diários', path: '/manutencao/checklists', icon: ClipboardCheck },
+            { id: 'manutencao_ordens', label: 'Ordens de Manutenção', path: '/manutencao/ordens', icon: FileText },
+            { id: 'manutencao_materiais', label: 'Gestão de Materiais', path: '/manutencao/materiais', icon: Package },
+            { id: 'manutencao_tecnicos', label: 'Técnicos de Manutenção', path: '/manutencao/tecnicos', icon: Users },
+            { id: 'manutencao_atividades', label: 'Atividades Padrão', path: '/manutencao/atividades', icon: Layers }
+        ]
+    },
     {
         id: 'sistema',
         label: 'Sistema',

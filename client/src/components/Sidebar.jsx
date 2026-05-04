@@ -13,6 +13,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const { user, logout, hasPermission, isAdmin } = useAuth();
     const { toggleHelp } = useHelp();
     const [visibleItems, setVisibleItems] = useState({});
+    const [generalConfig, setGeneralConfig] = useState({});
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
     const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
@@ -91,7 +92,20 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         config = {}; // Fallback
                     }
                 }
+                
+                let genConfig = {};
+                if (settings.general_config) {
+                    try {
+                        genConfig = typeof settings.general_config === 'string'
+                            ? JSON.parse(settings.general_config)
+                            : settings.general_config;
+                    } catch (e) {
+                        genConfig = {};
+                    }
+                }
+
                 setVisibleItems(config);
+                setGeneralConfig(genConfig);
                 setIsConfigLoaded(true);
             } catch (error) {
                 console.error("Failed to load sidebar config", error);
@@ -227,6 +241,9 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                 {/* Navigation Scroll Area */}
                 <nav className="flex-1 tech-scroll py-4 space-y-1 overflow-y-auto">
                     {MENU_GROUPS.map((group, idx) => {
+                        // Check if group is a controlled module
+                        if (group.id === 'manutencao' && !generalConfig?.module_maintenance_active) return null;
+
                         // Filter items based on visibility config and search term
                         const visibleGroupItems = group.items.filter(item => {
                             if (item.hidden) return false;

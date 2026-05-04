@@ -3,7 +3,7 @@ import api from '../services/api';
 import {
     PlayCircle, CheckCircle, User, Users, Info, Mail,
     Clock, XCircle, Zap, Calendar, ChevronDown, ChevronUp,
-    MessageCircle, TrendingUp
+    MessageCircle, TrendingUp, Briefcase, AlertTriangle, Timer
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import {
@@ -189,6 +189,119 @@ function SetorCard({ setor }) {
     );
 }
 
+// ─── Utilitários de Data ─────────────────────────────────────────────────────
+const fmtData = (d) => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const statusConfig = {
+    CONCLUIDO:    { label: 'Concluído',    bg: 'bg-emerald-100', text: 'text-emerald-700' },
+    EM_ANDAMENTO: { label: 'Em Andamento', bg: 'bg-blue-100',    text: 'text-blue-700'    },
+    PENDENTE:     { label: 'Pendente',     bg: 'bg-slate-100',   text: 'text-slate-600'   },
+};
+
+// ─── Seção de Tarefas do Projetista ─────────────────────────────────────────
+function TarefasProjetista({ dados }) {
+    const { resumo, tarefas } = dados;
+
+    const cardsDados = [
+        { label: 'Atrasadas',        valor: resumo.atrasadas,        bg: 'bg-red-50 border-red-200',     txt: 'text-red-600',     icon: AlertTriangle },
+        { label: 'Em Andamento',     valor: resumo.em_andamento,     bg: 'bg-blue-50 border-blue-200',   txt: 'text-blue-700',    icon: Zap           },
+        { label: 'Pendentes',        valor: resumo.pendentes,        bg: 'bg-slate-50 border-slate-200', txt: 'text-slate-600',   icon: Clock         },
+        { label: 'Concluídas (7d)',  valor: resumo.concluidas_semana,bg: 'bg-emerald-50 border-emerald-200', txt: 'text-emerald-700', icon: CheckCircle },
+        { label: 'Horas hoje',       valor: `${resumo.horas_hoje}h`, bg: 'bg-teal-50 border-teal-200',   txt: 'text-teal-700',    icon: Timer         },
+    ];
+
+    return (
+        <section>
+            <div className="flex items-center gap-2 mb-4">
+                <Briefcase className="w-5 h-5 text-slate-500" />
+                <h2 className="text-lg font-bold text-slate-700">Minhas Tarefas de Engenharia</h2>
+                <span className="text-xs text-slate-400">— somente visualização</span>
+            </div>
+
+            {/* Cards resumo */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+                {cardsDados.map(({ label, valor, bg, txt, icon: Icon }) => (
+                    <div key={label} className={`flex flex-col items-center text-center p-4 rounded-xl border ${bg}`}>
+                        <Icon className={`w-5 h-5 mb-1 ${txt}`} />
+                        <span className={`text-2xl font-black ${txt}`}>{valor}</span>
+                        <span className={`text-xs font-semibold mt-1 ${txt} opacity-80`}>{label}</span>
+                    </div>
+                ))}
+            </div>
+
+            {/* Tabela de tarefas */}
+            {tarefas.length > 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-100 text-sm">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left font-semibold text-slate-500 text-xs uppercase tracking-wider">Pedido / Item</th>
+                                    <th className="px-4 py-3 text-left font-semibold text-slate-500 text-xs uppercase tracking-wider">Descrição / Cliente</th>
+                                    <th className="px-4 py-3 text-left font-semibold text-slate-500 text-xs uppercase tracking-wider">Tipo</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-slate-500 text-xs uppercase tracking-wider">Prazo Plan.</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-slate-500 text-xs uppercase tracking-wider">Situação</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-100">
+                                {tarefas.map((t, idx) => {
+                                    const cfg = statusConfig[t.status] || statusConfig.PENDENTE;
+                                    const rowBg = t.atrasada ? 'bg-red-50/40' : '';
+
+                                    let situacaoEl;
+                                    if (t.status === 'CONCLUIDO') {
+                                        situacaoEl = <span className="text-emerald-600 font-semibold flex items-center justify-center gap-1"><CheckCircle className="w-3.5 h-3.5" /> Concluído</span>;
+                                    } else if (t.atrasada) {
+                                        situacaoEl = <span className="text-red-600 font-bold flex items-center justify-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> {t.dias_atraso}d atraso</span>;
+                                    } else if (t.dias_restantes === 0) {
+                                        situacaoEl = <span className="text-orange-600 font-bold">Vence hoje!</span>;
+                                    } else if (t.dias_restantes !== null && t.dias_restantes <= 3) {
+                                        situacaoEl = <span className="text-orange-500 font-semibold">{t.dias_restantes}d restantes</span>;
+                                    } else if (t.dias_restantes !== null) {
+                                        situacaoEl = <span className="text-slate-500">{t.dias_restantes}d restantes</span>;
+                                    } else {
+                                        situacaoEl = <span className="text-slate-400">Sem prazo</span>;
+                                    }
+
+                                    return (
+                                        <tr key={idx} className={`hover:bg-slate-50 transition-colors ${rowBg}`}>
+                                            <td className="px-4 py-3 font-mono font-semibold text-slate-700 whitespace-nowrap">
+                                                {t.pedido} <span className="text-slate-400 font-normal">/ {t.item}</span>
+                                            </td>
+                                            <td className="px-4 py-3 max-w-[200px]">
+                                                <p className="truncate font-medium text-slate-700" title={t.descricao}>{t.descricao || '—'}</p>
+                                                <p className="truncate text-xs text-slate-400" title={t.cliente}>{t.cliente || '—'}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-500 text-xs">{t.projeto_tipo || '—'}</td>
+                                            <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap">{fmtData(t.data_fim_plan)}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.text}`}>
+                                                    {cfg.label}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-xs whitespace-nowrap">{situacaoEl}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : (
+                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                    <CheckCircle className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                    <p className="text-slate-500 text-sm">Nenhuma tarefa de engenharia encontrada para o seu usuário.</p>
+                </div>
+            )}
+        </section>
+    );
+}
+
 // ─── Componente Principal ────────────────────────────────────────────────────
 export default function MeuCanal() {
     const [kpiData, setKpiData] = useState(null);
@@ -335,10 +448,10 @@ export default function MeuCanal() {
                         </div>
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                             <p className="text-slate-500 text-sm font-medium flex items-center gap-1">
-                                Bônus Extras (x2) <Info className="w-3.5 h-3.5 text-slate-400" title="Sem planejamento = pontuação dobrada" />
+                                Bônus Extras (x2) <Info className="w-3.5 h-3.5 text-slate-400" title="Peças sem planejamento PCP geram pontuação dobrada" />
                             </p>
                             <h3 className="text-4xl font-black text-amber-500 mt-1">+{individual.pontuacao_bonus}</h3>
-                            <p className="text-xs text-amber-600/80 mt-2">Peças sem data prevista no PCP</p>
+                            <p className="text-xs text-amber-600/80 mt-2">Pts extras por peças não planejadas</p>
                         </div>
                         <div className="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl shadow-sm p-5 text-white">
                             <p className="text-teal-100 text-sm font-medium">Pontuação Total Diária</p>
@@ -370,13 +483,13 @@ export default function MeuCanal() {
                                 />
                                 <CategoriaCard
                                     icon={Zap} valor={individual.categorias.iniciado_ok}
-                                    label="Iniciado na Data" sublabel="Início ok, fim atrasou"
+                                    label="Início Pontual" sublabel="Término atrasou ⚠"
                                     bgClass="bg-blue-50 border-blue-200"
                                     textClass="text-blue-700" iconClass="bg-blue-100 text-blue-600"
                                 />
                                 <CategoriaCard
                                     icon={Clock} valor={individual.categorias.finalizado_ok}
-                                    label="Finalizado na Data" sublabel="Início atrasou, fim ok"
+                                    label="Término Pontual" sublabel="Início atrasou ⚠"
                                     bgClass="bg-yellow-50 border-yellow-200"
                                     textClass="text-yellow-700" iconClass="bg-yellow-100 text-yellow-600"
                                 />
@@ -391,13 +504,23 @@ export default function MeuCanal() {
                     )}
                 </section>
 
+                {/* ── TAREFAS DO PROJETISTA ──────────────────────────────────────── */}
+                {kpiData.isProjetista && kpiData.tarefas_projetista && (
+                    <TarefasProjetista dados={kpiData.tarefas_projetista} />
+                )}
+
                 {/* ── METAS DOS SETORES ───────────────────────────────────────────── */}
                 {setores && setores.length > 0 && (
                     <section>
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-2 mb-4 flex-wrap">
                             <Users className="w-5 h-5 text-slate-500" />
                             <h2 className="text-lg font-bold text-slate-700">Metas dos Meus Setores (Hoje)</h2>
-                            <span className="text-xs text-slate-400 ml-1">— clique em um setor para ver detalhes</span>
+                            <span className="text-xs text-slate-400">— clique em um setor para ver detalhes</span>
+                            {kpiData.horaCalculo && (
+                                <span className="ml-auto flex items-center gap-1 text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                    <Clock className="w-3 h-3" /> Calculado às {kpiData.horaCalculo}
+                                </span>
+                            )}
                         </div>
                         <div className="space-y-3">
                             {setores.map(setor => (

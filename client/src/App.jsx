@@ -142,6 +142,15 @@ const PrivateRoute = () => {
     return <Outlet />;
 };
 
+// MÓDULO DE MANUTENÇÃO
+const ManutencaoDashboard = React.lazy(() => import('./pages/manutencao/Dashboard'));
+const ManutencaoMaquinas = React.lazy(() => import('./pages/manutencao/Maquinas'));
+const ManutencaoChecklists = React.lazy(() => import('./pages/manutencao/Checklists'));
+const ManutencaoOrdens = React.lazy(() => import('./pages/manutencao/Ordens'));
+const ManutencaoTecnicos = React.lazy(() => import('./pages/manutencao/Tecnicos'));
+const ManutencaoAtividades = React.lazy(() => import('./pages/manutencao/Atividades'));
+const GestaoMateriais = React.lazy(() => import('./pages/manutencao/GestaoMateriais'));
+
 const Layout = ({ children, fullWidth = true }) => {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const { toggleHelp, isOpen, isPinned } = useHelp();
@@ -229,6 +238,10 @@ function App() {
                                     <Route path="/login" element={<Login />} />
 
                                     <Route element={<PrivateRoute />}>
+                                        <Route path="/manutencao/maquinas" element={<Layout><ManutencaoMaquinas /></Layout>} />
+                                        <Route path="/manutencao/checklists" element={<Layout><ManutencaoChecklists /></Layout>} />
+                                        <Route path="/manutencao/ordens" element={<Layout><ManutencaoOrdens /></Layout>} />
+                                        <Route path="/manutencao/tecnicos" element={<Layout><ManutencaoTecnicos /></Layout>} />
                                         <Route path="/" element={
                                             <Layout fullWidth={true}>
                                                 <MeuCanal />
@@ -670,6 +683,38 @@ function App() {
                                         <Route path="/ppaps/buscar-produto" element={
                                             <Layout fullWidth={true}>
                                                 <PPAPsBuscarProduto />
+                                            </Layout>
+                                        } />
+
+                                        {/* MÓDULO DE MANUTENÇÃO */}
+                                        <Route path="/manutencao/dashboard" element={
+                                            <Layout fullWidth={true}>
+                                                <ManutencaoDashboard />
+                                            </Layout>
+                                        } />
+                                        <Route path="/manutencao/maquinas" element={
+                                            <Layout fullWidth={true}>
+                                                <ManutencaoMaquinas />
+                                            </Layout>
+                                        } />
+                                        <Route path="/manutencao/checklists" element={
+                                            <Layout fullWidth={true}>
+                                                <ManutencaoChecklists />
+                                            </Layout>
+                                        } />
+                                        <Route path="/manutencao/ordens" element={
+                                            <Layout fullWidth={true}>
+                                                <ManutencaoOrdens />
+                                            </Layout>
+                                        } />
+                                        <Route path="/manutencao/atividades" element={
+                                            <Layout fullWidth={true}>
+                                                <ManutencaoAtividades />
+                                            </Layout>
+                                        } />
+                                        <Route path="/manutencao/materiais" element={
+                                            <Layout fullWidth={true}>
+                                                <GestaoMateriais />
                                             </Layout>
                                         } />
                                     </Route>

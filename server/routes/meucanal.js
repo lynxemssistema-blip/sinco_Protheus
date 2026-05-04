@@ -255,9 +255,9 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
 
             let nivel = 'Crítico';
             let cor = '#ef4444';
-            if (perc > 25 && perc <= 50) { nivel = 'Atenção'; cor = '#f97316'; }
-            else if (perc > 50 && perc <= 75) { nivel = 'Bom'; cor = '#eab308'; }
-            else if (perc > 75) { nivel = 'Excelente'; cor = '#22c55e'; }
+            if (perc > 50 && perc <= 75) { nivel = 'Atenção'; cor = '#f97316'; }
+            else if (perc > 75 && perc <= 90) { nivel = 'Bom'; cor = '#eab308'; }
+            else if (perc > 90) { nivel = 'Excelente'; cor = '#22c55e'; }
 
             const pendencias = opsPlanejadas.reduce((acc, plan) => {
                 // Sum all user appointments for this planned operation
@@ -300,6 +300,108 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
 }
 
 // =========================================================================
+// TAREFAS DO PROJETISTA (usuários do setor ENGENHARIA)
+// =========================================================================
+async function calcularTarefasProjetista(nomeCompleto) {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const hojeSql = hoje.toISOString().slice(0, 10);
+
+    // Tarefas ativas + concluídas nos últimos 7 dias
+    const [tasks] = await mysql.query(`
+        SELECT id, pedido, item, status, designer_name,
+               designer_start_forecast, designer_end_forecast,
+               designer_start_real, designer_end_real,
+               designer_production_release_date, designer_notes, project_type, updated_at
+        FROM app_sales_order_item_notes
+        WHERE designer_name LIKE ?
+          AND (status IN ('PENDENTE','EM_ANDAMENTO')
+               OR (status = 'CONCLUIDO' AND designer_end_real >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)))
+        ORDER BY
+            CASE status WHEN 'EM_ANDAMENTO' THEN 0 WHEN 'PENDENTE' THEN 1 ELSE 2 END,
+            designer_end_forecast ASC
+    `, [`%${nomeCompleto}%`]);
+
+    // Horas registradas hoje nos timesheets
+    const [tsRows] = await mysql.query(`
+        SELECT COALESCE(SUM(duration_seconds), 0) AS total_sec
+        FROM app_engineering_timesheets
+        WHERE usuario LIKE ? AND DATE(start_time) = ?
+    `, [`%${nomeCompleto}%`, hojeSql]);
+    const horasHoje = Math.round((tsRows[0]?.total_sec || 0) / 360) / 10;
+
+    // Enriquecer com cliente + descrição do Protheus
+    let pgMap = {};
+    if (tasks.length > 0) {
+        try {
+            const pairs = tasks
+                .map(t => `('${(t.pedido || '').trim().replace(/'/g, "''")}','${(t.item || '').trim().replace(/'/g, "''")}')`)
+                .join(',');
+            const pgRes = await db.query(`
+                SELECT TRIM(c5.c5_num) AS pedido, TRIM(c6.c6_item) AS item,
+                       TRIM(sa1.a1_nome) AS cliente, TRIM(sb1.b1_desc) AS descricao
+                FROM sc6010 c6
+                JOIN sc5010 c5 ON c5.c5_num = c6.c6_num AND c5.c5_filial = c6.c6_filial
+                    AND COALESCE(c5.d_e_l_e_t_, '') = ''
+                LEFT JOIN sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli
+                    AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                WHERE (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${pairs})
+                  AND COALESCE(c6.d_e_l_e_t_, '') = ''
+            `);
+            for (const r of pgRes.rows) {
+                pgMap[`${r.pedido}|${r.item}`] = { cliente: r.cliente, descricao: r.descricao };
+            }
+        } catch (e) {
+            console.warn('[projetista] Enriquecimento Protheus falhou:', e.message);
+        }
+    }
+
+    // Classificar e calcular prazos
+    let atrasadas = 0, em_andamento = 0, pendentes = 0, concluidas_semana = 0;
+
+    const tasksList = tasks.map(t => {
+        const prazo = t.designer_end_forecast ? new Date(t.designer_end_forecast) : null;
+        if (prazo) prazo.setHours(0, 0, 0, 0);
+        const atrasada = prazo && prazo < hoje && t.status !== 'CONCLUIDO';
+        const diasAtraso = atrasada ? Math.floor((hoje - prazo) / 86400000) : 0;
+        const diasRestantes = (prazo && !atrasada && t.status !== 'CONCLUIDO')
+            ? Math.floor((prazo - hoje) / 86400000) : null;
+
+        const pg = pgMap[`${(t.pedido || '').trim()}|${(t.item || '').trim()}`] || {};
+
+        if (t.status === 'CONCLUIDO') concluidas_semana++;
+        else if (t.status === 'EM_ANDAMENTO') em_andamento++;
+        else if (atrasada) atrasadas++;
+        else pendentes++;
+
+        return {
+            id: t.id,
+            pedido: t.pedido,
+            item: t.item,
+            status: t.status,
+            projeto_tipo: t.project_type,
+            data_inicio_plan: t.designer_start_forecast,
+            data_fim_plan: t.designer_end_forecast,
+            data_inicio_real: t.designer_start_real,
+            data_fim_real: t.designer_end_real,
+            atrasada,
+            dias_atraso: diasAtraso,
+            dias_restantes: diasRestantes,
+            cliente: pg.cliente || null,
+            descricao: pg.descricao || null,
+            observacoes: t.designer_notes
+        };
+    });
+
+    return {
+        resumo: { atrasadas, em_andamento, pendentes, concluidas_semana, horas_hoje: horasHoje },
+        tarefas: tasksList
+    };
+}
+
+// =========================================================================
 // ROTA GET DA TELA (Chamada pelo Frontend)
 // =========================================================================
 router.get('/kpi', authenticateToken, async (req, res) => {
@@ -308,14 +410,26 @@ router.get('/kpi', authenticateToken, async (req, res) => {
         const userLogin = req.user?.login || req.user?.Login;
         const userName = req.user?.nome || req.user?.NomeCompleto || userLogin;
 
-        // Buscar foto diretamente do banco (não está no payload JWT)
+        // Buscar foto, setor e nome completo do banco (não estão no payload JWT)
         const [userRows] = await mysql.query(
-            'SELECT fotoUsuario FROM usuario WHERE idUsuario = ?',
+            'SELECT fotoUsuario, Setor, NomeCompleto FROM usuario WHERE idUsuario = ?',
             [userId]
         );
         const userFoto = userRows[0]?.fotoUsuario || null;
+        const userSetor = (userRows[0]?.Setor || '').toUpperCase();
+        const nomeCompleto = userRows[0]?.NomeCompleto || userName;
+        const isProjetista = userSetor.includes('ENGENHAR');
 
         const data = await calcularKPIMeuCanal(userId, userLogin, userName);
+
+        // Hora de cálculo para contexto no frontend
+        data.horaCalculo = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        data.isProjetista = isProjetista;
+
+        // Tarefas de engenharia (somente para projetistas)
+        if (isProjetista) {
+            data.tarefas_projetista = await calcularTarefasProjetista(nomeCompleto);
+        }
 
         data.usuario = {
             id: userId,

@@ -351,7 +351,8 @@ export const getProductionDashboard = (params, signal) => api.get('/production',
 export const getProductionMatrix = (params) => api.get('/production/matrix', { params }).then(res => res.data);
 export const getOperationById = (opId) => api.get(`/production/operations/${opId}`).then(res => res.data);
 export const saveProductionPlan = (data) => api.post('/production/plan', data).then(res => res.data);
-export const saveProductionPlanBatch = (plans) => api.post('/production/plan-batch', { plans }).then(res => res.data);
+export const saveProductionPlanBatch = (plans, observacao, modo_calculo) =>
+    api.post('/production/plan-batch', { plans, observacao, modo_calculo }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);
 export const getAppointmentHistory = (op, item, sequencia, operacao) => api.get(`/production/appointments/${op}`, { params: { item, sequencia, operacao } }).then(res => res.data);
 export const submitConferencia = ({ id, status, observacao, conferido_por, fotos = [] }) => {

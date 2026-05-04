@@ -38,7 +38,7 @@ export const FilterProvider = ({ children }) => {
             only_active: 'true',
             dateType: 'pedido',
             tipo_item: '',
-            viewMode: 'tree',
+            viewMode: 'flat',
             activeTab: 'evolucao',
             page: 1,
             expandedOrderId: null

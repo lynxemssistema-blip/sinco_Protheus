@@ -94,8 +94,8 @@ app.use((req, res, next) => {
 // Não altera a funcionalidade; apenas muda o transporte quando o browser suporta.
 app.use(compression());
 
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ limit: '5mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Auth — public routes (no token required)
 app.use('/api/auth', require('./routes/auth'));
@@ -229,6 +229,9 @@ app.use('/api/settings', require('./routes/system_settings'));
 
 // PPAPs
 app.use('/api/ppaps', require('./routes/ppaps'));
+
+// Manutenção de Equipamentos
+app.use('/api/manutencao', require('./routes/manutencao'));
 
 // Monitoramento de Sistema (Métricas)
 app.use('/api/monitoramento', require('./routes/monitoramento'));

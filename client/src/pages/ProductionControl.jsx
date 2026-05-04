@@ -328,9 +328,9 @@ export default function ProductionControl() {
             }
         }
     };
-    const handleMacroSaveBatch = async (plans) => {
+    const handleMacroSaveBatch = async (plans, observacao, modo_calculo) => {
         try {
-            await saveProductionPlanBatch(plans);
+            await saveProductionPlanBatch(plans, observacao, modo_calculo);
         } catch (err) {
             console.error(err);
             throw err;
@@ -398,24 +398,6 @@ export default function ProductionControl() {
                                               appointmentMode === 'balance'  ? 'Saldo' : 'Livre'}
                             </span>
                         )}
-                        <div className="flex items-center bg-white rounded-lg p-1 border shadow-sm">
-                            <button
-                                onClick={() => setCalcType('op_specific')}
-                                className={`px-3 py-1 text-sm rounded-md transition-colors ${calcType === 'op_specific' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                Progresso por OP
-                            </button>
-                            <button
-                                onClick={() => setCalcType('item_average')}
-                                className={`px-3 py-1 text-sm rounded-md transition-colors ${calcType === 'item_average' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                Progresso por Item (Média)
-                            </button>
-                        </div>
-                        <button onClick={() => setShowLegend(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            Legenda de Processos
-                        </button>
                     </div>
                 </div>
 
@@ -433,19 +415,24 @@ export default function ProductionControl() {
                     {/* Linha 2: Operação e Planejado */}
                     <div className="flex flex-col md:flex-row gap-3">
                         <div className="flex flex-1 gap-2 relative">
+                            {/* TEMPORARIAMENTE DESABILITADO — filtro por setor sem dados suficientes */}
                             <select
-                                value={filters.setor || ''}
-                                onChange={(e) => setFilters({ ...filters, setor: e.target.value })}
-                                className="w-1/3 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 bg-white"
+                                disabled
+                                value=""
+                                className="w-1/3 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-400 opacity-40 cursor-not-allowed"
+                                title="Filtro por setor temporariamente desabilitado"
                             >
                                 <option value="">Todos os Setores</option>
-                                {sectors.map(s => (
-                                    <option key={s.id} value={s.id}>{s.nome}</option>
-                                ))}
                             </select>
-                            <div className="w-2/3 relative">
-                                <input type="text" placeholder="Operação ou Recurso (ex: 01, SOLDA)" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                            <div className="w-2/3 flex gap-2">
+                                <div className="relative flex-1">
+                                    <input type="text" placeholder="Operação ou Recurso (ex: 01, SOLDA)" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                                </div>
+                                <button onClick={() => setShowLegend(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Ver legenda de processos">
+                                    <Filter className="w-4 h-4" />
+                                    Legenda de Processos
+                                </button>
                             </div>
                         </div>
                         
@@ -468,10 +455,10 @@ export default function ProductionControl() {
                         </div>
                     </div>
 
-                    {/* Linha 3: Status, Checkboxes, e Buscar */}
+                    {/* Linha 3: Status + filtro de pendentes + Buscar */}
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-semibold text-slate-700 mr-2 flex items-center gap-1"><Filter className="w-3 h-3"/> Status:</span>
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide mr-1 flex items-center gap-1"><Filter className="w-3 h-3"/> Status:</span>
                             {STATUS_OPTIONS.map(opt => {
                                 const isSelected = Array.isArray(filters.status) && filters.status.includes(opt.value);
                                 return (
@@ -479,7 +466,7 @@ export default function ProductionControl() {
                                         key={opt.value}
                                         onClick={() => toggleStatus(opt.value)}
                                         className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
-                                            isSelected 
+                                            isSelected
                                             ? opt.color
                                             : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                         }`}
@@ -488,28 +475,25 @@ export default function ProductionControl() {
                                     </button>
                                 );
                             })}
-                        </div>
 
-                        <div className="flex items-center gap-4 shrink-0">
-                            <label className="flex items-center gap-2 cursor-pointer group">
-                                <input
-                                    type="checkbox"
-                                    checked={filters.pending_delivery}
-                                    onChange={(e) => setFilters({ ...filters, pending_delivery: e.target.checked })}
-                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
-                                />
-                                <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                                    Apenas Saldo a Entregar (Pendentes)
-                                </span>
-                            </label>
-
-                            <div className="w-px h-6 bg-slate-200 hidden md:block"></div>
-
-                            <button onClick={handleSearch} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm" disabled={loading}>
-                                <Search className="w-4 h-4" />
-                                {loading ? 'Buscando...' : 'Buscar'}
+                            {/* Toggle pill: Pendentes — ao lado dos status pills, mais natural */}
+                            <button
+                                onClick={() => setFilters(prev => ({ ...prev, pending_delivery: !prev.pending_delivery }))}
+                                title="Exibe apenas OPs com quantidade de produção abaixo do previsto"
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                                    filters.pending_delivery
+                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                                Com saldo pendente
                             </button>
                         </div>
+
+                        <button onClick={handleSearch} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm shrink-0" disabled={loading}>
+                            <Search className="w-4 h-4" />
+                            {loading ? 'Buscando...' : 'Buscar'}
+                        </button>
                     </div>
 
                     <div className="flex border-b border-slate-200 mt-4 px-1 gap-6">
@@ -529,42 +513,39 @@ export default function ProductionControl() {
 
                 {!apiError && (activeTab === 'tabela' ? (
                     <>
-                        {total > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-4 shrink-0 px-1">
-                        <div className="text-sm font-medium text-slate-600">
-                            {total} operação{total !== 1 ? 'ões' : ''} encontrada{total !== 1 ? 's' : ''}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {Object.entries(ops.reduce((acc, op) => {
-                                const s = getOpStatus(op).text;
-                                acc[s] = (acc[s] || 0) + Number(op.qtd_planejada_op || 0);
-                                return acc;
-                            }, {})).map(([status, qty]) => (
-                                <div key={status} className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1 rounded-lg shadow-sm">
-                                    <span className="text-xs text-slate-500 font-medium">{status}:</span>
-                                    <span className="text-sm font-bold text-slate-800">{qty.toLocaleString('pt-BR')} <span className="text-[10px] font-normal text-slate-400">pçs</span></span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
-                    {selectedOps.length > 0 && (
-                        <div className="bg-blue-50 p-3 border-b border-blue-100 flex items-center justify-between">
-                            <span className="text-sm font-medium text-blue-800">
-                                {selectedOps.length} ordens selecionadas
+                        {/* Barra de contagem + ação de lote — compacta e contextual */}
+                        <div className="flex items-center justify-between gap-3 shrink-0 px-1 py-1">
+                            <span className="text-xs text-slate-500 font-medium">
+                                {total > 0
+                                    ? `${total} ${total !== 1 ? 'operações' : 'operação'} encontrada${total !== 1 ? 's' : ''}`
+                                    : 'Nenhum resultado'}
                             </span>
-                            <button 
-                                onClick={() => setPlanningOp(selectedOps)}
-                                className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
-                            >
-                                <Calendar className="w-4 h-4" />
-                                Planejar Lote
-                            </button>
+                            {selectedOps.length > 0 && (
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-600 font-medium">
+                                        <strong className="text-blue-700">{selectedOps.length}</strong> OP{selectedOps.length !== 1 ? 's' : ''} selecionada{selectedOps.length !== 1 ? 's' : ''}
+                                    </span>
+                                    <button
+                                        onClick={() => setPlanningOp(selectedOps)}
+                                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm"
+                                        title="Abre o planejamento sequencial para as OPs selecionadas"
+                                    >
+                                        <Calendar className="w-3.5 h-3.5" />
+                                        Sequenciar Planejamento
+                                    </button>
+                                    <button
+                                        onClick={() => setSelectedOps([])}
+                                        className="px-2 py-1.5 text-slate-500 text-xs font-medium rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
+                                        title="Desmarcar todas"
+                                    >
+                                        Limpar
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
-                    <div ref={tableContainerRef} className="overflow-auto flex-1">
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+                            <div ref={tableContainerRef} className="overflow-auto flex-1">
                         <table className="w-full relative">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                 <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
@@ -711,10 +692,10 @@ export default function ProductionControl() {
                                     );
                                 })
                             )}
-                        </tbody >
-                    </table >
-                </div >
-            </div>
+                            </tbody>
+                            </table>
+                            </div>
+                        </div>
 
 
 

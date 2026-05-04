@@ -823,27 +823,6 @@ const OrdersTable = () => {
                         </div>
                     </div>
 
-                    {/* Filtro OP Status (Single-select Pills) */}
-                    <div className="flex flex-col gap-1 md:col-span-1">
-                        <label className="text-[11px] font-medium text-gray-600 ml-1">Status da OP:</label>
-                        <div className="flex bg-gray-100 rounded-lg p-1 w-full">
-                            {[{value: '', label: 'Todos'}, {value: 'com_op', label: 'Com OP'}, {value: 'sem_op', label: 'Sem OP'}].map(opt => (
-                                <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => setFilters({ op_status: opt.value, page: 1 })}
-                                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all ${
-                                        (filters.op_status || '') === opt.value
-                                            ? 'bg-white text-blue-700 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    {opt.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
                     <div className="md:col-span-2 lg:col-span-2 flex gap-2">
                         <button
                             type="submit"
@@ -970,7 +949,7 @@ const OrdersTable = () => {
                                     </tr>
                                 ) : (
                                     <tr>
-                                        <th className="px-4 py-3 border-b border-slate-700 w-10 text-center">
+                                        <th className="px-2 py-3 border-b border-slate-700 text-center sticky left-0 z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">
                                             <input 
                                                 type="checkbox" 
                                                 checked={orders.length > 0 && selectedItems.length === orders.length}
@@ -978,14 +957,14 @@ const OrdersTable = () => {
                                                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                             />
                                         </th>
-                                        <th className="px-4 py-3 font-semibold">Pedido</th>
-                                        <th className="px-4 py-3 font-semibold text-center">Emissão</th>
-                                        <th className="px-4 py-3 font-semibold">Ref. Cliente</th>
-                                        <th className="px-4 py-3 font-semibold">Cliente</th>
-                                        <th className="px-4 py-3 font-semibold">PC</th>
-                                        <th className="px-4 py-3 font-semibold text-center w-8">It</th>
-                                        <th className="px-4 py-3 font-semibold text-center">OP</th>
-                                        <th className="px-4 py-3 font-semibold">Cód. Prod</th>
+                                        <th className="px-3 py-3 font-semibold sticky left-[40px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px]">Pedido</th>
+                                        <th className="px-3 py-3 font-semibold text-center sticky left-[130px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px]">Emissão</th>
+                                        <th className="px-3 py-3 font-semibold sticky left-[220px] z-20 bg-gray-50 min-w-[100px] max-w-[100px] w-[100px] truncate">Ref. Cliente</th>
+                                        <th className="px-3 py-3 font-semibold sticky left-[320px] z-20 bg-gray-50 min-w-[150px] max-w-[150px] w-[150px] truncate">Cliente</th>
+                                        <th className="px-3 py-3 font-semibold sticky left-[470px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] truncate">PC</th>
+                                        <th className="px-2 py-3 font-semibold text-center sticky left-[560px] z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">It</th>
+                                        <th className="px-3 py-3 font-semibold text-center sticky left-[600px] z-20 bg-gray-50 min-w-[80px] max-w-[80px] w-[80px]">OP</th>
+                                        <th className="px-3 py-3 font-semibold sticky left-[680px] z-20 bg-gray-50 min-w-[140px] max-w-[140px] w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Cód. Prod</th>
                                         <th className="px-4 py-3 font-semibold">C6_XREVM</th>
                                         <th className="px-4 py-3 font-semibold">Rev. Cliente</th>
                                         <th className="px-4 py-3 font-semibold text-center w-8 print:hidden text-[10px]">Ações</th>
@@ -1577,7 +1556,7 @@ const OrdersTable = () => {
                                             // FLAT VIEW IMPLEMENTATION
                                             orders.map((item, idx) => (
                                                 <tr key={`${item.pedido}-${item.item}-${idx}`} className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'} ${selectedItems.some(i => i.pedido === item.pedido && i.item === item.item) ? 'bg-blue-50' : ''}`}>
-                                                    <td className="px-4 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <td className="px-2 py-2 text-center sticky left-0 z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]" onClick={(e) => e.stopPropagation()}>
                                                         <input 
                                                             type="checkbox" 
                                                             checked={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)} 
@@ -1585,28 +1564,28 @@ const OrdersTable = () => {
                                                             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
                                                         />
                                                     </td>
-                                                    <td className="px-4 py-2 whitespace-nowrap">
+                                                    <td className="px-3 py-2 whitespace-nowrap sticky left-[40px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
                                                         <span className="font-bold text-gray-900">{item.pedido}</span>
                                                     </td>
-                                                    <td className="px-4 py-2 text-center text-xs text-gray-600 whitespace-nowrap">
+                                                    <td className="px-3 py-2 text-center text-xs text-gray-600 whitespace-nowrap sticky left-[130px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
                                                         <div className="flex items-center justify-center gap-1">
                                                             <Calendar className="h-3 w-3 text-gray-400" />
                                                             {formatProtheusDate(item.emissao)}
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">
+                                                    <td className="px-3 py-2 text-xs font-mono text-gray-600 sticky left-[220px] z-10 bg-inherit min-w-[100px] max-w-[100px] w-[100px] truncate">
                                                         {item.ref_cliente || '-'}
                                                     </td>
-                                                    <td className="px-4 py-2 max-w-[200px]">
+                                                    <td className="px-3 py-2 sticky left-[320px] z-10 bg-inherit min-w-[150px] max-w-[150px] w-[150px]">
                                                         <div className="text-xs font-medium text-gray-700 truncate" title={item.nome_cliente}>
                                                             {item.nome_cliente}
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-2 text-xs text-gray-600">
+                                                    <td className="px-3 py-2 text-xs text-gray-600 sticky left-[470px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px] truncate">
                                                         {item.ped_cliente || '-'}
                                                     </td>
-                                                    <td className="px-4 py-2 text-center text-xs font-mono text-gray-500">{item.item}</td>
-                                                    <td className="px-4 py-2 text-center">
+                                                    <td className="px-2 py-2 text-center text-xs font-mono text-gray-500 sticky left-[560px] z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]">{item.item}</td>
+                                                    <td className="px-3 py-2 text-center sticky left-[600px] z-10 bg-inherit min-w-[80px] max-w-[80px] w-[80px]">
                                                         <div className="flex items-center justify-center gap-1.5">
                                                             <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
                                                                 {item.op_num || '-'}
@@ -1620,7 +1599,7 @@ const OrdersTable = () => {
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">
+                                                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap sticky left-[680px] z-10 bg-inherit min-w-[140px] max-w-[140px] w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">
                                                         <Link
                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}`}
                                                             state={{ from: location.pathname }}

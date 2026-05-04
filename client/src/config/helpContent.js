@@ -27,6 +27,49 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Manutenção ──────────────────────────────────────────────────────────────
+  '/manutencao/execucao-modal': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Painel de Execução de Manutenção',
+    icon: 'Play',
+    description: 'Este modal centraliza todas as ações necessárias para executar e registrar uma manutenção na fábrica.',
+    tabs: [
+      {
+        id: 'execucao',
+        label: 'Aba de Execução',
+        description: 'Registre tempo, técnicos e detalhes da execução.',
+        steps: [
+          'Cronômetro: Permite medir exatamente o tempo gasto na manutenção. Pressione Play ao iniciar e Pause ao interromper.',
+          'Técnicos: É obrigatório selecionar ao menos um técnico envolvido na atividade.',
+          'Atividades: Descreva os reparos, peças ajustadas e testes realizados.',
+          'Fotos Pós-Manutenção: Anexe evidências do reparo concluído ou das peças substituídas.',
+          'Problema Resolvido: Define se a máquina pode voltar a operar ou se a ordem continuará pendente.'
+        ]
+      },
+      {
+        id: 'materiais',
+        label: 'Solicitação de Materiais',
+        description: 'Solicite peças necessárias para o reparo.',
+        steps: [
+          'Caso precise de peças, solicite por aqui. O almoxarifado (ou compras) será notificado e o item entrará no fluxo de Gestão de Materiais.'
+        ]
+      },
+      {
+        id: 'historico',
+        label: 'Histórico',
+        description: 'Acompanhe a rastreabilidade da ordem.',
+        steps: [
+          'Registra todas as interações da Ordem (abertura, solicitações, pausas, finalizações) com usuário e horário exatos, garantindo a rastreabilidade (Log de Auditoria).'
+        ]
+      }
+    ],
+    links: [
+      { path: '/manutencao/ordens', label: 'Ordens de Manutenção' },
+      { path: '/manutencao/atividades', label: 'Gestão de Atividades' }
+    ]
+  },
+
   // ── Faturamento e Comercial ──────────────────────────────────────────────────
   // Nota: entrada principal detalhada definida abaixo (linha ~1139). Esta é uma referência simplificada.
   '/vendas/itens-faturar-ref': {
@@ -353,20 +396,51 @@ export const HELP_CONTENT = {
     categoryColor: '#f59e0b',
     title: 'Controle de Produção',
     icon: 'LayoutDashboard',
-    description: 'Interface principal para acompanhamento de produção e programação de fábrica em lotes de planejamento. Foque no Recurso (Máquina) e defina pacotes de trabalho.',
+    description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo.',
     steps: [
-      'Visão por Recurso: A tabela mudou sua âncora de planejamento da operação genérica para o Recurso Real, mostrando exatamente a máquina onde o trabalho vai ocorrer.',
-      'Planejamento em Lote: Use os checkboxes na esquerda para selecionar múltiplas OPs (normalmente aquelas com o mesmo recurso). Em seguida clique no botão "Planejar Lote" no cabeçalho.',
-      'Data de Planejamento (Lote): O sistema associa automaticamente as OPs programadas num mesmo momento dentro de um Lote único, facilitando revisões futuras e a retirada/inclusão de OPs do pacote.',
-      'Limpeza de Dados: A interface esconde a quebra de sequência da OP na tela principal para um visual limpo, focando exclusivamente na OP e Item raízes.',
+      '── FILTROS ──',
+      'OP: Filtra pelo número da Ordem de Produção (ex: 005473). Aceita busca parcial.',
+      'Item: Filtra pelo número do item dentro da OP (ex: 01). Útil quando uma OP possui múltiplos itens de produto.',
+      'Seq: Filtra pelo número de sequência da operação dentro do roteiro da OP (ex: 001, 002). Cada passo do processo de fabricação tem uma sequência.',
+      'Produto: Filtra pelo código ou descrição do produto (ex: MT2-1783 ou "CX FREIO").',
+      'Cliente: Filtra pelo nome do cliente vinculado ao pedido de venda.',
+      'Operação ou Recurso: Campo multiuso que filtra pelo código da operação (ex: 01) OU pelo código do recurso/máquina (ex: SOLDA, MO0012). Use para focar em um setor ou equipamento específico.',
+      'Planejado (período): Filtra operações cujas datas planejadas de início e fim estejam dentro do intervalo informado. Útil para ver o que está programado para esta semana ou mês.',
+      '── FILTROS DE STATUS (PILLS) ──',
+      'Em Andamento (azul): Operações onde já foi registrado ao menos 1 apontamento de produção, mas a quantidade produzida ainda é menor que a planejada. A produção está ocorrendo.',
+      'Concluídos (verde): Operações onde a quantidade produzida atingiu ou superou a quantidade planejada. O trabalho nesta etapa foi finalizado.',
+      'Não Iniciados (cinza): Operações que ainda não possuem nenhum apontamento registrado. Podem estar planejadas (com datas) ou aguardando (sem datas definidas).',
+      'Atrasadas (vermelho): Operações onde a data de entrega do pedido (prazo de entrega ao cliente) já passou e a produção ainda não foi concluída. Indica risco de atraso na entrega.',
+      'Com saldo pendente (índigo): Quando ativado, exibe apenas OPs onde a quantidade produzida ainda é menor que a planejada. Remove da lista as operações 100% concluídas, focando no que ainda precisa ser feito.',
+      '── COLUNAS DA TABELA ──',
+      'Checkbox (primeira coluna): Permite selecionar uma ou mais OPs para sequenciar o planejamento em lote. O checkbox do cabeçalho seleciona/deseleciona todas as OPs visíveis de uma vez.',
+      'Ordem de Produção: Exibe o número da OP (ex: 005473) e o Item (ex: Item 01). Linhas com fundo azul claro representam a operação principal (sequência 001 — primeira etapa do roteiro).',
+      'Pedido: Número do Pedido de Venda (PV) do cliente no Protheus (ex: 003752) e abaixo o número do pedido do cliente (ex: 990478225). Permite rastrear qual demanda comercial originou esta OP.',
+      'Cliente: Nome do cliente final para quem o produto será entregue. Truncado com reticências — passe o mouse para ver o nome completo.',
+      'Produto: Código do produto (link clicável que abre a Estrutura/BOM) e abaixo a descrição do item. Clicar no código abre a árvore de componentes do produto.',
+      'PDF (ícone): Indica se há desenho técnico (PDF) cadastrado para este produto. Ícone vermelho = PDF disponível, clique para abrir. Ícone cinza = sem documento cadastrado.',
+      'Recurso: Código do recurso/máquina (ex: MO0012) em destaque e abaixo a descrição do centro de trabalho (ex: EMBALAGEM). É o equipamento ou setor onde esta operação será executada.',
+      'Planejamento: Datas planejadas de início (I:) e fim (F:) desta operação, conforme registrado pelo PCP. Exibe "Não planejado" em cinza quando ainda não há datas definidas.',
+      'Produção: Progresso da operação no formato "produzido / planejado" (ex: 0 / 1 ou 6 / 6). Acompanhado de uma barra de progresso visual. Chegando a 100% a barra fica verde.',
+      'Status (badge): Resumo visual do estado atual da operação: "Planejada" (azul — tem datas definidas, ainda não iniciada), "Em Andamento" (azul escuro — produção iniciada), "Concluída" (verde — 100% produzido), "Atrasada" (vermelho — prazo ultrapassado).',
+      'Ações: Botões de acesso rápido por linha: 📄 Impressão da OP, ☰ Histórico de planejamentos, 📊 Modal de Planejamento Sequencial (Gantt individual da OP).',
+      '── SEQUENCIAMENTO EM LOTE ──',
+      'Selecione múltiplas OPs usando os checkboxes. Geralmente selecione OPs do mesmo Recurso/Máquina para criar um pacote de trabalho coeso.',
+      'Com OPs selecionadas, clique em "Sequenciar Planejamento". O modal Gantt abrirá com todas as operações agrupadas por recurso.',
+      'No Gantt, defina datas, arraste barras, edite durações e escolha entre cálculo progressivo (frente) ou regressivo (trás). Ao salvar, todas as operações recebem datas planejadas de uma só vez.',
+      'Clique em "Limpar" para desmarcar todas as OPs selecionadas sem precisar percorrer a lista.',
     ],
     tips: [
-      'Crie lotes para otimizar setups. Se o Torno CNC tem 5 OPs do mesmo material, planeje-as juntas para reduzir perda de tempo.',
-      'Diferença entre Operação e Recurso: "Operação" é a ação (ex: FURAR), enquanto "Recurso" é o equipamento (ex: FURADEIRA DE BANCADA 01). O planejamento deve espelhar o tempo e capacidade do recurso físico.',
+      'Estratégia de uso: Filtre por Recurso específico (ex: MO0012) + status "Não Iniciados" para ver a fila de trabalho daquela máquina e planejar em sequência.',
+      'Linhas com fundo azul representam a sequência 001 (operação raiz do roteiro) — em geral é a primeira etapa da fabricação daquele item.',
+      'A coluna "Produção" (ex: 6/6) mostra apontamentos já registrados no chão de fábrica. Quando chega em 100%, o status vira "Concluída" automaticamente.',
+      'Operações "Atrasadas" (vermelho) indicam que o prazo de entrega ao cliente já venceu — priorize essas no planejamento.',
+      'O filtro "Com saldo pendente" é o padrão recomendado: mantém a lista limpa, mostrando apenas o que ainda precisa de atenção do PCP.',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
       { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/relatorios', label: 'Relatórios de Produção' },
     ],
   },
 
@@ -591,31 +665,7 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // ── Controle de Produção ─────────────────────────────────────────────────────
-  '/controle-producao': {
-    category: 'PCP',
-    categoryColor: '#f59e0b',
-    title: 'Monitor de Planejamento Macro (Gantt Estratégico)',
-    icon: 'Gauge',
-    description: 'Interface balística para alocação de carga-máquina (Planejamento Automático por Recurso). Substitui macros do Excel para injetar agendamentos finos diretamente na restrição de planta ERP.',
-    steps: [
-      'Visão de Drag-and-Drop: Na listagem de OPs já liberadas, você pode clicar e arrastar blocos para cima e para baixo. O sistema recalcula automaticamente o término da operação com base na restrição do centro de custo selecionado.',
-      'Modal de Planejamento Automático: Identifique o ícone "Flash" num recurso. O Modal permitirá duas matemáticas: Cálculo para Frente (baseado na data inicial e DSR saltando fins de semana) ou Cálculo Trás (amarrando à Data de Entrega do pedido forçando D-1).',
-      'Congelamento do Setup: Ao arrastar 1 OP para depois da OP 2, o sistema deduz se haverá Setup embutido ou se as matrizes e produtos são da mesma família de Setup-Livre.',
-      'Persistência de Linha Base (Baseline): Antes de comitar a simulação, ative o "Salvar Layout/Simulação". O botão visual mostrará "Tons de cor Ghost/Esmaecido" permitindo analisar o plano Original VS seu plano de simulação arrastado.',
-    ],
-    tips: [
-      'Cores das Linhas: Operações com fundo azul claro representam a operação "Pai" (sequência 001, a primeira etapa do roteiro). As demais etapas do item ficam com o fundo branco.',
-      'Cores de Status: Pílulas verdes indicam conclusão; vermelhas indicam atraso na entrega; laranjas indicam atraso no início; e azuis indicam que a operação já está em andamento no chão de fábrica.',
-      'Lembre-se: O planejamento só desce pro "Ind_Factory" ou pro "ERP" quando você aperta o Botão de Salvar verde no final. Arrastar os itens pela tela é apenas Simular Capacidade.',
-      'O sistema utiliza DSR Oficial nativo: feriados e finais de semana prolongados na tabela de calendário empurram o lote para a próxima data útil validada.',
-      'Modo de Apontamento (Livre / Sequência / Saldo): Se a etiqueta no topo marcar "Sequência" ou "Saldo", algumas operações ficarão bloqueadas para apontamento até que as etapas anteriores liberem saldo para o PCP.',
-    ],
-    links: [
-      { path: '/producao-matrix', label: 'Carga Máquina Total' },
-      { path: '/pcp/apontamento-vertical', label: 'Lançamentos (Ponta a Ponta)' },
-    ],
-  },
+  // ── Controle de Produção (entrada duplicada removida — mantida acima) ────────
 
   // ── Planejamento Sequencial ──────────────────────────────────────────────────
   '/planejamento-sequencial': {
@@ -2338,6 +2388,106 @@ export const HELP_CONTENT = {
     ],
     links: [
       { path: '/financeiro/plano-contas', label: 'Plano de Contas' }
+    ]
+  },
+
+  // ── Módulo de Manutenção ─────────────────────────────────────────────────────
+  '/manutencao/ordens': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Gestão de Ordens de Manutenção (O.M.)',
+    icon: 'PenTool',
+    description: 'Central de comando da manutenção. Aqui você visualiza, cria e gerencia solicitações de intervenção em máquinas e equipamentos.',
+    steps: [
+      '1. Criar Ordem: Clique em "Nova Ordem", selecione a máquina, relate o sintoma e defina tipo/prioridade.',
+      '2. Execução: Clique sobre a O.M. na tabela. O técnico deve preencher as atividades realizadas e fechar o status.',
+      '3. Registro de Custos: Na aba Materiais do painel, adicione peças usadas (o custo será carregado via Protheus).',
+      '4. Impressão de Relatório: No painel da O.M., clique em "Imprimir / PDF" para gerar a via oficial de assinaturas.'
+    ],
+    tips: [
+      'Acompanhe no dashboard os KPIs de tempo de reparo (MTTR) e custo total das ordens concluídas.',
+      'Ordens "CRÍTICAS" indicam máquina parada. Priorize-as no atendimento.'
+    ],
+    links: [
+      { path: '/manutencao/maquinas', label: 'Cadastro de Máquinas' },
+      { path: '/manutencao/checklists', label: 'Checklists (Poka-Yoke)' }
+    ]
+  },
+
+  '/manutencao/maquinas': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Cadastro de Máquinas e Equipamentos',
+    icon: 'Database',
+    description: 'Gestão de todo o parque fabril. É obrigatório que a máquina esteja cadastrada para receber Ordens de Manutenção.',
+    steps: [
+      'Use "Nova Máquina" para inserir tornos, injetoras, prensas ou ferramentas complexas.',
+      'Preencha a Tag de Identificação correta, que será usada pelos operadores no chão de fábrica.',
+      'Anexe Manuais Técnicos em PDF para que fiquem acessíveis a qualquer técnico durante a manutenção.'
+    ],
+    tips: [
+      'Você pode inativar máquinas que foram vendidas para não poluírem a lista de O.M. O histórico permanece salvo.'
+    ],
+    links: [
+      { path: '/manutencao/ordens', label: 'Ordens de Manutenção' }
+    ]
+  },
+
+  '/manutencao/checklists': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Checklists e Modelos (Poka-Yoke)',
+    icon: 'CheckSquare',
+    description: 'Criação de modelos de inspeção diária, setups ou manutenção preventiva.',
+    steps: [
+      'Crie um "Novo Modelo" e defina o Tipo (Diário, Setup, Preventiva).',
+      'Adicione perguntas com tipos de resposta (Sim/Não, Texto, Foto Obrigatória).',
+      'Vincule os modelos criados às máquinas no painel de "Máquinas e Equipamentos".'
+    ],
+    tips: [
+      'Utilize o requisito "Foto Obrigatória" para pontos críticos de desgaste.'
+    ],
+    links: [
+      { path: '/manutencao/maquinas', label: 'Máquinas e Equipamentos' }
+    ]
+  },
+
+  '/manutencao/dashboard': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Dashboard de Manutenção',
+    icon: 'LayoutDashboard',
+    description: 'Painel executivo com a visão global do departamento de manutenção, KPIs e gráficos.',
+    steps: [
+      'Visualize o MTTR (Mean Time To Repair) e MTBF (Mean Time Between Failures).',
+      'Acompanhe as Ordens Críticas que precisam de atenção imediata.'
+    ],
+    tips: [
+      'Estes dados são gerados automaticamente baseados na abertura e encerramento das O.M.'
+    ],
+    links: [
+      { path: '/manutencao/ordens', label: 'Ir para Ordens de Manutenção' }
+    ]
+  },
+
+  '/manutencao/materiais': {
+    category: 'Manutenção',
+    categoryColor: '#4f46e5',
+    title: 'Gestão de Materiais da O.M.',
+    icon: 'Package',
+    description: 'Acompanhe e faça o planejamento (follow-up) de todos os materiais solicitados nas Ordens de Manutenção.',
+    steps: [
+      'Busque um material pelo nome, máquina ou ID da ordem.',
+      'Clique em "Planejar" para alterar o status do material.',
+      'Defina as datas de previsão de compras, chegada e montagem final.'
+    ],
+    tips: [
+      'Ao alterar o planejamento, um registro ficará gravado no histórico da Ordem de Manutenção automaticamente.',
+      'Filtre pelo status "Aguardando Entrega" para acompanhar prazos com suprimentos.'
+    ],
+    links: [
+      { path: '/manutencao/ordens', label: 'Ordens de Manutenção' },
+      { path: '/manutencao/dashboard', label: 'Dashboard Gerencial' }
     ]
   }
 
