@@ -1899,13 +1899,17 @@ router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
 // as quantidades com base na quantidade vendida do pedido de venda (SC6).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/op-mirror/:id', async (req, res) => {
+    const client = await db.connect();
     try {
         const { id } = req.params;
-        const { item: queryItem } = req.query; // Optional single-item filter
+        const { item: queryItem } = req.query;
+
+        // Timeout estendido para pedidos grandes (3 minutos)
+        await client.query("SET LOCAL statement_timeout = '180000'");
 
         // Step 1: Fetch Capa do Pedido e Cliente
         const orderQuery = `
-            SELECT 
+            SELECT
                 TRIM(c5.c5_num) AS pedido,
                 TO_CHAR(TO_DATE(NULLIF(TRIM(c5.c5_emissao), ''), 'YYYYMMDD'), 'DD/MM/YY') AS emissao,
                 TRIM(sa1.a1_nome) AS nome_cliente,
@@ -1913,15 +1917,15 @@ router.get('/op-mirror/:id', async (req, res) => {
                 TRIM(sa1.a1_mun) AS municipio,
                 TRIM(sa1.a1_est) AS estado
             FROM sc5010 c5
-            LEFT JOIN sa1010 sa1 
-                ON sa1.a1_cod = c5.c5_cliente 
-                AND sa1.a1_loja = c5.c5_lojacli 
+            LEFT JOIN sa1010 sa1
+                ON sa1.a1_cod = c5.c5_cliente
+                AND sa1.a1_loja = c5.c5_lojacli
                 AND COALESCE(sa1.d_e_l_e_t_, '') = ''
             WHERE TRIM(c5.c5_num) = $1
               AND COALESCE(c5.d_e_l_e_t_, '') = ''
         `;
 
-        const orderResult = await db.query(orderQuery, [id]);
+        const orderResult = await client.query(orderQuery, [id]);
 
         if (orderResult.rows.length === 0) {
             return res.status(404).json({ error: 'Pedido não encontrado no Protheus.' });
@@ -1929,37 +1933,62 @@ router.get('/op-mirror/:id', async (req, res) => {
 
         const orderData = orderResult.rows[0];
 
-        // Se passarmos um item específico, adiciona condição na query
         const itemCondition = queryItem ? `AND TRIM(c6.c6_item) = '${queryItem}'` : '';
 
-        // Step 2: Query the Items (SC6) and explode the BOM (SG1) down to the leaves
-        // AND aggregate the Operations (SG2) per component.
+        // Step 2: Explosão de BOM + Roteiro
+        // Otimização: SC2 é pré-computado em CTE não-recursiva para evitar N subqueries
+        // correlacionadas dentro da parte recursiva (causa de timeout em pedidos grandes).
         const explosionQuery = `
             WITH RECURSIVE
-            -- 1. Capa de Itens do PV (Ignora itens sem OP)
+            -- Pre-fetch SC2 para o pedido inteiro (1 scan em vez de N correlated subqueries)
+            sc2_lookup AS (
+                SELECT
+                    c2.c2_itempv,
+                    TRIM(c2.c2_produto) AS produto,
+                    TRIM(c2.c2_num)     AS op_num,
+                    TRIM(c2.c2_tpop)   AS op_tipo,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY c2.c2_itempv, TRIM(c2.c2_produto)
+                        ORDER BY c2.c2_num
+                    ) AS rn
+                FROM sc2010 c2
+                WHERE TRIM(c2.c2_pedido) = $1
+                  AND COALESCE(c2.d_e_l_e_t_, '') = ''
+            ),
+            sc2_first AS (
+                SELECT c2_itempv, produto, op_num, op_tipo FROM sc2_lookup WHERE rn = 1
+            ),
+            -- 1. Capa de Itens do PV
             pv_itens AS (
-                SELECT 
+                SELECT
                     TRIM(c6.c6_item) AS item_pedido,
                     TRIM(c6.c6_produto) AS produto_venda,
                     TRIM(sb1.b1_desc) AS desc_venda,
                     TRIM(sb1.b1_tipo) AS tipo_venda,
                     COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0) AS qtd_venda,
-                    TRIM(c6.c6_um) as unid_venda,
-                    TRIM(c6.c6_xrevm) as rev_metalfisa,
+                    TRIM(c6.c6_um) AS unid_venda,
+                    TRIM(c6.c6_xrevm) AS rev_metalfisa,
                     COALESCE(TRIM(c2.c2_num), SUBSTRING(TRIM(c6.c6_numop), 1, 6)) AS op_num,
                     TRIM(c2.c2_tpop) AS op_tipo
                 FROM sc6010 c6
-                LEFT JOIN sc2010 c2 ON c2.c2_filial = c6.c6_filial AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num) AND c2.c2_itempv = c6.c6_item AND c2.c2_sequen = '001' AND COALESCE(c2.d_e_l_e_t_, '') = ''
-                LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sc2010 c2
+                    ON c2.c2_filial = c6.c6_filial
+                    AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num)
+                    AND c2.c2_itempv = c6.c6_item
+                    AND c2.c2_sequen = '001'
+                    AND COALESCE(c2.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1
+                    ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
                 WHERE TRIM(c6.c6_num) = $1
                   AND COALESCE(c6.d_e_l_e_t_, '') = ''
                   AND COALESCE(TRIM(c6.c6_numop), '') != ''
                   ${itemCondition}
             ),
-            -- 2. Explosão de Estrutura Recursiva (BOM) começando pelos itens da PV
+            -- 2. Explosão Recursiva de BOM
             estrutura AS (
-                -- Level 0: The finished products sold
-                SELECT 
+                -- Nível 0: produtos vendidos
+                SELECT
                     pv.item_pedido,
                     0 AS nivel,
                     pv.produto_venda AS produto_pai,
@@ -1976,44 +2005,33 @@ router.get('/op-mirror/:id', async (req, res) => {
 
                 UNION ALL
 
-                -- Recursive Levels: Children of the components
+                -- Filhos: JOIN com sc2_first em vez de subqueries correlacionadas
                 SELECT
                     e.item_pedido,
                     e.nivel + 1,
                     CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp) AS VARCHAR(30)) AS componente,
+                    CAST(TRIM(g1.g1_comp)  AS VARCHAR(30)) AS componente,
                     CAST(TRIM(sb1.b1_desc) AS VARCHAR(100)) AS descricao,
-                    CAST(TRIM(sb1.b1_tipo) AS VARCHAR(2)) AS tipo,
-                    CAST(TRIM(sb1.b1_um) AS VARCHAR(10)) AS unidade,
+                    CAST(TRIM(sb1.b1_tipo) AS VARCHAR(2))  AS tipo,
+                    CAST(TRIM(sb1.b1_um)   AS VARCHAR(10)) AS unidade,
                     CAST(TRIM(sb1.b1_urev) AS VARCHAR(10)) AS revisao,
                     g1.g1_quant::numeric AS qtd_base,
                     (e.qtd_necessaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria,
-                    COALESCE(
-                        (SELECT TRIM(c2_sub.c2_num)
-                         FROM sc2010 c2_sub 
-                         WHERE TRIM(c2_sub.c2_pedido) = $1 
-                           AND c2_sub.c2_itempv = e.item_pedido 
-                           AND TRIM(c2_sub.c2_produto) = TRIM(g1.g1_comp) 
-                           AND COALESCE(c2_sub.d_e_l_e_t_, '') = '' 
-                         LIMIT 1),
-                        e.op_relacionada
-                    ) AS op_relacionada,
-                    COALESCE(
-                        (SELECT TRIM(c2_sub.c2_tpop)
-                         FROM sc2010 c2_sub 
-                         WHERE TRIM(c2_sub.c2_pedido) = $1 
-                           AND c2_sub.c2_itempv = e.item_pedido 
-                           AND TRIM(c2_sub.c2_produto) = TRIM(g1.g1_comp) 
-                           AND COALESCE(c2_sub.d_e_l_e_t_, '') = '' 
-                         LIMIT 1),
-                        e.op_tipo_relacionada
-                    ) AS op_tipo_relacionada
+                    COALESCE(sc2.op_num,  e.op_relacionada)      AS op_relacionada,
+                    COALESCE(sc2.op_tipo, e.op_tipo_relacionada) AS op_tipo_relacionada
                 FROM estrutura e
-                JOIN sg1010 g1 ON TRIM(g1.g1_cod) = TRIM(e.componente) AND COALESCE(g1.d_e_l_e_t_, '') = ''
-                LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                WHERE e.nivel < 15 -- Prevents infinite loops if circular references exist
+                JOIN sg1010 g1
+                    ON TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sb1010 sb1
+                    ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp)
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sc2_first sc2
+                    ON sc2.c2_itempv = e.item_pedido
+                    AND sc2.produto  = TRIM(g1.g1_comp)
+                WHERE e.nivel < 15
             )
-            -- RESULTADO DE EXPLOSÃO + ROTEIRO (SG2)
+            -- RESULTADO + ROTEIRO (SG2)
             SELECT
                 e.item_pedido,
                 e.nivel,
@@ -2026,33 +2044,32 @@ router.get('/op-mirror/:id', async (req, res) => {
                 e.qtd_necessaria,
                 e.op_relacionada,
                 e.op_tipo_relacionada,
-                
-                -- Aggregating operations for the specific component using JSON
-                -- COALESCE returns an empty JSON array '[]' if no operations found
                 COALESCE(
                     (
                         SELECT json_agg(
                             json_build_object(
-                                'seq', TRIM(g2.g2_operac),
-                                'recurso', TRIM(g2.g2_recurso),
-                                'desc_operacao', CASE 
+                                'seq',          TRIM(g2.g2_operac),
+                                'recurso',      TRIM(g2.g2_recurso),
+                                'desc_operacao', CASE
                                     WHEN TRIM(g2.g2_recurso) = 'MO0013' THEN 'LASE'
-                                    ELSE TRIM(h1.h1_descri) 
+                                    ELSE TRIM(h1.h1_descri)
                                 END,
-                                'setup', g2.g2_setup,
+                                'setup',        g2.g2_setup,
                                 'tempo_padrao', g2.g2_tempad,
-                                'ferramenta', TRIM(g2.g2_ferram)
+                                'ferramenta',   TRIM(g2.g2_ferram)
                             ) ORDER BY TRIM(g2.g2_operac)
                         )
                         FROM sg2010 g2
-                        LEFT JOIN sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') = ''
+                        LEFT JOIN sh1010 h1
+                            ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                            AND COALESCE(h1.d_e_l_e_t_, '') = ''
                         WHERE TRIM(g2.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
                           AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
                           AND TRIM(g2.g2_codigo) = (
-                              SELECT MAX(TRIM(g2_sub.g2_codigo))
-                              FROM sg2010 g2_sub
-                              WHERE TRIM(g2_sub.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
-                                AND COALESCE(g2_sub.d_e_l_e_t_, '') IN ('', ' ')
+                              SELECT MAX(TRIM(g2s.g2_codigo))
+                              FROM sg2010 g2s
+                              WHERE TRIM(g2s.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
+                                AND COALESCE(g2s.d_e_l_e_t_, '') IN ('', ' ')
                           )
                     ), '[]'::json
                 ) AS operacoes
@@ -2060,7 +2077,7 @@ router.get('/op-mirror/:id', async (req, res) => {
             ORDER BY e.item_pedido ASC, e.nivel ASC, e.produto_pai ASC, e.componente ASC;
         `;
 
-        const explosionResult = await db.query(explosionQuery, [id]);
+        const explosionResult = await client.query(explosionQuery, [id]);
 
         // Step 3: Parse and Structure the flat SQL results into a Nested Hierarchy 
         // PV Item -> Final Product -> Tree of Components
@@ -2120,6 +2137,8 @@ router.get('/op-mirror/:id', async (req, res) => {
     } catch (err) {
         console.error('[OP Mirror Error]', err);
         res.status(500).json({ error: 'Erro interno ao gerar espelho de OP', details: err.message });
+    } finally {
+        client.release();
     }
 });
 

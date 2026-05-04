@@ -34,13 +34,27 @@ const PCPExportTab = () => {
 
     const { openHelp } = useHelp();
 
-    // ── Pre-fetch on mount if filters exist ──────────────────────────────
+    // ── Auto-fetch quando contexto muda (navegação via menu de ação) ──────
     useEffect(() => {
-        if (filters.pedido || filters.cliente) {
-            handleSearch();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        const ctxPedido = orderFilters.pedido;
+        if (!ctxPedido) return;
+
+        setFilters(f => ({ ...f, pedido: ctxPedido }));
+        setLoading(true);
+        setError(null);
+        setSelected(new Set());
+
+        api.get('/pcp/orders', {
+            params: {
+                pedido: ctxPedido,
+                only_active: orderFilters.only_active || 'true',
+                dateType: orderFilters.dateType || 'pedido',
+            }
+        })
+            .then(({ data }) => { setItems(data.data || []); setSearched(true); })
+            .catch(err => { setError(err.response?.data?.error || 'Erro ao buscar pedidos.'); })
+            .finally(() => setLoading(false));
+    }, [orderFilters.pedido]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Busca ────────────────────────────────────────────────────────────────
     const handleSearch = useCallback(async () => {
