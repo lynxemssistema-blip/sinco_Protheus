@@ -139,11 +139,13 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                                 isMaterial: false,
                                 qtdFrac: 0,
                                 parentCode,
-                                nivel: isLevel0 ? 'PAI' : component.nivel
+                                nivel: isLevel0 ? 'PAI' : component.nivel,
+                                pedidos: new Set()
                             });
                         }
                         const pDraw = partsWithDrawingsMap.get(code);
                         pDraw.qtdFrac += qtyForThisFrac;
+                        pDraw.pedidos.add(order.pedido || '-');
                         
                         const codPrefix = code.substring(0, 4).toUpperCase();
                         const isMaterialFallback = ['MTC-', 'MTA-', 'MTT-', 'MTD-', 'MTU-', 'MTE-'].includes(codPrefix);
@@ -519,7 +521,8 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 const roundedQtd = Number(part.qtdFrac);
                 const finalQtdStr = roundedQtd % 1 === 0 ? roundedQtd.toString() : roundedQtd.toFixed(2);
 
-                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                const uniquePedidos = part.pedidos ? Array.from(part.pedidos).join(', ') : '-';
+                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${uniquePedidos}`;
                 const textLine2 = `CÓD: ${part.codigo} | LOTE: ${loteInfo} | DATA PCP: ${dataPcp} | QTD AGLUTINADA: ${finalQtdStr} ${part.um}`;
 
                 for (const page of copiedPages) {

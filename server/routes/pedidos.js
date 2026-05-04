@@ -1997,7 +1997,17 @@ router.get('/op-mirror/:id', async (req, res) => {
                            AND COALESCE(c2_sub.d_e_l_e_t_, '') = '' 
                          LIMIT 1),
                         e.op_relacionada
-                    ) AS op_relacionada
+                    ) AS op_relacionada,
+                    COALESCE(
+                        (SELECT TRIM(c2_sub.c2_tpop)
+                         FROM sc2010 c2_sub 
+                         WHERE TRIM(c2_sub.c2_pedido) = $1 
+                           AND c2_sub.c2_itempv = e.item_pedido 
+                           AND TRIM(c2_sub.c2_produto) = TRIM(g1.g1_comp) 
+                           AND COALESCE(c2_sub.d_e_l_e_t_, '') = '' 
+                         LIMIT 1),
+                        e.op_tipo_relacionada
+                    ) AS op_tipo_relacionada
                 FROM estrutura e
                 JOIN sg1010 g1 ON TRIM(g1.g1_cod) = TRIM(e.componente) AND COALESCE(g1.d_e_l_e_t_, '') = ''
                 LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(sb1.d_e_l_e_t_, '') = ''
@@ -2015,6 +2025,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                 e.revisao,
                 e.qtd_necessaria,
                 e.op_relacionada,
+                e.op_tipo_relacionada,
                 
                 -- Aggregating operations for the specific component using JSON
                 -- COALESCE returns an empty JSON array '[]' if no operations found

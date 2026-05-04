@@ -137,7 +137,8 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                 // Exibe nome do lote e TODAS as OPs para não omitir
                 const visualOpStr = loteNome && loteNome !== uniqueOps ? `${loteNome} (OPs: ${uniqueOps})` : uniqueOps;
                 
-                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                const safePedidoNum = mirrorData?.pedido?.pedido || '-';
+                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
                 
                 // Junta todas as informações para serem quebradas dinamicamente
                 const baseInfo = `CÓD: ${part.codigo} | ENTREGA LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
