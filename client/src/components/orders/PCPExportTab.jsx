@@ -39,14 +39,16 @@ const PCPExportTab = () => {
         const ctxPedido = orderFilters.pedido;
         if (!ctxPedido) return;
 
-        setFilters(f => ({ ...f, pedido: ctxPedido }));
+        // Normaliza para 6 dígitos (ex: '4090' → '004090') igual ao backend Protheus
+        const pedidoNorm = ctxPedido.trim().padStart(6, '0');
+        setFilters(f => ({ ...f, pedido: pedidoNorm }));
         setLoading(true);
         setError(null);
         setSelected(new Set());
 
         api.get('/pcp/orders', {
             params: {
-                pedido: ctxPedido,
+                pedido: pedidoNorm,
                 only_active: orderFilters.only_active || 'true',
                 dateType: orderFilters.dateType || 'pedido',
             }

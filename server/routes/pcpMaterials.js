@@ -39,13 +39,13 @@ router.get('/orders', async (req, res) => {
         }
 
         if (pedido && typeof pedido === 'string') {
+            // Normaliza para 6 dígitos com zeros à esquerda (formato Protheus: '004090')
             whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(pedido.trim());
+            params.push(pedido.trim().padStart(6, '0'));
             paramCount++;
         } else if (Array.isArray(pedido)) {
-            // Em caso de query string repetida (pedido=x&pedido=y) pega só o primeiro por segurança
             whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(pedido[0].trim());
+            params.push(pedido[0].trim().padStart(6, '0'));
             paramCount++;
         }
 
