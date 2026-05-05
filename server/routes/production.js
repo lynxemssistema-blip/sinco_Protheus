@@ -4109,6 +4109,9 @@ UPPER(TRIM(usuario)),
 // ==========================================
 
 async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, usuario_original, data_inicio, data_fim, initialStatus) {
+    // DESABILITADO TEMPORARIAMENTE A PEDIDO DO USUÁRIO (05/05/2026)
+    return;
+    
     let cascataItems = [];
     try {
         const pgRes = await db.query(
