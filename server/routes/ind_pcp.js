@@ -124,23 +124,13 @@ router.post('/release-op', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        for (const fracao of fracoes) {
-            const op_fracionada = `${op_base}${fracao.suf}`; 
-            
-            await connection.query(`
-                INSERT INTO app_ind_producao_ativa 
-                    (op_base, op_fracionada, produto, descricao, quantidade_total, quantidade_lote, status)
-                VALUES 
-                    (?, ?, ?, ?, ?, ?, 'LIBERADO')
-            `, [
-                op_base,
-                op_fracionada,
-                produto,
-                descricao,
-                quantidade_total,
-                fracao.qtde
-            ]);
-        }
+        // Batch INSERT das frações
+        const fracPlaceholders = fracoes.map(() => "(?, ?, ?, ?, ?, ?, 'LIBERADO')").join(', ');
+        const fracValues = fracoes.flatMap(fracao => [op_base, `${op_base}${fracao.suf}`, produto, descricao, quantidade_total, fracao.qtde]);
+        await connection.query(
+            `INSERT INTO app_ind_producao_ativa (op_base, op_fracionada, produto, descricao, quantidade_total, quantidade_lote, status) VALUES ${fracPlaceholders}`,
+            fracValues
+        );
 
         // =========================================================================
         // HERANÇA DE APONTAMENTOS (WATERFALL ALLOCATION)
@@ -158,23 +148,23 @@ router.post('/release-op', async (req, res) => {
         `, [c2_num, c2_item]);
 
         if (existingAppts.length > 0) {
+            // Calcular alocações primeiro, depois INSERT em lote
+            const inheritanceRows = [];
             for (const appt of existingAppts) {
                 let remaining = Number(appt.total);
-                
                 for (const fracao of fracoes) {
                     if (remaining <= 0) break;
-                    
                     const allocate = Math.min(remaining, Number(fracao.qtde));
-                    const op_fracionada = `${op_base}${fracao.suf}`;
-                    
-                    await connection.query(`
-                        INSERT INTO app_ind_production_appointments 
-                            (op_fracionada, operacao_codigo, quantidade, usuario, status, data_inicio, data_fim)
-                        VALUES (?, ?, ?, 'SISTEMA_HERANCA', 'FINALIZADO', NOW(), NOW())
-                    `, [op_fracionada, appt.operacao_codigo, allocate]);
-
+                    inheritanceRows.push([`${op_base}${fracao.suf}`, appt.operacao_codigo, allocate]);
                     remaining -= allocate;
                 }
+            }
+            if (inheritanceRows.length > 0) {
+                const hPh = inheritanceRows.map(() => "(?, ?, ?, 'SISTEMA_HERANCA', 'FINALIZADO', NOW(), NOW())").join(', ');
+                await connection.query(
+                    `INSERT INTO app_ind_production_appointments (op_fracionada, operacao_codigo, quantidade, usuario, status, data_inicio, data_fim) VALUES ${hPh}`,
+                    inheritanceRows.flat()
+                );
             }
             console.log(`[HERANCA] Distribuídos apontamentos prévios da OP ${op_base} para as frações.`);
         }

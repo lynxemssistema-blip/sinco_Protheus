@@ -62,15 +62,14 @@ router.post('/solicitacoes', async (req, res) => {
 
         const solicitacaoId = result.insertId;
 
-        // Insert Items
+        // Insert Items (batch)
         if (itens && itens.length > 0) {
-            for (const item of itens) {
-                await conn.execute(`
-                    INSERT INTO app_solicitacoes_almoxarifado_itens
-                    (solicitacao_id, material_codigo, material_descricao, material_tipo, qtd_solicitada, almoxarifado)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `, [solicitacaoId, item.codigo, item.descricao, item.tipo, item.qtd, item.almoxarifado]);
-            }
+            const placeholders = itens.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+            const values = itens.flatMap(item => [solicitacaoId, item.codigo, item.descricao, item.tipo, item.qtd, item.almoxarifado]);
+            await conn.execute(
+                `INSERT INTO app_solicitacoes_almoxarifado_itens (solicitacao_id, material_codigo, material_descricao, material_tipo, qtd_solicitada, almoxarifado) VALUES ${placeholders}`,
+                values
+            );
         }
 
         await conn.commit();

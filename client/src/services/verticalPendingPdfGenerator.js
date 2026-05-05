@@ -3,7 +3,7 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
 
-export const generateVerticalPendingPdf = (pendencies, filters, currentUser, groupByResource) => {
+export const generateVerticalPendingPdf = (pendencies, filters, currentUser, groupByResource, pageBreakPerGroup = false) => {
     try {
         const doc = new jsPDF('landscape', 'mm', 'a4');
         const pageWidth = doc.internal.pageSize.getWidth();
@@ -82,29 +82,55 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
         doc.text(`Filtros Ativos: ${filterText.length > 0 ? filterText.join(' | ') : 'Nenhum'}`, ML, startY + 2);
         startY += 8;
 
-        const tableHead = [['Pedido Venda', 'Ordem Produção', 'Produto / Descrição', 'Operação / Passo', 'Recurso', 'Qtd Plan.', 'Qtd Apont.']];
+        const tableHead = [['Status', 'OP', 'Pedido', 'Entrega', 'Produto / Descrição', 'Progresso', 'Planejamento']];
         const colStyles = {
-            2: { cellWidth: 85 },
-            3: { cellWidth: 60 }
+            0: { cellWidth: 25 },
+            1: { cellWidth: 35 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 25 },
+            4: { cellWidth: 80 },
+            5: { cellWidth: 45, halign: 'center' },
+            6: { cellWidth: 30, halign: 'center' }
         };
 
-        const mapRow = (row) => [
-            row.pedido || '-',
-            row.op || '-',
-            `${row.produto}\n${row.desc_produto || ''}`,
-            `${row.operacao_codigo} - ${row.operacao_desc}`,
-            row.recurso_codigo || '-',
-            `${Number(row.qtd_op).toFixed(2)}`,
-            `${Number(row.qtd_apontada).toFixed(2)}`
-        ];
+        const formatDate = (dStr) => {
+            if (!dStr) return '-';
+            try {
+                if (typeof dStr === 'string' && dStr.includes('T')) return new Date(dStr).toLocaleDateString('pt-BR');
+                if (typeof dStr === 'string' && dStr.includes('-')) return dStr.substring(0, 10).split('-').reverse().join('/');
+                return new Date(dStr).toLocaleDateString('pt-BR');
+            } catch {
+                return '-';
+            }
+        };
+
+        const mapRow = (row) => {
+            const planStr = row.planejamento_inicio ? formatDate(row.planejamento_inicio) : '-';
+            const entregaStr = row.entrega ? formatDate(row.entrega) : '-';
+            
+            const qPlan = parseFloat(row.qtd_op || 0);
+            const qApont = parseFloat(row.qtd_apontada || 0);
+            const percent = qPlan > 0 ? Math.min(100, Math.round((qApont / qPlan) * 100)) : 0;
+            const progressoStr = `${qApont.toFixed(2)} / ${qPlan.toFixed(2)}\n(${percent}%)`;
+
+            return [
+                row.status || '-',
+                `${row.op || '-'}-${row.item_op || ''} (${row.sequen_op || ''})`,
+                row.pedido || '-',
+                entregaStr,
+                `${row.produto}\n${row.desc_produto || ''}`,
+                progressoStr,
+                planStr
+            ];
+        };
 
         if (groupByResource) {
-            // Group the pendencies by recurso_codigo
+            // Agrupar por Operação ao invés de Recurso
             const groups = {};
             pendencies.forEach(p => {
-                const rec = p.recurso_codigo || 'SEM RECURSO DEFINIDO';
-                if (!groups[rec]) groups[rec] = [];
-                groups[rec].push(p);
+                const opGroup = `${p.operacao_codigo || ''} - ${p.operacao_desc || 'SEM OPERAÇÃO DEFINIDA'}`;
+                if (!groups[opGroup]) groups[opGroup] = [];
+                groups[opGroup].push(p);
             });
 
             // Sort keys alphabetically
@@ -113,11 +139,11 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
             let sumTotalApont = 0;
 
             resources.forEach((rec, idx) => {
-                // Print Resource Subheader
+                // Print Subheader
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(30, 58, 95);
-                doc.text(`Recurso: ${rec}`, ML, startY + 2);
+                doc.text(`Operação: ${rec}`, ML, startY + 2);
                 doc.setTextColor(0, 0, 0); // reset
 
                 const groupPlan = groups[rec].reduce((sum, item) => sum + parseFloat(item.qtd_op || 0), 0);
@@ -127,9 +153,9 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
 
                 const tableBody = groups[rec].map(mapRow);
                 tableBody.push([
-                    { content: `TOTAL RECURSO ${rec}:`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                    { content: groupPlan.toFixed(2), styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                    { content: groupApont.toFixed(2), styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }
+                    { content: `TOTAL OPERAÇÃO:`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: `${groupApont.toFixed(2)} / ${groupPlan.toFixed(2)}`, styles: { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: '-', styles: { halign: 'center', fillColor: [240, 240, 240] } }
                 ]);
 
                 autoTable(doc, {
@@ -146,10 +172,14 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
                 
                 startY = doc.lastAutoTable.finalY + 8;
                 
-                // If nearing bottom, add new page
-                if (startY > doc.internal.pageSize.getHeight() - 30 && idx < resources.length - 1) {
-                    doc.addPage();
-                    startY = drawHeader(doc, 5);
+                if (idx < resources.length - 1) {
+                    if (pageBreakPerGroup) {
+                        doc.addPage();
+                        startY = drawHeader(doc, 5);
+                    } else if (startY > doc.internal.pageSize.getHeight() - 30) {
+                        doc.addPage();
+                        startY = drawHeader(doc, 5);
+                    }
                 }
             });
 
@@ -163,9 +193,9 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
                 autoTable(doc, {
                     startY: startY,
                     body: [[
-                        { content: 'TOTAL GERAL (TODOS OS RECURSOS):', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [220, 230, 240] } },
-                        { content: sumTotalPlan.toFixed(2), styles: { fontStyle: 'bold', fillColor: [220, 230, 240] } },
-                        { content: sumTotalApont.toFixed(2), styles: { fontStyle: 'bold', fillColor: [220, 230, 240] } }
+                        { content: 'TOTAL GERAL (TODAS AS OPERAÇÕES):', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [220, 230, 240] } },
+                        { content: `${sumTotalApont.toFixed(2)} / ${sumTotalPlan.toFixed(2)}`, styles: { halign: 'center', fontStyle: 'bold', fillColor: [220, 230, 240] } },
+                        { content: '-', styles: { halign: 'center', fillColor: [220, 230, 240] } }
                     ]],
                     theme: 'grid',
                     styles: { fontSize: 9, cellPadding: 3, valign: 'middle' },
@@ -182,8 +212,8 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
             const tableBody = pendencies.map(mapRow);
             tableBody.push([
                 { content: 'TOTAL GERAL DAS OPERAÇÕES:', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                { content: totalPlan.toFixed(2), styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                { content: totalApont.toFixed(2), styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }
+                { content: `${totalApont.toFixed(2)} / ${totalPlan.toFixed(2)}`, styles: { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                { content: '-', styles: { halign: 'center', fillColor: [240, 240, 240] } }
             ]);
 
             // Plain list

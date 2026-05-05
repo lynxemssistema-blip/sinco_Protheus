@@ -366,7 +366,8 @@ export default function Settings() {
             setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
             loadUsers();
         } catch (err) {
-            alert('Erro: ' + (err.response?.data?.error || err.message));
+            const msg = err.response?.data?.error || err.message || 'Erro desconhecido.';
+            alert(msg);
         } finally {
             setLoading(false);
         }

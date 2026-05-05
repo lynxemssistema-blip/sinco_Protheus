@@ -6,7 +6,7 @@ const pool = require('../services/mysqlService');
 router.get('/', async (req, res) => {
     try {
         console.log('📊 [COMPANY] GET request received');
-        const [rows] = await pool.query('SELECT * FROM app_company_settings WHERE id = 1');
+        const [rows] = await pool.query('SELECT id, cnpj, razao_social, endereco, bairro, cidade, uf, cep, telefone, menu_config, general_config FROM app_company_settings WHERE id = 1');
         console.log('✅ [COMPANY] Query successful, rows:', rows.length);
         res.json(rows[0] || {});
     } catch (err) {
@@ -95,12 +95,13 @@ router.get('/romaneio-number', async (req, res) => {
 router.post('/set-romaneio-number', async (req, res) => {
     try {
         const { numero_inicial } = req.body;
-        
-        if (!numero_inicial || isNaN(numero_inicial)) {
-            return res.status(400).json({ error: 'Número inicial inválido.' });
+
+        const numSafe = parseInt(numero_inicial, 10);
+        if (!numero_inicial || isNaN(numSafe) || numSafe < 1 || numSafe > 9999999) {
+            return res.status(400).json({ error: 'Número inicial inválido. Informe um número entre 1 e 9999999.' });
         }
 
-        const query = `ALTER TABLE app_romaneios AUTO_INCREMENT = ${parseInt(numero_inicial, 10)}`;
+        const query = `ALTER TABLE app_romaneios AUTO_INCREMENT = ${numSafe}`;
         await pool.query(query);
 
         res.json({ message: `Próximo número de Romaneio definido para ${numero_inicial}` });

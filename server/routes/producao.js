@@ -30,13 +30,16 @@ router.post('/pg-cleanup', async (req, res) => {
 router.get('/ordens', async (req, res) => {
   try {
     const { pedido } = req.query;
+
+    if (!pedido || pedido.trim() === '') {
+      return res.json([]);
+    }
+
     let queryParams = [];
     let filterClause = '';
 
-    if (pedido) {
-      queryParams.push(pedido);
-      filterClause = `AND c5.c5_num = $${queryParams.length}`;
-    }
+    queryParams.push(pedido.trim());
+    filterClause = `AND c5.c5_num = $${queryParams.length}`;
 
     // Resolve filtro de pedidos inativos ANTES do template
     const getInactiveFilter = await getInactiveOrdersFilter();
@@ -141,7 +144,7 @@ arvore AS (
   JOIN public.sg1010 g1
     ON g1.g1_cod = a.cod_atual
    AND g1.d_e_l_e_t_ = ' '
-  WHERE a.nivel < 20
+  WHERE a.nivel < 12
 )
 
 SELECT
@@ -496,7 +499,7 @@ router.get('/vertical-pendencias', async (req, res) => {
 
     const getInactiveFilter = await getInactiveOrdersFilter();
     let conditions = ["COALESCE(c2.d_e_l_e_t_, '') = ''"];
-    const inactiveSql = getInactiveFilter('c2.c2_pedido');
+    const inactiveSql = getInactiveFilter(`COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''))`);
     if (inactiveSql) conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
     let paramsArr = [];
     let pCount = 1;
@@ -546,7 +549,7 @@ router.get('/vertical-pendencias', async (req, res) => {
       paramsArr.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      conditions.push(`(TRIM(c2.c2_pedido) = $${pCount} OR TRIM(c2.c2_obs) ILIKE '%' || $${pCount} || '%')`);
+      conditions.push(`(TRIM(c2.c2_pedido) = $${pCount} OR TRIM(root_op.c2_pedido) = $${pCount} OR TRIM(c2.c2_obs) ILIKE '%' || $${pCount} || '%' OR TRIM(root_op.c2_obs) ILIKE '%' || $${pCount} || '%')`);
       paramsArr.push(String(pedido).trim().padStart(6, '0'));
       pCount++;
     }
@@ -570,27 +573,34 @@ router.get('/vertical-pendencias', async (req, res) => {
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
         TRIM(c2.c2_produto) AS produto,
-        TRIM(c2.c2_pedido) AS raw_pedido,
-        TRIM(c2.c2_obs) AS obs_venda,
-        TRIM(c2.c2_itempv) AS item_pedido,
+        COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS raw_pedido,
+        COALESCE(NULLIF(TRIM(c2.c2_obs),''), NULLIF(TRIM(root_op.c2_obs),'')) AS obs_venda,
+        COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS item_pedido,
         c2.c2_quant::numeric AS qtd_op,
         COALESCE(TRIM(c6.c6_descri), TRIM(b1.b1_desc)) AS desc_produto,
         TRIM(g2.g2_operac) AS operacao_codigo,
         TRIM(h1.h1_descri) AS operacao_desc,
         TRIM(g2.g2_recurso) AS recurso_codigo
       FROM public.sc2010 c2
+      LEFT JOIN public.sc2010 root_op
+        ON  root_op.c2_num    = c2.c2_num
+        AND root_op.c2_item   = c2.c2_item
+        AND root_op.c2_sequen = '001'
+        AND COALESCE(root_op.d_e_l_e_t_, '') = ''
       INNER JOIN public.sg2010 g2
         ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sh1010 h1
         ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
       LEFT JOIN public.sc6010 c6
-        ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido) AND TRIM(c6.c6_item) = TRIM(c2.c2_itempv) AND COALESCE(c6.d_e_l_e_t_, '') = ''
+        ON TRIM(c6.c6_num) = COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) 
+       AND TRIM(c6.c6_item) = COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) 
+       AND COALESCE(c6.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sa1010 a1
         ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja) AND COALESCE(a1.d_e_l_e_t_, '') = ''
       LEFT JOIN public.sb1010 b1
         ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
       ${whereClause}
-      ORDER BY c2.c2_pedido ASC, c2.c2_num ASC, g2.g2_operac ASC
+      ORDER BY COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) ASC, c2.c2_num ASC, g2.g2_operac ASC
     `;
 
     const pgResult = await db.query(pgQuery, paramsArr);
@@ -757,7 +767,7 @@ router.get('/vertical/:operacao', async (req, res) => {
     let sc2Params = [produtosDoRecurso];
     let sc2Count = 2;
 
-    const inactiveSqlSC2 = getInactiveFilter('c2.c2_pedido');
+    const inactiveSqlSC2 = getInactiveFilter(`COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''))`);
     if (inactiveSqlSC2) sc2Conditions.push(inactiveSqlSC2.replace(/^\s*AND\s+/i, ''));
 
     if (op) {
@@ -765,7 +775,7 @@ router.get('/vertical/:operacao', async (req, res) => {
       sc2Params.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      sc2Conditions.push(`(TRIM(c2.c2_pedido) = $${sc2Count} OR TRIM(c2.c2_obs) ILIKE '%' || $${sc2Count} || '%')`);
+      sc2Conditions.push(`(TRIM(c2.c2_pedido) = $${sc2Count} OR TRIM(root_op.c2_pedido) = $${sc2Count} OR TRIM(c2.c2_obs) ILIKE '%' || $${sc2Count} || '%' OR TRIM(root_op.c2_obs) ILIKE '%' || $${sc2Count} || '%')`);
       sc2Params.push(String(pedido).trim().padStart(6, '0'));
       sc2Count++;
     }

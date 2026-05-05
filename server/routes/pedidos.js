@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const mysqlPool = require('../services/mysqlService');
 const XLSX = require('xlsx');
+const { validate, rules } = require('../middlewares/validate');
 const archiver = require('archiver');
 const fs = require('fs');
 const nodePath = require('path');
@@ -114,63 +115,56 @@ router.get('/', async (req, res) => {
         sa1.a1_nome AS nome_cliente,
         NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
         TRIM(c5.c5_emissao) AS emissao_raw,
-        (
-            SELECT COUNT(*) 
-            FROM public.sc6010 c6_count
-            WHERE c6_count.c6_num = c5.c5_num
-            AND c6_count.c6_filial = c5.c5_filial
-            AND COALESCE(c6_count.d_e_l_e_t_, '') = ''
-        ) AS itens_count,
-        (
-            SELECT COUNT(*)
-            FROM public.sc6010 c6_op
-            WHERE c6_op.c6_num = c5.c5_num
-            AND c6_op.c6_filial = c5.c5_filial
-            AND COALESCE(c6_op.d_e_l_e_t_, '') = ''
-            AND EXISTS (
-                SELECT 1 FROM public.sc2010 c2
-                WHERE (c2.c2_pedido = c6_op.c6_num )
-                AND c2.c2_itempv = c6_op.c6_item
-                AND COALESCE(c2.d_e_l_e_t_, '') = ''
-            )
-        ) AS itens_com_op,
-        (
-            SELECT TRIM(MAX(c6_sub.c6_entreg))
-            FROM public.sc6010 c6_sub
-            WHERE c6_sub.c6_num = c5.c5_num
-            AND c6_sub.c6_filial = c5.c5_filial
-            AND COALESCE(c6_sub.d_e_l_e_t_, '') = ''
-        ) AS entrega_raw,
+        COALESCE(c6_agg.itens_count, 0)     AS itens_count,
+        COALESCE(c6_op_agg.itens_com_op, 0) AS itens_com_op,
+        c6_agg.entrega_raw,
         CASE
-            -- Sem itens no pedido
-            WHEN NOT EXISTS (SELECT 1 FROM public.sc6010 c6_check WHERE c6_check.c6_num = c5.c5_num AND COALESCE(c6_check.d_e_l_e_t_, '') = '') THEN 'red'
-            
-            -- Itens mistos (com e sem OP)
-            WHEN (
-                SELECT COUNT(DISTINCT c6_m.c6_item)
-                FROM public.sc6010 c6_m
-                WHERE c6_m.c6_num = c5.c5_num AND COALESCE(c6_m.d_e_l_e_t_, '') = ''
-            ) > (
-                SELECT COUNT(DISTINCT c2_m.c2_itempv)
-                FROM public.sc2010 c2_m
-                WHERE (c2_m.c2_pedido = c5.c5_num)
-                AND COALESCE(c2_m.d_e_l_e_t_, '') = ''
-            ) AND EXISTS (
-                SELECT 1 FROM public.sc2010 c2_e WHERE (c2_e.c2_pedido = c5.c5_num) AND COALESCE(c2_e.d_e_l_e_t_, '') = ''
-            ) THEN 'orange'
-
-            -- Todos os itens sem OP
-            WHEN NOT EXISTS (SELECT 1 FROM public.sc2010 c2_none WHERE (c2_none.c2_pedido = c5.c5_num) AND COALESCE(c2_none.d_e_l_e_t_, '') = '') THEN 'red'
-
-            -- Padrão Protheus
-            WHEN c5.c5_liberok = '' AND COALESCE(c5.c5_nota, '') = '' THEN 'green'
-            WHEN c5.c5_liberok = 'S' THEN 'yellow'
+            WHEN COALESCE(c6_agg.itens_count, 0) = 0
+                THEN 'red'
+            WHEN c6_agg.itens_distintos > COALESCE(c2_agg.op_count, 0)
+                 AND COALESCE(c2_agg.op_count, 0) > 0
+                THEN 'orange'
+            WHEN COALESCE(c2_agg.op_count, 0) = 0
+                THEN 'red'
+            WHEN c5.c5_liberok = '' AND COALESCE(c5.c5_nota, '') = ''
+                THEN 'green'
+            WHEN c5.c5_liberok = 'S'
+                THEN 'yellow'
             ELSE 'default'
         END AS status_cor
       FROM public.sc5010 c5
       LEFT JOIN public.sa1010 sa1
         ON sa1.a1_cod = c5.c5_cliente
         AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+      LEFT JOIN (
+          SELECT c6_num, c6_filial,
+              COUNT(*)                AS itens_count,
+              COUNT(DISTINCT c6_item) AS itens_distintos,
+              TRIM(MAX(c6_entreg))    AS entrega_raw
+          FROM public.sc6010
+          WHERE COALESCE(d_e_l_e_t_, '') = ''
+          GROUP BY c6_num, c6_filial
+      ) c6_agg ON c6_agg.c6_num = c5.c5_num AND c6_agg.c6_filial = c5.c5_filial
+      LEFT JOIN (
+          SELECT c6_x.c6_num, c6_x.c6_filial,
+              COUNT(DISTINCT c6_x.c6_item) AS itens_com_op
+          FROM public.sc6010 c6_x
+          WHERE COALESCE(c6_x.d_e_l_e_t_, '') = ''
+            AND EXISTS (
+                SELECT 1 FROM public.sc2010 c2_x
+                WHERE c2_x.c2_pedido = c6_x.c6_num
+                  AND c2_x.c2_itempv = c6_x.c6_item
+                  AND COALESCE(c2_x.d_e_l_e_t_, '') = ''
+            )
+          GROUP BY c6_x.c6_num, c6_x.c6_filial
+      ) c6_op_agg ON c6_op_agg.c6_num = c5.c5_num AND c6_op_agg.c6_filial = c5.c5_filial
+      LEFT JOIN (
+          SELECT c2_pedido,
+              COUNT(DISTINCT c2_itempv) AS op_count
+          FROM public.sc2010
+          WHERE COALESCE(d_e_l_e_t_, '') = ''
+          GROUP BY c2_pedido
+      ) c2_agg ON c2_agg.c2_pedido = c5.c5_num
       ${whereClause}
       ORDER BY c5.c5_emissao DESC, c5.c5_num DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
@@ -424,16 +418,16 @@ router.get('/flat', async (req, res) => {
                     c6.c6_pedcli as ped_cliente,
                     c5.c5_liberok as status_cor,
                     CASE
-                        WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_chk.ok IS NOT NULL THEN 'Restrição'
+                        WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_agg.produto IS NOT NULL THEN 'Restrição'
                         WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                        WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Novo'
+                        WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Novo'
                         ELSE 'PCP'
                     END AS status_tipo_item,
                     CASE
                         WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                        WHEN sz0_chk.ok IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
+                        WHEN sz0_agg.produto IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
                         WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                        WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
+                        WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
                         ELSE 'Item com estrutura existente, liberado para PCP.'
                     END AS status_tipo_detalhe
                 FROM public.sc5010 c5
@@ -448,21 +442,18 @@ router.get('/flat', async (req, res) => {
                 LEFT JOIN public.sb1010 sb1
                     ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                LEFT JOIN LATERAL (
-                    SELECT 1 as ok FROM public.sz0010
-                    WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
-                    AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P' LIMIT 1
-                ) sz0_chk ON true
-                LEFT JOIN LATERAL (
-                    SELECT 1 as ok FROM public.sg1010
-                    WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
-                    AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-                ) sg1_chk ON true
-                LEFT JOIN LATERAL (
-                    SELECT 1 as ok FROM public.sg2010
-                    WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
-                    AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-                ) sg2_chk ON true
+                LEFT JOIN (
+                    SELECT DISTINCT TRIM(z0_produto) AS produto FROM public.sz0010
+                    WHERE COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                ) sz0_agg ON sz0_agg.produto = TRIM(c6.c6_produto)
+                LEFT JOIN (
+                    SELECT DISTINCT TRIM(g1_cod) AS produto FROM public.sg1010
+                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                ) sg1_agg ON sg1_agg.produto = TRIM(c6.c6_produto)
+                LEFT JOIN (
+                    SELECT DISTINCT TRIM(g2_produto) AS produto FROM public.sg2010
+                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                ) sg2_agg ON sg2_agg.produto = TRIM(c6.c6_produto)
                 ${whereClause}
                 ORDER BY c5.c5_num DESC, c6.c6_item ASC
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
@@ -985,7 +976,12 @@ router.post('/snapshot-fabrica', async (req, res) => {
 // GET /api/pedidos/:id/itens
 router.get('/:id/itens', async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = String(req.params.id || '').trim();
+
+        // Guard: reject empty or obviously invalid IDs before touching the DB
+        if (!id) {
+            return res.status(400).json({ error: 'Parâmetro pedido inválido ou ausente.' });
+        }
 
         const query = `
             SELECT
@@ -1007,19 +1003,8 @@ router.get('/:id/itens', async (req, res) => {
                 c2.c2_quant   AS op_qtd,
                 COALESCE(c6.c6_qtdent, 0)::numeric(18,6) AS qtd_entreg,
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) AS qtd_faturar,
-                CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_chk.ok IS NOT NULL THEN 'Restrição'
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                    WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Novo'
-                    ELSE 'PCP'
-                END AS status_tipo_item,
-                CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN sz0_chk.ok IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                    WHEN sg1_chk.ok IS NULL AND sg2_chk.ok IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
-                    ELSE 'Item com estrutura existente, liberado para PCP.'
-                END AS status_tipo_detalhe
+                (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) AS qtd_faturar,
+                sb1.b1_msblql
             FROM public.sc5010 c5
             JOIN public.sc6010 c6
                 ON COALESCE(c6.d_e_l_e_t_, '') = ''
@@ -1032,37 +1017,32 @@ router.get('/:id/itens', async (req, res) => {
                 ON (c2.c2_pedido = c5.c5_num )
                 AND c2.c2_itempv = c6.c6_item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sz0010
-                WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P' LIMIT 1
-            ) sz0_chk ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sg1010
-                WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-            ) sg1_chk ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 as ok FROM public.sg2010
-                WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
-                AND COALESCE(d_e_l_e_t_, '') <> '*' LIMIT 1
-            ) sg2_chk ON true
+
             WHERE c5.c5_num = $1
             AND COALESCE(c5.d_e_l_e_t_, '') = ''
             AND c5.c5_tipo <> 'B'
             ORDER BY c6.c6_item ASC
         `;
 
-        const result = await db.query(query, [id]);
+        let result;
+        try {
+            result = await db.query(query, [id]);
+        } catch (pgErr) {
+            console.error(`[itens/${id}] ❌ FASE 1 - Query principal PostgreSQL falhou:`, pgErr.message);
+            return res.status(500).json({ error: 'Erro na query principal de itens.', details: pgErr.message });
+        }
 
-        // Parallel Enrichment: Notes + Docs + NFs + Ref/Rev cliente
+        // Parallel Enrichment: Notes + Docs + NFs + Ref/Rev cliente + PG Status Checks
         const items = result.rows;
         if (items.length > 0) {
+            console.log(`[itens/${id}] ✅ ${items.length} itens encontrados. Iniciando enriquecimento...`);
             const productCodes = [...new Set(items.map(i => i.codigo).filter(c => c))];
+            const paddedCodes = productCodes.map(c => c.padEnd(15, ' '));
+
             const codCliente = items[0]?.cod_cliente;
             const lojaCliente = items[0]?.loja_cliente;
 
-            const [notesResult, docsResult, nfResult, sz1Result] = await Promise.allSettled([
+            const [notesResult, docsResult, nfResult, sz1Result, pgStatusResult] = await Promise.allSettled([
                 // 1. Notes
                 mysqlPool.query('SELECT * FROM app_sales_order_item_notes WHERE pedido = ?', [id]),
                 // 2. Docs
@@ -1105,7 +1085,15 @@ router.get('/:id/itens', async (req, res) => {
                     AND TRIM(z1.z1_produto) = ANY($3::varchar[])
                     AND COALESCE(z1.d_e_l_e_t_, '') = ''
                     GROUP BY TRIM(z1.z1_produto)
-                `, [codCliente, lojaCliente, productCodes]) : Promise.resolve({ rows: [] })
+                `, [codCliente, lojaCliente, productCodes]) : Promise.resolve({ rows: [] }),
+                // 5. PG Status (SG1, SG2, SZ0) via batch with indexes
+                productCodes.length > 0 ? db.query(`
+                    SELECT 'sg1' as type, TRIM(g1_cod) as cod FROM public.sg1010 WHERE g1_cod = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sg2' as type, TRIM(g2_produto) as cod FROM public.sg2010 WHERE g2_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sz0' as type, TRIM(z0_produto) as cod FROM public.sz0010 WHERE z0_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                `, [paddedCodes]) : Promise.resolve({ rows: [] })
             ]);
 
             // Merge Notes
@@ -1192,6 +1180,41 @@ router.get('/:id/itens', async (req, res) => {
             } else {
                 console.error('Error merging SZ1 (items):', sz1Result.reason?.message);
             }
+
+            // Process Status Item (Calculated in JS instead of lateral joins)
+            let sg1Set = new Set(), sg2Set = new Set(), sz0Set = new Set();
+            if (pgStatusResult.status === 'fulfilled') {
+                pgStatusResult.value.rows.forEach(r => {
+                    if (r.type === 'sg1') sg1Set.add(r.cod);
+                    if (r.type === 'sg2') sg2Set.add(r.cod);
+                    if (r.type === 'sz0') sz0Set.add(r.cod);
+                });
+            } else {
+                console.error('Error fetching PG Status (items):', pgStatusResult.reason?.message);
+            }
+
+            items.forEach(item => {
+                const isBlocked = ['1','S','T','Y'].includes(item.b1_msblql);
+                const hasRestriction = sz0Set.has(item.codigo);
+                const revDiff = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
+                const isNew = !sg1Set.has(item.codigo) && !sg2Set.has(item.codigo);
+
+                if (isBlocked || hasRestriction) {
+                    item.status_tipo_item = 'Restrição';
+                    let detail = isBlocked ? `Produto bloqueado no cadastro (SB1 b1_msblql).` : `Restrição pendente no cadastro (SZ0 status=P).`;
+                    item.status_tipo_detalhe = `${detail} Rev. MF: ${item.rev_codigo || '-'} / Rev. Cli: ${item.c6_rev_cliente || '-'}`;
+                } else if (revDiff) {
+                    item.status_tipo_item = 'Revisão';
+                    item.status_tipo_detalhe = `Diferença de revisão detectada. Rev. MF: ${item.rev_codigo || '-'} / Rev. Cli: ${item.c6_rev_cliente || '-'}`;
+                } else if (isNew) {
+                    item.status_tipo_item = 'Novo';
+                    item.status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
+                } else {
+                    item.status_tipo_item = 'PCP';
+                    item.status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+                }
+            });
+
             // Fetch All PCP Forecasts for this pedido
             try {
                 const [forecasts] = await mysqlPool.query(`
@@ -1717,7 +1740,7 @@ router.get('/:pedido/items/:item/history', async (req, res) => {
 });
 
 // PCP Delivery Forecast Endpoints
-router.post('/pcp-forecasts/batch', async (req, res) => {
+router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req, res) => {
     try {
         const { items, data_entrega_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote } = req.body;
 
@@ -1774,7 +1797,7 @@ router.post('/pcp-forecasts/batch', async (req, res) => {
     }
 });
 
-router.post('/pcp-forecasts', async (req, res) => {
+router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
     try {
         const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item } = req.body;
 
@@ -1810,7 +1833,7 @@ router.post('/pcp-forecasts', async (req, res) => {
     }
 });
 
-router.put('/pcp-forecasts/:id', async (req, res) => {
+router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, res) => {
     try {
         const { id } = req.params;
         const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, usuario, qtd_total_item } = req.body;
@@ -1899,13 +1922,27 @@ router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
 // as quantidades com base na quantidade vendida do pedido de venda (SC6).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/op-mirror/:id', async (req, res) => {
-    const client = await db.connect();
+    let client;
     try {
+        client = await db.connect();
         const { id } = req.params;
-        const { item: queryItem } = req.query;
+        const { item: queryItem, pendingOnly } = req.query;
 
-        // Timeout estendido para pedidos grandes (3 minutos)
-        await client.query("SET LOCAL statement_timeout = '180000'");
+        // Guard: reject empty pedido
+        if (!id || String(id).trim() === '') {
+            return res.status(400).json({ error: 'Parâmetro pedido (id) é obrigatório.' });
+        }
+
+        // Guard: reject empty item when explicitly provided
+        if (queryItem !== undefined && String(queryItem).trim() === '') {
+            return res.status(400).json({ error: 'Parâmetro item não pode ser vazio.' });
+        }
+
+        // Strict boolean coercion for pendingOnly — never treat arbitrary string as truthy
+        const isPendingOnly = pendingOnly === 'true' || pendingOnly === '1';
+
+        // Timeout: 5 minutos para pedidos complexos (004554 tem BOM profundo)
+        await client.query("SET LOCAL statement_timeout = '300000'");
 
         // Step 1: Fetch Capa do Pedido e Cliente
         const orderQuery = `
@@ -1919,25 +1956,31 @@ router.get('/op-mirror/:id', async (req, res) => {
             FROM sc5010 c5
             LEFT JOIN sa1010 sa1
                 ON sa1.a1_cod = c5.c5_cliente
-                AND sa1.a1_loja = c5.c5_lojacli
-                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                AND COALESCE(sa1.d_e_l_e_t_, '') IN ('', ' ')
             WHERE TRIM(c5.c5_num) = $1
-              AND COALESCE(c5.d_e_l_e_t_, '') = ''
+              AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
         `;
 
         const orderResult = await client.query(orderQuery, [id]);
+        const orderData = orderResult.rows.length > 0 ? orderResult.rows[0] : null;
 
-        if (orderResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Pedido não encontrado no Protheus.' });
+        // Build parameterized item filter (prevents SQL injection — never interpolate queryParams)
+        const explosionParams = [id];
+        let itemCondition = '';
+        if (queryItem) {
+            explosionParams.push(String(queryItem).trim());
+            itemCondition = `AND TRIM(c6.c6_item) = $${explosionParams.length}`;
         }
 
-        const orderData = orderResult.rows[0];
+        // Pending-only: strict boolean
+        let pendingCondition = '';
+        let qtdVendaExpression = `COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0)`;
 
-        const itemCondition = queryItem ? `AND TRIM(c6.c6_item) = '${queryItem}'` : '';
+        if (isPendingOnly) {
+            pendingCondition = `AND (COALESCE(c6.c6_qtdven::numeric, 0) - COALESCE(c6.c6_qtdent::numeric, 0)) > 0`;
+            qtdVendaExpression = `GREATEST(COALESCE(c6.c6_qtdven::numeric, 0) - COALESCE(c6.c6_qtdent::numeric, 0), 0)`;
+        }
 
-        // Step 2: Explosão de BOM + Roteiro
-        // Otimização: SC2 é pré-computado em CTE não-recursiva para evitar N subqueries
-        // correlacionadas dentro da parte recursiva (causa de timeout em pedidos grandes).
         const explosionQuery = `
             WITH RECURSIVE
             -- Pre-fetch SC2 para o pedido inteiro (1 scan em vez de N correlated subqueries)
@@ -1953,7 +1996,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                     ) AS rn
                 FROM sc2010 c2
                 WHERE TRIM(c2.c2_pedido) = $1
-                  AND COALESCE(c2.d_e_l_e_t_, '') = ''
+                  AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
             ),
             sc2_first AS (
                 SELECT c2_itempv, produto, op_num, op_tipo FROM sc2_lookup WHERE rn = 1
@@ -1965,7 +2008,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                     TRIM(c6.c6_produto) AS produto_venda,
                     TRIM(sb1.b1_desc) AS desc_venda,
                     TRIM(sb1.b1_tipo) AS tipo_venda,
-                    COALESCE(NULLIF(c6.c6_qtdven::numeric, 0), c2.c2_quant::numeric, 0) AS qtd_venda,
+                    ${qtdVendaExpression} AS qtd_venda,
                     TRIM(c6.c6_um) AS unid_venda,
                     TRIM(c6.c6_xrevm) AS rev_metalfisa,
                     COALESCE(TRIM(c2.c2_num), SUBSTRING(TRIM(c6.c6_numop), 1, 6)) AS op_num,
@@ -1976,14 +2019,15 @@ router.get('/op-mirror/:id', async (req, res) => {
                     AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num)
                     AND c2.c2_itempv = c6.c6_item
                     AND c2.c2_sequen = '001'
-                    AND COALESCE(c2.d_e_l_e_t_, '') = ''
+                    AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
                 LEFT JOIN sb1010 sb1
                     ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
-                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                    AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
                 WHERE TRIM(c6.c6_num) = $1
-                  AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                  AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
                   AND COALESCE(TRIM(c6.c6_numop), '') != ''
                   ${itemCondition}
+                  ${pendingCondition}
             ),
             -- 2. Explosão Recursiva de BOM
             estrutura AS (
@@ -2022,16 +2066,51 @@ router.get('/op-mirror/:id', async (req, res) => {
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON TRIM(g1.g1_cod) = TRIM(e.componente)
-                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                    AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
                 LEFT JOIN sb1010 sb1
                     ON TRIM(sb1.b1_cod) = TRIM(g1.g1_comp)
-                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                    AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
                 LEFT JOIN sc2_first sc2
                     ON sc2.c2_itempv = e.item_pedido
                     AND sc2.produto  = TRIM(g1.g1_comp)
                 WHERE e.nivel < 15
+            ),
+            pecas_distintas AS (
+                SELECT DISTINCT componente FROM estrutura
+            ),
+            -- 3. Roteiro SG2: pré-materializa a revisão máxima por produto (O(N))
+            --    Substitui o correlated subquery MAX() que era O(N²) e causava timeout
+            max_rev_por_produto AS (
+                SELECT TRIM(g2_produto) AS produto, MAX(TRIM(g2_codigo)) AS max_codigo
+                FROM sg2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2_produto) IN (SELECT componente FROM pecas_distintas)
+                GROUP BY TRIM(g2_produto)
+            ),
+            roteiro_agregado AS (
+                SELECT
+                    TRIM(g2.g2_produto) AS g2_produto_limpo,
+                    json_agg(
+                        json_build_object(
+                            'seq',           TRIM(g2.g2_operac),
+                            'recurso',       TRIM(g2.g2_recurso),
+                            'desc_operacao', TRIM(h1.h1_descri),
+                            'setup',         g2.g2_setup,
+                            'tempo_padrao',  g2.g2_tempad,
+                            'ferramenta',    TRIM(g2.g2_ferram)
+                        ) ORDER BY TRIM(g2.g2_operac)
+                    ) AS operacoes
+                FROM sg2010 g2
+                JOIN max_rev_por_produto mr
+                    ON TRIM(g2.g2_produto) = mr.produto
+                    AND TRIM(g2.g2_codigo) = mr.max_codigo
+                LEFT JOIN sh1010 h1
+                    ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                    AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                GROUP BY TRIM(g2.g2_produto)
             )
-            -- RESULTADO + ROTEIRO (SG2)
+            -- RESULTADO + ROTEIRO (SG2) OTIMIZADO
             SELECT
                 e.item_pedido,
                 e.nivel,
@@ -2044,40 +2123,13 @@ router.get('/op-mirror/:id', async (req, res) => {
                 e.qtd_necessaria,
                 e.op_relacionada,
                 e.op_tipo_relacionada,
-                COALESCE(
-                    (
-                        SELECT json_agg(
-                            json_build_object(
-                                'seq',          TRIM(g2.g2_operac),
-                                'recurso',      TRIM(g2.g2_recurso),
-                                'desc_operacao', CASE
-                                    WHEN TRIM(g2.g2_recurso) = 'MO0013' THEN 'LASE'
-                                    ELSE TRIM(h1.h1_descri)
-                                END,
-                                'setup',        g2.g2_setup,
-                                'tempo_padrao', g2.g2_tempad,
-                                'ferramenta',   TRIM(g2.g2_ferram)
-                            ) ORDER BY TRIM(g2.g2_operac)
-                        )
-                        FROM sg2010 g2
-                        LEFT JOIN sh1010 h1
-                            ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
-                            AND COALESCE(h1.d_e_l_e_t_, '') = ''
-                        WHERE TRIM(g2.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
-                          AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-                          AND TRIM(g2.g2_codigo) = (
-                              SELECT MAX(TRIM(g2s.g2_codigo))
-                              FROM sg2010 g2s
-                              WHERE TRIM(g2s.g2_produto) = CAST(TRIM(e.componente) AS VARCHAR(30))
-                                AND COALESCE(g2s.d_e_l_e_t_, '') IN ('', ' ')
-                          )
-                    ), '[]'::json
-                ) AS operacoes
+                COALESCE(ra.operacoes, '[]'::json) AS operacoes
             FROM estrutura e
+            LEFT JOIN roteiro_agregado ra ON ra.g2_produto_limpo = e.componente
             ORDER BY e.item_pedido ASC, e.nivel ASC, e.produto_pai ASC, e.componente ASC;
         `;
 
-        const explosionResult = await client.query(explosionQuery, [id]);
+        const explosionResult = await client.query(explosionQuery, explosionParams);
 
         // Step 3: Parse and Structure the flat SQL results into a Nested Hierarchy 
         // PV Item -> Final Product -> Tree of Components
@@ -2138,7 +2190,7 @@ router.get('/op-mirror/:id', async (req, res) => {
         console.error('[OP Mirror Error]', err);
         res.status(500).json({ error: 'Erro interno ao gerar espelho de OP', details: err.message });
     } finally {
-        client.release();
+        if (client) client.release();
     }
 });
 

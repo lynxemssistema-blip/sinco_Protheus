@@ -26,6 +26,17 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
 
         mirrorData.itens.forEach(itemGroup => {
             const processComponent = (component, parentCode = 'PRODUTO FINAL') => {
+                const isLevel0 = component.nivel === 0 || component.nivel === undefined;
+                let rawQtd = isLevel0
+                    ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
+                    : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
+                
+                if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
+                    const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
+                    const fractionQty = parseFloat(batchContext.visual_qtd);
+                    rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                }
+
                 if (component.operacoes && Array.isArray(component.operacoes) && component.operacoes.length > 0) {
                     component.operacoes.forEach((op, index) => {
                         const recurso = op.recurso ? op.recurso.trim().toUpperCase() : 'INDEFINIDO';
@@ -46,20 +57,6 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                             });
                         }
 
-                        // User request: No consolidation, keep full traceability.
-                        // Calculate total quantity: (Quantity of this component in BOM) * (Sales Order quantity)
-                        // Note: Backend might already provide rawQtd as quantidade_calculada.
-                        const isLevel0 = component.nivel === 0 || component.nivel === undefined;
-                        let rawQtd = isLevel0
-                            ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
-                            : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
-                        
-                        if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
-                            const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
-                            const fractionQty = parseFloat(batchContext.visual_qtd);
-                            rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
-                        }
-
                         operationsMap.get(recurso).components.push({
                             pedido: mirrorData.pedido.pedido,
                             itemPedido: itemGroup.item_pedido,
@@ -73,6 +70,29 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                             nivel: isLevel0 ? 'PAI' : component.nivel,
                             op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-')
                         });
+                    });
+                } else {
+                    // Handle items without operations (e.g. raw materials, purchased parts, missing routing)
+                    const recurso = 'SEM OPERAÇÃO / ALMOXARIFADO';
+                    if (!operationsMap.has(recurso)) {
+                        operationsMap.set(recurso, {
+                            recurso: recurso,
+                            desc_operacao: 'Itens sem roteiro (Separação direta)',
+                            components: []
+                        });
+                    }
+                    operationsMap.get(recurso).components.push({
+                        pedido: mirrorData.pedido.pedido,
+                        itemPedido: itemGroup.item_pedido,
+                        produtoPai: parentCode,
+                        codigo: component.codigo,
+                        descricao: component.descricao,
+                        tipo: component.tipo,
+                        proxOp: '-',
+                        qtdTotal: rawQtd,
+                        um: component.unidade || component.um || 'UN',
+                        nivel: isLevel0 ? 'PAI' : component.nivel,
+                        op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-')
                     });
                 }
 

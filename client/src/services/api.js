@@ -61,6 +61,9 @@ api.interceptors.response.use(
         // Don't log canceled requests (AbortController / React StrictMode)
         if (error.code === 'ERR_CANCELED') return Promise.reject(error);
 
+        // 409 Conflict = duplicate resource (login/e-mail já cadastrado) — handled at component level
+        if (status === 409) return Promise.reject(error);
+
         console.error(`❌ Erro na API [${status || 'NET'}] ${error.config?.method?.toUpperCase() || '?'} ${error.config?.url} — ${error.message}`);
         return Promise.reject(error);
     }
@@ -97,7 +100,12 @@ export const saveSnapshotFabrica = async (data) => {
 };
 
 export const getItensPedido = async (pedidoId) => {
-    const response = await api.get(`/pedidos/${pedidoId}/itens`);
+    // Guard: never call with empty/undefined pedido — would hit /pedidos//itens
+    if (!pedidoId || String(pedidoId).trim() === '') {
+        console.warn('[getItensPedido] pedidoId inválido — chamada cancelada:', pedidoId);
+        return [];
+    }
+    const response = await api.get(`/pedidos/${encodeURIComponent(String(pedidoId).trim())}/itens`);
     return response.data;
 };
 

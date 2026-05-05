@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
+const { validate, rules } = require('../middlewares/validate');
 
 // Table Initialization
 (async () => {
@@ -70,7 +71,7 @@ router.get('/next-code', async (req, res) => {
 });
 
 // POST /api/engineering-releases/log - Register a new release action
-router.post('/log', async (req, res) => {
+router.post('/log', validate(rules.engineeringReleaseLog), async (req, res) => {
     try {
         const {
             codigo_produto,

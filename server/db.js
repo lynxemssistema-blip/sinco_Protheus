@@ -7,9 +7,9 @@ const pool = new Pool({
     database: process.env.PGDATABASE,
     password: process.env.PGPASSWORD,
     port: process.env.PGPORT,
-    max: 20,                         // Otimizado: aumentado para o máximo viável sem comprometer o PG
-    idleTimeoutMillis: 30000,        // Mantém conexões quentes por 30 segundos
-    connectionTimeoutMillis: 10000,
+    max: 100,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 5000,
     statement_timeout: 45000,
 });
 
@@ -20,4 +20,5 @@ pool.on('error', (err) => {
 
 module.exports = {
     query: (text, params) => pool.query(text, params),
+    connect: () => pool.connect(),
 };

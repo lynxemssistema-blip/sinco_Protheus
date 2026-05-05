@@ -3,6 +3,7 @@ const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const fs = require('fs');
 const path = require('path');
+const { validate, rules } = require('../middlewares/validate');
 
 // Base path for saving PDFs on the network share
 const OS_BASE_PATH = process.platform === 'win32'
@@ -48,36 +49,44 @@ const OS_BASE_PATH = process.platform === 'win32'
 })();
 
 /**
- * Generate unique liberation code: LPF-AAAA-NNNNN
- * e.g. LPF-2026-00001
+ * Generate unique liberation code using an atomic sequence table.
+ * Prevents duplicate codes under concurrent requests (race condition fix).
+ * Uses SELECT MAX(seq)+1 inside a serialized transaction.
  */
-const generateCodigoLiberacao = async () => {
+const generateCodigoLiberacao = async (conn) => {
     const year = new Date().getFullYear();
     const prefix = `LPF-${year}-`;
 
-    // Count records this year to generate sequential number
-    const [[{ total }]] = await mysqlPool.query(
-        `SELECT COUNT(*) AS total FROM app_pcp_releases 
-         WHERE codigo_liberacao LIKE ?`,
-        [`${prefix}%`]
-    );
-
-    const seq = String(total + 1).padStart(5, '0');
-    return `${prefix}${seq}`;
+    // Atomic: lock the table for this year's latest seq and increment
+    await conn.query('LOCK TABLES app_pcp_releases WRITE');
+    try {
+        const [[{ maxSeq }]] = await conn.query(
+            `SELECT COALESCE(MAX(
+                CAST(SUBSTRING(codigo_liberacao, LENGTH(?) + 1) AS UNSIGNED)
+            ), 0) AS maxSeq
+            FROM app_pcp_releases
+            WHERE codigo_liberacao LIKE ?`,
+            [prefix, `${prefix}%`]
+        );
+        const seq = String(maxSeq + 1).padStart(5, '0');
+        return `${prefix}${seq}`;
+    } finally {
+        await conn.query('UNLOCK TABLES');
+    }
 };
 
 // POST /api/pcp-releases/log — Register a batch liberation
-router.post('/log', async (req, res) => {
+router.post('/log', validate(rules.pcpReleaseLog), async (req, res) => {
+    const connection = await mysqlPool.getConnection();
     try {
         const { lote_info, data_pcp, usuario, qtd_ops, ops_json } = req.body;
 
-        if (!lote_info || !usuario) {
-            return res.status(400).json({ error: 'Campos obrigatórios ausentes: lote_info, usuario.' });
-        }
+        await connection.beginTransaction();
 
-        const codigo_liberacao = await generateCodigoLiberacao();
+        // Atomic code generation inside the same connection (prevents race condition)
+        const codigo_liberacao = await generateCodigoLiberacao(connection);
 
-        const [result] = await mysqlPool.query(
+        const [result] = await connection.query(
             `INSERT INTO app_pcp_releases (codigo_liberacao, lote_info, data_pcp, usuario, qtd_ops, ops_json)
              VALUES (?, ?, ?, ?, ?, ?)`,
             [codigo_liberacao, lote_info, data_pcp || null, usuario, qtd_ops || 0, ops_json || null]
@@ -88,12 +97,12 @@ router.post('/log', async (req, res) => {
                 const ops = JSON.parse(ops_json);
                 for (const op of ops) {
                     if (op.is_fraction && op.fraction_id) {
-                        await mysqlPool.query(
+                        await connection.query(
                             'UPDATE app_pcp_delivery_forecasts SET lpf_codigo = ? WHERE id = ?',
                             [codigo_liberacao, op.fraction_id]
                         );
                     } else if (op.pedido && op.item) {
-                        await mysqlPool.query(
+                        await connection.query(
                             'UPDATE app_sales_order_item_notes SET lpf_codigo = ? WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
                             [codigo_liberacao, op.pedido.trim(), op.item.trim()]
                         );
@@ -104,11 +113,15 @@ router.post('/log', async (req, res) => {
             }
         }
 
+        await connection.commit();
         console.log(`✅ Liberação PCP registrada: ${codigo_liberacao} (id=${result.insertId})`);
         res.json({ success: true, codigo_liberacao, id: result.insertId });
     } catch (err) {
+        await connection.rollback();
         console.error('❌ [PCP RELEASE LOG ERROR]', err);
         res.status(500).json({ error: err.message });
+    } finally {
+        connection.release();
     }
 });
 

@@ -23,19 +23,19 @@ router.get('/test-route', (req, res) => {
 router.get('/analytics/evolution', async (req, res) => {
     try {
         const { startDate, endDate, sector, user } = req.query;
-        console.log('📈 [EVOLUTION] Filters:', { startDate, endDate, sector, user });
+
+        const effectiveStart = startDate || new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+        const effectiveEnd   = endDate   || new Date().toISOString().split('T')[0];
+        console.log('📈 [EVOLUTION] Filters:', { startDate: effectiveStart, endDate: effectiveEnd, sector, user });
 
         let whereClauses = [`a.data_fim IS NOT NULL`];
         let params = [];
 
-        if (startDate) {
-            whereClauses.push(`a.data_fim >= ?`);
-            params.push(`${startDate} 00:00:00`);
-        }
-        if (endDate) {
-            whereClauses.push(`a.data_fim <= ?`);
-            params.push(`${endDate} 23:59:59`);
-        }
+        whereClauses.push(`a.data_fim >= ?`);
+        params.push(`${effectiveStart} 00:00:00`);
+
+        whereClauses.push(`a.data_fim <= ?`);
+        params.push(`${effectiveEnd} 23:59:59`);
         if (user) {
             whereClauses.push(`a.usuario = ?`);
             params.push(user);
@@ -981,8 +981,8 @@ router.get('/', async (req, res) => {
         if (planned_date_start || planned_date_end) {
             let planSql = `SELECT op_numero, op_item, op_sequencia, operacao_codigo FROM app_production_planning WHERE 1=1`;
             const planParams = [];
-            if (planned_date_start) { planSql += ` AND (data_planejada_inicio >= ? OR data_planejada_fim >= ?)`; planParams.push(planned_date_start, planned_date_start); }
-            if (planned_date_end)   { planSql += ` AND (data_planejada_inicio <= ? OR data_planejada_fim <= ?)`; planParams.push(planned_date_end, planned_date_end); }
+            if (planned_date_start) { planSql += ` AND data_planejada_inicio >= ?`; planParams.push(planned_date_start); }
+            if (planned_date_end)   { planSql += ` AND data_planejada_inicio <= ?`; planParams.push(planned_date_end); }
             const [plannedRows] = await mysqlPool.execute(planSql, planParams);
             if (plannedRows.length === 0) return res.json({ data: [], total: 0 });
             plannedOpsFilter = plannedRows;
@@ -1022,8 +1022,17 @@ router.get('/', async (req, res) => {
         const cutoffDate = new Date();
         cutoffDate.setMonth(cutoffDate.getMonth() - 18);
         const cutoffStr = cutoffDate.toISOString().slice(0, 10).replace(/-/g, '');
-        // Only apply date cutoff when no specific OP/pedido/item filter — those are already selective
-        const hasSelectiveFilter = !!(op || pedido || item);
+        // Inject planned dates OPs into Postgres to prevent LIMIT truncation
+        if (plannedOpsFilter && plannedOpsFilter.length > 0) {
+            const plannedOpNums = [...new Set(plannedOpsFilter.map(p => (p.op_numero || '').trim().padEnd(6, ' ')))];
+            const ph = plannedOpNums.map((_, i) => `$${pn + i}`).join(',');
+            s1Conds.push(`c2.c2_num IN (${ph})`);
+            params.push(...plannedOpNums);
+            pn += plannedOpNums.length;
+        }
+
+        // Only apply date cutoff when no specific OP/pedido/item/planned filter — those are already selective
+        const hasSelectiveFilter = !!(op || pedido || item || plannedOpsFilter);
         if (!hasSelectiveFilter) {
             s1Conds.push(`c2.c2_datpri >= '${cutoffStr}'`);
         }
@@ -1058,7 +1067,7 @@ router.get('/', async (req, res) => {
             pn++;
         }
 
-        // Setor/operação: pre-filter SG2010 to avoid slow EXISTS in Stage 1
+        // Setor/operação: pre-fetch produtos correspondentes em SG2010 (query separada, evita subquery lenta)
         if (operacao || setor) {
             let recursoArray = [];
             const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
@@ -1070,36 +1079,41 @@ router.get('/', async (req, res) => {
                         : ['___NO_MATCH___'];
                 } catch (e) { console.error('Erro ao buscar recursos do setor:', e.message); }
             }
-            
-            const existsConds = [];
-            let sgParams = [];
+
+            const sgConds = [];
+            const sgParams = [];
             let sgPn = 1;
 
             if (recursoArray.length > 0) {
                 const ph = recursoArray.map((_, i) => `$${sgPn + i}`).join(',');
-                existsConds.push(`TRIM(g2_recurso) IN (${ph})`);
+                sgConds.push(`TRIM(g2_recurso) IN (${ph})`);
                 sgParams.push(...recursoArray);
                 sgPn += recursoArray.length;
             }
             if (operacaoArray.length > 0) {
-                const conds = operacaoArray.map((_, i) => `(g2_operac ILIKE $${sgPn + i} OR g2_descri ILIKE $${sgPn + i} OR TRIM(g2_recurso) ILIKE $${sgPn + i})`);
-                existsConds.push(`(${conds.join(' OR ')})`);
+                const conds = operacaoArray.map((_, i) => `(TRIM(g2_operac) ILIKE $${sgPn + i} OR g2_descri ILIKE $${sgPn + i} OR TRIM(g2_recurso) ILIKE $${sgPn + i})`);
+                sgConds.push(`(${conds.join(' OR ')})`);
                 sgParams.push(...operacaoArray.map(s => `%${s}%`));
                 sgPn += operacaoArray.length;
             }
 
-            if (existsConds.length > 0) {
-                // Ao invés de trafegar milhares de códigos de produto para o Node.js e enviar de volta, 
-                // delegamos o filtro diretamente para o PostgreSQL via subquery:
-                const subquerySql = `TRIM(c2.c2_produto) IN (
-                    SELECT DISTINCT TRIM(g2_produto)
-                    FROM public.sg2010
-                    WHERE COALESCE(d_e_l_e_t_,'') IN ('', ' ')
-                    AND (${existsConds.map(c => c.replace(/\$(\d+)/g, (match, num) => `$${parseInt(num) + pn - 1}`)).join(' AND ')})
-                )`;
-                s1Conds.push(subquerySql);
-                params.push(...sgParams);
-                pn += sgParams.length;
+            if (sgConds.length > 0) {
+                try {
+                    const sgRes = await db.query(`
+                        SELECT DISTINCT TRIM(g2_produto) AS cod
+                        FROM public.sg2010
+                        WHERE COALESCE(d_e_l_e_t_,'') IN ('', ' ')
+                        AND (${sgConds.join(' AND ')})
+                    `, sgParams);
+                    const matchingProdCodes = sgRes.rows.map(r => r.cod).filter(Boolean);
+                    if (matchingProdCodes.length > 0) {
+                        s1Conds.push(`TRIM(c2.c2_produto) = ANY($${pn})`);
+                        params.push(matchingProdCodes);
+                        pn++;
+                    } else {
+                        return res.json({ data: [], total: 0 });
+                    }
+                } catch (e) { console.error('Erro ao pré-filtrar setor/operacao:', e.message); }
             }
         }
 
@@ -1274,8 +1288,9 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         }
         // 3. Apply MySQL pre-filter (planned dates)
         if (plannedOpsFilter) {
-            const plannedSet = new Set(plannedOpsFilter.map(p => `${p.op_numero}|${p.op_item}|${p.op_sequencia}`));
-            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.sequen}`));
+            // Include operation code in the set key to filter specifically which operation falls in the date range
+            const plannedSet = new Set(plannedOpsFilter.map(p => `${p.op_numero}|${p.op_item}|${p.op_sequencia}|${p.operacao_codigo}`));
+            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`));
         }
 
         // 4. Fetch Plans & Appointments from MySQL

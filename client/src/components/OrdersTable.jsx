@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
@@ -10,15 +10,21 @@ import PCPExportTab from './orders/PCPExportTab';
 import DocsModal from './DocsModal';
 import NotesDrawer from './NotesDrawer';
 import MeetingReportModal from './MeetingReportModal';
-import ProductImageModal from './ProductImageModal'; // Import Image Modal
+import ProductImageModal from './ProductImageModal';
 import EngineeringControlModal from './EngineeringControlModal';
-
 import PCPForecastModal from './PCPForecastModal';
 import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
-import { generateOrderPDF } from '../services/orderPdfGenerator'; // Import new PDF service
+import { generateOrderPDF } from '../services/orderPdfGenerator';
+
+// Sub-components
+import OrderFiltersBar from './orders/OrderFiltersBar';
+import FlatItemRow from './orders/FlatItemRow';
+import TableSkeletonRows from './orders/TableSkeletonRows';
+import RetryToast from './orders/RetryToast';
+import { useOrders } from '../hooks/useOrders';
 
 const OrdersTable = () => {
 
@@ -43,16 +49,9 @@ const OrdersTable = () => {
     const activeTab = orderFilters.activeTab || 'evolucao';
     const setActiveTab = (val) => updateOrderFilters({ activeTab: val });
 
-    const [orders, setOrders] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-
     // Tree Mode: Expanded Rows
     const expandedRow = orderFilters.expandedOrderId;
     const setExpandedRow = (val) => updateOrderFilters({ expandedOrderId: val });
-
-    const [itemsLoading, setItemsLoading] = useState(false);
-    const [orderItems, setOrderItems] = useState({});
 
     // Docs Modal State
     const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
@@ -63,14 +62,14 @@ const OrdersTable = () => {
     const [selectedProductForImage, setSelectedProductForImage] = useState(null);
 
     // Notes Drawer State (Ata Viva)
-    const [notesTarget, setNotesTarget] = useState(null); // { order, item, product }
-    const [engineeringTarget, setEngineeringTarget] = useState(null); // { orderId, item object }
+    const [notesTarget, setNotesTarget] = useState(null);
+    const [engineeringTarget, setEngineeringTarget] = useState(null);
     const [showReportModal, setShowReportModal] = useState(false);
     const [isGlobalReport, setIsGlobalReport] = useState(false);
     const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
-    const [printingOrderId, setPrintingOrderId] = useState(null); // Local loading state for print button
+    const [printingOrderId, setPrintingOrderId] = useState(null);
 
     // PCPMetal AI Drawer State
     const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
@@ -83,7 +82,7 @@ const OrdersTable = () => {
     // Action dropdown menu state
     const [openActionMenu, setOpenActionMenu] = useState(null);
     const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
-    
+
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
@@ -126,125 +125,47 @@ const OrdersTable = () => {
     const page = orderFilters.page;
     const setPage = (val) => updateOrderFilters({ page: val });
 
-    const [totalPages, setTotalPages] = useState(1);
     const limit = viewMode === 'flat' ? 50 : 20;
     const colSpanCount = viewMode === 'flat' ? 23 : 7;
 
+    // useOrders: encapsulates fetch, retry, expand, poll
+    const {
+        orders,
+        loading,
+        error,
+        totalPages,
+        retryInfo,
+        orderItems,
+        itemsLoading,
+        fetchData,
+        pollOrderItems,
+        handleExpandRow: hookHandleExpandRow,
+        updateOrderItemsForPedido,
+        updateFlatOrdersFromItems,
+    } = useOrders({ limit, viewMode, filters, page });
+
+    const handleExpandRow = useCallback((pedidoId) => {
+        hookHandleExpandRow(pedidoId, expandedRow, setExpandedRow);
+    }, [hookHandleExpandRow, expandedRow, setExpandedRow]);
 
     // Selection State (Flat View)
     const [selectedItems, setSelectedItems] = useState([]);
 
     const handleSelectAll = (e) => {
-        if (e.target.checked) {
-            // Select all currently loaded flat items
-            setSelectedItems([...orders]);
-        } else {
-            setSelectedItems([]);
-        }
+        if (e.target.checked) setSelectedItems([...orders]);
+        else setSelectedItems([]);
     };
 
-    const handleSelectItem = (item) => {
+    const handleSelectItem = useCallback((item) => {
         setSelectedItems(prev => {
             const isSelected = prev.some(i => i.pedido === item.pedido && i.item === item.item);
-            if (isSelected) {
-                return prev.filter(i => !(i.pedido === item.pedido && i.item === item.item));
-            } else {
-                return [...prev, item];
-            }
+            if (isSelected) return prev.filter(i => !(i.pedido === item.pedido && i.item === item.item));
+            return [...prev, item];
         });
-    };
+    }, []);
 
-    // Keep selection cleared if pagination, search, or viewMode changes
-    useEffect(() => {
-        setSelectedItems([]);
-    }, [orders, viewMode]);
-
-    // AbortController ref — cancels stale requests on rapid filter/page changes
-    const abortRef = useRef(null);
-
-    const fetchData = async (overrides = {}) => {
-        // Cancel any in-flight request
-        if (abortRef.current) abortRef.current.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
-
-        setLoading(true);
-        setError(null);
-        try {
-            const searchFilters = {
-                cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
-                pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
-                produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
-                dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
-                dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
-                dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
-                tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
-                op_status: overrides.op_status !== undefined ? overrides.op_status : filters.op_status,
-                only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
-            };
-            const searchPage = overrides.page || page;
-            const searchViewMode = overrides.viewMode || viewMode;
-
-
-            const searchLimit = searchFilters.pedido ? 5000 : limit;
-            const reqOptions = { signal: controller.signal };
-
-            let result;
-            if (searchViewMode === 'flat') {
-                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
-            } else {
-                result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
-            }
-
-            if (!controller.signal.aborted) {
-                const { data, meta } = result;
-                setOrders(data);
-                setTotalPages(Math.ceil(meta.total / searchLimit));
-            }
-        } catch (err) {
-            if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
-            console.error(err);
-            const serverError = err.response?.data;
-            const errorMsg = serverError
-                ? typeof serverError === 'object' ? JSON.stringify(serverError, null, 2) : serverError
-                : err.message;
-            setError(`Erro ao carregar dados: ${errorMsg}`);
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
-    };
-
-    const handleExpandRow = async (pedidoId) => {
-        if (expandedRow === pedidoId) {
-            setExpandedRow(null);
-            return;
-        }
-
-        setExpandedRow(pedidoId);
-
-        // If items already loaded for this order, just expand
-        if (orderItems[pedidoId]) {
-            setItemsLoading(false);
-            return;
-        }
-
-        setItemsLoading(true);
-        try {
-            const itens = await getItensPedido(pedidoId);
-
-            if (Array.isArray(itens)) {
-                setOrderItems(prev => ({ ...prev, [pedidoId]: itens }));
-            } else {
-                console.warn(`Resposta inesperada para itens do pedido ${pedidoId}:`, itens);
-                setOrderItems(prev => ({ ...prev, [pedidoId]: [] }));
-            }
-        } catch (err) {
-            console.error(`Erro ao buscar itens do pedido ${pedidoId}:`, err);
-            setError(`Falha ao carregar itens do pedido ${pedidoId}.`);
-        } finally {
-            setItemsLoading(false);
-        }
-    };
+    // Keep selection cleared when orders change
+    useEffect(() => { setSelectedItems([]); }, [orders, viewMode]);
 
     const [hasSearched, setHasSearched] = useState(false);
 
@@ -252,18 +173,18 @@ const OrdersTable = () => {
         return !!(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
     };
 
-    // Fetch on filter/page change — cleanup aborts stale requests
+    // Fetch on page/viewMode/active filter change
     useEffect(() => {
         if (!hasSearched) return;
         fetchData();
-        return () => { if (abortRef.current) abortRef.current.abort(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, viewMode, filters.only_active, hasSearched]);
 
-    const handleFilterChange = (e) => {
+    const handleFilterChange = useCallback((e) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
-    };
+    }, [setFilters]);
+
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -410,15 +331,21 @@ const OrdersTable = () => {
 
     const handlePrintOPMirror = async (pedido, e, itemId = null) => {
         if (e) e.stopPropagation();
+        // Guard: never call op-mirror with an empty pedido (would produce 500 or /op-mirror/?...)
+        if (!pedido || String(pedido).trim() === '') {
+            console.warn('[handlePrintOPMirror] pedido inválido — chamada cancelada.');
+            return;
+        }
         const loadKey = itemId ? `op-${pedido}-${itemId}` : `op-${pedido}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${encodeURIComponent(pedido)}?item=${encodeURIComponent(itemId)}&pendingOnly=true`
+                : `/pedidos/op-mirror/${encodeURIComponent(pedido)}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+
 
             const { generateOPMirrorPdf } = await import('../services/opMirrorPdfGenerator');
             generateOPMirrorPdf(mirrorData);
@@ -438,8 +365,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -462,8 +389,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -487,8 +414,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -512,8 +439,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -537,8 +464,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -561,8 +488,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
-                : `/pedidos/op-mirror/${pedido}`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
+                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -667,7 +594,12 @@ const OrdersTable = () => {
                 </div>
             )}
             {/* Header & Filtros */}
-            <div className="p-4 border-b border-gray-100 bg-white print:hidden">
+            <div className="border-b border-gray-100 bg-white print:hidden">
+                {/* ── Top loading progress bar ── */}
+                <div className={`h-0.5 w-full overflow-hidden transition-opacity duration-300 ${loading ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="h-full" style={{ width: '100%', backgroundImage: 'linear-gradient(90deg, transparent 0%, #3b82f6 30%, #60a5fa 50%, #3b82f6 70%, transparent 100%)', backgroundSize: '200% 100%', animation: 'shimmerBar 1.4s linear infinite' }} />
+                </div>
+                <div className="p-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div>
                         <h2 className="text-xl font-bold text-gray-800">Pedidos de Venda</h2>
@@ -701,6 +633,14 @@ const OrdersTable = () => {
                     </div>
                 </div>
 
+                {/* ── Status bar while fetching ── */}
+                {loading && (
+                    <div className="mb-3 flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                        <span>Buscando dados no servidor… Aguarde.</span>
+                        <span className="ml-auto text-xs text-blue-400 italic">Isso pode levar alguns segundos dependendo dos filtros.</span>
+                    </div>
+                )}
                 <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-3 items-end">
                     <div className="flex flex-col gap-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
@@ -826,16 +766,24 @@ const OrdersTable = () => {
                     <div className="md:col-span-2 lg:col-span-2 flex gap-2">
                         <button
                             type="submit"
-                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
+                            disabled={loading}
+                            className={`flex-1 font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-all flex items-center justify-center gap-2 ${
+                                loading
+                                    ? 'bg-blue-400 cursor-not-allowed text-white opacity-80'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
                         >
-                            <Search className="h-4 w-4" />
-                            Filtrar
+                            {loading
+                                ? <><Loader2 className="h-4 w-4 animate-spin" /> Buscando...</>
+                                : <><Search className="h-4 w-4" /> Filtrar</>
+                            }
                         </button>
 
                         <button
                             type="button"
                             onClick={handleDownloadExcel}
-                            className="bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center"
+                            disabled={loading}
+                            className="bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center disabled:opacity-40"
                             title="Exportar Excel"
                         >
                             <FileSpreadsheet className="h-4 w-4" />
@@ -858,7 +806,8 @@ const OrdersTable = () => {
                         <button
                             type="button"
                             onClick={() => { setIsGlobalReport(false); setShowReportModal(true); }}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
+                            disabled={loading}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-2 disabled:opacity-40"
                             title="Gerar Ata (Pedidos da Tela)"
                         >
                             <StickyNote className="h-4 w-4" />
@@ -888,6 +837,7 @@ const OrdersTable = () => {
                         </div>
                     </div>
                 </form>
+                </div>
             </div>
 
             {/* Tab Navigation */}
@@ -983,14 +933,7 @@ const OrdersTable = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {loading ? (
-                                    <tr>
-                                        <td colSpan={colSpanCount} className="px-6 py-12 text-center">
-                                            <div className="flex flex-col items-center justify-center gap-2">
-                                                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-                                                <span className="text-gray-400 font-medium">Carregando dados...</span>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    <TableSkeletonRows count={8} isFlat={viewMode === 'flat'} />
                                 ) : error ? (
                                     <tr>
                                         <td colSpan={colSpanCount} className="px-6 py-12 text-center text-red-500">
@@ -1553,226 +1496,25 @@ const OrdersTable = () => {
                                                 </React.Fragment>
                                             ))
                                         ) : (
-                                            // FLAT VIEW IMPLEMENTATION
+                                            // FLAT VIEW — memoized rows prevent full-table re-renders
                                             orders.map((item, idx) => (
-                                                <tr key={`${item.pedido}-${item.item}-${idx}`} className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'} ${selectedItems.some(i => i.pedido === item.pedido && i.item === item.item) ? 'bg-blue-50' : ''}`}>
-                                                    <td className="px-2 py-2 text-center sticky left-0 z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]" onClick={(e) => e.stopPropagation()}>
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)} 
-                                                            onChange={() => handleSelectItem(item)}
-                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-                                                        />
-                                                    </td>
-                                                    <td className="px-3 py-2 whitespace-nowrap sticky left-[40px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
-                                                        <span className="font-bold text-gray-900">{item.pedido}</span>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center text-xs text-gray-600 whitespace-nowrap sticky left-[130px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
-                                                        <div className="flex items-center justify-center gap-1">
-                                                            <Calendar className="h-3 w-3 text-gray-400" />
-                                                            {formatProtheusDate(item.emissao)}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-xs font-mono text-gray-600 sticky left-[220px] z-10 bg-inherit min-w-[100px] max-w-[100px] w-[100px] truncate">
-                                                        {item.ref_cliente || '-'}
-                                                    </td>
-                                                    <td className="px-3 py-2 sticky left-[320px] z-10 bg-inherit min-w-[150px] max-w-[150px] w-[150px]">
-                                                        <div className="text-xs font-medium text-gray-700 truncate" title={item.nome_cliente}>
-                                                            {item.nome_cliente}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-xs text-gray-600 sticky left-[470px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px] truncate">
-                                                        {item.ped_cliente || '-'}
-                                                    </td>
-                                                    <td className="px-2 py-2 text-center text-xs font-mono text-gray-500 sticky left-[560px] z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]">{item.item}</td>
-                                                    <td className="px-3 py-2 text-center sticky left-[600px] z-10 bg-inherit min-w-[80px] max-w-[80px] w-[80px]">
-                                                        <div className="flex items-center justify-center gap-1.5">
-                                                            <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
-                                                                {item.op_num || '-'}
-                                                            </span>
-                                                            {item.op_num && item.op_num !== '-' && (
-                                                                item.op_tipo === 'F' ? (
-                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded shadow-sm border border-emerald-200" title="OP Firme">F</span>
-                                                                ) : item.op_tipo === 'P' ? (
-                                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-800 rounded shadow-sm border border-orange-200" title="OP Prevista">P</span>
-                                                                ) : null
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap sticky left-[680px] z-10 bg-inherit min-w-[140px] max-w-[140px] w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">
-                                                        <Link
-                                                            to={`/estrutura/${encodeURIComponent(item.codigo)}`}
-                                                            state={{ from: location.pathname }}
-                                                            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                                                        >
-                                                            {item.codigo} <Layers className="h-3 w-3" />
-                                                        </Link>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center text-xs text-gray-500 font-mono">
-                                                        {item.rev_codigo || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2 font-mono text-xs text-gray-500 text-center">
-                                                        {item.c6_rev_cliente || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center print:hidden">
-                                                        <div className="flex items-center justify-center gap-1">
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (item.has_drawing && item.drawing_url) {
-                                                                        window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank');
-                                                                    } else if (item.docs_count === 1 && item.first_doc) {
-                                                                        window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank');
-                                                                    } else {
-                                                                        handleOpenDocs(item.codigo, item.descricao);
-                                                                    }
-                                                                }}
-                                                                className={`p-1.5 rounded-lg transition-all relative ${item.has_docs
-                                                                    ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
-                                                                    : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                                                                    }`}
-                                                                title={item.has_docs
-                                                                    ? `${item.docs_count} Documento(s) - Clique para abrir`
-                                                                    : "Documentos"}
-                                                            >
-                                                                <FileText className="h-4 w-4" />
-                                                                {item.has_docs && (
-                                                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                                                                    </span>
-                                                                )}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setEngineeringTarget({ orderId: item.pedido, item })}
-                                                                className="p-1.5 text-gray-400 hover:text-blue-500 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center"
-                                                                title="Controle Engenharia / BOM"
-                                                            >
-                                                                <Settings className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        {(() => {
-                                                            const tipo = item.status_tipo_item;
-                                                            const detalhe = item.status_tipo_detalhe;
-                                                            const cfgs = {
-                                                                Novo: { label: 'NOVO', bg: 'bg-blue-100 text-blue-700 border-blue-200' },
-                                                                'Revisão': { label: 'REVISÃO', bg: 'bg-orange-100 text-orange-700 border-orange-200' },
-                                                                'Restrição': { label: 'RESTRIÇÃO', bg: 'bg-red-100 text-red-700 border-red-200' },
-                                                            };
-                                                            const cfg = cfgs[tipo] || { label: 'PCP', bg: 'bg-gray-100 text-gray-700 border-gray-200' };
-                                                            return (
-                                                                <div className="relative group/tipo inline-flex justify-center">
-                                                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded border cursor-help ${cfg.bg}`}>{cfg.label}</span>
-                                                                    {detalhe && (
-                                                                        <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tipo:flex flex-col items-center">
-                                                                            <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px] max-w-[300px]">
-                                                                                <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Detalhes do Tipo:</div>
-                                                                                <div className="whitespace-normal">{detalhe}</div>
-                                                                            </div>
-                                                                            <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-xs text-gray-600 truncate max-w-[250px]" title={item.descricao}>
-                                                        {item.descricao}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        {parseFloat(item.qtd_faturar) <= 0 ? (
-                                                            <div className="relative group inline-flex justify-center">
-                                                                <span className="px-2 py-0.5 text-[9px] font-bold bg-green-100 text-green-700 rounded border border-green-200 cursor-help">ENTREGUE</span>
-                                                                {item.notas_fiscais && item.notas_fiscais.length > 0 && (
-                                                                    <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                                                                        <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px]">
-                                                                            <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Notas Fiscais Emitidas:</div>
-                                                                            {item.notas_fiscais.map((nf, nfIdx) => (
-                                                                                <div key={nfIdx} className="py-0.5 flex justify-between gap-3">
-                                                                                    <span><span className="text-slate-400">NF:</span> {nf.nota} <span className="text-slate-500">({nf.serie})</span> <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span></span>
-                                                                                    <span><span className="text-slate-400">Emissão:</span> {nf.emissao} <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span></span>
-                                                                                    <span className="font-semibold text-blue-300 ml-2">{nf.qtd} {item.unidade}</span>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                        <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="relative group inline-flex justify-center">
-                                                                <span className={`px-2 py-0.5 text-[9px] font-bold rounded border ${item.notas_fiscais && item.notas_fiscais.length > 0 ? 'cursor-help' : ''} bg-orange-100 text-orange-700 border-orange-200`}>PENDENTE</span>
-                                                                {item.notas_fiscais && item.notas_fiscais.length > 0 && (
-                                                                    <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                                                                        <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px]">
-                                                                            <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Notas Fiscais Emitidas (Parciais):</div>
-                                                                            {item.notas_fiscais.map((nf, nfIdx) => (
-                                                                                <div key={nfIdx} className="py-0.5 flex justify-between gap-3">
-                                                                                    <span><span className="text-slate-400">NF:</span> {nf.nota} <span className="text-slate-500">({nf.serie})</span> <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span></span>
-                                                                                    <span><span className="text-slate-400">Emissão:</span> {nf.emissao} <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span></span>
-                                                                                    <span className="font-semibold text-blue-300 ml-2">{nf.qtd} {item.unidade}</span>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                        <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right text-gray-600">
-                                                        {parseFloat(item.qtd_entreg || 0).toLocaleString('pt-BR')}
-                                                    </td>
-                                                    <td className={`px-4 py-2 text-right font-medium ${parseFloat(item.qtd_faturar) <= 0 ? 'text-green-600' : 'text-orange-600 font-bold'}`}>
-                                                        {parseFloat(item.qtd_faturar || 0).toLocaleString('pt-BR')}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right font-medium">
-                                                        {parseFloat(item.quantidade).toLocaleString('pt-BR')} <span className="text-[10px] text-gray-400">{item.unidade}</span>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <div className={`flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${item.pcp_planned_eng_date ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-gray-50 text-gray-400 border-dashed border-gray-200'}`}>
-                                                                <Calendar className="h-2.5 w-2.5" />
-                                                                <span>Plan: {item.pcp_planned_eng_date ? new Date(item.pcp_planned_eng_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</span>
-                                                            </div>
-                                                            {item.designer_production_release_date && (
-                                                                <div className="flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">
-                                                                    <Calendar className="h-2.5 w-2.5" />
-                                                                    <span>Real: {new Date(item.designer_production_release_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center flex items-center justify-center gap-1 font-medium bg-blue-50 text-blue-800 rounded">
-                                                        <Calendar className="h-3 w-3 text-blue-400" />
-                                                        {item.entrega ? item.entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right text-xs font-medium text-teal-700">
-                                                        <div
-                                                            className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block"
-                                                            onClick={() => setPcpForecastTarget(item)}
-                                                            title="Clique para definir Qtd. PCP"
-                                                        >
-                                                            <span className="group-hover/pcp:text-teal-900">
-                                                                {item.pcp_delivery_forecast_qtd ? parseFloat(item.pcp_delivery_forecast_qtd).toLocaleString('pt-BR') : 'Definir...'}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center text-xs">
-                                                        <div
-                                                            className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block"
-                                                            onClick={() => setPcpForecastTarget(item)}
-                                                            title="Clique para definir Data PCP"
-                                                        >
-                                                            {item.pcp_delivery_forecast_date ? (
-                                                                <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-semibold group-hover/pcp:border-teal-400">
-                                                                    {new Date(item.pcp_delivery_forecast_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                                                                </span>
-                                                            ) : <span className="text-gray-400 group-hover/pcp:text-teal-600">Definir...</span>}
-                                                        </div>
-                                                    </td>
-                                                </tr>
+                                                <FlatItemRow
+                                                    key={`${item.pedido}-${item.item}-${idx}`}
+                                                    item={item}
+                                                    locationPathname={location.pathname}
+                                                    isSelected={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)}
+                                                    printingOrderId={printingOrderId}
+                                                    openActionMenu={openActionMenu}
+                                                    menuPosition={menuPosition}
+                                                    onSelectItem={handleSelectItem}
+                                                    onOpenDocs={handleOpenDocs}
+                                                    onSetEngineeringTarget={setEngineeringTarget}
+                                                    onSetPcpForecastTarget={setPcpForecastTarget}
+                                                    onSetNotesTarget={setNotesTarget}
+                                                    onSetInvoiceModal={({ nf, item: it }) => { setSelectedInvoice(nf); setInvoiceModalItem(it); }}
+                                                    onOpenActionMenu={setOpenActionMenu}
+                                                    formatProtheusDate={formatProtheusDate}
+                                                />
                                             ))
                                         )}
                                     </>
@@ -1886,64 +1628,32 @@ const OrdersTable = () => {
                         onClose={async () => {
                             const target = pcpForecastTarget;
                             setPcpForecastTarget(null);
-                            
-                            // Atualiza apenas a linha específica (sem piscar a tela inteira)
                             if (!target) return;
-                            const isBatch = Array.isArray(target);
-                            if (isBatch) {
+                            if (Array.isArray(target)) {
                                 fetchData();
                             } else {
-                                try {
-                                    // Aguarda 1 segundo para garantir que o Protheus salvou no banco
-                                    await new Promise(r => setTimeout(r, 1000));
-                                    const updatedItems = await getItensPedido(target.pedido);
-                                    if (viewMode === 'tree' && expandedRow === target.pedido) {
-                                        setOrderItems(prev => ({ ...prev, [target.pedido]: updatedItems }));
-                                    }
-                                    if (viewMode === 'flat') {
-                                        setOrders(prev => prev.map(o => {
-                                            if (o.pedido === target.pedido) {
-                                                const updated = updatedItems.find(u => u.item === o.item);
-                                                // Devemos mesclar os objetos para não perder campos exclusivos do modo flat (como cliente, emissão, etc)
-                                                return updated ? { ...o, ...updated } : o;
-                                            }
-                                            return o;
-                                        }));
-                                    }
-                                } catch (err) {
-                                    console.error('Erro ao atualizar linha individual:', err);
+                                await pollOrderItems(
+                                    target,
+                                    expandedRow,
+                                    viewMode === 'flat' ? updateFlatOrdersFromItems : null
+                                );
+                                if (viewMode === 'tree' && expandedRow === target.pedido) {
+                                    // pollOrderItems already called updateOrderItemsForPedido internally
                                 }
                             }
                         }}
                         item={pcpForecastTarget}
                         onSaveSuccess={async () => {
-                            // Mesma lógica de atualização individual para não dar reload full
                             const target = pcpForecastTarget;
                             if (!target) return;
-                            const isBatch = Array.isArray(target);
-                            if (isBatch) {
+                            if (Array.isArray(target)) {
                                 fetchData();
                             } else {
-                                try {
-                                    // Aguarda 1 segundo para garantir que o Protheus salvou no banco
-                                    await new Promise(r => setTimeout(r, 1000));
-                                    const updatedItems = await getItensPedido(target.pedido);
-                                    if (viewMode === 'tree' && expandedRow === target.pedido) {
-                                        setOrderItems(prev => ({ ...prev, [target.pedido]: updatedItems }));
-                                    }
-                                    if (viewMode === 'flat') {
-                                        setOrders(prev => prev.map(o => {
-                                            if (o.pedido === target.pedido) {
-                                                const updated = updatedItems.find(u => u.item === o.item);
-                                                // Mesclar
-                                                return updated ? { ...o, ...updated } : o;
-                                            }
-                                            return o;
-                                        }));
-                                    }
-                                } catch (err) {
-                                    console.error('Erro ao atualizar linha individual:', err);
-                                }
+                                await pollOrderItems(
+                                    target,
+                                    expandedRow,
+                                    viewMode === 'flat' ? updateFlatOrdersFromItems : null
+                                );
                             }
                         }}
                     />
@@ -1956,7 +1666,9 @@ const OrdersTable = () => {
                 onClose={() => setPcpmetalOpen(false)}
                 context={pcpmetalContext}
             />
-        </div >
+            {/* Retry Toast — shown during exponential backoff on 500 errors */}
+            <RetryToast retryInfo={retryInfo} />
+        </div>
     );
 };
 

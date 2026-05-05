@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes shimmerBar {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   /* Prevent font scaling in landscape while allowing user zoom */

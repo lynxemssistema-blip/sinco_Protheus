@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 export default function VerticalAppointmentPage() {
     const { user } = useAuth();
     const [groupByResource, setGroupByResource] = useState(false);
+    const [pageBreakPerGroup, setPageBreakPerGroup] = useState(false);
     const [operations, setOperations] = useState([]);
     const [selectedOp, setSelectedOp] = useStickyState('', '@metalfisa:vert_selectedOp');
     const [data, setData] = useStickyState([], '@metalfisa:vertical_data');
@@ -64,7 +65,10 @@ export default function VerticalAppointmentPage() {
             return;
         }
 
-        if (showLoader) setLoading(true);
+        if (showLoader) {
+            setLoading(true);
+            setData([]);
+        }
         setApiError(null);
         try {
             const params = { ...filters };
@@ -98,6 +102,44 @@ export default function VerticalAppointmentPage() {
 
     const handlePlanChange = (opKey, dateStr) => {
         setDraftPlans(prev => ({ ...prev, [opKey]: dateStr }));
+    };
+
+
+    const getWeekStart = (date) => {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(d.setDate(diff));
+    };
+
+    const setDateShortcut = (type) => {
+        const now = new Date();
+        let start = new Date(now);
+        let end = new Date(now);
+
+        const fmt = (d) => {
+            const yr = d.getFullYear();
+            const mo = String(d.getMonth() + 1).padStart(2, '0');
+            const da = String(d.getDate()).padStart(2, '0');
+            return `${yr}-${mo}-${da}`;
+        };
+
+        if (type === 'today') {
+            // now
+        } else if (type === 'this_week') {
+            start = getWeekStart(now);
+            end = new Date(start);
+            end.setDate(end.getDate() + 6);
+        } else if (type === 'next_week') {
+            start = getWeekStart(now);
+            start.setDate(start.getDate() + 7);
+            end = new Date(start);
+            end.setDate(end.getDate() + 6);
+        } else if (type === 'this_month') {
+            start = new Date(now.getFullYear(), now.getMonth(), 1);
+            end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        }
+        setFilters(prev => ({ ...prev, plan_inicio_de: fmt(start), plan_inicio_ate: fmt(end) }));
     };
 
     const savePlan = async (row) => {
@@ -170,7 +212,7 @@ export default function VerticalAppointmentPage() {
                 return;
             }
 
-            generateVerticalPendingPdf(pendencies, filters, user, groupByResource);
+            generateVerticalPendingPdf(pendencies, filters, user, groupByResource, pageBreakPerGroup);
 
         } catch (err) {
             console.error('Erro ao gerar relatório de pendências', err);
@@ -310,6 +352,12 @@ export default function VerticalAppointmentPage() {
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
                             </div>
+                            <div className="flex gap-2 justify-start col-span-2 md:col-span-6 w-full pt-1">
+                                <button onClick={() => setDateShortcut('today')} className="text-[10px] uppercase font-bold text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-blue-50 transition-colors shadow-sm">Hoje</button>
+                                <button onClick={() => setDateShortcut('this_week')} className="text-[10px] uppercase font-bold text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-blue-50 transition-colors shadow-sm">Semana</button>
+                                <button onClick={() => setDateShortcut('next_week')} className="text-[10px] uppercase font-bold text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-blue-50 transition-colors shadow-sm">Próx. Sem.</button>
+                                <button onClick={() => setDateShortcut('this_month')} className="text-[10px] uppercase font-bold text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-blue-50 transition-colors shadow-sm">Mês</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -363,11 +411,25 @@ export default function VerticalAppointmentPage() {
                             <input 
                                 type="checkbox" 
                                 checked={groupByResource} 
-                                onChange={(e) => setGroupByResource(e.target.checked)}
+                                onChange={(e) => {
+                                    setGroupByResource(e.target.checked);
+                                    if (!e.target.checked) setPageBreakPerGroup(false);
+                                }}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
-                            Agrupar por Recurso
+                            Agrupar por Operação
                         </label>
+                        {groupByResource && (
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-3 py-2 rounded border cursor-pointer hover:bg-slate-100 transition-colors" title="Imprimir cada recurso em uma folha separada">
+                                <input 
+                                    type="checkbox" 
+                                    checked={pageBreakPerGroup} 
+                                    onChange={(e) => setPageBreakPerGroup(e.target.checked)}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                Folhas Individuais
+                            </label>
+                        )}
                         <button
                             onClick={handleGeneratePendingReport}
                             className="bg-slate-800 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-900 transition-colors flex items-center justify-center gap-2 flex-1 md:flex-none"

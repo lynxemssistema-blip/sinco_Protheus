@@ -18,7 +18,7 @@ robocopy "$serverSrc" "$serverDest" index.js db.js package.json package-lock.jso
 
 # 2. Mirror code subdirectories — /MIR + /IS + /IT garante sincronia completa de conteúdo
 Write-Host "Mirroring Backend subdirectories..." -ForegroundColor Yellow
-$codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public")
+$codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public", "scripts")
 foreach ($dir in $codeDirs) {
     $srcDir = Join-Path $serverSrc $dir
     $destDir = Join-Path $serverDest $dir

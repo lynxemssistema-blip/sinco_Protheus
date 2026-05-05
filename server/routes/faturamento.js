@@ -176,35 +176,36 @@ router.post('/solicitacoes', async (req, res) => {
 
         const solicitacaoId = resultHeader.insertId;
 
-        // 2. Inserir itens
-        for (const it of items) {
-            if (!it.quantidade_solicitada || it.quantidade_solicitada <= 0) continue;
-
+        // 2. Inserir itens (batch)
+        const validItems = items.filter(it => it.quantidade_solicitada && it.quantidade_solicitada > 0);
+        if (validItems.length > 0) {
+            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            const values = validItems.flatMap(it => [
+                solicitacaoId,
+                String(it.pedido).trim(),
+                String(it.item).trim(),
+                String(it.codigo).trim(),
+                parseFloat(it.quantidade_solicitada),
+                parseFloat(it.qtd_faturar || 0),
+                it.ped_cliente ? String(it.ped_cliente).trim() : null,
+                it.ref_cliente ? String(it.ref_cliente).trim() : null,
+                it.nome_cliente ? String(it.nome_cliente).trim() : null,
+                it.valor_unitario || null,
+                it.valor_total || null,
+                it.pcp_forecast_id || null,
+                it.pcp_data_entrega ? String(it.pcp_data_entrega).split('T')[0] : null,
+                it.pcp_serie_cliente || null,
+                it.pcp_serie_metalfisa || null,
+                it.pcp_numero_serie || null,
+                it.pcp_lote || null,
+                it.pcp_numero_lote || null
+            ]);
             await connection.query(
                 `INSERT INTO app_faturamento_solicitacao_itens
                  (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, pedido_cliente, desenho_cliente, nome_cliente, valor_unitario, valor_total,
                   pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_numero_serie, pcp_lote, pcp_numero_lote)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    solicitacaoId,
-                    String(it.pedido).trim(),
-                    String(it.item).trim(),
-                    String(it.codigo).trim(),
-                    parseFloat(it.quantidade_solicitada),
-                    parseFloat(it.qtd_faturar || 0),
-                    it.ped_cliente ? String(it.ped_cliente).trim() : null,
-                    it.ref_cliente ? String(it.ref_cliente).trim() : null,
-                    it.nome_cliente ? String(it.nome_cliente).trim() : null,
-                    it.valor_unitario || null,
-                    it.valor_total || null,
-                    it.pcp_forecast_id || null,
-                    it.pcp_data_entrega ? String(it.pcp_data_entrega).split('T')[0] : null,
-                    it.pcp_serie_cliente || null,
-                    it.pcp_serie_metalfisa || null,
-                    it.pcp_numero_serie || null,
-                    it.pcp_lote || null,
-                    it.pcp_numero_lote || null
-                ]
+                 VALUES ${placeholders}`,
+                values
             );
         }
 

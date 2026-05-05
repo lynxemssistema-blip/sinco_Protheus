@@ -8,12 +8,12 @@ export default defineConfig({
         host: true, // Listen on all IPs
         proxy: {
             '/api': {
-                target: 'http://localhost:3001',
+                target: 'http://localhost:3002',
                 changeOrigin: true,
                 secure: false
             },
             '/socket.io': {
-                target: 'http://localhost:3001',
+                target: 'http://localhost:3002',
                 ws: true
             }
         }
