@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { MessageSquare, CheckCircle, Reply } from 'lucide-react';
+import { MessageSquare, CheckCircle, Reply, X, ExternalLink } from 'lucide-react';
 import api from '../services/api';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const FloatingAvisos = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const isAvisosPage = location.pathname === '/avisos';
     const { user, signed } = useAuth();
     const [avisos, setAvisos] = useState([]);
@@ -20,9 +21,15 @@ const FloatingAvisos = () => {
             const res = await api.get(`/avisos/nao-concluidos/${user.id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setAvisos(res.data);
-            if (currentIndex >= res.data.length && res.data.length > 0) {
-                setCurrentIndex(res.data.length - 1);
+            
+            const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+            const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
+            
+            const filtered = res.data.filter(a => !dismissed.has(a.idAviso));
+            setAvisos(filtered);
+            
+            if (currentIndex >= filtered.length && filtered.length > 0) {
+                setCurrentIndex(filtered.length - 1);
             }
         } catch (error) {
             console.error('Erro ao buscar avisos', error);
@@ -49,7 +56,12 @@ const FloatingAvisos = () => {
 
             socket.on('novo_aviso', (novoData) => {
                 if (window.location.pathname === '/avisos') return;
-                setAvisos(prev => [...prev, novoData]);
+                
+                const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+                const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
+                if (!dismissed.has(novoData.idAviso)) {
+                    setAvisos(prev => [...prev, novoData]);
+                }
             });
         }).catch(err => console.error('Socket.io load error:', err));
 
@@ -81,6 +93,16 @@ const FloatingAvisos = () => {
         }
     };
 
+    const handleDismiss = (idAviso) => {
+        const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+        const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
+        dismissed.add(idAviso);
+        sessionStorage.setItem('@metalfisa:dismissedAvisos', JSON.stringify([...dismissed]));
+        
+        setAvisos(prev => prev.filter(a => a.idAviso !== idAviso));
+        if (currentIndex > 0) setCurrentIndex(p => p - 1);
+    };
+
     const handleReply = async (aviso) => {
         if (!replyText.trim()) return;
         try {
@@ -107,13 +129,37 @@ const FloatingAvisos = () => {
     const avisoAtual = avisos[currentIndex];
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce-short">
+        <div className="fixed bottom-24 right-6 z-50 animate-bounce-short">
             <div className="bg-white rounded-lg shadow-2xl border-l-4 border-blue-500 w-80 md:w-96 overflow-hidden flex flex-col pointer-events-auto">
                 {/* Header do Aviso */}
                 <div className="bg-slate-50 p-3 border-b flex items-center justify-between">
                     <div className="flex items-center gap-2 text-slate-700">
-                        <MessageSquare className="w-5 h-5 text-blue-500" />
+                        {avisoAtual.fotoRemetente ? (
+                            <img 
+                                src={api.defaults.baseURL.replace('/api', '') + avisoAtual.fotoRemetente} 
+                                alt={avisoAtual.nomeRemetente}
+                                className="w-6 h-6 rounded-full object-cover shadow-sm"
+                            />
+                        ) : (
+                            <MessageSquare className="w-5 h-5 text-blue-500" />
+                        )}
                         <span className="font-bold text-sm">Novo Aviso de {avisoAtual.nomeRemetente}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button 
+                            onClick={() => navigate('/avisos')}
+                            className="text-blue-500 hover:text-blue-700 transition-colors p-1 rounded-full hover:bg-slate-200"
+                            title="Abrir página completa de avisos"
+                        >
+                            <ExternalLink className="w-4 h-4" />
+                        </button>
+                        <button 
+                            onClick={() => handleDismiss(avisoAtual.idAviso)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-full hover:bg-slate-200"
+                            title="Fechar e ignorar temporariamente"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 

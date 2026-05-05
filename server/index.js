@@ -97,6 +97,19 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// --- AI Error Tracker Middleware ---
+const { handleSystemError } = require('./utils/errorHandlerToAgent');
+app.use((req, res, next) => {
+    const originalJson = res.json;
+    res.json = function(body) {
+        if (res.statusCode >= 500) {
+            handleSystemError(req, body).catch(e => console.error(e));
+        }
+        return originalJson.call(this, body);
+    };
+    next();
+});
+
 // Auth — public routes (no token required)
 app.use('/api/auth', require('./routes/auth'));
 
@@ -243,6 +256,12 @@ app.use('/api/meucanal', require('./routes/meucanal'));
 
 // WhatsApp Logs
 app.use('/api/whatsapp', require('./routes/whatsapp'));
+
+// Suporte IA Webhook (WhatsApp Evolution)
+app.use('/api/webhook', require('./routes/webhook_suporte'));
+
+// System Errors Tracking
+app.use('/api/system-errors', require('./routes/systemErrors'));
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));

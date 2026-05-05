@@ -143,7 +143,7 @@ router.post('/', async (req, res) => {
         const io = req.app.get('io');
         if (io) {
             const queryData = `
-                SELECT a.*, ur.NomeCompleto as nomeRemetente 
+                SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente 
                 FROM sistema_avisos a
                 JOIN usuario ur ON a.idRemetente = ur.idUsuario
                 WHERE a.idAviso = ?
@@ -180,7 +180,7 @@ router.get('/nao-concluidos/:idUsuario', async (req, res) => {
         const grupoFilter = hasIdGrupo ? 'AND a.idGrupo IS NULL' : '';
 
         const query = `
-            SELECT a.*, ur.NomeCompleto as nomeRemetente 
+            SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente 
             FROM sistema_avisos a
             JOIN usuario ur ON a.idRemetente = ur.idUsuario
             WHERE a.idDestinatario = ? AND a.concluido = 0 ${grupoFilter}
