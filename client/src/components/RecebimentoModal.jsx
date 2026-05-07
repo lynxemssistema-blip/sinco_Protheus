@@ -19,6 +19,9 @@ export default function RecebimentoModal({ isOpen, onClose, selectedItem, onSave
     const [historico, setHistorico] = useState([]);
     const [loadingHistorico, setLoadingHistorico] = useState(false);
     const [isHistoricoOpen, setIsHistoricoOpen] = useState(false);
+    
+    const [operacoes, setOperacoes] = useState([]);
+    const [operacaoBaixa, setOperacaoBaixa] = useState('');
 
     const inputQtdRef = useRef(null);
 
@@ -36,10 +39,21 @@ export default function RecebimentoModal({ isOpen, onClose, selectedItem, onSave
                     inputQtdRef.current.select();
                 }
             }, 100);
+
+            // Fetch operations 
+            if (selectedItem.item_id) {
+                api.get(`/romaneios/items/${selectedItem.item_id}/operations`)
+                    .then(res => setOperacoes(res.data))
+                    .catch(err => console.error('Erro ao buscar operações:', err));
+            } else {
+                setOperacoes([]);
+            }
         } else {
             setQuantidade('');
             setObservacao('');
             setHistorico([]);
+            setOperacoes([]);
+            setOperacaoBaixa('');
             setDataRecebimento(getLocalDatetime());
         }
     }, [isOpen, selectedItem]);
@@ -97,7 +111,8 @@ export default function RecebimentoModal({ isOpen, onClose, selectedItem, onSave
                 quantidade: qtdNum,
                 usuario: user?.nome || user?.email || 'Sistema',
                 observacao,
-                data_recebimento: dataRecebimento
+                data_recebimento: dataRecebimento,
+                operacao_baixa: operacaoBaixa || undefined
             });
 
             toast.success('Recebimento registrado com sucesso!');
@@ -245,6 +260,29 @@ export default function RecebimentoModal({ isOpen, onClose, selectedItem, onSave
                                 )}
                             </div>
                         </div>
+
+                        {operacoes.length > 0 && (
+                            <div className="bg-blue-50 p-2.5 rounded border border-blue-100">
+                                <label className="block text-xs font-bold text-blue-800 mb-1">
+                                    Baixa Automática na Produção (Opcional)
+                                </label>
+                                <select
+                                    value={operacaoBaixa}
+                                    onChange={(e) => setOperacaoBaixa(e.target.value)}
+                                    className="w-full border rounded p-2 text-sm text-slate-900 border-blue-200 focus:border-blue-500 outline-none"
+                                >
+                                    <option value="">-- Não baixar nenhuma operação --</option>
+                                    {operacoes.map(op => (
+                                        <option key={op.operacao_codigo} value={op.operacao_codigo}>
+                                            {op.operacao_codigo} - {op.operacao_desc}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-blue-600 mt-1">
+                                    Selecione uma operação para gerar o apontamento de produção automaticamente com este retorno.
+                                </p>
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-xs font-bold text-slate-700 mb-1">Data e Hora de Recebimento</label>

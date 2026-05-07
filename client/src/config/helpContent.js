@@ -2036,6 +2036,71 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Romaneios e Recebimento ────────────────────────────────────────────────────────────────
+  '/romaneios': {
+    category: 'Logística',
+    categoryColor: '#8b5cf6',
+    title: 'Gestão de Romaneios',
+    icon: 'Package',
+    description: 'Gestão principal dos Romaneios de Remessa e Retorno de Terceiros.',
+    steps: [
+      'Esta é a tela principal de listagem de romaneios.',
+      'Acesse os detalhes de um romaneio específico ou inicie o processo de recebimento clicando no botão de retorno.'
+    ],
+    tips: [
+      'Filtre os romaneios por status para localizar envios pendentes de devolução.'
+    ],
+    links: [
+      { path: '/recebimentos', label: 'Tela de Recebimentos' },
+      { path: '/producao', label: 'Ordens de Produção' }
+    ]
+  },
+
+  '/recebimentos': {
+    category: 'Logística e PCP',
+    categoryColor: '#8b5cf6',
+    title: 'Página de Recebimentos de Romaneio',
+    icon: 'DownloadCloud',
+    description: 'Controle detalhado e apontamento de recebimento dos itens físicos que retornaram dos serviços externos ou fornecedores.',
+    tabs: [
+      {
+        id: 'recebimento-basico',
+        label: 'Regras de Recebimento',
+        description: 'Como funciona a entrada parcial ou total de peças.',
+        steps: [
+          'Na lista de itens do romaneio, localize o produto que acabou de chegar fisicamente.',
+          'Clique no botão verde "Receber". O sistema pré-carrega automaticamente o "Saldo Pendente" daquele envio original.',
+          'Você pode digitar uma quantidade menor (Recebimento Parcial) caso não tenha retornado tudo.',
+          'Regra de Quantidade: O sistema bloqueia recebimentos onde a quantidade informada seja superior ao saldo pendente do envio. Não é possível receber mais peças do que o enviado.'
+        ],
+        tips: [
+          'Se for um recebimento parcial, o item continuará com o status de Pendente até que todo o saldo seja zerado em recebimentos futuros.',
+          'O preenchimento de "Data" vem com a data atual por padrão, mas pode ser retroativo.'
+        ]
+      },
+      {
+        id: 'baixa-automatica',
+        label: 'Baixa Automática na Produção',
+        description: 'Integração em tempo real com as Ordens de Produção do ERP.',
+        steps: [
+          'Ao abrir o modal de recebimento, você verá um campo opcional chamado "Baixa Automática na Produção".',
+          'Esse campo pesquisa no ERP o roteiro (operações) atrelado a esse produto e a essa Ordem de Produção.',
+          'Selecione a operação (ex: PINTURA, SOLDA) onde o item estava. Ao salvar, o sistema fará o recebimento físico do romaneio E também gravará a quantidade como "produzida" diretamente na OP.',
+          'Regra de Saldo da OP: O sistema faz um cálculo de segurança. Se você tentar baixar uma quantidade que seja MAIOR do que o saldo que falta fabricar na OP para aquela operação específica, a ação será bloqueada com Erro 400.'
+        ],
+        tips: [
+          'Se o campo de "Baixa Automática" não mostrar nenhuma operação para selecionar, significa que o item não tem um roteiro padrão cadastrado no ERP, ou a OP já foi finalizada/deletada.',
+          'Essa função é opcional. Se deixar em branco, o sistema fará apenas o retorno físico do romaneio e não apontará na OP.',
+          'Todos os apontamentos gerados desta forma ficam registrados com a observação "Baixa automática via Retorno de Romaneio".'
+        ]
+      }
+    ],
+    links: [
+      { path: '/romaneios', label: 'Voltar aos Romaneios' },
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' }
+    ]
+  },
+
   // ── Central de Ajuda ─────────────────────────────────────────────────────────
   '/ajuda': {
     category: 'Comunicação',

@@ -1,18 +1,14 @@
+const mysql = require('mysql2/promise');
 require('dotenv').config();
-const mysqlPool = require('./services/mysqlService');
-async function checkMySQL() {
-    let t0 = Date.now();
-    await mysqlPool.query(`SELECT * FROM app_pcp_delivery_forecasts LIMIT 1`);
-    console.log('MySQL connected in', Date.now() - t0, 'ms');
-    
-    t0 = Date.now();
-    await mysqlPool.query(`SELECT TRIM(pedido) as pedido, TRIM(item) as item FROM app_pedidos_notes WHERE pedido IN ('001421')`);
-    console.log('app_pedidos_notes in', Date.now() - t0, 'ms');
-
-    t0 = Date.now();
-    await mysqlPool.query(`SELECT * FROM app_pedidos_faturamentos_saldos WHERE pedido IN ('001421')`);
-    console.log('app_pedidos_faturamentos_saldos in', Date.now() - t0, 'ms');
-
-    process.exit();
+async function run() {
+    const pool = mysql.createPool({
+        host: process.env.MYSQL_HOST,
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASSWORD,
+        database: process.env.MYSQL_DATABASE
+    });
+    const [rows] = await pool.query("SELECT * FROM produtos_docs WHERE produto_codigo LIKE 'MT2%'");
+    console.log(rows.map(r=>r.produto_codigo));
+    pool.end();
 }
-checkMySQL();
+run();

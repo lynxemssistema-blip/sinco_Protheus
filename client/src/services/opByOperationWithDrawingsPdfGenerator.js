@@ -12,10 +12,18 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
 export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
-            console.error("Invalid data provided to PDF generator");
-            alert("Dados inválidos para geração do PDF.");
+            console.error('[opByOperationWithDrawingsPdfGenerator] Dados inválidos:', mirrorData);
+            alert('Dados inválidos para geração do PDF.');
             return;
         }
+
+        if (!mirrorData.itens || !Array.isArray(mirrorData.itens) || mirrorData.itens.length === 0) {
+            console.warn('[opByOperationWithDrawingsPdfGenerator] mirrorData.itens está vazio ou ausente:', mirrorData);
+            alert('O espelho desta OP não possui itens. Verifique o roteiro no Protheus.');
+            return;
+        }
+
+        console.log('[opByOperationWithDrawingsPdfGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length);
 
         // Generate the ArrayBuffer of the front cover (Rastreabilidade Operações Mode)
         const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);

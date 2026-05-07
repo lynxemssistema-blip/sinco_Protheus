@@ -12,10 +12,18 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
 export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
-            console.error("Invalid data provided to PDF generator");
-            alert("Dados inválidos para geração do PDF.");
+            console.error('[opDrawingsByResourceGenerator] Dados inválidos:', mirrorData);
+            alert('Dados inválidos para geração do PDF.');
             return;
         }
+
+        if (!mirrorData.itens || !Array.isArray(mirrorData.itens) || mirrorData.itens.length === 0) {
+            console.warn('[opDrawingsByResourceGenerator] mirrorData.itens está vazio ou ausente:', mirrorData);
+            alert('O espelho desta OP não possui itens ou operações. Verifique se o pedido possui roteiro no Protheus.');
+            return;
+        }
+
+        console.log('[opDrawingsByResourceGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length);
 
         const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);
         if (!espelhoBuffer) {

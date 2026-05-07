@@ -119,8 +119,8 @@ Em caso de problemas:
 
 ---
 
-**Versão**: 1.3.11 (Status Firme/Prevista OP e Autopreenchimento PCP)  
-**Build**: 01/05/2026 15:31
+**Versão**: 1.3.13 (Modal de Apontamento Multi-Operações e Saldo Automático)  
+**Build**: 06/05/2026 21:13
 
 **Comando de Publicação no servidor**
 scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa -r ./linux-deployment/* sinco@192.168.1.77:/var/www/metalfisa/

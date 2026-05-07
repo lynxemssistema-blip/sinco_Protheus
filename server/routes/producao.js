@@ -1228,4 +1228,88 @@ router.get('/estrutura-routing', async (req, res) => {
   }
 });
 
+// ============================================================
+// GET /api/producao/op-roteiro-saldo
+// Retorna as operações do roteiro de um item de OP + saldos
+// ============================================================
+router.get('/op-roteiro-saldo', async (req, res) => {
+  try {
+    const { op, item, sequencia, produto } = req.query;
+    if (!op || !item || !produto) {
+      return res.status(400).json({ error: 'op, item e produto são obrigatórios.' });
+    }
+
+    // 1. Buscar roteiro daquele produto em sg2010
+    const sgQuery = `
+      SELECT
+        TRIM(g2.g2_produto)  AS produto,
+        TRIM(g2.g2_operac)   AS operacao_codigo,
+        TRIM(g2.g2_recurso)  AS recurso_codigo,
+        TRIM(h1.h1_descri)   AS operacao_desc
+      FROM public.sg2010 g2
+      LEFT JOIN public.sh1010 h1
+        ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+        AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+      WHERE TRIM(g2.g2_produto) = $1
+        AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+      ORDER BY g2.g2_operac ASC
+    `;
+    const sgResult = await db.query(sgQuery, [produto.trim()]);
+    const operacoes = sgResult.rows;
+
+    if (operacoes.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. Quantidade total da OP em SC2
+    const sc2Query = `
+      SELECT CAST(c2_quant AS numeric) AS qtd_op
+      FROM public.sc2010
+      WHERE TRIM(c2_num) = $1 AND TRIM(c2_item) = $2 AND TRIM(c2_sequen) = $3
+      AND COALESCE(d_e_l_e_t_, '') = ''
+      LIMIT 1
+    `;
+    const sc2Result = await db.query(sc2Query, [op.trim().padStart(6, '0'), item.trim(), (sequencia || '001').trim()]);
+    const qtd_op = sc2Result.rows.length > 0 ? Number(sc2Result.rows[0].qtd_op) : 0;
+
+    // 3. Buscar apontamentos no MySQL
+    const opCodOperacoes = operacoes.map(o => o.operacao_codigo);
+    const placeholders = opCodOperacoes.map(() => '?').join(',');
+    
+    let appointments = [];
+    if (opCodOperacoes.length > 0) {
+      const [aRows] = await mysqlPool.query(`
+        SELECT operacao_codigo, SUM(quantidade) as total_produzido
+        FROM app_production_appointments
+        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ?
+        AND operacao_codigo IN (${placeholders})
+        GROUP BY operacao_codigo
+      `, [op.trim().padStart(6, '0'), item.trim(), (sequencia || '001').trim(), ...opCodOperacoes]);
+      appointments = aRows;
+    }
+
+    // 4. Mapear resposta
+    const resultado = operacoes.map(opRow => {
+      const appt = appointments.find(a => a.operacao_codigo === opRow.operacao_codigo);
+      const produzido = appt ? Number(appt.total_produzido) : 0;
+      const saldo = Math.max(0, qtd_op - produzido);
+      
+      return {
+        ...opRow,
+        op: op.trim().padStart(6, '0'),
+        item_op: item.trim(),
+        sequen: (sequencia || '001').trim(),
+        qtd_planejada_op: qtd_op,
+        qtd_produzida_real: produzido,
+        saldo: saldo
+      };
+    });
+
+    res.json(resultado);
+  } catch (err) {
+    console.error('❌ [OP-ROTEIRO-SALDO]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

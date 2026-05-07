@@ -340,8 +340,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${encodeURIComponent(pedido)}?item=${encodeURIComponent(itemId)}&pendingOnly=true`
-                : `/pedidos/op-mirror/${encodeURIComponent(pedido)}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${encodeURIComponent(pedido)}?item=${encodeURIComponent(itemId)}`
+                : `/pedidos/op-mirror/${encodeURIComponent(pedido)}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -365,8 +365,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -389,8 +389,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -414,8 +414,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -439,8 +439,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -464,8 +464,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
@@ -488,8 +488,8 @@ const OrdersTable = () => {
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
-                ? `/pedidos/op-mirror/${pedido}?item=${itemId}&pendingOnly=true`
-                : `/pedidos/op-mirror/${pedido}?pendingOnly=true`;
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;

@@ -20,6 +20,7 @@ export default function VerticalAppointmentPage() {
     const [data, setData] = useStickyState([], '@metalfisa:vertical_data');
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
+    const [wasSearched, setWasSearched] = useState(false); // Distingue "nunca buscou" de "buscou mas não achou"
 
     // Filtros rápidos
     const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
@@ -58,9 +59,11 @@ export default function VerticalAppointmentPage() {
     const loadData = async (showLoader = true) => {
         if (!selectedOp) return;
 
-        // Bloqueio de Performance
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
+        // Bloqueio de Performance — sem nenhum filtro, não executa
+        const hasFilter = filters.op || filters.pedido || filters.produto || filters.cliente || filters.plan_inicio_de || filters.plan_inicio_ate;
+        if (!hasFilter) {
             setData([]);
+            setWasSearched(false);
             if (showLoader) setLoading(false);
             return;
         }
@@ -76,6 +79,7 @@ export default function VerticalAppointmentPage() {
 
             const result = await getVerticalProduction(selectedOp, params);
             setData(Array.isArray(result) ? result : (result?.data || []));
+            setWasSearched(true);
             setDraftPlans({});
         } catch (err) {
             console.error('Erro ao carregar fila vertical', err);
@@ -402,6 +406,7 @@ export default function VerticalAppointmentPage() {
                                 setFilters({ op: '', pedido: '', produto: '', cliente: '', plan_inicio_de: '', plan_inicio_ate: '' });
                                 setFilterStatus('ABERTOS');
                                 setData([]);
+                                setWasSearched(false);
                             }}
                             className="px-4 py-2 border rounded text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
                         >
@@ -460,8 +465,35 @@ export default function VerticalAppointmentPage() {
                 </div>
             ) : data.length === 0 && selectedOp ? (
                 <div className="bg-white rounded-lg shadow-sm border p-8 text-center text-slate-500">
-                    <div className="font-medium text-slate-700 text-base">Nenhuma operação em exibição</div>
-                    <div className="text-sm mt-1 mb-2">Por questões de performance, a busca não é automática. <br />Verifique se selecionou um <strong>Centro de Custo</strong> e informou ao menos <strong>um Filtro</strong> para buscar.</div>
+                    {wasSearched ? (
+                        /* Buscou mas não achou nada — mostrar diagnóstico útil */
+                        <>
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+                                    <AlertTriangle className="w-6 h-6 text-amber-500" />
+                                </div>
+                                <div className="font-semibold text-slate-700 text-base">Nenhuma operação encontrada para estes filtros</div>
+                            </div>
+                            <div className="mt-4 max-w-md mx-auto text-sm text-slate-500 space-y-2 text-left bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                <p className="font-semibold text-amber-800 flex items-center gap-2">
+                                    <AlertTriangle className="w-4 h-4" /> Possíveis causas:
+                                </p>
+                                <ul className="list-disc list-inside space-y-1.5 text-amber-700">
+                                    <li>O produto do pedido/OP informado <strong>não passa pelo recurso <span className="font-mono">{selectedOp}</span></strong> em seu roteiro de fabricação (SG2010).</li>
+                                    <li>O filtro <strong>PEDIDO</strong> deve conter o número do Pedido de Venda (ex: <span className="font-mono">003731</span>) — não o número da OP.</li>
+                                    <li>O filtro <strong>OP</strong> deve conter o número da Ordem de Produção (ex: <span className="font-mono">005909</span>).</li>
+                                    <li>O pedido pode estar <strong>inativo/arquivado</strong> no sistema.</li>
+                                </ul>
+                                <p className="text-amber-600 text-xs pt-1 border-t border-amber-200">💡 Dica: Verifique em qual setor/recurso esse produto é fabricado e selecione-o no campo Recurso.</p>
+                            </div>
+                        </>
+                    ) : (
+                        /* Ainda não buscou — instrução padrão */
+                        <>
+                            <div className="font-medium text-slate-700 text-base">Nenhuma operação em exibição</div>
+                            <div className="text-sm mt-1 mb-2">Por questões de performance, a busca não é automática. <br />Verifique se selecionou um <strong>Centro de Custo</strong> e informou ao menos <strong>um Filtro</strong> para buscar.</div>
+                        </>
+                    )}
                 </div>
             ) : filteredData.length > 0 ? (
                 <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex-1 flex flex-col min-h-0">

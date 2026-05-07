@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
-    StickyNote, MoreVertical, Loader2
+    StickyNote, MoreVertical, Loader2, Truck
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
@@ -49,6 +49,9 @@ const FlatItemRow = ({
 
     const menuKey = `flat-${item.pedido}-${item.item}`;
     const isMenuOpen = openActionMenu === menuKey;
+
+    const romaneios = item.romaneios || [];
+    const totalRomaneio = romaneios.reduce((acc, r) => acc + Number(r.quantidade), 0);
 
     return (
         <tr
@@ -199,7 +202,39 @@ const FlatItemRow = ({
 
             {/* Entregue */}
             <td className="px-4 py-2 text-right text-gray-600">
-                {parseFloat(item.qtd_entreg || 0).toLocaleString('pt-BR')}
+                <div className="flex items-center justify-end gap-1.5">
+                    {romaneios.length > 0 && (
+                        <div className="relative group/romaneio flex items-center">
+                            <div className={`p-1 rounded cursor-help ${totalRomaneio >= parseFloat(item.quantidade) ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                                <Truck className="h-4 w-4" />
+                            </div>
+                            <div className="absolute z-[60] bottom-full right-0 mb-2 hidden group-hover/romaneio:flex flex-col items-end">
+                                <div className="bg-slate-800 text-slate-100 text-[11px] rounded p-2.5 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[200px]">
+                                    <div className="font-bold text-white mb-2 border-b border-slate-600 pb-1 flex items-center gap-2">
+                                        <Truck className="h-4 w-4 text-blue-400" />
+                                        Expedição (Romaneios)
+                                    </div>
+                                    <div className="max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {romaneios.map(r => (
+                                            <div key={r.romaneio_id} className="flex justify-between py-1 border-b border-slate-700/50 last:border-0">
+                                                <span className="text-slate-300">Romaneio <span className="font-bold text-slate-200">#{r.romaneio_id}</span></span>
+                                                <span className="font-mono font-medium text-emerald-400 bg-emerald-900/30 px-1.5 rounded">{r.quantidade} un</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 pt-2 border-t border-slate-600 flex justify-between font-bold text-white text-xs">
+                                        <span>Total Enviado:</span>
+                                        <span className={totalRomaneio >= parseFloat(item.quantidade) ? 'text-green-400' : 'text-amber-400'}>
+                                            {totalRomaneio} / {parseFloat(item.quantidade)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 mr-2 border-b border-r border-slate-700" />
+                            </div>
+                        </div>
+                    )}
+                    <span>{parseFloat(item.qtd_entreg || 0).toLocaleString('pt-BR')}</span>
+                </div>
             </td>
 
             {/* Saldo Fat. */}
@@ -277,6 +312,7 @@ const areEqual = (prev, next) => {
         prev.item.pcp_delivery_forecast_qtd === next.item.pcp_delivery_forecast_qtd &&
         prev.item.op_num === next.item.op_num &&
         prev.item.qtd_faturar === next.item.qtd_faturar &&
+        prev.item.romaneios === next.item.romaneios &&
         prev.isSelected === next.isSelected &&
         prev.openActionMenu === next.openActionMenu &&
         prev.printingOrderId === next.printingOrderId

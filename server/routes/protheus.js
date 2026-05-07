@@ -234,15 +234,15 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                     [pedidoStr, itemPvStr]
                 );
                 if (sc6Rows.length > 0 && sc6Rows[0].c6_produto) {
-                    produto = sc6Rows[0].c6_produto.trim();
+                    produto = sc6Rows[0].c6_produto.trim().replace(/\s/g, '');
                     if (sc6Rows[0].c6_filial) filial = sc6Rows[0].c6_filial.trim();
                     qtd_venda = parseFloat(sc6Rows[0].c6_qtdven) || 0;
                 } else {
-                    produto = (it.produto || "").trim(); // fallback
+                    produto = (it.produto || "").trim().replace(/\s/g, ''); // fallback
                 }
             } catch (err) {
                 console.error("Erro SC6:", err.message);
-                produto = (it.produto || "").trim();
+                produto = (it.produto || "").trim().replace(/\s/g, '');
             }
 
             // BUSCAR QTD JÁ GERADA DE OPs PARA ESTE ITEM NO PROTHEUS

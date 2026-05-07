@@ -121,6 +121,27 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
         });
 
         if (operationsMap.size === 0) {
+            if (returnBuffer) {
+                // Generate a fallback page so downstream generators always get a valid buffer
+                console.warn('[opByOperationPdfGenerator] Nenhuma operação encontrada — gerando capa de aviso.');
+                const fallbackDoc = new jsPDF('landscape', 'mm', 'a4');
+                const fw = fallbackDoc.internal.pageSize.getWidth();
+                const fh = fallbackDoc.internal.pageSize.getHeight();
+                fallbackDoc.setFillColor(30, 58, 95);
+                fallbackDoc.rect(10, 5, 40, 15, 'F');
+                fallbackDoc.setTextColor(255, 255, 255);
+                fallbackDoc.setFontSize(12);
+                fallbackDoc.text('METALFISA', 30, 14, { align: 'center' });
+                fallbackDoc.setTextColor(0, 0, 0);
+                fallbackDoc.setFontSize(16);
+                fallbackDoc.setFont('helvetica', 'bold');
+                fallbackDoc.text('ESPELHO OP - SEM OPERAÇÕES ENCONTRADAS', fw / 2, fh / 2 - 10, { align: 'center' });
+                fallbackDoc.setFontSize(10);
+                fallbackDoc.setFont('helvetica', 'normal');
+                fallbackDoc.text(`Pedido: ${mirrorData.pedido?.pedido || '-'} | Cliente: ${mirrorData.pedido?.nome_cliente || '-'}`, fw / 2, fh / 2 + 5, { align: 'center' });
+                fallbackDoc.text('Nenhum roteiro de fabricação foi localizado para este pedido.', fw / 2, fh / 2 + 15, { align: 'center' });
+                return fallbackDoc.output('arraybuffer');
+            }
             alert("Nenhuma operação de manufatura encontrada.");
             return;
         }

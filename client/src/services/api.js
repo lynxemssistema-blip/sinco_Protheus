@@ -233,6 +233,12 @@ export const deleteRomaneioItem = async (romaneioId, itemId) => {
     const response = await api.delete(`/romaneios/${romaneioId}/items/${itemId}`);
     return response.data;
 };
+
+export const getRomaneioItemOperations = async (itemId) => {
+    const response = await api.get(`/romaneios/items/${itemId}/operations`);
+    return response.data;
+};
+
 export const createRevision = async (id, reason) => {
     const response = await api.post(`/romaneios/${id}/revisions`, { reason });
     return response.data;
@@ -567,6 +573,8 @@ export const reportSystemError = async (moduleName, error, filters = {}) => {
         console.error('Falha ao enviar log de erro por email', emailErr);
     }
 };
+
+export const getOpRoteiroSaldo = (op, item, sequencia, produto) => api.get('/producao/op-roteiro-saldo', { params: { op, item, sequencia, produto } }).then(res => res.data);
 
 export { api };
 export default api;

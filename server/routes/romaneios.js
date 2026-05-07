@@ -1164,8 +1164,9 @@ router.get('/recebimentos/pendentes', async (req, res) => {
 
 // 2. Registrar um recebimento para um item
 router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'), async (req, res) => {
+    let connection;
     try {
-        const { romaneio_id, quantidade, usuario, observacao, data_recebimento } = req.body;
+        const { romaneio_id, quantidade, usuario, observacao, data_recebimento, operacao_baixa } = req.body;
         const romaneio_item_id = req.params.itemId;
 
         if (!quantidade || quantidade <= 0) {
@@ -1177,7 +1178,10 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
             dataFormatada = dataFormatada.replace('T', ' ') + (dataFormatada.length === 16 ? ':00' : '');
         }
 
-        await mysqlPool.execute(
+        connection = await mysqlPool.getConnection();
+        await connection.beginTransaction();
+
+        await connection.execute(
             `INSERT INTO app_romaneio_recebimentos
                             (romaneio_id, romaneio_item_id, quantidade, usuario, observacao, data_recebimento)
                         VALUES(?, ?, ?, ?, ?, ?)`,
@@ -1191,9 +1195,76 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
             ]
         );
 
+        if (operacao_baixa) {
+            const [itemRows] = await connection.execute('SELECT pedido, item_pedido, codigo_produto, romaneio_id FROM app_romaneio_items WHERE id = ?', [romaneio_item_id]);
+            if (itemRows.length > 0) {
+                const { pedido, item_pedido } = itemRows[0];
+                let pgRes = { rows: [] };
+
+                if (pedido) {
+                    const pgQuery = `
+                        SELECT TRIM(c2_num) as op_numero, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, TRIM(c2_quant) as op_quantidade
+                        FROM public.sc2010
+                        WHERE (
+                            (REPLACE(TRIM(c2_pedido), ' ', '') = REPLACE(TRIM($1), ' ', '') AND REPLACE(TRIM(c2_itempv), ' ', '') = REPLACE(TRIM($2), ' ', ''))
+                            OR (TRIM(COALESCE(c2_pedido, '')) = '' AND REPLACE(TRIM(c2_obs), ' ', '') LIKE $3 AND REPLACE(TRIM(c2_itempv), ' ', '') = REPLACE(TRIM($2), ' ', ''))
+                            OR (TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) = REPLACE(TRIM($1), ' ', ''))
+                        )
+                        AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                        LIMIT 1
+                    `;
+                    const searchObs = `${pedido.trim().replace(/\s/g, '')}%`;
+                    pgRes = await db.query(pgQuery, [pedido.trim(), item_pedido?.trim() || '', searchObs]);
+                }
+
+                if (pgRes.rows.length > 0) {
+                    const { op_numero, op_item, op_sequencia, op_quantidade } = pgRes.rows[0];
+                    
+                    // Validate if the specific operation has remaining balance
+                    const [aptRows] = await connection.query(`
+                        SELECT SUM(quantidade) AS apontado
+                        FROM app_production_appointments
+                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND status != 'CANCELADO'
+                    `, [op_numero, op_item, op_sequencia, operacao_baixa]);
+                    
+                    const apontado = aptRows[0].apontado || 0;
+                    const maxQtd = parseFloat(op_quantidade) || 0;
+                    const saldoOperacao = maxQtd - apontado;
+                    
+                    if (Number(quantidade) > saldoOperacao) {
+                        await connection.rollback();
+                        return res.status(400).json({ error: `Não foi possível realizar a baixa automática: A quantidade (${quantidade}) excede o saldo pendente desta operação na OP (${saldoOperacao}).` });
+                    }
+
+                    const [configRows] = await connection.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+                    let enableVerification = false;
+                    if (configRows.length > 0 && configRows[0].general_config) {
+                        const cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+                        enableVerification = !!cfg.enable_production_verification;
+                    }
+                    const initialStatus = enableVerification ? 'PENDENTE' : 'OK';
+                    const observacaoApontamento = `Baixa automática via Retorno de Romaneio #${romaneio_id}. ${observacao || ''}`;
+                    
+                    await connection.execute(`
+                        INSERT INTO app_production_appointments
+                        (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, conferencia_status)
+                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `, [op_numero, op_item, op_sequencia, operacao_baixa, usuario || 'Sistema', quantidade, dataFormatada, dataFormatada, observacaoApontamento, initialStatus]);
+                } else {
+                    // Fail the transaction if user requested "operacao_baixa" but OP wasn't found
+                    await connection.rollback();
+                    return res.status(400).json({ error: 'Não foi possível realizar a baixa automática: Ordem de Produção não encontrada no Protheus para este item.' });
+                }
+            }
+        }
+
+        await connection.commit();
         res.json({ message: 'Recebimento registrado com sucesso' });
     } catch (err) {
+        if (connection) await connection.rollback();
         res.status(500).json({ error: err.message });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -1207,6 +1278,28 @@ router.get('/items/:itemId/historico', async (req, res) => {
             [req.params.itemId]
         );
         res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 4. Operações de Produção associadas a este item
+router.get('/items/:itemId/operations', async (req, res) => {
+    try {
+        const itemId = req.params.itemId;
+        const [rows] = await mysqlPool.execute('SELECT codigo_produto FROM app_romaneio_items WHERE id = ?', [itemId]);
+        if (rows.length === 0 || !rows[0].codigo_produto) return res.json([]);
+        
+        const codigo_produto = rows[0].codigo_produto;
+        const pgQuery = `
+            SELECT TRIM(g2.g2_operac) as operacao_codigo, TRIM(h1.h1_descri) as operacao_desc
+            FROM public.sg2010 g2
+            LEFT JOIN public.sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE REPLACE(TRIM(g2.g2_produto), ' ', '') = REPLACE(TRIM($1), ' ', '') AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            ORDER BY g2.g2_operac ASC
+        `;
+        const pgResult = await db.query(pgQuery, [codigo_produto]);
+        res.json(pgResult.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
