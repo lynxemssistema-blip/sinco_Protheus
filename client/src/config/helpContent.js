@@ -733,22 +733,26 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // ── Apontamento Vertical ─────────────────────────────────────────────────────
+  // ── Apontamento Vertical e Multi-Operação ─────────────────────────────────────
   '/pcp/apontamento-vertical': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Apontamento Vertical',
+    title: 'Apontamento Vertical & Multi-Operação',
     icon: 'ListChecks',
-    description: 'Registre apontamentos de produção de forma ágil por operação e operador. Ideal para uso no chão de fábrica.',
+    description: 'Central ágil para registro de produção. O novo recurso de Apontamento Multi-Operação permite dar baixa sistêmica em várias etapas do roteiro de uma só vez, ideal para fechar saldos de processos que ocorreram em sequência.',
     steps: [
-      'Selecione a OP e a operação a apontar.',
-      'Informe o operador, quantidade produzida e tempo gasto.',
-      'Confirme o apontamento — ele será refletido imediatamente no controle.',
-      'Para apontamentos de refugo, marque a opção "Refugo" e informe a causa.',
+      'Busca Rápida: Utilize os filtros no topo (Pedido, OP, Código do Produto ou Máquina) para localizar exatamente a operação que você vai apontar.',
+      'Abrindo o Modal: Clique no ícone verde de "Apontar" (CheckSquare) na última coluna da operação desejada.',
+      'Apontamento Multi-Operação: Ao abrir o modal, o sistema não exibirá apenas a etapa atual. Ele listará todas as operações ANTERIORES do roteiro daquele produto, informando o Saldo (peças pendentes de apontamento) de cada uma.',
+      'Auto-Preenchimento Inteligente (A Mágica): Quando você digita uma quantidade na "Operação Atual", o sistema automaticamente preenche as operações anteriores. Ele limita o valor copiado ao máximo permitido pelo Saldo de cada etapa anterior.',
+      'Exemplo de Auto-Preenchimento: Se a Operação 10 tem 50 de saldo, a 20 tem 20 de saldo, e a 30 (Atual) tem 50 de saldo. Ao digitar "50" na atual, a etapa 20 será preenchida com "20" (limite dela) e a 10 com "50".',
+      'Auditoria de Operador: O seu usuário logado ficará gravado no Histórico de todas as operações apontadas. Porém, para as etapas anteriores que foram auto-preenchidas, o sistema gravará seu nome com a tag "(Baixa Auto)", garantindo total transparência de quem operou a máquina versus quem fez a baixa sistêmica.',
+      'Tempos (Cronômetro): Você pode usar o "Cronômetro de Operação" no topo para marcar o tempo exato (Início e Fim). O mesmo tempo será replicado para as baixas automáticas anteriores que ocorrem no mesmo lote.',
     ],
     tips: [
-      'Apontamentos podem ser feitos diretamente pelo tablet no chão de fábrica.',
-      'Regra de Apontamento: Se a sua fábrica opera em regime "Sequência", você não conseguirá apontar uma etapa 02 se a etapa 01 não estiver finalizada. No regime "Saldo", só poderá apontar a quantidade exata já processada pela etapa anterior. O regime "Livre" não aplica essas travas.',
+      'Se o valor preenchido automaticamente na etapa anterior ficar com erro (vermelho), é porque ultrapassou o Saldo. O botão de salvar será bloqueado até a correção.',
+      'Para apontar apenas a operação atual sem mexer nas anteriores, basta zerar manualmente os campos das operações anteriores antes de clicar em Confirmar.',
+      'Regra de Apontamento: Observe a etiqueta no topo do Modal (Livre, Sequência ou Saldo) para entender as restrições impostas pela fábrica.',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
