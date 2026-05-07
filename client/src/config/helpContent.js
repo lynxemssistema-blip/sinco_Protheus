@@ -753,7 +753,7 @@ export const HELP_CONTENT = {
       'Se o valor preenchido automaticamente na etapa anterior ficar com erro (vermelho), é porque ultrapassou o Saldo. O botão de salvar será bloqueado até a correção.',
       'Para apontar apenas a operação atual sem mexer nas anteriores, basta zerar manualmente os campos das operações anteriores antes de clicar em Confirmar.',
       'Regra de Apontamento: Observe a etiqueta no topo do Modal (Livre, Sequência ou Saldo) para entender as restrições impostas pela fábrica.',
-      'Configuração das Regras: A ativação/desativação da trava de Saldo ou Sequência é feita pelos Administradores no menu "Configurações Globais" > aba "Regras de Negócio", no campo "Regra de Apontamento de Produção".',
+      'Configuração das Regras: A ativação/desativação da trava de Saldo ou Sequência é feita pelos Administradores no menu "Configurações Globais" > aba "Geral", no campo "Controle de Apontamento de Produção".',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
