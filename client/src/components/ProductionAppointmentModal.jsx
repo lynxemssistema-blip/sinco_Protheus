@@ -111,9 +111,13 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             
             const ops = await getOpRoteiroSaldo(op.op, op.item_op, op.sequen, codProduto);
             
-            // Find current operation index
-            const currentIndex = ops.findIndex(o => o.operacao_codigo == op.operacao);
-            // Slice up to the current operation
+            // Find current operation index (op.operacao might be '01' or 'MO0010')
+            const currentIndex = ops.findIndex(o => 
+                String(o.operacao_codigo).trim() === String(op.operacao).trim() || 
+                String(o.recurso_codigo).trim() === String(op.operacao).trim()
+            );
+            
+            // Se encontrar, corta a lista até ela. Se não encontrar, mostra tudo.
             const visibleOps = currentIndex >= 0 ? ops.slice(0, currentIndex + 1) : ops;
             
             setRouteOperations(visibleOps);

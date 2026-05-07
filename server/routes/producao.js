@@ -1252,6 +1252,12 @@ router.get('/op-roteiro-saldo', async (req, res) => {
         AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
       WHERE TRIM(g2.g2_produto) = $1
         AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+        AND TRIM(g2.g2_codigo) = (
+           SELECT MAX(TRIM(sub.g2_codigo))
+           FROM public.sg2010 sub
+           WHERE TRIM(sub.g2_produto) = TRIM(g2.g2_produto)
+             AND COALESCE(sub.d_e_l_e_t_, '') = ''
+        )
       ORDER BY g2.g2_operac ASC
     `;
     const sgResult = await db.query(sgQuery, [produto.trim()]);
