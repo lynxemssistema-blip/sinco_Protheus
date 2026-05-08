@@ -1,34 +1,23 @@
 # 🎉 NOVA VERSÃO EM PRODUÇÃO - MetalFisa PCP
 
-**Data**: 17/01/2026  
-**Servidor**: http://192.168.1.169:3001
+**Data**: 08/05/2026  
+**Servidor**: http://192.168.1.77:3001
 
 ---
 
 ## ✅ NOVIDADES DESTA VERSÃO
 
-### 🎨 Cores nos Pedidos de Venda
+### 🚀 Melhorias de Estabilidade Visual (Filtros de Pedido e OPs)
 
-Agora a lista de pedidos possui identificação visual por cores:
+Fizemos ajustes cruciais nas telas de **Pedidos de Venda** e **Gestão de OPs por Lote** para melhorar o feedback visual ao usuário:
 
-- 🟢 **VERDE (Aberto)**: Pedidos liberados sem OP aberta.
-- 🟡 **AMARELO (Liberado)**: Pedidos com OP aberta (Liberado PC).
-- 🔴 **Vermelho (Faturado)**: Pedidos 100% faturados agora são **ocultos** automaticamente da lista para facilitar a visualização do que está pendente.
+- ✅ **Fim da Tela Congelada ("Nada Acontece")**: Resolvemos um problema na tela de Pedidos de Venda onde o indicador "Buscando..." desaparecia instantaneamente ao recarregar filtros simultâneos. Agora o sistema sempre vai exibir corretamente quando estiver processando dados grandes.
+- ✅ **Feedback na Gestão de OPs**: Adicionamos o indicador visual explícito "Buscando..." com o ícone giratório na tela de *Gestão de OPs por Lote*, garantindo padronização e garantindo que os usuários saibam quando o sistema está em atividade.
 
-### 🚀 Importação em Massa de Documentos - CORRIGIDO
+### 🖨️ Integração de Impressão na Visão Plana (Lista Plana)
 
-Agora você pode usar **drives mapeados** (Q:, Z:, etc.) na importação em massa!
-
-**Exemplo:**
-- Digite: `Q:\desenhos\PHILLIPS\VMI`
-- O sistema automaticamente converte para o caminho de rede correto
-- Todos os arquivos PDF serão vinculados aos produtos
-
-**Melhorias:**
-- ✅ Suporte completo a pastas de rede mapeadas
-- ✅ Conversão automática de drives (Q:, Z:) para caminhos UNC
-- ✅ Mensagens de erro mais claras e específicas
-- ✅ Processamento recursivo em subpastas
+- ✅ **Impressão Múltipla na Visão de Itens**: Agora é possível imprimir e gerar atas diretamente das linhas da visão "Lista Plana" (Flat) no módulo de Engenharia/PCP, assim como já funcionava na visão agrupada.
+- ✅ **Múltiplos Formatos Atendidos**: Geração de Ata Viva, PDF de OP, espelho de planejamento e Excel diretamente da lista plana.
 
 ---
 
@@ -40,7 +29,7 @@ Os usuários precisam **forçar a atualização** para ver a nova versão:
 
 ### Opção 1️⃣ - Rápida (Recomendada)
 
-1. Acesse: `http://192.168.1.169:3001`
+1. Acesse: `http://192.168.1.77:3001`
 2. Pressione: **CTRL + SHIFT + R** (ou **CTRL + F5**)
 3. Pronto! A nova versão será carregada
 
@@ -53,78 +42,23 @@ Os usuários precisam **forçar a atualização** para ver a nova versão:
 
 ---
 
-## 🎯 COMO USAR A IMPORTAÇÃO EM MASSA
-
-### Passo a Passo:
-
-1. **Acesse o sistema**: http://192.168.1.169:3001
-2. **Navegue**: Catálogo de Produtos → Documentos (ícone 📄)
-3. **Clique**: "Importação em Massa"
-4. **Informe o caminho**: Ex: `Q:\desenhos\PHILLIPS\VMI`
-5. **Marque** (opcional): "Atualizar vínculos existentes"
-6. **Clique**: "Iniciar Importação"
-
-### Como Funciona:
-
-O sistema irá:
-- Varrer a pasta informada (incluindo subpastas)
-- Buscar todos os arquivos PDF
-- Vincular automaticamente ao produto pelo nome do arquivo
-  - Exemplo: `XA100.pdf` será vinculado ao produto **XA100**
-
-### Formatos de Caminho Aceitos:
-
-✅ **Drive mapeado**: `Q:\desenhos\PHILLIPS\VMI`  
-✅ **Caminho UNC**: `\\192.168.1.253\Engenharia\desenhos\PHILLIPS\VMI`  
-✅ **Caminho local**: `C:\Arquivos\Documentos`
-
----
-
-## 🔧 PARA ADMINISTRADORES
-
-### Iniciar o Servidor:
-
-Execute o arquivo: **`INICIAR_SISTEMA.bat`**
-
-Este script:
-- Configura acesso automático ao compartilhamento de rede
-- Inicia o servidor na porta 3001
-- Disponibiliza o sistema para todos na rede
-
-### Configurações de Rede:
-
-**Servidor**: 192.168.1.169:3001  
-**Compartilhamento**: \\192.168.1.253\Engenharia  
-**Credenciais**: Configuradas automaticamente no script
-
-### Mapeamento de Drives:
-
-O sistema converte automaticamente:
-- `Q:\` → `\\192.168.1.253\Engenharia\`
-
-Para adicionar outros drives, edite:  
-`server/config/driveMapping.js`
-
----
-
 ## 📞 SUPORTE
 
 Em caso de problemas:
 
 1. ✅ Certifique-se de que limpou o cache do navegador
-2. ✅ Verifique se o servidor está rodando (janela aberta)
+2. ✅ Verifique se o servidor está rodando
 3. ✅ Teste o acesso ao compartilhamento de rede manualmente
 
-**Endereço do sistema**: http://192.168.1.169:3001
+**Endereço do sistema**: http://192.168.1.77:3001
 
 ---
 
-**Versão**: 1.3.13 (Modal de Apontamento Multi-Operações e Saldo Automático)  
-**Build**: 06/05/2026 21:13
+**Versão**: 1.3.14 (Estabilidade Visual & Impressão Lista Plana)  
+**Build**: 08/05/2026 12:00
 
 **Comando de Publicação no servidor**
 scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa -r ./linux-deployment/* sinco@192.168.1.77:/var/www/metalfisa/
-
 
 **Comando para Reiniciar o servidor**
 ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa sinco@192.168.1.77 "cd /var/www/metalfisa/server && npm install && pm2 restart all"
