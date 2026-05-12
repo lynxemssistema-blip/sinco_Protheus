@@ -29,6 +29,8 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
 
     const [routeOperations, setRouteOperations] = useState([]);
     const [quantities, setQuantities] = useState({});
+    const isSubmittingRef = useRef(false);
+
     const [loadingOps, setLoadingOps] = useState(true);
 
     const [loading, setLoading] = useState(false);
@@ -36,6 +38,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [showHistory, setShowHistory] = useState(false);
     const [appointmentMode, setAppointmentMode] = useState(null);
+    const [enableMultiOp, setEnableMultiOp] = useState(false);
 
     // Auto-focus logic
     const qtdInputRef = useRef(null);
@@ -81,8 +84,14 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
         loadHistory();
         loadRouteOps();
         getCompanySettings()
-            .then(data => setAppointmentMode(data?.general_config?.production_appointment_mode || 'free'))
-            .catch(() => setAppointmentMode('free'));
+            .then(data => {
+                setAppointmentMode(data?.general_config?.production_appointment_mode || 'free');
+                setEnableMultiOp(data?.general_config?.enable_multi_operation_appointment || false);
+            })
+            .catch(() => {
+                setAppointmentMode('free');
+                setEnableMultiOp(false);
+            });
     }, []);
 
     const loadHistory = async () => {
@@ -156,6 +165,11 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     };
 
     const isExceedingBalance = () => {
+        if (!enableMultiOp || routeOperations.length === 0) {
+            const val = Number(quantities[op.operacao] || 0);
+            return val > fallbackBalance;
+        }
+
         for (const row of routeOperations) {
             const val = Number(quantities[row.operacao_codigo] || 0);
             if (val > row.saldo) return true;
@@ -164,11 +178,16 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     };
 
     const getTotalQuantity = () => {
+        if (!enableMultiOp || routeOperations.length === 0) {
+            return Number(quantities[op.operacao] || 0);
+        }
         return Object.values(quantities).reduce((sum, val) => sum + Number(val || 0), 0);
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        if (loading || isSubmittingRef.current) return;
 
         if (isExceedingBalance()) {
             return; // Validação visual já deve impedir
@@ -179,12 +198,21 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             return;
         }
 
+        isSubmittingRef.current = true;
         setLoading(true);
         try {
             const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
             const end = `${formData.data_fim} ${formData.hora_fim}:00`;
 
-            const opsToSave = routeOperations.filter(row => Number(quantities[row.operacao_codigo]) > 0);
+            let opsToSave = [];
+            if (enableMultiOp && routeOperations.length > 0) {
+                opsToSave = routeOperations.filter(row => Number(quantities[row.operacao_codigo]) > 0);
+            } else {
+                if (Number(quantities[op.operacao]) > 0) {
+                    opsToSave = [{ operacao_codigo: op.operacao }];
+                }
+            }
+            
             const savedPayloads = [];
 
             // Dispara salvar para cada operacao escolhida sequencialmente
@@ -222,9 +250,16 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             
             onClose();
         } catch (error) {
-            alert('Erro ao salvar: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
+            // Se for nosso erro de conflito (duplo clique detectado pelo backend), tratamos de forma silenciosa e fechamos
+            if (error.response?.status === 409) {
+                console.warn('Backend bloqueou submissão duplicada (Double Click).');
+                onClose();
+            } else {
+                alert('Erro ao salvar: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
+            }
         } finally {
             setLoading(false);
+            isSubmittingRef.current = false;
         }
     };
 
@@ -339,7 +374,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                                 <div className="p-4 text-center text-sm text-slate-500 animate-pulse">
                                     Carregando roteiro e saldos...
                                 </div>
-                            ) : routeOperations.length > 0 ? (
+                            ) : enableMultiOp && routeOperations.length > 0 ? (
                                 <div className="divide-y divide-slate-200">
                                     {routeOperations.map((row, idx) => {
                                         const isCurrent = Number(row.operacao_codigo) === Number(op.operacao);
@@ -389,7 +424,15 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                                 </div>
                             ) : (
                                 <div className="p-4 flex flex-col gap-3">
-                                    <span className="text-sm text-slate-600">Não foi possível carregar o roteiro múltiplo. Modo simples ativado.</span>
+                                    {!enableMultiOp ? (
+                                        <span className="text-xs text-slate-600 border border-amber-200 bg-amber-50 p-2 rounded">
+                                            Modo Multi-Operação desativado. Apontamento restrito à operação atual.
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-slate-600 border border-slate-200 bg-slate-50 p-2 rounded">
+                                            Não foi possível carregar o roteiro múltiplo. Modo simples ativado.
+                                        </span>
+                                    )}
                                     <div className="flex justify-between items-center mb-1">
                                         <label className="block text-xs font-bold text-slate-700">Qtd. Produzida</label>
                                         <span className="text-xs font-bold text-slate-500">Saldo: {fallbackBalance}</span>

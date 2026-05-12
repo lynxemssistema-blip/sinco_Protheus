@@ -50,10 +50,18 @@ export const generateFaturamentoPdf = async (solicitacao, currentUser, returnAsB
     doc.text(solicitacao.status || 'Pendente', pageWidth - 65, 35);
     doc.setTextColor(50, 50, 50);
 
+    if (solicitacao.nota_fiscal) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 58, 95);
+        doc.text(`NF Global: ${solicitacao.nota_fiscal}`, pageWidth - 80, 40);
+        doc.setTextColor(50, 50, 50);
+        doc.setFont('helvetica', 'normal');
+    }
+
     // Linha separadora
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.5);
-    doc.line(ML, 42, pageWidth - MR, 42);
+    doc.line(ML, 45, pageWidth - MR, 45);
 
     // --- 2. DADOS DO CLIENTE ---
     const clientesNomes = [...new Set(solicitacao.itens.map(it => it.nome_cliente).filter(Boolean))];
@@ -84,28 +92,35 @@ export const generateFaturamentoPdf = async (solicitacao, currentUser, returnAsB
         try { return new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch { return '-'; }
     };
 
-    const tableData = solicitacao.itens.map((it, idx) => [
-        (idx + 1).toString().padStart(3, '0'),
-        `${it.pedido} - ${it.item}`,
-        it.nome_cliente || '-',
-        it.codigo_produto,
-        fmtQtd(it.quantidade_solicitada),
-        it.pedido_cliente || '-',
-        it.desenho_cliente || '-',
-        fmtDate(it.pcp_data_entrega),
-        it.pcp_serie_cliente || '-',
-        it.pcp_serie_metalfisa || '-',
-        it.pcp_numero_serie || '-',
-        [it.pcp_lote, it.pcp_numero_lote].filter(Boolean).join('\n') || '-',
-    ]);
+    const tableData = solicitacao.itens.map((it, idx) => {
+        const nfs = Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0
+            ? it.notas_fiscais_protheus
+            : null;
+        const nfStr    = nfs ? nfs.map(n => `NF ${n.nota}`).join('\n') : (it.nota_fiscal || solicitacao.nota_fiscal || '-');
+        const emissao  = nfs ? (nfs[0].emissao || '-') : fmtDate(solicitacao.updated_at || solicitacao.created_at);
+        return [
+            (idx + 1).toString().padStart(3, '0'),
+            `${it.pedido} - ${it.item}`,
+            it.nome_cliente || '-',
+            it.codigo_produto,
+            fmtQtd(it.quantidade_solicitada),
+            it.pedido_cliente || '-',
+            it.desenho_cliente || '-',
+            nfStr,
+            emissao,
+            it.pcp_serie_cliente || '-',
+            it.pcp_numero_serie || '-',
+            [it.pcp_lote, it.pcp_numero_lote].filter(Boolean).join('\n') || '-',
+        ];
+    });
 
     autoTable(doc, {
         startY: yOffset,
-        head: [['Seq.', 'Pedido/Item', 'Cliente', 'Cód. Produto', 'Qtd', 'Ped. Cliente', 'Desenho', 'Dt. Entrega', 'Série Cli.', 'Série MF', 'Nº Série', 'Lote / Nº Lote']],
+        head: [['Seq.', 'Pedido/Item', 'Cliente', 'Cód. Produto', 'Qtd', 'Ped. Cliente', 'Desenho', 'NF', 'Emissão NF', 'Série Cli.', 'Nº Série', 'Lote / Nº Lote']],
         body: tableData,
         theme: 'grid',
         styles: {
-            fontSize: 8,
+            fontSize: 7.5,
             cellPadding: 2.5,
             font: 'helvetica',
         },
@@ -114,21 +129,21 @@ export const generateFaturamentoPdf = async (solicitacao, currentUser, returnAsB
             textColor: 255,
             fontStyle: 'bold',
             halign: 'center',
-            fontSize: 7.5,
+            fontSize: 7,
         },
         columnStyles: {
             0:  { halign: 'center', cellWidth: 9 },
-            1:  { halign: 'center', cellWidth: 18 },
-            2:  { halign: 'left',   cellWidth: 38 },
-            3:  { halign: 'left',   cellWidth: 28 },
-            4:  { halign: 'right',  fontStyle: 'bold', textColor: [0, 0, 0], cellWidth: 14 },
-            5:  { halign: 'left',   cellWidth: 20 },
-            6:  { halign: 'left',   fontStyle: 'bold', textColor: [30, 58, 95], cellWidth: 22 },
-            7:  { halign: 'center', cellWidth: 18, textColor: [55, 65, 180] },
-            8:  { halign: 'center', cellWidth: 18, textColor: [55, 65, 180] },
-            9:  { halign: 'center', cellWidth: 18, textColor: [55, 65, 180] },
-            10: { halign: 'center', cellWidth: 20, textColor: [55, 65, 180] },
-            11: { halign: 'center', cellWidth: 20, textColor: [55, 65, 180] },
+            1:  { halign: 'center', cellWidth: 16 },
+            2:  { halign: 'left',   cellWidth: 32 },
+            3:  { halign: 'left',   cellWidth: 26 },
+            4:  { halign: 'right',  fontStyle: 'bold', textColor: [0, 0, 0], cellWidth: 12 },
+            5:  { halign: 'left',   cellWidth: 18 },
+            6:  { halign: 'left',   fontStyle: 'bold', textColor: [30, 58, 95], cellWidth: 20 },
+            7:  { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+            8:  { halign: 'center', cellWidth: 16, textColor: [34, 139, 34] },
+            9:  { halign: 'center', cellWidth: 16, textColor: [55, 65, 180] },
+            10: { halign: 'center', cellWidth: 18, textColor: [55, 65, 180] },
+            11: { halign: 'center', cellWidth: 18, textColor: [55, 65, 180] },
         },
         alternateRowStyles: {
             fillColor: [245, 248, 250]

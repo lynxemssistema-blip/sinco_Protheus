@@ -179,7 +179,7 @@ const CurriculosAnalyzer = () => {
     const getStatusBadge = (status) => {
         switch(status) {
             case 'Em Avaliação': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">Em Avaliação</span>;
-            case 'Entrevista Agendada': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">Entrevista Agendada</span>;
+            case 'Entrevista Agendada': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200">Entrevista Agendada</span>;
             case 'Aprovado': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">Aprovado</span>;
             case 'Reprovado': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 border border-red-200">Reprovado</span>;
             case 'Banco de Talentos': return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 border border-orange-200">Banco de Talentos</span>;

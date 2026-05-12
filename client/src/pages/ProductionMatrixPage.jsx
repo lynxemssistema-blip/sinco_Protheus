@@ -162,7 +162,6 @@ export default function ProductionMatrixPage() {
     };
 
     const handleAppointmentSave = async (data) => {
-        await saveAppointment(data); // throws on validation error — modal handles display
         setAppointingOp(null);
 
         // ATUALIZAÇÃO OTIMISTA (Sem Reload)

@@ -75,7 +75,6 @@ const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage')
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
 const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
 const SWorks = React.lazy(() => import('./pages/SWorks'));
-const ProtheusStudyChat = React.lazy(() => import('./pages/admin/ProtheusStudyChat'));
 const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
 const GestaoOPsPage = React.lazy(() => import('./pages/GestaoOPsPage'));
 const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
@@ -536,11 +535,6 @@ function App() {
                                                 <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando balancete dinâmico...</div>}>
                                                     <Balancete />
                                                 </Suspense>
-                                            </Layout>
-                                        } />
-                                        <Route path="/admin/protheus-estudo" element={
-                                            <Layout fullWidth={true}>
-                                                <ProtheusStudyChat />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/gestao-materiais" element={<MaterialManagementPage />} />

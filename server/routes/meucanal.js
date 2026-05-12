@@ -69,7 +69,7 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
                     SELECT c2_datprf, c2_datini 
                     FROM sc2010 
                     WHERE c2_num=$1 AND c2_item=$2 AND c2_sequen=$3 AND COALESCE(d_e_l_e_t_,' ')=' '
-                `, [(ap.op_numero||'').trim(), (ap.op_item||'').trim(), (ap.op_sequencia||'').trim()]);
+                `, [(ap.op_numero||'').trim().padStart(6, '0'), (ap.op_item||'').trim().padStart(2, '0'), (ap.op_sequencia||'').trim().padStart(3, '0')]);
                 
                 if (pgRes.rows.length > 0) {
                     const datprf = pgRes.rows[0].c2_datprf?.trim();
@@ -153,32 +153,61 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
             });
         }
 
-        // ── Fase 2: UMA ÚNICA query PG para TODOS os recursos de TODOS os setores ──
+        // ── Fase 2: Duas Etapas para evitar lentidão (Full Table Scan) ──
         const todosRecursos = [...new Set(setoresComRecursos.flatMap(s => s.recursos))];
 
         let todasOpsPlanejadas = [];
         if (todosRecursos.length > 0) {
-            const placeholdersAll = todosRecursos.map((_, i) => `$${i + 1}`).join(',');
-            const pgRes = await db.query(`
-                SELECT DISTINCT ON (c2.c2_num, c2.c2_item, c2.c2_sequen, g2.g2_operac, g2.g2_recurso)
-                    TRIM(c2.c2_num)     AS op_numero,
-                    TRIM(c2.c2_item)    AS op_item,
-                    TRIM(c2.c2_sequen)  AS op_sequencia,
-                    TRIM(c2.c2_produto) AS produto,
-                    c2.c2_quant::numeric AS qtd_planejada,
-                    TRIM(g2.g2_operac)  AS operacao_codigo,
-                    TRIM(g2.g2_descri)  AS operacao_nome,
-                    TRIM(g2.g2_recurso) AS recurso
-                FROM sc2010 c2
-                JOIN sg2010 g2
-                    ON btrim(g2.g2_produto) = btrim(c2.c2_produto)
-                   AND COALESCE(g2.d_e_l_e_t_, ' ') = ' '
-                WHERE btrim(g2.g2_recurso) IN (${placeholdersAll})
-                  AND c2.c2_datprf = $${todosRecursos.length + 1}
-                  AND COALESCE(c2.d_e_l_e_t_, ' ') = ' '
-                ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen, g2.g2_operac, g2.g2_recurso
-            `, [...todosRecursos, todayStr]);
-            todasOpsPlanejadas = pgRes.rows;
+            // Etapa 1: Buscar apenas as OPs planejadas para hoje
+            const pgOpsRes = await db.query(`
+                SELECT 
+                    TRIM(c2_num) AS op_numero, 
+                    TRIM(c2_item) AS op_item, 
+                    TRIM(c2_sequen) AS op_sequencia, 
+                    TRIM(c2_produto) AS produto, 
+                    c2_quant::numeric AS qtd_planejada
+                FROM sc2010
+                WHERE c2_datprf = $1 AND COALESCE(d_e_l_e_t_, ' ') = ' '
+            `, [todayStr]);
+
+            const opsDoDia = pgOpsRes.rows;
+
+            if (opsDoDia.length > 0) {
+                const produtosUnicos = [...new Set(opsDoDia.map(op => op.produto))];
+
+                // Etapa 2: Buscar os roteiros DESSES produtos que passam pelos RECURSOS dos setores
+                const pgRotRes = await db.query(`
+                    SELECT DISTINCT
+                        TRIM(g2_produto) AS produto,
+                        TRIM(g2_operac) AS operacao_codigo,
+                        TRIM(g2_descri) AS operacao_nome,
+                        TRIM(g2_recurso) AS recurso
+                    FROM sg2010
+                    WHERE TRIM(g2_produto) = ANY($1)
+                      AND TRIM(g2_recurso) = ANY($2)
+                      AND COALESCE(d_e_l_e_t_, ' ') = ' '
+                `, [produtosUnicos, todosRecursos]);
+
+                const roteiros = pgRotRes.rows;
+
+                // Merge (Equivalente ao JOIN)
+                for (const op of opsDoDia) {
+                    const rotDoProduto = roteiros.filter(r => r.produto === op.produto);
+                    for (const rot of rotDoProduto) {
+                        // Usamos um set na lógica original ou push
+                        todasOpsPlanejadas.push({
+                            op_numero: op.op_numero,
+                            op_item: op.op_item,
+                            op_sequencia: op.op_sequencia,
+                            produto: op.produto,
+                            qtd_planejada: op.qtd_planejada,
+                            operacao_codigo: rot.operacao_codigo,
+                            operacao_nome: rot.operacao_nome,
+                            recurso: rot.recurso
+                        });
+                    }
+                }
+            }
         }
 
         // ── Fase 3: distribuir resultados por setor em memória (zero queries extras) ──
@@ -335,7 +364,7 @@ async function calcularTarefasProjetista(nomeCompleto) {
     if (tasks.length > 0) {
         try {
             const pairs = tasks
-                .map(t => `('${(t.pedido || '').trim().replace(/'/g, "''")}','${(t.item || '').trim().replace(/'/g, "''")}')`)
+                .map(t => `('${(t.pedido || '').trim().padStart(6, '0')}','${(t.item || '').trim().padStart(2, '0')}')`)
                 .join(',');
             const pgRes = await db.query(`
                 SELECT TRIM(c5.c5_num) AS pedido, TRIM(c6.c6_item) AS item,
@@ -347,7 +376,7 @@ async function calcularTarefasProjetista(nomeCompleto) {
                     AND COALESCE(sa1.d_e_l_e_t_, '') = ''
                 LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                WHERE (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${pairs})
+                WHERE (c6.c6_num, c6.c6_item) IN (${pairs})
                   AND COALESCE(c6.d_e_l_e_t_, '') = ''
             `);
             for (const r of pgRes.rows) {

@@ -235,13 +235,15 @@ router.get('/tracking-comparison', async (req, res) => {
             paramCount++;
         }
         if (pedido) {
-            conditions.push(`TRIM(c2.c2_pedido) LIKE $${paramCount}`);
-            protheusParams.push(`%${pedido}%`);
+            const paddedPedido = pedido.trim().padStart(6, '0');
+            conditions.push(`c2.c2_pedido LIKE $${paramCount}`);
+            protheusParams.push(`${paddedPedido}%`);
             paramCount++;
         }
         if (op) {
-            conditions.push(`TRIM(c2.c2_num) LIKE $${paramCount}`);
-            protheusParams.push(`%${op}%`);
+            const paddedOp = op.trim().padStart(6, '0');
+            conditions.push(`c2.c2_num LIKE $${paramCount}`);
+            protheusParams.push(`${paddedOp}%`);
             paramCount++;
         }
         if (produto) {
@@ -473,13 +475,15 @@ router.get('/analytics-dashboard', async (req, res) => {
             paramCount++;
         }
         if (pedido) {
-            protheusFilters.push(`TRIM(c2.c2_pedido) LIKE $${paramCount}`);
-            protheusParams.push(`%${pedido}%`);
+            const paddedPedido = pedido.trim().padStart(6, '0');
+            protheusFilters.push(`c2.c2_pedido LIKE $${paramCount}`);
+            protheusParams.push(`${paddedPedido}%`);
             paramCount++;
         }
         if (op) {
-            protheusFilters.push(`TRIM(c2.c2_num) LIKE $${paramCount}`);
-            protheusParams.push(`%${op}%`);
+            const paddedOp = op.trim().padStart(6, '0');
+            protheusFilters.push(`c2.c2_num LIKE $${paramCount}`);
+            protheusParams.push(`${paddedOp}%`);
             paramCount++;
         }
         if (produto) {
@@ -609,10 +613,10 @@ router.get('/analytics-dashboard', async (req, res) => {
         let paramCount = 1;
 
         if (pedido_venda) {
-            whereClause += ` AND (TRIM(c2.c2_pedido) = $${paramCount} OR TRIM(c2.c2_obs) LIKE $${paramCount + 1})`;
-            params.push(pedido_venda);
-            params.push(`${pedido_venda}%`);
-            paramCount += 2;
+            const paddedPedido = pedido_venda.trim().padStart(6, '0');
+            whereClause += ` AND c2.c2_pedido LIKE $${paramCount}`;
+            params.push(`${paddedPedido}%`);
+            paramCount++;
         }
 
         if (data_inicio) {
@@ -634,9 +638,10 @@ router.get('/analytics-dashboard', async (req, res) => {
         }
 
         if (op) {
-            // Trim leading zeros for flexible matching
-            whereClause += ` AND (TRIM(c2.c2_num) ILIKE $${paramCount} OR LTRIM(TRIM(c2.c2_num), '0') ILIKE $${paramCount})`;
-            params.push(`%${op}%`);
+            // Use exact padded match for better indexing
+            const paddedOp = op.trim().padStart(6, '0');
+            whereClause += ` AND c2.c2_num LIKE $${paramCount}`;
+            params.push(`${paddedOp}%`);
             paramCount++;
         }
 
@@ -1041,29 +1046,28 @@ router.get('/', async (req, res) => {
         if (op) {
             const opArr = op.split(',').map(s => s.trim()).filter(Boolean);
             if (opArr.length === 1) {
-                // If single OP, use ILIKE (no index, but it's what they expect for partial search)
-                s1Conds.push(`TRIM(c2.c2_num) ILIKE $${pn++}`);
-                params.push(`%${opArr[0]}%`);
+                const paddedOp = opArr[0].padStart(6, '0');
+                s1Conds.push(`TRIM(c2.c2_num) = $${pn++}`);
+                params.push(paddedOp);
             } else if (opArr.length > 1) {
-                // If multiple OPs, pad exactly to 6 chars and use IN without TRIM so the index is used!
-                const paddedOps = opArr.map(s => s.padEnd(6, ' '));
+                const paddedOps = opArr.map(s => s.padStart(6, '0'));
                 const ph = paddedOps.map((_, i) => `$${pn + i}`).join(',');
-                s1Conds.push(`c2.c2_num IN (${ph})`);
+                s1Conds.push(`TRIM(c2.c2_num) IN (${ph})`);
                 params.push(...paddedOps);
                 pn += paddedOps.length;
             }
         }
-        if (pedido)   { s1Conds.push(`(TRIM(c2.c2_pedido) ILIKE $${pn} OR TRIM(root_op.c2_pedido) ILIKE $${pn})`); params.push(`%${pedido.trim()}%`); pn++; }
+        if (pedido) { 
+            const paddedPedido = pedido.trim().padStart(6, '0');
+            s1Conds.push(`(TRIM(c2.c2_pedido) = $${pn} OR TRIM(root_op.c2_pedido) = $${pn})`); 
+            params.push(paddedPedido); 
+            pn++; 
+        }
         if (item)     { s1Conds.push(`TRIM(c2.c2_item) ILIKE $${pn++}`);  params.push(`%${item.trim()}%`); }
         if (sequencia){ s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`);params.push(`%${sequencia.trim()}%`); }
         if (produto) {
-            s1Conds.push(`TRIM(c2.c2_produto) IN (
-                SELECT DISTINCT TRIM(b1_cod)
-                FROM public.sb1010
-                WHERE (b1_cod ILIKE $${pn} OR b1_desc ILIKE $${pn})
-                AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
-            )`);
-            params.push(`%${produto.trim().toUpperCase()}%`);
+            s1Conds.push(`TRIM(c2.c2_produto) = $${pn}`);
+            params.push(produto.trim().toUpperCase());
             pn++;
         }
 
@@ -1491,8 +1495,9 @@ router.get('/matrix', async (req, res) => {
             paramCount++;
         }
         if (pedido) {
-            pgQuery += ` AND TRIM(c2.c2_pedido) ILIKE $${paramCount++}`;
-            params.push(`%${pedido.trim()}%`);
+            const paddedPedido = pedido.trim().padStart(6, '0');
+            pgQuery += ` AND c2.c2_pedido LIKE $${paramCount++}`;
+            params.push(`${paddedPedido}%`);
         }
         if (operacao) {
             pgQuery += ` ${opCond}`;
@@ -2162,6 +2167,20 @@ router.post('/appoint', async (req, res) => {
         connection = await mysqlPool.getConnection();
         await connection.beginTransaction();
 
+        // --- PREVENÇÃO CONTRA DUPLO CLIQUE (DOUBLE SUBMIT) ---
+        // Verifica se já existe um apontamento idêntico nos últimos 10 segundos
+        const [recentApps] = await connection.execute(`
+            SELECT id FROM app_production_appointments
+            WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+            AND usuario=? AND quantidade=? AND data_inicio=? AND data_fim=?
+            AND created_at >= NOW() - INTERVAL 10 SECOND
+        `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim]);
+
+        if (recentApps.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ error: 'Apontamento duplicado detectado. Requisição ignorada.' });
+        }
+
         // --- LEITURA DE CONFIG ---
         const [configRows] = await connection.query('SELECT general_config FROM app_company_settings WHERE id = 1');
         let appointmentMode = 'free';
@@ -2476,8 +2495,8 @@ router.get('/pendentes', async (req, res) => {
             let paramCount = 1;
 
             if (pedido) {
-                pgSql += ` AND (c2.c2_pedido ILIKE $${paramCount} OR c2.c2_obs ILIKE $${paramCount})`;
-                pgParams.push(`%${pedido}%`);
+                pgSql += ` AND c2.c2_pedido = $${paramCount}`;
+                pgParams.push(pedido.trim().padStart(6, '0'));
                 paramCount++;
             }
             if (cliente) {

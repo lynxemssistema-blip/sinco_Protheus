@@ -100,6 +100,17 @@ router.get('/view', (req, res) => {
         return res.status(400).send('Caminho do arquivo não informado.');
     }
 
+    // Tratamento para múltiplos caminhos concatenados do Protheus (ex: caminho1.pdf" "caminho2.dwg)
+    if (filePath.includes('" "')) {
+        const paths = filePath.split('" "').map(p => p.replace(/"/g, '').trim());
+        // Dá preferência para o PDF, se não houver, pega o primeiro
+        const pdfPath = paths.find(p => p.toLowerCase().endsWith('.pdf'));
+        filePath = pdfPath || paths[0];
+    }
+    
+    // Remove aspas soltas que possam sobrar
+    filePath = filePath.replace(/"/g, '').trim();
+
     // Normalizar caminho para Linux ou Windows
     filePath = normalizeFilePath(filePath);
 

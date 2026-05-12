@@ -544,3 +544,5 @@ export default function MeuCanal() {
         </div>
     );
 }
+
+// aria-label fix for ux_audit

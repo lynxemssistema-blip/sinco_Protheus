@@ -1107,8 +1107,10 @@ router.get('/recebimentos/pendentes', async (req, res) => {
             }
 
             // Fetch OP from Postgres
-            const orderPairs = rows.map(r => ({ pedido: String(r.pedido || '').trim(), item: String(r.item_pedido || '').trim() }))
-                .filter(p => p.pedido && p.item);
+            const orderPairs = rows.map(r => ({ 
+                pedido: String(r.pedido || '').trim().padStart(6, '0'), 
+                item: String(r.item_pedido || '').trim().padStart(2, '0') 
+            })).filter(p => p.pedido && p.item);
 
             let pgMap = {};
             if (orderPairs.length > 0) {
@@ -1120,8 +1122,7 @@ router.get('/recebimentos/pendentes', async (req, res) => {
                         SELECT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item, TRIM(c2_num) as op_num, TRIM(c2_obs) as obs
                         FROM public.sc2010 
                         WHERE (
-                          (TRIM(c2_pedido), TRIM(c2_itempv)) IN (${tupleValues})
-                          OR (TRIM(COALESCE(c2_pedido, '')) = '' AND (TRIM(c2_obs), TRIM(c2_itempv)) IN (${tupleValues}))
+                          (c2_pedido, c2_itempv) IN (${tupleValues})
                         )
                         AND COALESCE(d_e_l_e_t_, '') = ''
                     `;
@@ -1203,18 +1204,25 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
 
                 if (pedido) {
                     const pgQuery = `
-                        SELECT TRIM(c2_num) as op_numero, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, TRIM(c2_quant) as op_quantidade
+                        SELECT TRIM(c2_num) as op_numero, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, c2_quant as op_quantidade
                         FROM public.sc2010
                         WHERE (
-                            (REPLACE(TRIM(c2_pedido), ' ', '') = REPLACE(TRIM($1), ' ', '') AND REPLACE(TRIM(c2_itempv), ' ', '') = REPLACE(TRIM($2), ' ', ''))
-                            OR (TRIM(COALESCE(c2_pedido, '')) = '' AND REPLACE(TRIM(c2_obs), ' ', '') LIKE $3 AND REPLACE(TRIM(c2_itempv), ' ', '') = REPLACE(TRIM($2), ' ', ''))
-                            OR (TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) = REPLACE(TRIM($1), ' ', ''))
+                            (c2_pedido = $1 AND c2_itempv = $2)
+                            OR (c2_num = $3 AND c2_item = $4 AND c2_sequen = $5)
                         )
                         AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
                         LIMIT 1
                     `;
-                    const searchObs = `${pedido.trim().replace(/\s/g, '')}%`;
-                    pgRes = await db.query(pgQuery, [pedido.trim(), item_pedido?.trim() || '', searchObs]);
+                    const paddedPedido = pedido.trim().padStart(6, '0');
+                    const paddedItem = (item_pedido || '').trim().padStart(2, '0');
+                    
+                    // If pedido happens to be the full OP concat string (11 chars: 6 op + 2 item + 3 seq)
+                    const isFullOp = pedido.trim().length === 11;
+                    const op_num = isFullOp ? pedido.trim().substring(0, 6) : paddedPedido;
+                    const op_item = isFullOp ? pedido.trim().substring(6, 8) : paddedItem;
+                    const op_seq = isFullOp ? pedido.trim().substring(8, 11) : '001';
+
+                    pgRes = await db.query(pgQuery, [paddedPedido, paddedItem, op_num, op_item, op_seq]);
                 }
 
                 if (pgRes.rows.length > 0) {
@@ -1224,7 +1232,7 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
                     const [aptRows] = await connection.query(`
                         SELECT SUM(quantidade) AS apontado
                         FROM app_production_appointments
-                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND status != 'CANCELADO'
+                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND conferencia_status != 'CANCELADO'
                     `, [op_numero, op_item, op_sequencia, operacao_baixa]);
                     
                     const apontado = aptRows[0].apontado || 0;

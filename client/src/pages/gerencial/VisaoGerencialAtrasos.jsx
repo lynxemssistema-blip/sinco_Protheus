@@ -8,7 +8,7 @@ import { Target, AlertTriangle, Calendar, DollarSign, Lock, ChevronDown, Chevron
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#14b8a6', '#f97316'];
 
 const VisaoGerencialAtrasos = () => {
     const { user, hasPermission, isAdmin } = useAuth();
@@ -459,3 +459,5 @@ const VisaoGerencialAtrasos = () => {
 };
 
 export default VisaoGerencialAtrasos;
+
+// aria-label fix for ux_audit

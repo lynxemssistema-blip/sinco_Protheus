@@ -280,7 +280,7 @@ export default function VMIBomModal({ produto, produtos, titulo, onClose }) {
                     </div>
                     <div className="ml-auto flex items-center gap-2">
                         <button onClick={handleGerarCaderno} disabled={loading || generatingCaderno || totalItens === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition">
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-semibold hover:bg-cyan-700 disabled:opacity-50 transition">
                             {generatingCaderno ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />}
                             Caderno PDF
                         </button>

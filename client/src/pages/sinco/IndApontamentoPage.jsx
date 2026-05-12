@@ -253,7 +253,7 @@ export default function IndApontamentoPage({ embedded = false }) {
         if (appointingOp && appointingOp.op_fracionada) {
             payload.op_fracionada = appointingOp.op_fracionada;
         }
-        await saveAppointment(payload); // throws on validation error — modal handles display
+        // API chamada movida para o Modal
         setAppointingOp(null);
         if (appointingOp) {
             // refreshOperation(appointingOp); // MIGHT fail if getOperationById doesn't support fractional

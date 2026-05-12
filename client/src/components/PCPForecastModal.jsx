@@ -626,12 +626,13 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                 <div className="space-y-3 mb-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
                                     {targetItems.map((t, idx) => {
                                         const itemKey = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
+                                        const uniqueKey = `${itemKey}_${idx}`;
                                         const eligibility = getOpEligibility(t);
                                         const localOp = localBatchOps[itemKey];
                                         const isProcessing = processingItems.includes(itemKey);
 
                                         return (
-                                            <div id={`batch-item-${itemKey}`} key={itemKey} className={`rounded p-3 flex justify-between items-center text-sm transition-all duration-300 ${isProcessing ? 'bg-indigo-50 border border-indigo-300 shadow' : 'bg-gray-50 border border-gray-200'}`}>
+                                            <div id={`batch-item-${uniqueKey}`} key={uniqueKey} className={`rounded p-3 flex justify-between items-center text-sm transition-all duration-300 ${isProcessing ? 'bg-indigo-50 border border-indigo-300 shadow' : 'bg-gray-50 border border-gray-200'}`}>
                                                 <div className="flex-1 min-w-0 pr-4">
                                                     <div className="font-bold text-gray-800 flex items-center gap-2">
                                                         <span>#{String(t.pedido).trim()} - Item {String(t.item).trim()}</span>
@@ -644,7 +645,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                             </span>
                                                         )}
                                                         {localOp && (
-                                                            <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded">OP: {localOp}</span>
+                                                            <span className="text-xs bg-cyan-100 text-cyan-700 font-bold px-2 py-0.5 rounded">OP: {localOp}</span>
                                                         )}
                                                         {!eligibility.valid && !localOp && (
                                                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
@@ -695,7 +696,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                     {parseFloat(prog.quantidade_pcp).toLocaleString('pt-BR')} un
                                                                 </span>
                                                                 {(prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') && (
-                                                                    <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded" title="OP Vinculada">
+                                                                    <span className="text-xs bg-cyan-100 text-cyan-700 font-bold px-2 py-0.5 rounded" title="OP Vinculada">
                                                                         OP: {prog.op_protheus}
                                                                     </span>
                                                                 )}

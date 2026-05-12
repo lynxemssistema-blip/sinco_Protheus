@@ -52,7 +52,7 @@ export default function GlobalTimerWidget() {
 
     const handleAppointmentSave = async (data) => {
         try {
-            await saveAppointment(data);
+            // await saveAppointment(data); // Removido pois o modal já salva
             if (modalData?.timerContextProps?.id) {
                 removeTimer(modalData.timerContextProps.id);
             }

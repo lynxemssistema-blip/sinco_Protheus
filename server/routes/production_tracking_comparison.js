@@ -56,8 +56,8 @@ router.get('/tracking-comparison', async (req, res) => {
             protheusParams.push(data_fim.replace(/-/g, ''));
         }
         if (pedido) {
-            protheusFilters.push(`(c2.c2_pedido = ? OR c2.c2_obs LIKE ?)`);
-            protheusParams.push(String(pedido).trim().padStart(6, '0'), `%${pedido}%`);
+            protheusFilters.push(`c2.c2_pedido = ?`);
+            protheusParams.push(String(pedido).trim().padStart(6, '0'));
         }
         if (op) {
             protheusFilters.push(`c2.c2_num = ?`);

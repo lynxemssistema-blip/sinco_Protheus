@@ -77,7 +77,9 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
                 return;
             } catch (err) {
                 if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
-                    setLoading(false); // ✅ cancelled
+                    // We intentionally DO NOT set loading to false here.
+                    // A cancellation only happens because a newer fetch was started,
+                    // which is now responsible for managing the loading state.
                     return;
                 }
                 lastError = err;

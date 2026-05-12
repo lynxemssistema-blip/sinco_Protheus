@@ -20,7 +20,9 @@ export default function VerticalAppointmentPage() {
     const [data, setData] = useStickyState([], '@metalfisa:vertical_data');
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
-    const [wasSearched, setWasSearched] = useState(false); // Distingue "nunca buscou" de "buscou mas não achou"
+    const [wasSearched, setWasSearched] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pagination, setPagination] = useState({ total: 0, totalPages: 0, limit: 100 }); // Distingue "nunca buscou" de "buscou mas não achou"
 
     // Filtros rápidos
     const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
@@ -56,7 +58,7 @@ export default function VerticalAppointmentPage() {
         }
     };
 
-    const loadData = async (showLoader = true) => {
+    const loadData = async (showLoader = true, targetPage = page) => {
         if (!selectedOp) return;
 
         // Bloqueio de Performance — sem nenhum filtro, não executa
@@ -193,7 +195,7 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleAppointmentSave = async (payload) => {
-        await saveAppointment(payload); // throws on validation error — modal handles display
+        // API chamada movida para dentro do Modal
         setAppointingOp(null);
         loadData(false);
     };

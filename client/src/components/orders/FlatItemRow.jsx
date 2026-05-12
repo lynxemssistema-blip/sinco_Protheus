@@ -2,7 +2,8 @@ import React, { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
-    StickyNote, MoreVertical, Loader2, Truck
+    StickyNote, MoreVertical, Loader2, Truck,
+    Factory, ClipboardList, ImageIcon, FileSpreadsheet
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
@@ -27,6 +28,14 @@ const FlatItemRow = ({
     onSetInvoiceModal,
     onOpenActionMenu,
     formatProtheusDate,
+    onPrintOPMirror,
+    onPrintFichas,
+    onPrintOPByOperation,
+    onPrintOPByOperationWithDrawings,
+    onPrintOPByResourceWithDrawings,
+    onPrintOPWithOpsStampWithDrawings,
+    onExportOPByOperationExcel,
+    onSetMenuPosition,
 }) => {
     const handleNfClick = useCallback((nf) => {
         onSetInvoiceModal({ nf, item });
@@ -65,6 +74,7 @@ const FlatItemRow = ({
             <td className="px-2 py-2 text-center sticky left-0 z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]" onClick={(e) => e.stopPropagation()}>
                 <input
                     type="checkbox"
+                    aria-label="Selecionar Item"
                     checked={isSelected}
                     onChange={() => onSelectItem(item)}
                     className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
@@ -171,6 +181,102 @@ const FlatItemRow = ({
                     >
                         <Settings className="h-4 w-4" />
                     </button>
+
+                    {/* Dropdown: Impressão/Exportação */}
+                    <div className="relative" onClick={e => e.stopPropagation()}>
+                        <button
+                            title="Mais ações"
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (isMenuOpen) {
+                                    onOpenActionMenu(null);
+                                } else {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const spaceBelow = window.innerHeight - rect.bottom;
+                                    const spaceAbove = rect.top;
+                                    const menuHeight = 350;
+                                    if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+                                        // Open upwards
+                                        onSetMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right });
+                                    } else {
+                                        // Open downwards
+                                        onSetMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right });
+                                    }
+                                    onOpenActionMenu(menuKey);
+                                }
+                            }}
+                            className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center"
+                        >
+                            <MoreVertical className="h-4 w-4" />
+                        </button>
+                        {isMenuOpen && (
+                            <div 
+                                className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]"
+                                style={{ 
+                                    top: menuPosition?.top !== undefined ? `${menuPosition.top}px` : 'auto', 
+                                    bottom: menuPosition?.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', 
+                                    right: `${menuPosition?.right}px` 
+                                }}
+                            >
+                                <button
+                                    onClick={(e) => { onPrintOPMirror(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-500" />}
+                                    <span>Espelho OP</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onPrintFichas(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `ficha-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ClipboardList className="h-4 w-4 flex-shrink-0 text-amber-500" />}
+                                    <span>Fichas de Operação</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onPrintOPByOperation(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-oper-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-500" />}
+                                    <span>Por Operações (PDF)</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
+                                    <span>OP + Desenhos (PDF)</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onPrintOPByResourceWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />}
+                                    <span>OP + Desenhos (Por Recurso)</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onPrintOPWithOpsStampWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                    <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { onExportOPByOperationExcel(item.pedido, e, item.item); onOpenActionMenu(null); }}
+                                    disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${item.pedido}-${item.item}`}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    {printingOrderId === `op-excel-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
+                                    <span>Por Operações (Excel)</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </td>
 

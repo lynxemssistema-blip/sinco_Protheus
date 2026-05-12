@@ -22,7 +22,7 @@ import api from '../../services/api';
 const STATUS_CONFIG = {
     'Pendente':    { color: '#f59e0b', bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200', icon: Clock,        label: 'Pendente' },
     'Em Análise':  { color: '#3b82f6', bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',  icon: Activity,     label: 'Em Análise' },
-    'Aprovado':    { color: '#8b5cf6', bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-200',icon: CheckCircle2, label: 'Aprovado' },
+    'Aprovado':    { color: '#14b8a6', bg: 'bg-cyan-50',  text: 'text-cyan-700',  border: 'border-cyan-200',icon: CheckCircle2, label: 'Aprovado' },
     'Faturado':    { color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',icon: CheckCircle2, label: 'Faturado' },
     'Cancelado':   { color: '#ef4444', bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',   icon: XCircle,      label: 'Cancelado' },
     'Rejeitado':   { color: '#f97316', bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',icon: XCircle,      label: 'Rejeitado' },
@@ -48,7 +48,7 @@ const PERIOD_PRESETS = [
     { label: 'Tudo',  all: true },
 ];
 
-const CHART_COLORS = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#14b8a6','#f97316','#a855f7','#06b6d4'];
+const CHART_COLORS = ['#6366f1','#14b8a6','#ec4899','#f59e0b','#10b981','#3b82f6','#14b8a6','#f97316','#2DD4BF','#06b6d4'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -435,7 +435,7 @@ export default function DashboardFaturamento() {
             {/* ── KPI Cards ────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 {/* Card Total */}
-                <div className="col-span-2 md:col-span-3 xl:col-span-2 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl p-4 text-white flex flex-col justify-between">
+                <div className="col-span-2 md:col-span-3 xl:col-span-2 bg-gradient-to-br from-indigo-600 to-cyan-600 rounded-xl p-4 text-white flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wide opacity-80">Total Geral</span>
                         <Target className="h-5 w-5 opacity-70" />

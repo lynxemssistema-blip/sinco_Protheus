@@ -1,23 +1,18 @@
 # 🎉 NOVA VERSÃO EM PRODUÇÃO - MetalFisa PCP
 
-**Data**: 08/05/2026  
+**Data**: 12/05/2026  
 **Servidor**: http://192.168.1.77:3001
 
 ---
 
 ## ✅ NOVIDADES DESTA VERSÃO
 
-### 🚀 Melhorias de Estabilidade Visual (Filtros de Pedido e OPs)
+### 🚀 Configuração de Apontamento Multi-Operação
+Adicionado um controle nas Configurações do Sistema para habilitar/desabilitar o apontamento em massa de operações pendentes.
 
-Fizemos ajustes cruciais nas telas de **Pedidos de Venda** e **Gestão de OPs por Lote** para melhorar o feedback visual ao usuário:
-
-- ✅ **Fim da Tela Congelada ("Nada Acontece")**: Resolvemos um problema na tela de Pedidos de Venda onde o indicador "Buscando..." desaparecia instantaneamente ao recarregar filtros simultâneos. Agora o sistema sempre vai exibir corretamente quando estiver processando dados grandes.
-- ✅ **Feedback na Gestão de OPs**: Adicionamos o indicador visual explícito "Buscando..." com o ícone giratório na tela de *Gestão de OPs por Lote*, garantindo padronização e garantindo que os usuários saibam quando o sistema está em atividade.
-
-### 🖨️ Integração de Impressão na Visão Plana (Lista Plana)
-
-- ✅ **Impressão Múltipla na Visão de Itens**: Agora é possível imprimir e gerar atas diretamente das linhas da visão "Lista Plana" (Flat) no módulo de Engenharia/PCP, assim como já funcionava na visão agrupada.
-- ✅ **Múltiplos Formatos Atendidos**: Geração de Ata Viva, PDF de OP, espelho de planejamento e Excel diretamente da lista plana.
+- ✅ **Controle Global**: Nova chave de ativação na aba "Geral" das Configurações do Sistema.
+- ✅ **Bloqueio no Chão de Fábrica**: Se desativado, o modal de apontamento esconde o roteiro completo e obriga o apontamento exclusivo da operação atual.
+- ✅ **Melhoria Visual**: Feedback visual (aviso em amarelo) informando aos operadores quando o modo Multi-Operação foi desativado pela diretoria.
 
 ---
 
@@ -54,8 +49,8 @@ Em caso de problemas:
 
 ---
 
-**Versão**: 1.3.14 (Estabilidade Visual & Impressão Lista Plana)  
-**Build**: 08/05/2026 12:00
+**Versão**: 1.5.0 (Configuração de Apontamento Multi-Operação)  
+**Build**: 12/05/2026 07:40
 
 **Comando de Publicação no servidor**
 scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa -r ./linux-deployment/* sinco@192.168.1.77:/var/www/metalfisa/

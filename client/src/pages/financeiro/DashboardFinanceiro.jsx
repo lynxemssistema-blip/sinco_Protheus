@@ -29,8 +29,8 @@ const formatDate = (s) => {
 };
 
 const STATUS_COLOR = { Pago: '#10b981', Aberto: '#f59e0b', Atrasado: '#ef4444' };
-const CHART_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
-    '#3b82f6', '#14b8a6', '#f97316', '#a855f7', '#06b6d4'];
+const CHART_COLORS = ['#6366f1', '#14b8a6', '#ec4899', '#f59e0b', '#10b981',
+    '#3b82f6', '#14b8a6', '#f97316', '#2DD4BF', '#06b6d4'];
 
 // ─── Tooltip customizado ──────────────────────────────────────────────────────
 
@@ -412,7 +412,7 @@ const DashboardFinanceiro = () => {
                                         <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100}
                                             tickFormatter={v => v.length > 16 ? v.slice(0, 15) + '…' : v} />
                                         <Tooltip content={<ChartTooltip />} />
-                                        <Bar dataKey="saldo" name="Saldo" fill="#8b5cf6" radius={[0, 3, 3, 0]}>
+                                        <Bar dataKey="saldo" name="Saldo" fill="#14b8a6" radius={[0, 3, 3, 0]}>
                                             {chartFornecedor.map((_, i) => (
                                                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                                             ))}

@@ -354,9 +354,24 @@ const FaturamentoPainel = () => {
                                                             onChange={e => setEditForm({...editForm, nota_fiscal: e.target.value})}
                                                         />
                                                     ) : (
-                                                        <span className={it.nota_fiscal ? 'text-gray-800 font-semibold' : 'text-gray-400 italic'}>
-                                                            {it.nota_fiscal || globalNf || 'Sem NF'}
-                                                        </span>
+                                                        <>
+                                                            {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0 ? (
+                                                                <div className="flex flex-col gap-0.5">
+                                                                    {it.notas_fiscais_protheus.map((nf, nfIdx) => (
+                                                                        <div key={nfIdx} className="flex flex-col">
+                                                                            <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                                                                NF {nf.nota}
+                                                                            </span>
+                                                                            {nf.emissao && <span className="text-[9px] text-gray-400 pl-0.5">Em: {nf.emissao} | Qtd: {nf.qtd}</span>}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <span className={it.nota_fiscal ? 'text-gray-800 font-semibold font-mono text-sm' : 'text-gray-400 italic text-xs'}>
+                                                                    {it.nota_fiscal || globalNf || 'Sem NF'}
+                                                                </span>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </td>
                                                 {selectedSolicitacao.status === 'Pendente' && (

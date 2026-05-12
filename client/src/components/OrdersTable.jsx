@@ -1091,9 +1091,9 @@ const OrdersTable = () => {
                                                                             <button
                                                                                 onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-resource-drawings-${order.pedido}`}
-                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-40"
                                                                             >
-                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />}
                                                                                 <span>OP + Desenhos (Por Recurso)</span>
                                                                             </button>
                                                                             <button
@@ -1304,9 +1304,9 @@ const OrdersTable = () => {
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
                                                                                                                             disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}`}
-                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                                                                                         >
-                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />}
                                                                                                                             <span>OP + Desenhos (Por Recurso)</span>
                                                                                                                         </button>
                                                                                                                         <button
@@ -1514,6 +1514,14 @@ const OrdersTable = () => {
                                                     onSetInvoiceModal={({ nf, item: it }) => { setSelectedInvoice(nf); setInvoiceModalItem(it); }}
                                                     onOpenActionMenu={setOpenActionMenu}
                                                     formatProtheusDate={formatProtheusDate}
+                                                    onPrintOPMirror={handlePrintOPMirror}
+                                                    onPrintFichas={handlePrintFichas}
+                                                    onPrintOPByOperation={handlePrintOPByOperation}
+                                                    onPrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
+                                                    onPrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
+                                                    onPrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
+                                                    onExportOPByOperationExcel={handleExportOPByOperationExcel}
+                                                    onSetMenuPosition={setMenuPosition}
                                                 />
                                             ))
                                         )}

@@ -204,7 +204,7 @@ const GestaoOPsPage = () => {
     const [totalPages, setTotalPages] = useState(1);
     const [requiresFilter, setRequiresFilter] = useState(false);
 
-    const limit = viewMode === 'flat' ? 50 : 20;
+    const limit = viewMode === 'flat' ? 100 : 100;
     const colSpanCount = viewMode === 'flat' ? 23 : 7;
 
     // Debug mount
@@ -1143,10 +1143,13 @@ const GestaoOPsPage = () => {
                     <div className="md:col-span-2 flex gap-2">
                         <button
                             type="submit"
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2 h-[42px] flex-1"
+                            disabled={loading}
+                            className={`font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2 h-[42px] flex-1 ${
+                                loading ? 'bg-blue-400 cursor-not-allowed opacity-80 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
                         >
-                            <Search className="h-4 w-4" />
-                            Filtrar
+                            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                            {loading ? 'Buscando...' : 'Filtrar'}
                         </button>
 
                         <button
@@ -1380,9 +1383,9 @@ const GestaoOPsPage = () => {
                                                                             <button
                                                                                 onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-resource-drawings-${order.pedido}`}
-                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-40"
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-40"
                                                                             >
-                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                {printingOrderId === `op-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />}
                                                                                 <span>OP + Desenhos (Por Recurso)</span>
                                                                             </button>
                                                                             <button
@@ -1580,9 +1583,9 @@ const GestaoOPsPage = () => {
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handlePrintOPByResourceWithDrawings(order.pedido, e, item.item, item); setOpenActionMenu(null); }}
                                                                                                                             disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}`}
-                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                                                                                         >
-                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            {printingOrderId === `op-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />}
                                                                                                                             <span>OP + Desenhos (Por Recurso)</span>
                                                                                                                         </button>
                                                                                                                         <button

@@ -1,6 +1,116 @@
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
+const nodemailer = require('nodemailer');
+
+// ─── Helper: busca NFs do Protheus para uma lista de pedidos ─────────────────
+// Usa 2 queries separadas: sd2010 (sem JOIN) + sf2010 (enriquecimento de data).
+// O JOIN era a causa do sumiço: se o cabeçalho sf2010 estava soft-deleted ou
+// a série não casava, o INNER JOIN filtrava tudo e retornava 0 linhas.
+const buildNFLookup = async (pgPool, uniquePedidos) => {
+    if (!uniquePedidos || uniquePedidos.length === 0) return {};
+
+    const normItem = (s) => { const n = parseInt(String(s).trim(), 10); return isNaN(n) ? String(s).trim() : String(n); };
+    const fmtEmissao = (raw) => {
+        if (!raw) return null;
+        const s = raw.trim();
+        if (s.length !== 8 || s === '00000000' || !/^\d{8}$/.test(s)) return null;
+        return `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
+    };
+
+    // Etapa 1: busca itens de NF em sd2010 SEM JOIN com sf2010
+    const { rows: d2Rows } = await pgPool.query(`
+        SELECT
+            TRIM(d2.d2_pedido) as pedido,
+            TRIM(d2.d2_itempv) as item,
+            TRIM(d2.d2_doc)    as nota,
+            TRIM(d2.d2_serie)  as serie,
+            TRIM(d2.d2_cf)     as cfop,
+            d2.d2_quant::numeric(18,2)  as qtd,
+            d2.d2_prunit::numeric(18,2) as valor_unit,
+            d2.d2_total::numeric(18,2)  as valor_total
+        FROM public.sd2010 d2
+        WHERE d2.d2_pedido = ANY($1::varchar[])
+          AND COALESCE(d2.d_e_l_e_t_, '') = ''
+          AND TRIM(d2.d2_doc) != ''
+    `, [uniquePedidos]);
+
+    console.log(`[FAT NF] pedidos=${uniquePedidos.join(',')} | sd2010_rows=${d2Rows.length}`);
+
+    if (d2Rows.length === 0) return {};
+
+    // Etapa 2: busca datas de emissão em sf2010 para as notas encontradas
+    const uniqueNotas = [...new Set(d2Rows.map(r => r.nota).filter(Boolean))];
+    const emissaoMap = {};
+    if (uniqueNotas.length > 0) {
+        try {
+            const { rows: f2Rows } = await pgPool.query(`
+                SELECT TRIM(f2.f2_doc) as nota, TRIM(f2.f2_emissao) as emissao_raw
+                FROM public.sf2010 f2
+                WHERE TRIM(f2.f2_doc) = ANY($1::varchar[])
+                  AND COALESCE(f2.d_e_l_e_t_, '') = ''
+            `, [uniqueNotas]);
+            f2Rows.forEach(r => { if (!emissaoMap[r.nota]) emissaoMap[r.nota] = r.emissao_raw; });
+        } catch (e) {
+            console.warn('[FAT NF] Erro ao buscar datas sf2010 (não crítico):', e.message);
+        }
+    }
+
+    // Etapa 2b: busca serie_nf via sf2010 (mapa nota → serie)
+    const serieMap = {};
+    if (uniqueNotas.length > 0) {
+        try {
+            const { rows: f2s } = await pgPool.query(`
+                SELECT TRIM(f2.f2_doc) as nota, TRIM(f2.f2_serie) as serie
+                FROM public.sf2010 f2
+                WHERE TRIM(f2.f2_doc) = ANY($1::varchar[])
+                  AND COALESCE(f2.d_e_l_e_t_, '') = ''
+            `, [uniqueNotas]);
+            f2s.forEach(r => { if (!serieMap[r.nota]) serieMap[r.nota] = r.serie; });
+        } catch (e) {}
+    }
+
+    // Monta nfMap indexado por "pedido-item" (original e normalizado)
+    const nfMap = {};
+    d2Rows.forEach(nf => {
+        const pedido   = nf.pedido;
+        const itemOrig = nf.item;
+        const itemNorm = normItem(itemOrig);
+        const emissao  = fmtEmissao(emissaoMap[nf.nota]);
+
+        [pedido + '-' + itemOrig, pedido + '-' + itemNorm].forEach(key => {
+            if (!nfMap[key]) nfMap[key] = [];
+            if (nf.nota && !nfMap[key].some(n => n.nota === nf.nota)) {
+                nfMap[key].push({
+                    nota:        nf.nota,
+                    serie:       serieMap[nf.nota] || nf.serie || '',
+                    emissao,
+                    cfop:        nf.cfop || '',
+                    qtd:         parseFloat(nf.qtd) || 0,
+                    valor_unit:  parseFloat(nf.valor_unit) || 0,
+                    valor_total: parseFloat(nf.valor_total) || 0
+                });
+            }
+        });
+    });
+
+    console.log(`[FAT NF] nfMap keys: ${Object.keys(nfMap).join(' | ')}`);
+    return nfMap;
+};
+
+// Aplica nfMap sobre um array de itens do MySQL
+const applyNFMap = (itensRows, nfMap) => {
+    const normItem = (s) => { const n = parseInt(String(s).trim(), 10); return isNaN(n) ? String(s).trim() : String(n); };
+    itensRows.forEach(item => {
+        const pedTrim  = String(item.pedido).trim();
+        const itemTrim = String(item.item).trim();
+        const itemNorm = normItem(itemTrim);
+        const nfs = nfMap[pedTrim + '-' + itemTrim] || nfMap[pedTrim + '-' + itemNorm] || [];
+        // Retorna array de objetos (mesmo formato que pedidos.js notas_fiscais)
+        item.notas_fiscais_protheus = nfs.length > 0 ? nfs : [];
+        item.nf_emissao_protheus    = nfs.length > 0 ? (nfs[0].emissao || null) : null;
+    });
+};
 
 // Inicialização automática do banco de dados (Tabelas de Faturamento)
 const initDB = async () => {
@@ -12,6 +122,7 @@ const initDB = async () => {
                 usuario VARCHAR(100) NOT NULL,
                 status VARCHAR(50) DEFAULT 'Pendente',
                 observacao TEXT,
+                nota_fiscal VARCHAR(100) NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
@@ -28,9 +139,21 @@ const initDB = async () => {
                 saldo_faturar_momentaneo DECIMAL(18,6) NOT NULL,
                 valor_unitario DECIMAL(18,2) NULL,
                 valor_total DECIMAL(18,2) NULL,
+                nota_fiscal VARCHAR(100) NULL,
+                pedido_cliente VARCHAR(100) NULL,
+                desenho_cliente VARCHAR(100) NULL,
+                nome_cliente VARCHAR(255) NULL,
+                pcp_forecast_id INT NULL,
+                pcp_data_entrega DATE NULL,
+                pcp_serie_cliente VARCHAR(100) NULL,
+                pcp_serie_metalfisa VARCHAR(100) NULL,
+                pcp_numero_serie VARCHAR(150) NULL,
+                pcp_lote VARCHAR(100) NULL,
+                pcp_numero_lote VARCHAR(150) NULL,
                 FOREIGN KEY (solicitacao_id) REFERENCES app_faturamento_solicitacoes(id) ON DELETE CASCADE
             )
         `);
+
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_faturamento_auditoria (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -43,44 +166,6 @@ const initDB = async () => {
                 FOREIGN KEY (solicitacao_id) REFERENCES app_faturamento_solicitacoes(id) ON DELETE CASCADE
             )
         `);
-
-        // Migration step: Add nota_fiscal, pedido_cliente and desenho_cliente
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacoes ADD COLUMN nota_fiscal VARCHAR(100) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN nota_fiscal VARCHAR(100) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pedido_cliente VARCHAR(100) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN desenho_cliente VARCHAR(100) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN nome_cliente VARCHAR(255) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN valor_unitario DECIMAL(18,2) NULL");
-        } catch (e) {}
-
-        try {
-            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN valor_total DECIMAL(18,2) NULL");
-        } catch (e) {}
-
-        // Migrations para campos do PCP Forecasting (Rastreabilidade)
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_forecast_id INT NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_data_entrega DATE NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_serie_cliente VARCHAR(100) NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_serie_metalfisa VARCHAR(100) NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_numero_serie VARCHAR(150) NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_lote VARCHAR(100) NULL"); } catch (e) {}
-        try { await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_numero_lote VARCHAR(150) NULL"); } catch (e) {}
 
         console.log('✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.');
     } catch (err) {
@@ -119,38 +204,6 @@ const gerarNumeroSolicitacao = async () => {
 
     return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
 };
-
-// ROTA TEMPORÁRIA PARA MIGRAÇÃO DE DADOS ANTIGOS
-router.get('/migrate-pedidos', async (req, res) => {
-    try {
-        const pgPool = require('../services/postgresService');
-        const [rows] = await mysqlPool.query("SELECT id, pedido, item, codigo_produto FROM app_faturamento_solicitacao_itens WHERE pedido_cliente IS NULL OR desenho_cliente IS NULL OR nome_cliente IS NULL");
-        
-        let updatedCount = 0;
-        for (const r of rows) {
-            const { rows: pgRow } = await pgPool.query("SELECT TRIM(c6.c6_pedcli) as ped_cliente FROM public.sc6010 c6 WHERE TRIM(c6.c6_num) = $1 AND TRIM(c6.c6_item) = $2", [String(r.pedido).trim(), String(r.item).padStart(2, '0')]);
-            const { rows: zgRow } = await pgPool.query("SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') as ref_cliente FROM public.sz1010 z1 WHERE TRIM(z1.z1_produto) = $1 AND COALESCE(z1.d_e_l_e_t_, '') = ''", [String(r.codigo_produto).trim()]);
-            
-            const { rows: cliRow } = await pgPool.query(`
-                SELECT TRIM(sa1.a1_nome) as nome_cliente 
-                FROM public.sc5010 c5
-                JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-                WHERE TRIM(c5.c5_num) = $1 AND COALESCE(c5.d_e_l_e_t_, '') = ''
-            `, [String(r.pedido).trim()]);
-
-            const pCli = pgRow.length > 0 && pgRow[0].ped_cliente ? pgRow[0].ped_cliente.trim() : '';
-            const rCli = zgRow.length > 0 && zgRow[0].ref_cliente ? zgRow[0].ref_cliente.trim() : '';
-            const nCli = cliRow.length > 0 && cliRow[0].nome_cliente ? cliRow[0].nome_cliente.trim() : '';
-            
-            await mysqlPool.query("UPDATE app_faturamento_solicitacao_itens SET pedido_cliente = ?, desenho_cliente = ?, nome_cliente = ? WHERE id = ?", [pCli, rCli, nCli, r.id]);
-            updatedCount++;
-        }
-        res.json({ success: true, message: `Migração concluída. Atualizados ${updatedCount} registros.` });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // POST /api/faturamento/solicitacoes - Cria uma nova solicitação
 router.post('/solicitacoes', async (req, res) => {
@@ -240,7 +293,6 @@ router.post('/solicitacoes', async (req, res) => {
                         }
                         
                         if (recipientList.length > 0) {
-                            const nodemailer = require('nodemailer');
                             let getCorpEmailType = (html) => html; // Default fallback
                             try {
                                 const utils = require('../utils/emailTemplate');
@@ -371,9 +423,41 @@ router.get('/solicitacoes', async (req, res) => {
                 ORDER BY pedido ASC, item ASC
             `, solicitacaoIds);
 
-            // Agrupa os itens
+            // Fetch NFs from Protheus (Postgres)
+            if (itensRows.length > 0) {
+                try {
+                    const pgPool = require('../services/protheusDB');
+                    const uniquePedidos = [...new Set(itensRows.map(i => String(i.pedido).trim()))];
+                    const nfMap = await buildNFLookup(pgPool, uniquePedidos);
+                    applyNFMap(itensRows, nfMap);
+                } catch (err) {
+                    console.error('[FAT NF] Erro ao buscar NFs do Protheus:', err.message);
+                }
+            }
+
+            // Agrupa os itens e Auto-Faturamento
             rows.forEach(solicitacao => {
                 solicitacao.itens = itensRows.filter(i => i.solicitacao_id === solicitacao.id);
+
+                if (solicitacao.status === 'Pendente' && solicitacao.itens.length > 0) {
+                    const allHaveNf = solicitacao.itens.every(it => Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0);
+                    if (allHaveNf) {
+                        const nfs = new Set();
+                        solicitacao.itens.forEach(it => it.notas_fiscais_protheus.forEach(nf => nfs.add(nf.nota)));
+                        const nfString = Array.from(nfs).join(' / ');
+                        
+                        solicitacao.status = 'Atendido';
+                        solicitacao.nota_fiscal = nfString;
+
+                        mysqlPool.query(
+                            "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ?",
+                            [nfString, solicitacao.id]
+                        ).then(() => {
+                            mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'ALTERACAO_STATUS', 'Sistema (Auto)', JSON.stringify('De Pendente para Atendido')]);
+                            mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'VINCULO_NF', 'Sistema (Auto)', JSON.stringify({ nota_fiscal: nfString })]);
+                        }).catch(e => console.error('[FAT Auto] Erro:', e.message));
+                    }
+                }
             });
         }
 
@@ -405,7 +489,39 @@ router.get('/solicitacoes/:id', async (req, res) => {
         const solicitacao = rows[0];
 
         const [itensRows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = ? ORDER BY pedido ASC, item ASC", [id]);
+        
+        if (itensRows.length > 0) {
+            try {
+                const pgPool = require('../services/protheusDB');
+                const uniquePedidos = [...new Set(itensRows.map(i => String(i.pedido).trim()))];
+                const nfMap = await buildNFLookup(pgPool, uniquePedidos);
+                applyNFMap(itensRows, nfMap);
+            } catch (err) {
+                console.error('[FAT NF] Erro ao buscar NFs do Protheus:', err.message);
+            }
+        }
+
         solicitacao.itens = itensRows;
+
+        if (solicitacao.status === 'Pendente' && solicitacao.itens.length > 0) {
+            const allHaveNf = solicitacao.itens.every(it => Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0);
+            if (allHaveNf) {
+                const nfs = new Set();
+                solicitacao.itens.forEach(it => it.notas_fiscais_protheus.forEach(nf => nfs.add(nf.nota)));
+                const nfString = Array.from(nfs).join(' / ');
+                
+                solicitacao.status = 'Atendido';
+                solicitacao.nota_fiscal = nfString;
+
+                mysqlPool.query(
+                    "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ?",
+                    [nfString, solicitacao.id]
+                ).then(() => {
+                    mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'ALTERACAO_STATUS', 'Sistema (Auto)', JSON.stringify('De Pendente para Atendido')]);
+                    mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'VINCULO_NF', 'Sistema (Auto)', JSON.stringify({ nota_fiscal: nfString })]);
+                }).catch(e => console.error('[FAT Auto] Erro:', e.message));
+            }
+        }
 
         res.json(solicitacao);
     } catch (error) {
@@ -543,7 +659,7 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
             item: oldItem[0].item 
         });
 
-        // Se deletou todos os itens, podemos cancelar a solicitacao (opcional)? Fica a critério do negócio.
+
 
         await connection.commit();
         res.json({ success: true, message: 'Item removido da solicitação.' });
@@ -674,7 +790,6 @@ router.post('/enviar-email-lote', async (req, res) => {
             `;
         }
 
-        const nodemailer = require('nodemailer');
         let getCorpEmailType = (html) => html;
         try {
             const utils = require('../utils/emailTemplate');

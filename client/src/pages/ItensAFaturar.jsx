@@ -38,7 +38,7 @@ const ItensAFaturar = () => {
 
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
-    const limit = 50;
+    const limit = 100;
 
     // --- FATURAMENTO CART STATE ---
     const [selectedItems, setSelectedItems] = useState({}); // { 'pedido-item': orderObject }
@@ -123,7 +123,7 @@ const ItensAFaturar = () => {
 
     const getStatusTypeColor = (tipo) => {
         switch (tipo) {
-            case 'Novo': return 'bg-purple-100 text-purple-800 border-purple-200';
+            case 'Novo': return 'bg-cyan-100 text-cyan-800 border-cyan-200';
             case 'Restrição': return 'bg-red-100 text-red-800 border-red-200';
             case 'Revisão': return 'bg-orange-100 text-orange-800 border-orange-200';
             case 'PCP': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
@@ -375,7 +375,7 @@ const ItensAFaturar = () => {
                                             return (
                                                 <tr key={key} className="hover:bg-blue-50/30 transition-colors group">
                                                     <td className="px-4 py-2 font-mono text-gray-900">{order.pedido} <span className="text-blue-500 font-bold mx-1">-</span> {order.item}</td>
-                                                    <td className="px-4 py-2 font-mono text-xs text-purple-700 font-bold text-center whitespace-nowrap">
+                                                    <td className="px-4 py-2 font-mono text-xs text-cyan-700 font-bold text-center whitespace-nowrap">
                                                         {order.op_num_completa || '-'}
                                                     </td>
                                                     <td className="px-4 py-2">
@@ -649,7 +649,7 @@ const ItensAFaturar = () => {
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
                                 <th className="px-3 py-3 font-semibold text-center">Status</th>
-                                <th className="px-3 py-3 font-semibold text-center text-purple-700">Fat. Solicitados</th>
+                                <th className="px-3 py-3 font-semibold text-center text-cyan-700">Fat. Solicitados</th>
                                 <th className="px-3 py-3 font-semibold text-center">NFs Anteriores</th>
                             </tr>
                         </thead>
@@ -716,7 +716,7 @@ const ItensAFaturar = () => {
                                             </td>
                                             <td className="px-3 py-2 font-medium text-gray-900">{order.pedido}</td>
                                             <td className="px-3 py-2 font-mono text-xs">{order.item}</td>
-                                            <td className="px-3 py-2 font-mono text-xs text-purple-700 font-bold text-center whitespace-nowrap">
+                                            <td className="px-3 py-2 font-mono text-xs text-cyan-700 font-bold text-center whitespace-nowrap">
                                                 {order.op_num_completa || '-'}
                                             </td>
                                             <td className="px-3 py-2 font-mono text-xs text-blue-700 font-semibold">{order.codigo}</td>
@@ -773,6 +773,23 @@ const ItensAFaturar = () => {
                                                             ✓ Pronto
                                                         </span>
                                                     )}
+                                                    {/* NFs inline — visíveis para itens faturados (total ou parcial) */}
+                                                    {(parseFloat(order.qtd_faturar) <= 0 || parseFloat(order.qtd_entreg) > 0) &&
+                                                        Array.isArray(order.notas_fiscais) &&
+                                                        order.notas_fiscais.filter(nf => nf?.nota?.trim()).length > 0 && (
+                                                        <div className="flex flex-col gap-0.5 items-center mt-0.5">
+                                                            {order.notas_fiscais.filter(nf => nf?.nota?.trim()).map((nf, nfIdx) => (
+                                                                <button
+                                                                    key={nfIdx}
+                                                                    onClick={(e) => { e.stopPropagation(); setSelectedInvoice(nf); setInvoiceModalItem({ ...order, nf_selecionada: nf }); }}
+                                                                    className="text-[9px] px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-emerald-700 font-mono font-bold transition-colors whitespace-nowrap"
+                                                                    title={`NF ${nf.nota} | Emissão: ${nf.emissao || '-'} | Qtd: ${nf.qtd}`}
+                                                                >
+                                                                    NF {nf.nota}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
@@ -787,7 +804,7 @@ const ItensAFaturar = () => {
 
                                                         return faturamentosValidos.length > 0 ? (
                                                             faturamentosValidos.map((fat, fIdx) => (
-                                                                <div key={fIdx} className="text-[9px] bg-purple-50 text-purple-700 border border-purple-200 rounded px-1.5 py-0.5 whitespace-nowrap overflow-hidden" title={`Qtd: ${fat.quantidade_solicitada}`}>
+                                                                <div key={fIdx} className="text-[9px] bg-cyan-50 text-cyan-700 border border-cyan-200 rounded px-1.5 py-0.5 whitespace-nowrap overflow-hidden" title={`Qtd: ${fat.quantidade_solicitada}`}>
                                                                     <span className="font-bold">{fat.numero_solicitacao}</span> ({parseFloat(fat.quantidade_solicitada).toLocaleString()})
                                                                 </div>
                                                             ))

@@ -3,21 +3,11 @@ const router = express.Router();
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
-// const PdfPrinter = require('pdfmake/src/printer'); // Temporarily disabled due to module issues
+// PdfPrinter desativado temporariamente devido a problemas com módulo
+// const PdfPrinter = require('pdfmake/src/printer'); 
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
-
-// Fonts for pdfmake
-// const fonts = {
-//     Roboto: {
-//         normal: 'Helvetica',
-//         bold: 'Helvetica-Bold',
-//         italics: 'Helvetica-Oblique',
-//         bolditalics: 'Helvetica-BoldOblique'
-//     }
-// };
-// const printer = new PdfPrinter(fonts);
 
 /**
  * Shared Data Fetching Logic

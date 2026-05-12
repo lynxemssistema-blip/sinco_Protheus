@@ -531,7 +531,7 @@ router.get('/vertical-pendencias', async (req, res) => {
       if (plannedOps.length === 0) {
         return res.json([]); // No OPs planned in this date range at all
       }
-      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim());
+      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim().padStart(6, '0'));
     }
 
     if (opFilterFromMySQL) {
@@ -539,17 +539,17 @@ router.get('/vertical-pendencias', async (req, res) => {
         opFilterFromMySQL = opFilterFromMySQL.slice(0, 5000);
       }
       const inPlaceholders = opFilterFromMySQL.map((_, i) => `$${pCount + i}`).join(',');
-      conditions.push(`TRIM(c2.c2_num) IN (${inPlaceholders})`);
+      conditions.push(`c2.c2_num IN (${inPlaceholders})`);
       paramsArr.push(...opFilterFromMySQL);
       pCount += opFilterFromMySQL.length;
     }
 
     if (op) {
-      conditions.push(`TRIM(c2.c2_num) = $${pCount++}`);
+      conditions.push(`c2.c2_num = $${pCount++}`);
       paramsArr.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      conditions.push(`(TRIM(c2.c2_pedido) = $${pCount} OR TRIM(root_op.c2_pedido) = $${pCount} OR TRIM(c2.c2_obs) ILIKE '%' || $${pCount} || '%' OR TRIM(root_op.c2_obs) ILIKE '%' || $${pCount} || '%')`);
+      conditions.push(`(c2.c2_pedido = $${pCount} OR root_op.c2_pedido = $${pCount})`);
       paramsArr.push(String(pedido).trim().padStart(6, '0'));
       pCount++;
     }
@@ -704,8 +704,12 @@ router.get('/vertical-pendencias', async (req, res) => {
 router.get('/vertical/:operacao', async (req, res) => {
   try {
     let { operacao } = req.params;
-    operacao = String(operacao).trim(); // Mantém o código do recurso como veio (ex: 'MO0004')
+    operacao = String(operacao).split('-')[0].trim(); // Mantém apenas o código do recurso (ex: 'MO0004 - Torno' vira 'MO0004')
     const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate } = req.query;
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = (page - 1) * limit;
 
     console.log(`🏭 [VERTICAL] Buscando fila para recurso: ${operacao} com Filtros`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate });
 
@@ -724,7 +728,7 @@ router.get('/vertical/:operacao', async (req, res) => {
 
       const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
       if (plannedOps.length === 0) return res.json([]);
-      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim()).slice(0, 5000);
+      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim().padStart(6, '0')).slice(0, 5000);
     }
 
     // ── ETAPA 1: buscar produtos e operações do roteiro para este RECURSO ──────
@@ -771,11 +775,11 @@ router.get('/vertical/:operacao', async (req, res) => {
     if (inactiveSqlSC2) sc2Conditions.push(inactiveSqlSC2.replace(/^\s*AND\s+/i, ''));
 
     if (op) {
-      sc2Conditions.push(`TRIM(c2.c2_num) = $${sc2Count++}`);
+      sc2Conditions.push(`c2.c2_num = $${sc2Count++}`);
       sc2Params.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      sc2Conditions.push(`(TRIM(c2.c2_pedido) = $${sc2Count} OR TRIM(root_op.c2_pedido) = $${sc2Count} OR TRIM(c2.c2_obs) ILIKE '%' || $${sc2Count} || '%' OR TRIM(root_op.c2_obs) ILIKE '%' || $${sc2Count} || '%')`);
+      sc2Conditions.push(`(c2.c2_pedido = $${sc2Count} OR root_op.c2_pedido = $${sc2Count})`);
       sc2Params.push(String(pedido).trim().padStart(6, '0'));
       sc2Count++;
     }
@@ -794,7 +798,7 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     // Filtro de datas planejadas (MySQL → lista de OPs)
     if (opFilterFromMySQL && opFilterFromMySQL.length > 0) {
-      sc2Conditions.push(`TRIM(c2.c2_num) = ANY($${sc2Count++})`);
+      sc2Conditions.push(`c2.c2_num = ANY($${sc2Count++})`);
       sc2Params.push(opFilterFromMySQL);
     }
 
@@ -802,6 +806,7 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     const pgQuery = `
       SELECT
+        COUNT(*) OVER() AS full_count,
         TRIM(c2.c2_num)  AS op,
         TRIM(c2.c2_item) AS item_op,
         TRIM(c2.c2_sequen) AS sequen_op,
@@ -837,9 +842,10 @@ router.get('/vertical/:operacao', async (req, res) => {
         ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
       ${sc2Where}
       ORDER BY c6.c6_entreg ASC NULLS LAST, c2.c2_pedido ASC, c2.c2_num ASC
-      LIMIT 500
+      LIMIT $${sc2Count++} OFFSET $${sc2Count++}
     `;
 
+    sc2Params.push(limit, offset);
     const pgResult = await db.query(pgQuery, sc2Params);
 
     // Enriquecer cada linha com os dados do roteiro (operacao, recurso, desc) do routingMap
@@ -974,7 +980,17 @@ router.get('/vertical/:operacao', async (req, res) => {
       finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) <= new Date(`${String(plan_fim_ate)}T23:59:59`));
     }
 
-    res.json(finalList);
+    const totalRecords = pgResult.rows.length > 0 ? parseInt(pgResult.rows[0].full_count, 10) : 0;
+
+    res.json({
+      data: finalList,
+      pagination: {
+        total: totalRecords,
+        page,
+        limit,
+        totalPages: Math.ceil(totalRecords / limit)
+      }
+    });
 
   } catch (err) {
     console.error('❌ [VERTICAL ROUTE ERROR] message:', err.message);

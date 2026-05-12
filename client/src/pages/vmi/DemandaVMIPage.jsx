@@ -529,7 +529,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                             <button
                                 title="Espelho do Produto (PDF)"
                                 onClick={() => setOpMirrorModal({ b1cod: r.b1_cod, label: r.descricao_produto_cliente, defaultQty: rowTotal })}
-                                className="p-0.5 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors">
+                                className="p-0.5 rounded hover:bg-cyan-100 text-cyan-400 hover:text-cyan-600 transition-colors">
                                 <FileText className="w-3.5 h-3.5" />
                             </button>
                         )}
@@ -626,9 +626,9 @@ export default function DemandaVMIPage({ isTab = false }) {
                                                         setOpenBomDropdown(null);
                                                         setOpMirrorModal({ b1cod: g.b1CodPai, label: g.label || g.key, defaultQty: groupTotal });
                                                     }}
-                                                    className="w-full text-left px-4 py-2.5 text-xs hover:bg-purple-50 flex flex-col gap-0.5 border-t border-slate-100">
+                                                    className="w-full text-left px-4 py-2.5 text-xs hover:bg-cyan-50 flex flex-col gap-0.5 border-t border-slate-100">
                                                     <span className="font-semibold text-slate-800">Espelho do Produto</span>
-                                                    <span className="text-slate-400">Roteiro de produção de <span className="font-mono text-purple-600">{g.b1CodPai}</span></span>
+                                                    <span className="text-slate-400">Roteiro de produção de <span className="font-mono text-cyan-600">{g.b1CodPai}</span></span>
                                                 </button>
                                             )}
                                         </div>
@@ -673,7 +673,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                                             <button
                                                 title="Espelho do Produto (PDF)"
                                                 onClick={() => setOpMirrorModal({ b1cod: r.b1_cod, label: r.descricao_produto_cliente, defaultQty: qty })}
-                                                className="p-0.5 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors">
+                                                className="p-0.5 rounded hover:bg-cyan-100 text-cyan-400 hover:text-cyan-600 transition-colors">
                                                 <FileText className="w-3.5 h-3.5" />
                                             </button>
                                         </>);

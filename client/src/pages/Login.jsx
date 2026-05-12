@@ -37,7 +37,7 @@ const Login = () => {
         const result = await login(loginInput, passwordInput);
 
         if (result.success) {
-            navigate('/');
+            navigate('/ajuda');
         } else {
             setError(result.message);
             setLoading(false);

@@ -26,15 +26,45 @@ export function HelpProvider({ children }) {
     const fetchHelpData = useCallback(async () => {
         setLoadingHelp(true);
         try {
+            const localModulesArr = Object.entries(HELP_CONTENT).map(([path, data], index) => ({
+                id: `local_${index}`,
+                route_path: path,
+                path: path,
+                ...data
+            }));
+
             const token = localStorage.getItem('@MetalFisa:token');
             // If not logged in, we still want to show help from helpContent.js
-            if (!token) return;
+            if (!token) {
+                setAllModules(localModulesArr);
+                return;
+            }
+
             const res = await axios.get('/api/sgq/processos', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setAllModules(res.data);
+
+            const dbModules = res.data || [];
+            const merged = [...localModulesArr];
+            dbModules.forEach(dbMod => {
+                const existingIndex = merged.findIndex(m => m.route_path === dbMod.route_path);
+                if (existingIndex >= 0) {
+                    merged[existingIndex] = { ...merged[existingIndex], ...dbMod, path: dbMod.route_path };
+                } else {
+                    merged.push({ ...dbMod, path: dbMod.route_path });
+                }
+            });
+
+            setAllModules(merged);
         } catch (e) {
             console.error('Erro ao buscar Ajuda/SGQ:', e);
+            const localModulesArr = Object.entries(HELP_CONTENT).map(([path, data], index) => ({
+                id: `local_${index}`,
+                route_path: path,
+                path: path,
+                ...data
+            }));
+            setAllModules(localModulesArr);
         } finally {
             setLoadingHelp(false);
         }
@@ -61,15 +91,15 @@ export function HelpProvider({ children }) {
     }, [isOpen]);
 
     const getHelpByPath = useCallback((pathname) => {
-        // First priority: Local static helpContent.js (Manual overrides)
-        if (HELP_CONTENT[pathname]) {
-            return HELP_CONTENT[pathname];
-        }
-
-        // Secondary priority: Database-driven modules
+        // First priority: Database-driven modules (SGQ SOPs)
         if(allModules && allModules.length > 0) {
             let exact = allModules.find(m => m.route_path === pathname);
             if (exact) return exact;
+        }
+
+        // Secondary priority: Local static helpContent.js (Fallback)
+        if (HELP_CONTENT[pathname]) {
+            return HELP_CONTENT[pathname];
         }
 
         // Tertiary priority: Dynamic patterns
@@ -80,7 +110,7 @@ export function HelpProvider({ children }) {
 
         for (const pattern of dynamicPatterns) {
             if (pattern.regex.test(pathname)) {
-                return HELP_CONTENT[pattern.key] || (allModules ? allModules.find(m => m.route_path === pattern.key) : null);
+                return (allModules && allModules.find(m => m.route_path === pattern.key)) || HELP_CONTENT[pattern.key];
             }
         }
         

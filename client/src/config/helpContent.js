@@ -419,10 +419,11 @@ export const HELP_CONTENT = {
     description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo.',
     steps: [
       '── FILTROS ──',
-      'OP: Filtra pelo número da Ordem de Produção (ex: 005473). Aceita busca parcial.',
+      'OP: Filtra pelo número EXATO da Ordem de Produção (ex: 005473). Para pesquisar várias OPs de uma vez, separe-as por vírgula.',
       'Item: Filtra pelo número do item dentro da OP (ex: 01). Útil quando uma OP possui múltiplos itens de produto.',
       'Seq: Filtra pelo número de sequência da operação dentro do roteiro da OP (ex: 001, 002). Cada passo do processo de fabricação tem uma sequência.',
-      'Produto: Filtra pelo código ou descrição do produto (ex: MT2-1783 ou "CX FREIO").',
+      'Produto: Filtra pelo código EXATO do produto (ex: MT2-1783). Para garantir o máximo de performance na pesquisa, não são mais permitidos trechos de descrição.',
+      'Pedido: Filtra pelo número EXATO do Pedido de Venda (PV) do cliente no Protheus (ex: 003752).',
       'Cliente: Filtra pelo nome do cliente vinculado ao pedido de venda.',
       'Operação ou Recurso: Campo multiuso que filtra pelo código da operação (ex: 01) OU pelo código do recurso/máquina (ex: SOLDA, MO0012). Use para focar em um setor ou equipamento específico.',
       'Planejado (período): Filtra operações cujas datas planejadas de início e fim estejam dentro do intervalo informado. Útil para ver o que está programado para esta semana ou mês.',
@@ -753,7 +754,7 @@ export const HELP_CONTENT = {
       'Se o valor preenchido automaticamente na etapa anterior ficar com erro (vermelho), é porque ultrapassou o Saldo. O botão de salvar será bloqueado até a correção.',
       'Para apontar apenas a operação atual sem mexer nas anteriores, basta zerar manualmente os campos das operações anteriores antes de clicar em Confirmar.',
       'Regra de Apontamento: Observe a etiqueta no topo do Modal (Livre, Sequência ou Saldo) para entender as restrições impostas pela fábrica.',
-      'Configuração das Regras: A ativação/desativação da trava de Saldo ou Sequência é feita pelos Administradores no menu "Configurações Globais" > aba "Geral", no campo "Controle de Apontamento de Produção".',
+      'Configuração das Regras: O recurso de baixar operações em lote pode ser habilitado/desabilitado pelos Administradores no menu "Configurações" > aba "Geral", ativando ou não o "Apontamento Multi-Operação".',
     ],
     links: [
       { path: '/producao', label: 'Ordens de Produção' },
@@ -976,7 +977,7 @@ export const HELP_CONTENT = {
     description: 'Central de controle absoluto do MetalFisa PCP. Aqui o administrador gerencia desde a identidade visual da empresa até o monitoramento de desempenho dos servidores em tempo real, organizados em abas de fácil acesso.',
     steps: [
       '── GERAL ──',
-      'Configura a identidade da empresa (Nome, CNPJ, Endereço, Telefones e Logo) que sairá nos cabeçalhos dos relatórios em PDF. Aqui também se define a numeração de base para criar os próximos Romaneios.',
+      'Configura a identidade da empresa (Nome, CNPJ, Endereço, Telefones e Logo) que sairá nos cabeçalhos dos relatórios em PDF. Aqui também se define a numeração de base para criar os próximos Romaneios e o controle global de Apontamento Multi-Operação (permitir ou não baixas em lote no chão de fábrica).',
       '── VISIBILIDADE DE PEDIDOS ──',
       'Permite ligar ou desligar a visualização de status específicos de pedidos (ex: "Faturado", "Aguardando Produção"). O interruptor global Master pode ocultar instantaneamente lotes encerrados das tabelas de todo o sistema.',
       '── MENU & NAVEGAÇÃO ──',

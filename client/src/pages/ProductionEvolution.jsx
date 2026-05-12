@@ -10,7 +10,7 @@ const RANK_COLORS = [
     '#f59e0b', // 1st - Gold
     '#94a3b8', // 2nd - Silver
     '#d97706', // 3rd - Bronze
-    '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
+    '#3b82f6', '#6366f1', '#14b8a6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
 ];
 
 const RANK_ICONS = [

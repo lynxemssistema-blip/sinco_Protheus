@@ -229,7 +229,7 @@ const EngineeringOrdersPage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [totalPages, setTotalPages] = useState(1);
-    const limit = 50;
+    const limit = 100;
 
     // Tipo frontend filter (multi-select)
     const [tipoFilter, setTipoFilter] = useStickyState([], '@metalfisa:eng_tipoFilter');

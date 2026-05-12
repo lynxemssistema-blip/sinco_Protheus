@@ -158,7 +158,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
                         <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-200 transition-all group">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <div className={`p-2 rounded border border-gray-200 ${doc.tipo === 'Desenho' ? 'bg-blue-50 text-blue-600' :
-                                    doc.tipo === 'Gabarito' ? 'bg-purple-50 text-purple-600' :
+                                    doc.tipo === 'Gabarito' ? 'bg-cyan-50 text-cyan-600' :
                                     doc.tipo === 'Manual' ? 'bg-indigo-50 text-indigo-600' :
                                     'bg-white text-gray-500'
                                     }`}>
@@ -169,7 +169,7 @@ const ProductDocuments = ({ produtoCodigo }) => {
                                         <h4 className="font-medium text-gray-800 truncate">{doc.titulo}</h4>
                                         {doc.tipo && (
                                             <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold tracking-wider ${doc.tipo === 'Desenho' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                                doc.tipo === 'Gabarito' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                                                doc.tipo === 'Gabarito' ? 'bg-cyan-100 text-cyan-700 border-cyan-200' :
                                                 doc.tipo === 'Manual' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
                                                 'bg-gray-100 text-gray-600 border-gray-200'
                                                 }`}>

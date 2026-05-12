@@ -795,6 +795,23 @@ export default function Settings() {
                                     </p>
                                 </div>
 
+                                {/* Apontamento Multi-Operação */}
+                                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Apontamento Multi-Operação</h4>
+                                        <p className="text-sm text-slate-500">Permitir apontar operações anteriores pendentes na mesma tela (Baixa Automática).</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleGeneralConfig('enable_multi_operation_appointment')}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.enable_multi_operation_appointment ? 'bg-blue-600' : 'bg-slate-200'}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.enable_multi_operation_appointment ? 'translate-x-6' : 'translate-x-1'}`}
+                                        />
+                                    </button>
+                                </div>
+
                                 {/* Romaneio Config */}
                                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                     <h4 className="font-medium text-slate-800 mb-2">Numeração Automática do Romaneio</h4>

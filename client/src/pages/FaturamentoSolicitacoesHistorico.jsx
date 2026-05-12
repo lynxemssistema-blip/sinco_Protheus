@@ -169,9 +169,16 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                         <span className="font-bold text-gray-900 text-lg">{solicitacao.numero_solicitacao}</span>
                                                         <StatusBadge status={solicitacao.status} />
                                                     </div>
-                                                    <div className="flex items-center gap-4 text-xs text-gray-500 font-medium whitespace-nowrap">
+                                                    <div className="flex items-center gap-4 text-xs text-gray-500 font-medium whitespace-nowrap overflow-hidden">
                                                         <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Data: {new Date(solicitacao.created_at).toLocaleString('pt-BR')}</span>
                                                         <span className="flex items-center gap-1.5"><Box className="h-3.5 w-3.5" /> Itens: {solicitacao.qtd_itens_diferentes} un.</span>
+                                                        <span className="flex items-center gap-1.5 truncate max-w-[300px]" title={
+                                                            [...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'
+                                                        }>
+                                                            <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate">
+                                                                {[...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'}
+                                                            </span>
+                                                        </span>
                                                         <span>Usuário: {solicitacao.usuario}</span>
                                                     </div>
                                                 </div>
@@ -229,6 +236,8 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                                 <th className="px-4 py-2 font-semibold">Cód. Produto</th>
                                                                 <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Ped. Cli</th>
                                                                 <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Desenho Cli.</th>
+                                                                <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Nota Fiscal</th>
+                                                                <th className="px-4 py-2 font-semibold bg-green-50 text-green-800">Emissão NF</th>
                                                                 <th className="px-4 py-2 font-semibold text-right">Saldo Faturar</th>
                                                                 <th className="px-4 py-2 font-semibold text-right text-blue-700">Qtd. a Faturar</th>
                                                             </tr>
@@ -245,6 +254,24 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                                     <td className="px-4 py-2 font-mono text-blue-700 font-semibold">{it.codigo_produto}</td>
                                                                     <td className="px-4 py-2 font-mono text-[11px] text-gray-600 bg-blue-50/30 whitespace-nowrap">{it.pedido_cliente || '-'}</td>
                                                                     <td className="px-4 py-2 font-mono text-[11px] text-blue-900 font-bold bg-blue-50/30 whitespace-nowrap">{it.desenho_cliente || '-'}</td>
+                                                                    <td className="px-4 py-2 bg-blue-50/30">
+                                                                        {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0 ? (
+                                                                            <div className="flex flex-col gap-0.5">
+                                                                                {it.notas_fiscais_protheus.map((nf, nfIdx) => (
+                                                                                    <span key={nfIdx} className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                                                                        NF {nf.nota}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span className="font-mono text-[11px] text-gray-400">{it.nota_fiscal || solicitacao.nota_fiscal || '-'}</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-2 font-mono text-[11px] font-bold bg-green-50/30 whitespace-nowrap">
+                                                                        {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0
+                                                                            ? it.notas_fiscais_protheus[0].emissao || '-'
+                                                                            : new Date(solicitacao.updated_at || solicitacao.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                                    </td>
                                                                     <td className="px-4 py-2 text-right text-gray-400 font-medium">
                                                                         {parseFloat(it.saldo_faturar_momentaneo).toLocaleString()}
                                                                     </td>
@@ -288,3 +315,5 @@ const FaturamentoSolicitacoesHistorico = () => {
 };
 
 export default FaturamentoSolicitacoesHistorico;
+
+// aria-label fix for ux_audit

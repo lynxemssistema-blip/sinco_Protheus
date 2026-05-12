@@ -168,75 +168,73 @@ router.post('/export', async (req, res) => {
             return res.status(400).json({ error: 'Lista de itens vazia ou inválida' });
         }
 
-        // Acumula matérias-primas: { componente -> { descricao, unidade, quantidade } }
         const consolidado = new Map();
 
-        for (const item of items) {
-            const { produto, quantidade } = item;
-            const qty = parseFloat(quantidade) || 1;
+        const itemsPayload = items.map(i => ({
+            produto: String(i.produto).trim(),
+            quantidade: parseFloat(i.quantidade) || 1
+        }));
 
-            const bomQuery = `
-                WITH RECURSIVE estrutura AS (
-                    -- Começamos com o próprio produto (nível 0)
-                    SELECT
-                        0                         AS nivel,
-                        CAST($1 AS VARCHAR(30))   AS produto_pai,
-                        CAST($1 AS VARCHAR(30))   AS componente,
-                        1::numeric                AS qtd_unitaria,
-                        $2::numeric               AS qtd_total
-
-                    UNION ALL
-
-                    -- Explodimos os filhos se existirem
-                    SELECT
-                        e.nivel + 1,
-                        CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
-                        CAST(TRIM(g1.g1_comp)   AS VARCHAR(30)) AS componente,
-                        g1.g1_quant::numeric                    AS qtd_unitaria,
-                        e.qtd_total * g1.g1_quant::numeric      AS qtd_total
-                    FROM estrutura e
-                    JOIN sg1010 g1
-                        ON  TRIM(g1.g1_cod) = TRIM(e.componente)
-                        AND COALESCE(g1.d_e_l_e_t_, '') = ''
-                    WHERE e.nivel < 10
-                )
+        const bomQuery = `
+            WITH RECURSIVE estrutura AS (
+                -- Começamos com os próprios produtos (nível 0)
                 SELECT
-                    e.componente,
-                    TRIM(sb1.b1_desc) AS descricao,
-                    TRIM(sb1.b1_um)   AS unidade,
-                    SUM(e.qtd_total)  AS qtd_total
+                    0                         AS nivel,
+                    CAST(p.produto AS VARCHAR(30))   AS produto_pai,
+                    CAST(p.produto AS VARCHAR(30))   AS componente,
+                    1::numeric                AS qtd_unitaria,
+                    p.quantidade::numeric     AS qtd_total
+                FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric)
+
+                UNION ALL
+
+                -- Explodimos os filhos se existirem
+                SELECT
+                    e.nivel + 1,
+                    CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)   AS VARCHAR(30)) AS componente,
+                    g1.g1_quant::numeric                    AS qtd_unitaria,
+                    e.qtd_total * g1.g1_quant::numeric      AS qtd_total
                 FROM estrutura e
-                LEFT JOIN sb1010 sb1
-                    ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
-                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                -- Filtramos apenas as folhas (materiais que não têm mais estrutura abaixo deles)
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM sg1010 sg1leaf
-                    WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
-                      AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
-                )
-                  -- Se o produto raiz $1 não tiver estrutura, a query acima trará ele mesmo como folha
-                  -- Isso é o comportamento desejado.
-                GROUP BY e.componente, sb1.b1_desc, sb1.b1_um
-                ORDER BY e.componente
-            `;
+                JOIN sg1010 g1
+                    ON  TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 10
+            )
+            SELECT
+                e.componente,
+                TRIM(sb1.b1_desc) AS descricao,
+                TRIM(sb1.b1_um)   AS unidade,
+                SUM(e.qtd_total)  AS qtd_total
+            FROM estrutura e
+            LEFT JOIN sb1010 sb1
+                ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
+                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            -- Filtramos apenas as folhas (materiais que não têm mais estrutura abaixo deles)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sg1010 sg1leaf
+                WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
+                  AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
+            )
+            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um
+            ORDER BY e.componente
+        `;
 
-            const result = await db.query(bomQuery, [produto.trim(), qty]);
+        const result = await db.query(bomQuery, [JSON.stringify(itemsPayload)]);
 
-            for (const row of result.rows) {
-                const key = row.componente;
-                const qtdTotal = parseFloat(row.qtd_total) || 0;
+        for (const row of result.rows) {
+            const key = row.componente;
+            const qtdTotal = parseFloat(row.qtd_total) || 0;
 
-                if (consolidado.has(key)) {
-                    consolidado.get(key).quantidade += qtdTotal;
-                } else {
-                    consolidado.set(key, {
-                        codigo: row.componente,
-                        descricao: row.descricao || '',
-                        unidade: row.unidade || 'UN',
-                        quantidade: qtdTotal,
-                    });
-                }
+            if (consolidado.has(key)) {
+                consolidado.get(key).quantidade += qtdTotal;
+            } else {
+                consolidado.set(key, {
+                    codigo: row.componente,
+                    descricao: row.descricao || '',
+                    unidade: row.unidade || 'UN',
+                    quantidade: qtdTotal,
+                });
             }
         }
 

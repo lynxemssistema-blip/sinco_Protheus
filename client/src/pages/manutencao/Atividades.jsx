@@ -20,7 +20,7 @@ const PRIORIDADE = {
 const STATUS_OM = {
     SOLICITADA:      { label: 'Aguardando',    cls: 'bg-amber-100 text-amber-800'    },
     EM_ANDAMENTO:    { label: 'Em Andamento',  cls: 'bg-blue-100 text-blue-800'      },
-    AGUARDANDO_PECA: { label: 'Aguard. Peça',  cls: 'bg-purple-100 text-purple-800'  },
+    AGUARDANDO_PECA: { label: 'Aguard. Peça',  cls: 'bg-cyan-100 text-cyan-800'  },
     CONCLUIDA:       { label: 'Concluída',     cls: 'bg-green-100 text-green-800'    },
     CANCELADA:       { label: 'Cancelada',     cls: 'bg-slate-100 text-slate-600'    },
 };
@@ -426,7 +426,7 @@ function ChecklistCard({ tarefa, onRealizar }) {
 function FreqBadge({ tipo }) {
     const cls = {
         DIARIO:    'bg-blue-100 text-blue-700',
-        SEMANAL:   'bg-violet-100 text-violet-700',
+        SEMANAL:   'bg-cyan-100 text-cyan-700',
         MENSAL:    'bg-teal-100 text-teal-700',
         PREVENTIVA:'bg-orange-100 text-orange-700',
     }[tipo] || 'bg-slate-100 text-slate-500';

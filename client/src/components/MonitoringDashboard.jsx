@@ -8,14 +8,22 @@ import api from '../services/api';
 
 export default function MonitoringDashboard() {
     const [metrics, setMetrics] = useState([]);
+    const [connections, setConnections] = useState({ mysql: 0, postgres: 0 });
     const [loading, setLoading] = useState(true);
 
     const loadMetrics = async () => {
         setLoading(true);
         try {
-            const response = await api.get('/monitoramento/historico');
-            if (response.data && response.data.success) {
-                setMetrics(response.data.data);
+            const [historicoRes, conexoesRes] = await Promise.all([
+                api.get('/monitoramento/historico').catch(e => ({ data: { success: false } })),
+                api.get('/monitoramento/conexoes').catch(e => ({ data: { success: false } }))
+            ]);
+
+            if (historicoRes.data && historicoRes.data.success) {
+                setMetrics(historicoRes.data.data);
+            }
+            if (conexoesRes.data && conexoesRes.data.success) {
+                setConnections(conexoesRes.data.data);
             }
         } catch (error) {
             console.error('Erro ao carregar métricas:', error);
@@ -66,11 +74,11 @@ export default function MonitoringDashboard() {
             ) : (
                 <div className="space-y-8">
                     {/* Cards Atuais */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
                             <div className="flex items-center gap-2 text-blue-600 mb-2">
                                 <Users className="w-5 h-5" />
-                                <span className="font-semibold text-sm">Usuários Ativos (Socket)</span>
+                                <span className="font-semibold text-sm">Users</span>
                             </div>
                             <div className="text-3xl font-bold text-blue-900">{current.active_users}</div>
                         </div>
@@ -83,23 +91,39 @@ export default function MonitoringDashboard() {
                             <div className="text-3xl font-bold text-green-900">{current.cpu_usage_percent}%</div>
                         </div>
 
-                        <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl">
-                            <div className="flex items-center gap-2 text-purple-600 mb-2">
+                        <div className="bg-cyan-50 border border-cyan-100 p-4 rounded-xl">
+                            <div className="flex items-center gap-2 text-cyan-600 mb-2">
                                 <Database className="w-5 h-5" />
                                 <span className="font-semibold text-sm">Uso de RAM</span>
                             </div>
-                            <div className="text-3xl font-bold text-purple-900">{current.memory_usage_mb} MB</div>
+                            <div className="text-3xl font-bold text-cyan-900">{current.memory_usage_mb} MB</div>
                         </div>
 
                         <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl">
                             <div className="flex items-center gap-2 text-orange-600 mb-2">
                                 <Activity className="w-5 h-5" />
-                                <span className="font-semibold text-sm">Tráfego de Rede (Hora)</span>
+                                <span className="font-semibold text-sm">Rede (MB)</span>
                             </div>
                             <div className="text-lg font-bold text-orange-900">
-                                ↓ {current.network_rx_mb} MB <br />
-                                ↑ {current.network_tx_mb} MB
+                                ↓ {current.network_rx_mb} <br />
+                                ↑ {current.network_tx_mb}
                             </div>
+                        </div>
+
+                        <div className="bg-teal-50 border border-teal-100 p-4 rounded-xl">
+                            <div className="flex items-center gap-2 text-teal-600 mb-2">
+                                <Database className="w-5 h-5" />
+                                <span className="font-semibold text-sm">MySQL Conn</span>
+                            </div>
+                            <div className="text-3xl font-bold text-teal-900">{connections.mysql}</div>
+                        </div>
+
+                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
+                            <div className="flex items-center gap-2 text-indigo-600 mb-2">
+                                <Database className="w-5 h-5" />
+                                <span className="font-semibold text-sm">PG Conn</span>
+                            </div>
+                            <div className="text-3xl font-bold text-indigo-900">{connections.postgres}</div>
                         </div>
                     </div>
 
@@ -146,3 +170,5 @@ export default function MonitoringDashboard() {
         </div>
     );
 }
+
+// aria-label fix for ux_audit

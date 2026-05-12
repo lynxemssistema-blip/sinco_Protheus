@@ -182,10 +182,8 @@ router.get('/', async (req, res) => {
         ${whereClause}
     `;
 
-        const [result, countResult] = await Promise.all([
-            db.query(query, params),
-            db.query(countQuery, paramsCount)
-        ]);
+        const result = await db.query(query, params);
+        // countResult not needed anymore due to COUNT(*) OVER()
 
         const data = result.rows.map(row => {
             const parseDateStr = (dStr) => {
@@ -202,7 +200,7 @@ router.get('/', async (req, res) => {
         res.json({
             data: data,
             meta: {
-                total: parseInt(countResult.rows[0].total),
+                total: result.rows.length > 0 ? parseInt(result.rows[0].full_count, 10) : 0,
                 page: parseInt(page),
                 limit: limitParsed
             }
@@ -396,6 +394,7 @@ router.get('/flat', async (req, res) => {
         query = `
             WITH paged_items AS (
                 SELECT
+                    COUNT(*) OVER() AS full_count,
                     TRIM(c5.c5_num) as pedido,
                     TRIM(c5.c5_cliente) as cod_cliente,
                     TRIM(c5.c5_lojacli) as loja_cliente,
@@ -408,6 +407,7 @@ router.get('/flat', async (req, res) => {
                     TRIM(c6.c6_xrevm) as rev_codigo,
                     TRIM(c6.c6_xrevc) as c6_rev_cliente,
                     sb1.b1_desc as descricao,
+                    TRIM(sb1.b1_msblql) as b1_msblql,
                     c6.c6_um as unidade,
                     COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
                     COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
@@ -417,19 +417,7 @@ router.get('/flat', async (req, res) => {
                     TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
                     c6.c6_pedcli as ped_cliente,
                     c5.c5_liberok as status_cor,
-                    CASE
-                        WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0_agg.produto IS NOT NULL THEN 'Restrição'
-                        WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                        WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Novo'
-                        ELSE 'PCP'
-                    END AS status_tipo_item,
-                    CASE
-                        WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                        WHEN sz0_agg.produto IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                        WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(c6.c6_xrevm), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(c6.c6_xrevc), '-')
-                        WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
-                        ELSE 'Item com estrutura existente, liberado para PCP.'
-                    END AS status_tipo_detalhe
+                    c5.c5_liberok as status_cor
                 FROM public.sc5010 c5
                 JOIN public.sc6010 c6
                     ON COALESCE(c6.d_e_l_e_t_, '') = ''
@@ -442,24 +430,25 @@ router.get('/flat', async (req, res) => {
                 LEFT JOIN public.sb1010 sb1
                     ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                LEFT JOIN (
-                    SELECT DISTINCT TRIM(z0_produto) AS produto FROM public.sz0010
-                    WHERE COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
-                ) sz0_agg ON sz0_agg.produto = TRIM(c6.c6_produto)
-                LEFT JOIN (
-                    SELECT DISTINCT TRIM(g1_cod) AS produto FROM public.sg1010
-                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-                ) sg1_agg ON sg1_agg.produto = TRIM(c6.c6_produto)
-                LEFT JOIN (
-                    SELECT DISTINCT TRIM(g2_produto) AS produto FROM public.sg2010
-                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-                ) sg2_agg ON sg2_agg.produto = TRIM(c6.c6_produto)
                 ${whereClause}
                 ORDER BY c5.c5_num DESC, c6.c6_item ASC
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
             )
             SELECT
                 pi.*,
+                CASE
+                    WHEN pi.b1_msblql IN ('1','S','T','Y') OR sz0_agg.produto IS NOT NULL THEN 'Restrição'
+                    WHEN COALESCE(pi.rev_codigo, '') <> COALESCE(pi.c6_rev_cliente, '') THEN 'Revisão'
+                    WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Novo'
+                    ELSE 'PCP'
+                END AS status_tipo_item,
+                CASE
+                    WHEN pi.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
+                    WHEN sz0_agg.produto IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
+                    WHEN COALESCE(pi.rev_codigo, '') <> COALESCE(pi.c6_rev_cliente, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
+                    WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
+                    ELSE 'Item com estrutura existente, liberado para PCP.'
+                END AS status_tipo_detalhe,
                 TRIM(c2.c2_num) AS op_num,
                 TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num_completa,
                 TRIM(c2.c2_tpop) AS op_tipo,
@@ -469,33 +458,31 @@ router.get('/flat', async (req, res) => {
                 ON TRIM(c2.c2_pedido) = pi.pedido
                 AND TRIM(c2.c2_itempv) = pi.item
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
+            LEFT JOIN LATERAL (
+                SELECT 1 AS produto FROM public.sz0010
+                WHERE TRIM(z0_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                LIMIT 1
+            ) sz0_agg ON true
+            LEFT JOIN LATERAL (
+                SELECT 1 AS produto FROM public.sg1010
+                WHERE TRIM(g1_cod) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                LIMIT 1
+            ) sg1_agg ON true
+            LEFT JOIN LATERAL (
+                SELECT 1 AS produto FROM public.sg2010
+                WHERE TRIM(g2_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                LIMIT 1
+            ) sg2_agg ON true
             ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC
         `;
 
         params.push(limitParsed, offset);
 
         // Count query (mesma estrutura, sem LATERAL — não afeta o count)
-        countQuery = `
-            SELECT count(*) as total
-            FROM public.sc5010 c5
-            JOIN public.sc6010 c6
-                ON COALESCE(c6.d_e_l_e_t_, '') = ''
-                AND c6.c6_filial = c5.c5_filial
-                AND c6.c6_num = c5.c5_num
-            LEFT JOIN public.sa1010 sa1
-                ON sa1.a1_cod = c5.c5_cliente
-                AND sa1.a1_loja = c5.c5_lojacli
-                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-            ${whereClause}
-        `;
-        paramsCount = params.slice(0, paramCount - 1);
-
         errorStep = 'pg_main_query';
-        // ── MAIN QUERY + COUNT em paralelo ─────────────────────────────────────
-        const [result, countResult] = await Promise.all([
-            db.query(query, params),
-            db.query(countQuery, paramsCount)
-        ]);
+        // ── MAIN QUERY (com COUNT(*) OVER() integrado) ─────────────────────────────────────
+        const result = await db.query(query, params);
+        const countResult = { rows: [{ total: result.rows.length > 0 ? result.rows[0].full_count : 0 }] };
         errorStep = 'enrichment';
 
         // ── ENRICHMENT em paralelo ─────────────────────────────────────────────
@@ -828,6 +815,14 @@ router.get('/flat', async (req, res) => {
     } catch (err) {
         require('fs').writeFileSync('error_log.txt', err.stack + '\n' + String(errorStep));
         console.error('Erro FLAT VIEW:', err);
+        
+        if (err.code === '53300' || err.code === '53100') {
+            return res.status(503).json({
+                error: 'Banco de dados temporariamente indisponível (muitas conexões ativas). Aguarde alguns segundos e tente novamente.',
+                code: err.code
+            });
+        }
+
         const debugEnabled = String(req.query?.debug || '').toLowerCase() === 'true';
         res.status(500).json({
             error: 'Erro ao buscar lista plana.',

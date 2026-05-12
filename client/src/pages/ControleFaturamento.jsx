@@ -485,6 +485,8 @@ const ControleFaturamento = () => {
                                             <th className="px-4 py-3 font-semibold bg-blue-50/50 text-blue-800">Cliente</th>
                                             <th className="px-4 py-3 font-semibold bg-blue-50/50 text-blue-800">Ped. Cli</th>
                                             <th className="px-4 py-3 font-semibold bg-blue-50/50 text-blue-800">Desenho Cli.</th>
+                                            <th className="px-4 py-3 font-semibold bg-green-50/50 text-green-800">Nota Fiscal</th>
+                                            <th className="px-4 py-3 font-semibold bg-green-50/50 text-green-800">Emissão NF</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série MF</th>
@@ -520,6 +522,24 @@ const ControleFaturamento = () => {
                                                 <td className="px-4 py-3 font-mono text-[11px] text-slate-800 font-bold bg-blue-50/30 whitespace-nowrap truncate max-w-[150px]" title={it.nome_cliente}>{it.nome_cliente || '-'}</td>
                                                 <td className="px-4 py-3 font-mono text-[11px] text-gray-600 bg-blue-50/30 whitespace-nowrap">{it.pedido_cliente || '-'}</td>
                                                 <td className="px-4 py-3 font-mono text-[11px] text-blue-900 font-bold bg-blue-50/30 whitespace-nowrap">{it.desenho_cliente || '-'}</td>
+                                                <td className="px-4 py-3 bg-green-50/30">
+                                                    {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0 ? (
+                                                        <div className="flex flex-col gap-0.5">
+                                                            {it.notas_fiscais_protheus.map((nf, nfIdx) => (
+                                                                <span key={nfIdx} className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                                                    NF {nf.nota}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="font-mono text-[11px] text-gray-400">{it.nota_fiscal || selectedSolicitacao.nota_fiscal || '-'}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 font-mono text-[11px] font-bold bg-green-50/30 whitespace-nowrap text-emerald-800">
+                                                    {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0
+                                                        ? it.notas_fiscais_protheus[0].emissao || '-'
+                                                        : '-'}
+                                                </td>
                                                 <td className="px-3 py-3 text-center text-xs font-bold text-indigo-700 whitespace-nowrap">
                                                     {it.pcp_data_entrega ? new Date(it.pcp_data_entrega).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
                                                 </td>

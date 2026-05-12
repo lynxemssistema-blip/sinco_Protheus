@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
 
-const NfTooltip = ({ notas_fiscais, unidade, onNfClick }) => {
+export const NfTooltip = ({ notas_fiscais, unidade, onNfClick }) => {
     if (!notas_fiscais || notas_fiscais.length === 0) return null;
     return (
         <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">

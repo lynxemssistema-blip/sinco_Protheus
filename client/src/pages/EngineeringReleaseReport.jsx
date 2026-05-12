@@ -157,7 +157,7 @@ const EngineeringTab = () => {
                                             <td className="px-5 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div>
-                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${r.modo==='FULL'?'bg-purple-50 text-purple-600 border border-purple-100':'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${r.modo==='FULL'?'bg-cyan-50 text-cyan-600 border border-cyan-100':'bg-amber-50 text-amber-600 border border-amber-100'}`}>
                                                             {r.modo==='FULL'?'COMPLETO':'NÍVEL 1'}
                                                         </span>
                                                         {r.destinatarios && <p className="text-[10px] text-slate-400 mt-1 truncate max-w-[220px]">Para: {r.destinatarios}</p>}

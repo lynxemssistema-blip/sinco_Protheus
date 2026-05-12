@@ -2,13 +2,19 @@ import React, { useState } from 'react';
 import { X, Save, ArrowRight, User, Box, FileText, CheckSquare, Target } from 'lucide-react';
 import './ProcessMappingForm.css'; // We'll create simple styles
 
+const generateId = () => {
+    return (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
 const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     const [formData, setFormData] = useState({
         sector: '',
         leader: '',
-        inputsList: [{ id: crypto.randomUUID(), supplier: '', input: '' }],
+        inputsList: [{ id: generateId(), supplier: '', input: '' }],
         activity: '',
-        outputsList: [{ id: crypto.randomUUID(), output: '', customer: '' }],
+        outputsList: [{ id: generateId(), output: '', customer: '' }],
         mission: '',
         supportActivities: ''
     });
@@ -18,17 +24,17 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
             // Migration logic for legacy data
             let newInputs = initialData.inputsList ? [...initialData.inputsList] : [];
             if (newInputs.length === 0 && (initialData.supplier || initialData.inputs)) {
-                newInputs.push({ id: crypto.randomUUID(), supplier: initialData.supplier || '', input: initialData.inputs || '' });
+                newInputs.push({ id: generateId(), supplier: initialData.supplier || '', input: initialData.inputs || '' });
             }
-            if (newInputs.length === 0) newInputs.push({ id: crypto.randomUUID(), supplier: '', input: '' });
-            else newInputs = newInputs.map(item => ({ ...item, id: item.id || crypto.randomUUID() }));
+            if (newInputs.length === 0) newInputs.push({ id: generateId(), supplier: '', input: '' });
+            else newInputs = newInputs.map(item => ({ ...item, id: item.id || generateId() }));
 
             let newOutputs = initialData.outputsList ? [...initialData.outputsList] : [];
             if (newOutputs.length === 0 && (initialData.outputs || initialData.customer)) {
-                newOutputs.push({ id: crypto.randomUUID(), output: initialData.outputs || '', customer: initialData.customer || '' });
+                newOutputs.push({ id: generateId(), output: initialData.outputs || '', customer: initialData.customer || '' });
             }
-            if (newOutputs.length === 0) newOutputs.push({ id: crypto.randomUUID(), output: '', customer: '' });
-            else newOutputs = newOutputs.map(item => ({ ...item, id: item.id || crypto.randomUUID() }));
+            if (newOutputs.length === 0) newOutputs.push({ id: generateId(), output: '', customer: '' });
+            else newOutputs = newOutputs.map(item => ({ ...item, id: item.id || generateId() }));
 
             setFormData(prev => ({
                 ...prev,
@@ -57,7 +63,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     const addRow = (listName) => {
         setFormData(prev => ({
             ...prev,
-            [listName]: [...prev[listName], listName === 'inputsList' ? { id: crypto.randomUUID(), supplier: '', input: '' } : { id: crypto.randomUUID(), output: '', customer: '' }]
+            [listName]: [...prev[listName], listName === 'inputsList' ? { id: generateId(), supplier: '', input: '' } : { id: generateId(), output: '', customer: '' }]
         }));
     };
 
