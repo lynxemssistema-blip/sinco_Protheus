@@ -216,6 +216,35 @@ router.get('/protheus-recursos', async (req, res) => {
     }
 });
 
+// ─── GET /api/pcp-setores/todos-recursos ───────────────────────────────────
+router.get('/todos-recursos', async (req, res) => {
+    const q = (req.query.q || '').trim();
+    const like = `%${q.toUpperCase()}%`;
+    try {
+        let queryStr = `
+            SELECT DISTINCT
+                    RTRIM(h1_codigo) AS codigo,
+                    RTRIM(h1_descri)  AS nome
+             FROM public.sh1010
+             WHERE d_e_l_e_t_ = ' '
+        `;
+        const queryParams = [];
+
+        if (q) {
+            queryStr += ` AND (UPPER(RTRIM(h1_codigo)) LIKE $1 OR UPPER(RTRIM(h1_descri)) LIKE $1)`;
+            queryParams.push(like);
+        }
+
+        queryStr += ` ORDER BY RTRIM(h1_codigo) LIMIT 100`;
+
+        const result = await db.query(queryStr, queryParams);
+        res.json(result.rows.map(r => ({ codigo: r.codigo, nome: r.nome || '' })));
+    } catch (err) {
+        console.error('[setores] GET /todos-recursos:', err.message);
+        res.json([]);
+    }
+});
+
 // ─── POST /api/pcp-setores/recursos ──────────────────────────────────────────
 router.post('/recursos', async (req, res) => {
     const { setor_id, recurso_codigo, recurso_nome } = req.body;
@@ -671,6 +700,337 @@ router.get('/visao', async (req, res) => {
         res.json(resultado);
     } catch (err) {
         console.error('[setores/visao] Erro geral:', err.message, err.stack);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+const { sendText } = require('../services/whatsapp');
+const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+const nodemailer = require('nodemailer');
+const axios = require('axios');
+
+const transporter = nodemailer.createTransport({
+    host: 'smtp.task.com.br',
+    port: 587,
+    secure: false,
+    auth: {
+        user: 'sincometal@metalfisa.com.br',
+        pass: 'Pro1042@sm'
+    },
+    tls: { rejectUnauthorized: false }
+});
+
+router.post('/visao/notify', async (req, res) => {
+    try {
+        const { filters, tipo, canal } = req.body; // tipo: 'responsibles', 'all', 'me', canal: 'whatsapp' or 'email'
+        
+        // 1. Fetch visao data (using local request)
+        const port = process.env.PORT || 3002;
+        const url = `http://127.0.0.1:${port}/api/pcp-setores/visao`;
+        
+        const visaoRes = await axios.get(url, { 
+            params: filters,
+            headers: { Authorization: req.headers.authorization }
+        });
+        const visaoData = visaoRes.data;
+
+        // 2. Load all responsibles
+        const [respRows] = await mysql.query(`
+            SELECT r.setor_id, u.idUsuario, u.NomeCompleto, u.email, u.telefone 
+            FROM pcp_setor_responsaveis r
+            JOIN usuario u ON u.idUsuario = r.usuario_id
+        `);
+        
+        let sentLog = [];
+        
+        // Formatter for WhatsApp
+        const formatWhatsapp = (nome, setores) => {
+            const linhas = setores.map(s => {
+                const kpis = s.kpis || {};
+                const progresso = kpis.progresso_medio || 0;
+                const emoji = progresso >= 90 ? '✅' : progresso >= 60 ? '⚠️' : '❌';
+                return `• *${s.nome}*: ${progresso}% concluído (${kpis.concluidas || 0}/${kpis.total || 0} OPs) ${emoji}`;
+            }).join('\n');
+            return `📊 *Evolução de Pedidos por Setor*\nOlá, ${nome}!\n\n${linhas}`;
+        };
+
+        // Formatter for E-mail (HTML)
+        const formatEmailHtml = (nome, setores) => {
+            let trs = setores.map(s => {
+                const kpis = s.kpis || {};
+                const progresso = kpis.progresso_medio || 0;
+                const cor = progresso >= 90 ? '#10b981' : progresso >= 60 ? '#f59e0b' : '#ef4444';
+                return `
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>${s.nome}</strong></td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: center;"><span style="color: ${cor}; font-weight: bold;">${progresso}%</span></td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: center;">${kpis.concluidas || 0} / ${kpis.total || 0} OPs</td>
+                </tr>
+                `;
+            }).join('');
+
+            return `
+                <div style="font-family: sans-serif; color: #334155;">
+                    <h2 style="color: #0f172a;">📊 Evolução de Pedidos por Setor</h2>
+                    <p>Olá, <strong>${nome}</strong>!</p>
+                    <p>Segue o resumo da produção e andamento de seus setores:</p>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                        <thead style="background-color: #f8fafc;">
+                            <tr>
+                                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #cbd5e1;">Setor</th>
+                                <th style="padding: 10px; text-align: center; border-bottom: 2px solid #cbd5e1;">Progresso</th>
+                                <th style="padding: 10px; text-align: center; border-bottom: 2px solid #cbd5e1;">OPs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trs}
+                        </tbody>
+                    </table>
+                    <p style="margin-top: 30px; font-size: 12px; color: #64748b;">Relatório gerado automaticamente pelo sistema SGQ MetalFisa.</p>
+                </div>
+            `;
+        };
+
+        // Grouping data by user
+        let userSetores = {};
+        if (tipo === 'responsibles') {
+            for (const r of respRows) {
+                if (!userSetores[r.idUsuario]) {
+                    userSetores[r.idUsuario] = { user: r, setores: [] };
+                }
+                const sData = visaoData.find(v => v.id === r.setor_id);
+                if (sData) userSetores[r.idUsuario].setores.push(sData);
+            }
+        } else if (tipo === 'all') {
+            const uniqueUsers = {};
+            respRows.forEach(r => uniqueUsers[r.idUsuario] = r);
+            for (const user of Object.values(uniqueUsers)) {
+                userSetores[user.idUsuario] = { user, setores: visaoData };
+            }
+        } else if (tipo === 'me') {
+            const { telefone, email, nome } = req.body;
+            userSetores['me'] = {
+                user: { NomeCompleto: nome || 'Usuário', telefone: telefone, email: email },
+                setores: visaoData
+            };
+        }
+
+        // Sending Loop
+        for (const [userId, data] of Object.entries(userSetores)) {
+            if (data.setores.length > 0) {
+                try {
+                    if (canal === 'email' && data.user.email) {
+                        const html = getCorporateEmailTemplate(formatEmailHtml(data.user.NomeCompleto, data.setores));
+                        const info = await transporter.sendMail({
+                            from: '"MetalFisa PCP" <sincometal@metalfisa.com.br>',
+                            to: data.user.email,
+                            subject: `Relatório PCP: Evolução de Pedidos - ${data.user.NomeCompleto}`,
+                            html: html
+                        });
+                        sentLog.push({ target: data.user.NomeCompleto, canal: 'email', ok: true });
+                    } 
+                    else if (canal !== 'email' && data.user.telefone) { // default whatsapp
+                        const texto = formatWhatsapp(data.user.NomeCompleto, data.setores);
+                        const resultado = await sendText(data.user.telefone, texto, 'Visão Setores - ' + data.user.NomeCompleto);
+                        sentLog.push({ target: data.user.NomeCompleto, canal: 'whatsapp', ok: resultado.some(x => x.ok) });
+                    }
+                } catch (sendErr) {
+                    console.error(`Falha ao enviar ${canal} para ${data.user.NomeCompleto}:`, sendErr.message);
+                    sentLog.push({ target: data.user.NomeCompleto, canal: canal, ok: false, error: sendErr.message });
+                }
+            }
+        }
+
+        res.json({ success: true, message: 'Relatórios processados!', sentLog });
+    } catch (err) {
+        console.error('[setores/visao/notify] Erro:', err.message, err.stack);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+router.get('/fila-dependencias', async (req, res) => {
+    try {
+        const { recurso, data_fim } = req.query;
+        if (!recurso) return res.status(400).json({ error: 'Recurso obrigatório.' });
+
+        const dataLimite = data_fim ? data_fim.replace(/-/g, '') : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+        // 1. Pegar produtos que usam o recurso
+        const sg2FilterRes = await db.query(
+            "SELECT DISTINCT TRIM(g2_produto) as prod FROM sg2010 WHERE g2_recurso = $1 AND COALESCE(d_e_l_e_t_, ' ') = ' '",
+            [recurso]
+        );
+        const produtosDoRecurso = new Set(sg2FilterRes.rows.map(r => r.prod));
+        
+        if (produtosDoRecurso.size === 0) return res.json({ inbound: [], outbound: [] });
+
+        // 2. Buscar OPs ativas ate dataLimite
+        const opsQuery = `
+            SELECT
+                RTRIM(pl.c2_num)       AS op,
+                RTRIM(pl.c2_item)      AS item_op,
+                RTRIM(pl.c2_sequen)    AS sequen,
+                RTRIM(pl.c2_pedido)    AS pedido_venda,
+                RTRIM(pl.c2_itempv)    AS item_pv,
+                TRIM(pl.c2_produto)    AS cod_produto,
+                COALESCE(pl.c2_quant, 0) AS qtd_total,
+                RTRIM(pl.c2_datpri)    AS data_planejada,
+                RTRIM(pl.c2_datprf)    AS data_fim_planejada,
+                RTRIM(sb1.b1_desc)     AS desc_produto,
+                RTRIM(c.a1_nome)     AS nome_cliente
+            FROM sc2010 pl
+            LEFT JOIN sb1010 sb1 ON pl.c2_produto = sb1.b1_cod AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '
+            INNER JOIN sc5010 pv ON pl.c2_pedido = pv.c5_num AND COALESCE(pv.d_e_l_e_t_, ' ') = ' '
+            INNER JOIN sc6010 c6 ON pl.c2_pedido = c6.c6_num AND pl.c2_itempv = c6.c6_item AND COALESCE(c6.d_e_l_e_t_, ' ') = ' '
+            LEFT JOIN sa1010 c ON pv.c5_cliente = c.a1_cod AND pv.c5_lojacli = c.a1_loja AND COALESCE(c.d_e_l_e_t_, ' ') = ' '
+            WHERE pl.c2_datpri <= $1
+              AND COALESCE(pl.c2_quant, 0) > COALESCE(pl.c2_quje, 0)
+              AND COALESCE(pl.d_e_l_e_t_, ' ') = ' '
+              AND TRIM(pl.c2_pedido) != ''
+              AND COALESCE(c6.c6_qtdven, 0) > COALESCE(c6.c6_qtdent, 0)
+            ORDER BY RTRIM(pl.c2_datpri) ASC
+        `;
+        const { rows: allOps } = await db.query(opsQuery, [dataLimite]);
+
+        // VERIFICAR CONFIGURAÇÃO DE PEDIDOS INATIVOS
+        let activeOps = allOps;
+        try {
+            const [settingsResult] = await mysql.query("SELECT setting_value FROM app_settings WHERE setting_key = 'hide_inactive_orders'");
+            const hideInactive = settingsResult && settingsResult[0] && (settingsResult[0].setting_value === '1' || settingsResult[0].setting_value === 'true');
+            
+            if (hideInactive) {
+                const [inactiveResult] = await mysql.query("SELECT pedido_numero FROM app_pedidos_inativos");
+                const inactivePedidos = new Set(inactiveResult.map(r => r.pedido_numero.trim()));
+                activeOps = allOps.filter(o => !inactivePedidos.has(o.pedido_venda.trim()));
+            }
+        } catch (e) {
+            console.error('Erro ao buscar status de pedidos inativos:', e);
+        }
+        
+        // Filtrar OPs que possuem roteiro passando pelo recurso
+        const ops = activeOps.filter(o => produtosDoRecurso.has(o.cod_produto));
+
+        if (ops.length === 0) return res.json({ inbound: [], outbound: [] });
+
+        // 2. Para cada cod_produto único, buscar o roteiro completo SG2
+        const uniqueProducts = [...new Set(ops.map(o => o.cod_produto).filter(Boolean))];
+        const routings = {};
+        if (uniqueProducts.length > 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < uniqueProducts.length; i += chunkSize) {
+                const chunk = uniqueProducts.slice(i, i + chunkSize);
+                const sg2Res = await db.query(`
+                    SELECT 
+                        TRIM(g2.g2_produto) as cod_produto,
+                        RTRIM(g2.g2_recurso) as recurso,
+                        RTRIM(g2.g2_descri)  as desc_operacao,
+                        RTRIM(h1.h1_descri)  as desc_recurso,
+                        RTRIM(g2.g2_operac)  as operacao
+                    FROM sg2010 g2
+                    LEFT JOIN sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, ' ') = ' '
+                    WHERE g2.g2_produto = ANY($1)
+                      AND COALESCE(g2.d_e_l_e_t_, ' ') = ' '
+                    ORDER BY g2.g2_produto, g2.g2_operac ASC
+                `, [chunk]);
+
+                sg2Res.rows.forEach(r => {
+                    if (!routings[r.cod_produto]) routings[r.cod_produto] = [];
+                    routings[r.cod_produto].push(r);
+                });
+            }
+        }
+
+        // 3. Buscar os apontamentos no MySQL
+        const opNumbers = [...new Set(ops.map(o => o.op).filter(Boolean))];
+        const apptsMap = {};
+        if (opNumbers.length > 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < opNumbers.length; i += chunkSize) {
+                const chunk = opNumbers.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const [mysqlRows] = await mysql.query(`
+                    SELECT 
+                        op_numero, op_item, op_sequencia, operacao_codigo, 
+                        SUM(quantidade) AS total_produzido,
+                        MAX(COALESCE(data_fim, created_at)) as ultima_data,
+                        SUBSTRING_INDEX(GROUP_CONCAT(usuario ORDER BY COALESCE(data_fim, created_at) DESC SEPARATOR ','), ',', 1) AS ultimo_usuario
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${placeholders})
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                `, chunk);
+                mysqlRows.forEach(row => {
+                    const key = `${row.op_numero}_${row.op_item}_${row.op_sequencia}_${row.operacao_codigo}`;
+                    apptsMap[key] = {
+                        total: parseFloat(row.total_produzido) || 0,
+                        data: row.ultima_data,
+                        usuario: row.ultimo_usuario
+                    };
+                });
+            }
+        }
+
+        // 4. Lógica de Inbound e Outbound
+        const inbound = [];
+        const outbound = [];
+
+        for (const op of ops) {
+            const route = routings[op.cod_produto] || [];
+            const myIndex = route.findIndex(r => r.recurso === recurso);
+            if (myIndex === -1) continue;
+            
+            const myOpInfo = route[myIndex];
+            const myAppt = apptsMap[`${op.op}_${op.item_op}_${op.sequen}_${myOpInfo.operacao}`];
+            const myApontado = myAppt ? myAppt.total : 0;
+            const myData = myAppt ? myAppt.data : null;
+            const myUsuario = myAppt ? myAppt.usuario : null;
+
+            const prevOpInfo = myIndex > 0 ? route[myIndex - 1] : null;
+            const nextOpInfo = myIndex < route.length - 1 ? route[myIndex + 1] : null;
+
+            let prevApontado = op.qtd_total;
+            let prevData = null;
+            let prevUsuario = null;
+            if (prevOpInfo) {
+                const prevAppt = apptsMap[`${op.op}_${op.item_op}_${op.sequen}_${prevOpInfo.operacao}`];
+                if (prevAppt) {
+                    prevApontado = prevAppt.total;
+                    prevData = prevAppt.data;
+                    prevUsuario = prevAppt.usuario;
+                } else {
+                    prevApontado = 0;
+                }
+            }
+
+            // Inbound: Anterior tem pendência
+            if (prevOpInfo && prevApontado < op.qtd_total) {
+                inbound.push({
+                    ...op,
+                    recurso_referencia: prevOpInfo.recurso,
+                    desc_recurso_referencia: prevOpInfo.desc_recurso,
+                    qtd_pendente: op.qtd_total - prevApontado,
+                    qtd_apontada: prevApontado,
+                    status: 'Atrasado na Origem'
+                });
+            }
+
+            // Outbound: Eu tenho pendência (quantidade na minha mão > produzida)
+            const qtdNaMinhaMao = prevApontado - myApontado;
+            if (qtdNaMinhaMao > 0) {
+                outbound.push({
+                    ...op,
+                    recurso_referencia: nextOpInfo ? nextOpInfo.recurso : 'FINAL',
+                    desc_recurso_referencia: nextOpInfo ? nextOpInfo.desc_recurso : 'Expedição/Fim',
+                    qtd_pendente: qtdNaMinhaMao,
+                    qtd_apontada: myApontado,
+                    status: 'Na minha Fila'
+                });
+            }
+        }
+
+        res.json({ inbound, outbound });
+    } catch (err) {
+        console.error('[setores/fila-dependencias] Erro:', err);
         res.status(500).json({ error: err.message });
     }
 });

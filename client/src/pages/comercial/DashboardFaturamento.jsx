@@ -503,7 +503,7 @@ export default function DashboardFaturamento() {
                         <div className="h-56 flex items-center justify-center text-slate-400 text-sm">Sem dados no período</div>
                     ) : (
                         <>
-                            <ResponsiveContainer width="100%" height={200}>
+                            <ResponsiveContainer width="100%" height={200} minWidth={1} minHeight={1}>
                                 <PieChart>
                                     <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85}
                                         paddingAngle={3} dataKey="value"
@@ -566,7 +566,7 @@ export default function DashboardFaturamento() {
                     ) : agrupChartData.length === 0 ? (
                         <div className="h-64 flex items-center justify-center text-slate-400 text-sm">Sem dados no período</div>
                     ) : (
-                        <ResponsiveContainer width="100%" height={Math.max(200, agrupChartData.length * 30 + 40)}>
+                        <ResponsiveContainer width="100%" height={Math.max(200, agrupChartData.length * 30 + 40)} minWidth={1} minHeight={1}>
                             <BarChart data={agrupChartData} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                                 <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
@@ -620,7 +620,7 @@ export default function DashboardFaturamento() {
                             ) : trendChartData.length === 0 ? (
                                 <div className="h-64 flex items-center justify-center text-slate-400 text-sm">Sem dados no período</div>
                             ) : (
-                                <ResponsiveContainer width="100%" height={280}>
+                                <ResponsiveContainer width="100%" height={280} minWidth={1} minHeight={1}>
                                     <BarChart data={trendChartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
@@ -649,7 +649,7 @@ export default function DashboardFaturamento() {
                             ) : dailyChartData.length === 0 ? (
                                 <div className="h-64 flex items-center justify-center text-slate-400 text-sm">Sem movimentação nos últimos 30 dias</div>
                             ) : (
-                                <ResponsiveContainer width="100%" height={280}>
+                                <ResponsiveContainer width="100%" height={280} minWidth={1} minHeight={1}>
                                     <AreaChart data={dailyChartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
                                         <defs>
                                             {dailyStatuses.map((s, i) => (

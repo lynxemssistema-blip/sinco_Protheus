@@ -110,7 +110,8 @@ export default function SINCOFormularioPrincipal() {
     useEffect(() => {
         let socket = null;
         import('socket.io-client').then(({ io }) => {
-            socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+            const socketUrl = api.defaults.baseURL.replace(/\/api\/?$/, '');
+            socket = io(socketUrl, { transports: ['websocket', 'polling'] });
             socket.on('connect', () => { socket.emit('join_sinco_formulario'); });
             socket.on('sinco:desenho_atualizado', (novos) => {
                 setDados(prev => {

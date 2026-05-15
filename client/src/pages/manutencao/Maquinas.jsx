@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Plus, Search, Edit2, Trash2, X, Save, AlertCircle, Image as ImageIcon, FileText, Upload } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Save, AlertCircle, Image as ImageIcon, FileText, Upload, Copy, Printer } from 'lucide-react';
+import { useReactToPrint } from 'react-to-print';
+import FichaTecnicaMaquinaPrint from '../../components/FichaTecnicaMaquinaPrint';
 
 export default function ManutencaoMaquinas() {
     const [maquinas, setMaquinas] = useState([]);
@@ -10,9 +12,26 @@ export default function ManutencaoMaquinas() {
     const [usuarios, setUsuarios] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Impressão
+    const [maquinaParaImprimir, setMaquinaParaImprimir] = useState(null);
+    const printRef = useRef();
+    const handlePrintExec = useReactToPrint({
+        contentRef: printRef,
+        documentTitle: `Ficha_Tecnica_Equipamento`,
+        onAfterPrint: () => setMaquinaParaImprimir(null)
+    });
+
+    const handlePrintClick = (m) => {
+        setMaquinaParaImprimir(m);
+        setTimeout(() => {
+            handlePrintExec();
+        }, 300); // give it time to render the hidden component
+    };
+
     // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [checklistSelecionado, setChecklistSelecionado] = useState('');
     const [formData, setFormData] = useState({
         id: null,
         nome: '',
@@ -26,7 +45,15 @@ export default function ManutencaoMaquinas() {
         checklists_vinculados: [],
         operadores_vinculados: [],
         fotos: [],
-        documentos_pdf: []
+        documentos_pdf: [],
+        dados_aluguel: {
+            data_inicio: '',
+            data_validade: '',
+            previsao_entrega: '',
+            valor_mensal: '',
+            certificacao_inclusa: false,
+            numero_serie_locador: ''
+        }
     });
 
     const loadData = async () => {
@@ -70,7 +97,15 @@ export default function ManutencaoMaquinas() {
                 checklists_vinculados: maquina.checklists_vinculados || [],
                 operadores_vinculados: maquina.operadores_vinculados || [],
                 fotos: maquina.fotos || [],
-                documentos_pdf: maquina.documentos_pdf || []
+                documentos_pdf: maquina.documentos_pdf || [],
+                dados_aluguel: maquina.dados_aluguel || {
+                    data_inicio: '',
+                    data_validade: '',
+                    previsao_entrega: '',
+                    valor_mensal: '',
+                    certificacao_inclusa: false,
+                    numero_serie_locador: ''
+                }
             });
         } else {
             setFormData({
@@ -86,18 +121,66 @@ export default function ManutencaoMaquinas() {
                 checklists_vinculados: [],
                 operadores_vinculados: [],
                 fotos: [],
-                documentos_pdf: []
+                documentos_pdf: [],
+                dados_aluguel: {
+                    data_inicio: '',
+                    data_validade: '',
+                    previsao_entrega: '',
+                    valor_mensal: '',
+                    certificacao_inclusa: false,
+                    numero_serie_locador: ''
+                }
             });
         }
         setIsModalOpen(true);
     };
 
-    const toggleChecklist = (id) => {
-        setFormData(prev => {
-            const has = prev.checklists_vinculados.includes(id);
-            if (has) return { ...prev, checklists_vinculados: prev.checklists_vinculados.filter(c => c !== id) };
-            return { ...prev, checklists_vinculados: [...prev.checklists_vinculados, id] };
+    const handleClone = (maquina) => {
+        setFormData({
+            id: null, // Null to force creation of new record
+            nome: maquina.nome + ' (Cópia)',
+            numero_serie: '', // Clear unique identifier
+            tag_identificacao: '', // Clear unique identifier
+            tipo: maquina.tipo || 'MAQUINA',
+            id_categoria: maquina.id_categoria || '',
+            id_setor: maquina.id_setor || '',
+            status: maquina.status,
+            status_operacional: maquina.status_operacional,
+            checklists_vinculados: maquina.checklists_vinculados || [],
+            operadores_vinculados: maquina.operadores_vinculados || [],
+            fotos: maquina.fotos || [], // Keep the photos? Or maybe clear them. Let's keep for clone.
+            documentos_pdf: maquina.documentos_pdf || [],
+            dados_aluguel: maquina.dados_aluguel || {
+                data_inicio: '',
+                data_validade: '',
+                previsao_entrega: '',
+                valor_mensal: '',
+                certificacao_inclusa: false,
+                numero_serie_locador: ''
+            }
         });
+        setIsModalOpen(true);
+    };
+
+    const addChecklist = () => {
+        if (!checklistSelecionado) return;
+        const id = parseInt(checklistSelecionado);
+        if (formData.checklists_vinculados.some(v => parseInt(v) === id)) {
+            alert('Este checklist já está vinculado.');
+            return;
+        }
+        setFormData(prev => ({
+            ...prev,
+            checklists_vinculados: [...prev.checklists_vinculados, id]
+        }));
+        setChecklistSelecionado('');
+    };
+
+    const removeChecklist = (id) => {
+        setFormData(prev => ({
+            ...prev,
+            checklists_vinculados: prev.checklists_vinculados.filter(c => parseInt(c) !== parseInt(id))
+        }));
     };
 
     const handleFileUpload = (type, file) => {
@@ -153,6 +236,7 @@ export default function ManutencaoMaquinas() {
             setSaving(true);
             const payload = {
                 ...formData,
+                propriedade: formData.tipo === 'ALUGADO' ? 'ALUGADO' : 'PROPRIO',
                 id_categoria: formData.id_categoria ? parseInt(formData.id_categoria) : null,
                 id_setor: formData.id_setor ? parseInt(formData.id_setor) : null
             };
@@ -255,13 +339,16 @@ export default function ManutencaoMaquinas() {
                                             ) : '-'}
                                         </td>
                                         <td className="p-4">
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                                m.tipo === 'VEICULO'     ? 'bg-blue-100 text-blue-700' :
-                                                m.tipo === 'EQUIPAMENTO' ? 'bg-orange-100 text-orange-700' :
-                                                'bg-slate-100 text-slate-600'
-                                            }`}>
-                                                {m.tipo === 'VEICULO' ? '🚗 Veículo' : m.tipo === 'EQUIPAMENTO' ? '🔧 Equip.' : '⚙️ Máquina'}
-                                            </span>
+                                            <div className="flex flex-col gap-1 items-start">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${
+                                                    m.tipo === 'VEICULO' ? 'bg-blue-100 text-blue-700' : 
+                                                    m.tipo === 'EQUIPAMENTO' ? 'bg-orange-100 text-orange-700' :
+                                                    m.tipo === 'ALUGADO' ? 'bg-purple-100 text-purple-700' :
+                                                    'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                    {m.tipo === 'VEICULO' ? '🚗 Veículo' : m.tipo === 'EQUIPAMENTO' ? '🔧 Equip.' : m.tipo === 'ALUGADO' ? '🤝 Alugado' : '⚙️ Máquina'}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="p-4">{m.categoria_nome || '-'}</td>
                                         <td className="p-4">{m.setor_nome || '-'}</td>
@@ -275,7 +362,21 @@ export default function ManutencaoMaquinas() {
                                                 {m.status_operacional.replace('_', ' ')}
                                             </span>
                                         </td>
-                                        <td className="p-4 flex gap-3 justify-center" style={{minWidth:'90px'}}>
+                                        <td className="p-4 flex gap-3 justify-center" style={{minWidth:'110px'}}>
+                                            <button 
+                                                onClick={() => handlePrintClick(m)}
+                                                className="text-amber-600 hover:text-amber-900 bg-amber-50 p-1.5 rounded"
+                                                title="Imprimir Ficha Técnica"
+                                            >
+                                                <Printer size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleClone(m)}
+                                                className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 p-1.5 rounded"
+                                                title="Clonar Máquina"
+                                            >
+                                                <Copy size={16} />
+                                            </button>
                                             <button 
                                                 onClick={() => handleOpenModal(m)}
                                                 className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-1.5 rounded"
@@ -357,8 +458,77 @@ export default function ManutencaoMaquinas() {
                                             <option value="MAQUINA">⚙️ Máquina / Equipamento Produtivo</option>
                                             <option value="EQUIPAMENTO">🔧 Equipamento / Utilitário</option>
                                             <option value="VEICULO">🚗 Veículo / Transporte</option>
+                                            <option value="ALUGADO">🤝 Equipamento Alugado</option>
                                         </select>
                                     </div>
+
+                                    {formData.tipo === 'ALUGADO' && (
+                                        <div className="col-span-2 bg-purple-50/50 border border-purple-100 rounded-xl p-5 mt-2 mb-2">
+                                            <h3 className="text-sm font-bold text-purple-800 mb-4 flex items-center gap-2">
+                                                <AlertCircle size={16} /> Dados do Contrato de Locação
+                                            </h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Nº Série / Identificação do Locador</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={formData.dados_aluguel.numero_serie_locador}
+                                                        onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, numero_serie_locador: e.target.value}})}
+                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        placeholder="Ex: LOC-9988"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Valor Mensal do Aluguel (R$)</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={formData.dados_aluguel.valor_mensal}
+                                                        onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, valor_mensal: e.target.value}})}
+                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        placeholder="Ex: 1500,00"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Data de Início do Contrato</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={formData.dados_aluguel.data_inicio}
+                                                        onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, data_inicio: e.target.value}})}
+                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Data de Validade (Fim)</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={formData.dados_aluguel.data_validade}
+                                                        onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, data_validade: e.target.value}})}
+                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Previsão de Entrega (Devolução)</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={formData.dados_aluguel.previsao_entrega}
+                                                        onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, previsao_entrega: e.target.value}})}
+                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1 flex items-center mt-6">
+                                                    <label className="flex items-center cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={formData.dados_aluguel.certificacao_inclusa}
+                                                            onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, certificacao_inclusa: e.target.checked}})}
+                                                            className="w-4 h-4 text-purple-600 border-purple-300 rounded focus:ring-purple-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-semibold text-slate-700">Certificação/Calibração inclusa no aluguel?</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <div className="col-span-2 md:col-span-1">
                                         <label className="block text-sm font-semibold text-slate-700 mb-1 flex justify-between">
@@ -508,26 +678,61 @@ export default function ManutencaoMaquinas() {
 
                                     {/* SEÇÃO: CHECKLISTS VINCULADOS */}
                                     <div className="col-span-2 mt-4">
-                                        <h3 className="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2 mb-3">Checklists de Inspeção Associados</h3>
-                                        {checklistsModelos.length === 0 ? (
-                                            <div className="text-sm text-slate-500 italic">Nenhum modelo de checklist cadastrado no sistema.</div>
+                                        <div className="flex justify-between items-end border-b border-slate-200 pb-2 mb-3">
+                                            <h3 className="text-sm font-bold text-slate-800">Checklists de Inspeção Associados</h3>
+                                        </div>
+
+                                        <div className="flex gap-2 mb-4">
+                                            <select 
+                                                value={checklistSelecionado}
+                                                onChange={(e) => setChecklistSelecionado(e.target.value)}
+                                                className="flex-1 border border-slate-300 rounded-lg p-2 text-sm focus:ring-1 focus:ring-indigo-500"
+                                            >
+                                                <option value="">-- Selecione um modelo de checklist --</option>
+                                                {checklistsModelos
+                                                    .filter(c => !formData.checklists_vinculados.some(v => parseInt(v) === parseInt(c.id)))
+                                                    .map(c => (
+                                                        <option key={c.id} value={c.id}>{c.nome} ({c.tipo})</option>
+                                                    ))
+                                                }
+                                            </select>
+                                            <button 
+                                                type="button"
+                                                onClick={addChecklist}
+                                                className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                                            >
+                                                <Plus size={16} /> Adicionar
+                                            </button>
+                                        </div>
+
+                                        {formData.checklists_vinculados.length === 0 ? (
+                                            <div className="text-sm text-slate-500 italic bg-slate-50 p-3 rounded text-center border border-slate-200 border-dashed">
+                                                Nenhum checklist associado. Selecione acima para adicionar.
+                                            </div>
                                         ) : (
-                                            <div className="flex flex-wrap gap-2">
-                                                {checklistsModelos.map(c => {
-                                                    const isSelected = formData.checklists_vinculados.includes(c.id);
+                                            <div className="space-y-2">
+                                                {formData.checklists_vinculados.map(id => {
+                                                    const c = checklistsModelos.find(m => parseInt(m.id) === parseInt(id));
+                                                    if (!c) return null;
                                                     return (
-                                                        <button
-                                                            key={c.id}
-                                                            type="button"
-                                                            onClick={() => toggleChecklist(c.id)}
-                                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                                                                isSelected 
-                                                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700' 
-                                                                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                                                            }`}
-                                                        >
-                                                            {isSelected ? '✓ ' : '+ '} {c.nome}
-                                                        </button>
+                                                        <div key={id} className="flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg shadow-sm">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-slate-800 text-sm">{c.nome}</span>
+                                                                <span className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                                                                    <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">
+                                                                        Frequência: {c.tipo}
+                                                                    </span>
+                                                                </span>
+                                                            </div>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => removeChecklist(id)}
+                                                                className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded transition-colors"
+                                                                title="Remover Checklist"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </div>
                                                     );
                                                 })}
                                             </div>
@@ -617,6 +822,17 @@ export default function ManutencaoMaquinas() {
                     </div>
                 </div>
             )}
+
+            {/* Print Component (Hidden) */}
+            <div style={{ display: 'none' }}>
+                <FichaTecnicaMaquinaPrint 
+                    ref={printRef} 
+                    maquina={maquinaParaImprimir} 
+                    checklistsModelos={checklistsModelos}
+                    categorias={categorias}
+                    setores={setores}
+                />
+            </div>
         </div>
     );
 }

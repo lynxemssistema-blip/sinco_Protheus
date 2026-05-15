@@ -762,6 +762,31 @@ export const HELP_CONTENT = {
     ],
   },
 
+  // ── Fila e Dependências por Recurso ──────────────────────────────────────────
+  '/pcp/fila-dependencias': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Fila e Dependências por Recurso',
+    icon: 'ListOrdered',
+    description: 'Interface gerencial para acompanhamento dinâmico das Ordens de Produção alocadas em um recurso (máquina/setor). Permite entender rapidamente não só o que precisa ser feito, mas de onde a peça vem (origem) e para onde vai (destino).',
+    steps: [
+      'Escolha do Recurso: Utilize o seletor no topo para definir qual máquina ou setor você quer analisar (ex: Embalagem, Solda).',
+      'Aba "Depende de (Inbound)": Foca no que precisa CHEGAR na sua máquina. A última coluna mostra qual é a operação anterior que está segurando ou fornecendo o material.',
+      'Aba "Próxima Fila (Outbound)": Foca no que vai SAIR da sua máquina. A última coluna mostra qual é a próxima etapa que está aguardando o seu trabalho.',
+      'Acompanhamento de Progresso: A barra de apontamentos mostra o quanto já foi produzido. Quando a quantidade pendente chega a zero (após arredondamento), o status muda automaticamente para "Concluída".',
+      'Ações: Você pode visualizar PDFs técnicos clicando no ícone do documento (quando em vermelho).',
+      'Impressão: A página possui formatação otimizada para impressão em paisagem (A4) utilizando o atalho do navegador (Ctrl+P).'
+    ],
+    tips: [
+      'Pedidos de venda com saldo já finalizado e entregue são bloqueados pelo sistema, garantindo que a fila contenha apenas o que é estritamente necessário.',
+      'Itens sem pedido de venda associado são indicados pela tag "OP de Estoque".'
+    ],
+    links: [
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' }
+    ]
+  },
+
   // ── Conferência de Apontamentos ──────────────────────────────────────────────
   '/pcp/conferencia': {
     category: 'PCP',
@@ -2579,6 +2604,116 @@ export const HELP_CONTENT = {
     links: [
       { path: '/manutencao/ordens', label: 'Ordens de Manutenção' },
       { path: '/manutencao/dashboard', label: 'Dashboard Gerencial' }
+    ]
+  },
+
+  '/sgq/ativos': {
+    category: 'Qualidade',
+    categoryColor: 'bg-emerald-100 text-emerald-800',
+    title: 'Gestão de Ativos & Calibração',
+    icon: 'Wrench',
+    description: 'Módulo dedicado ao controle do inventário físico de equipamentos (paquímetros, trenas, durômetros) com rastreabilidade completa das certificações e prazos de calibração vigentes.',
+    steps: [
+      'Cadastrar Ativo: Utilize o formulário para registrar as especificações técnicas, fabricante, número de série (nº de patrimônio) e tolerâncias da norma.',
+      'Definir Calibração: Preencha as frequências exigidas para calibração, laboratório homologado, validade do último certificado e anexe a documentação técnica no formato PDF.',
+      'Rastreabilidade: Todo ativo entra no "Painel de Controle", que alerta automaticamente os equipamentos com vencimento iminente ou expirado.',
+      'Suspensão Automática: Se a calibração vencer, o sistema bloqueia o envio desse equipamento em novos Romaneios de SGQ para auditorias.'
+    ],
+    tips: [
+      'Cadastre a foto real do equipamento; facilita muito a identificação no chão de fábrica e na hora do embarque da caixa de ferramentas.',
+      'Equipamentos em manutenção externa ou "perdidos" devem ter seu status alterado para evitar emissões indevidas.'
+    ],
+    links: [
+      { path: '/sgq/caixas', label: 'Caixas de Ferramenta' },
+      { path: '/sgq/romaneios', label: 'Romaneios SGQ' }
+    ]
+  },
+
+  '/sgq/caixas': {
+    category: 'Qualidade',
+    categoryColor: 'bg-emerald-100 text-emerald-800',
+    title: 'Caixas de Ferramentas (Kits)',
+    icon: 'Package',
+    description: 'Sistema de gestão que permite agrupar diversos ativos e ferramentas em "Kits" (Caixas), vinculando-os a colaboradores ou frotas para otimizar auditorias e devoluções.',
+    steps: [
+      'Criar Caixa: Crie um registro com o nome ou numeração da Caixa e designe um responsável direto (ex: Montador Externo X).',
+      'Inserir Ativos: Através do menu da caixa, bipe ou selecione os ativos que compõem o kit (como Lixadeira, Multímetro, etc).',
+      'Validação de Compliance: Se algum equipamento da caixa estiver com a calibração vencida, o sistema dispara um alerta crítico.',
+      'Integração Logística: Uma Caixa de Ferramentas pode ser enviada de forma consolidada dentro de um Romaneio de SGQ para equipes externas.'
+    ],
+    tips: [
+      'Caixas são ótimas para equipes de campo. Quando um funcionário devolve, o sistema audita instantaneamente se falta algum componente.',
+      'Nunca inclua equipamentos descalibrados nas caixas, isso pode gerar RNC (Não Conformidade) na obra do cliente.'
+    ],
+    links: [
+      { path: '/sgq/ativos', label: 'Gestão de Ativos' },
+      { path: '/sgq/romaneios', label: 'Romaneios SGQ' }
+    ]
+  },
+
+  '/sgq/romaneios': {
+    category: 'Qualidade',
+    categoryColor: 'bg-emerald-100 text-emerald-800',
+    title: 'Romaneios SGQ',
+    icon: 'Truck',
+    description: 'Módulo de expedição de qualidade focado no trânsito de Instrumentos e Caixas de Ferramentas. Garante a integridade da entrega e devolução dos ativos de auditoria e trabalho de campo.',
+    steps: [
+      'Gerar Romaneio: Inicie um romaneio informando o Destino, Responsável pelo Envio e o Portador (quem está levando).',
+      'Adicionar Itens: Insira no documento os Ativos avulsos ou as Caixas de Ferramentas completas que irão para o local.',
+      'Emissão de Checklist: O romaneio consolida todos os itens e imprime um relatório profissional. Só é permitido enviar se todos os certificados obrigatórios estiverem em dia.',
+      'Baixa / Retorno: Quando o material volta para a base, utilize a tela do Romaneio para confirmar a devolução física (Check-in), garantindo que nada foi perdido na viagem.'
+    ],
+    tips: [
+      'A rastreabilidade dos Romaneios é exigência direta para auditorias de conformidade ISO-9001 e IATF.',
+      'Sempre finalize e assine os Romaneios quando o retorno for concluído.'
+    ],
+    links: [
+      { path: '/sgq/ativos', label: 'Gestão de Ativos' },
+      { path: '/sgq/caixas', label: 'Caixas de Ferramenta' }
+    ]
+  },
+
+  '/manutencao/tecnicos': {
+    category: 'Manutenção',
+    categoryColor: 'bg-orange-100 text-orange-800',
+    title: 'Técnicos de Manutenção',
+    icon: 'Users',
+    description: 'Gestão do corpo técnico de manutenção. Centraliza informações de disponibilidade, especialidades (Mecânica, Elétrica, Automação) e apuração de carga de trabalho para melhor alocação das O.Ms.',
+    steps: [
+      'Registrar Técnico: Cadastre o profissional informando seu registro interno, nome, e-mail e função.',
+      'Classificação: Defina as áreas de atuação (Especialidades) e turnos em que o técnico opera.',
+      'Acompanhamento de OS: Ao acessar o perfil de um técnico, você pode visualizar todo o histórico de execuções de ordens (O.M) das quais ele participou.',
+      'Análise de Demanda: Use essa tela para identificar quem está com sobrecarga de apontamentos e quem está disponível para chamados corretivos.'
+    ],
+    tips: [
+      'Mantenha o cadastro sempre atualizado. O sistema de Execução de Manutenção só permite apontamento em nome de técnicos ativos no banco.',
+      'Associe a especialidade corretamente; o Dashboard filtra a produtividade cruzando HH e Setores.'
+    ],
+    links: [
+      { path: '/manutencao/dashboard', label: 'Gestão Manutenção' },
+      { path: '/manutencao/ordens', label: 'Ordens de Manutenção' }
+    ]
+  },
+
+  '/manutencao/atividades': {
+    category: 'Manutenção',
+    categoryColor: 'bg-orange-100 text-orange-800',
+    title: 'Atividades Padrão',
+    icon: 'Layers',
+    description: 'Biblioteca central de atividades (instruções e tarefas repetitivas) utilizadas em Checklists Preventivos e Planos de Manutenção. Garante a padronização dos métodos técnicos operacionais.',
+    steps: [
+      'Criar Atividade Padrão: Registre as tarefas (ex: "Troca de Óleo Lubrificante", "Aperto de Terminais", "Limpeza do Compressor").',
+      'Definir Procedimento: Descreva o passo a passo seguro para aquela atividade e associe EPIs ou Ferramentas necessárias.',
+      'Tempo Padrão: Determine o tempo estimado (setup e execução) para referência na O.M.',
+      'Associação a Checklists: Estas atividades cadastradas ficarão disponíveis para serem "puxadas" no momento em que você criar Planos Preventivos ou Checklists de Equipamentos.'
+    ],
+    tips: [
+      'Não escreva tarefas genéricas ("Verificar máquina"). Seja específico ("Medir tensão das correias do eixo X").',
+      'O uso de Atividades Padrão diminui o erro humano e acelera a criação de ordens de serviço rotineiras.'
+    ],
+    links: [
+      { path: '/manutencao/checklists', label: 'Checklists Diários' },
+      { path: '/manutencao/ordens', label: 'Ordens de Manutenção' }
     ]
   }
 

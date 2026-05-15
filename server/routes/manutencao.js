@@ -26,7 +26,8 @@ router.get('/maquinas', async (req, res) => {
             fotos: r.fotos ? JSON.parse(r.fotos) : [],
             documentos_pdf: r.documentos_pdf ? JSON.parse(r.documentos_pdf) : [],
             checklists_vinculados: r.checklists_vinculados ? JSON.parse(r.checklists_vinculados) : [],
-            operadores_vinculados: r.operadores_vinculados ? JSON.parse(r.operadores_vinculados) : []
+            operadores_vinculados: r.operadores_vinculados ? JSON.parse(r.operadores_vinculados) : [],
+            dados_aluguel: r.dados_aluguel ? JSON.parse(r.dados_aluguel) : {}
         }));
 
         res.json(formatadas);
@@ -39,15 +40,16 @@ router.get('/maquinas', async (req, res) => {
 // POST /api/manutencao/maquinas
 router.post('/maquinas', async (req, res) => {
     try {
-        const { nome, numero_serie, tag_identificacao, tipo, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados } = req.body;
+        const { nome, numero_serie, tag_identificacao, tipo, propriedade, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados, dados_aluguel } = req.body;
         const [result] = await mysqlPool.query(`
-            INSERT INTO pcp_manutencao_maquinas (nome, numero_serie, tag_identificacao, tipo, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO pcp_manutencao_maquinas (nome, numero_serie, tag_identificacao, tipo, propriedade, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados, dados_aluguel)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             nome,
             numero_serie || null,
             tag_identificacao || null,
             tipo || 'MAQUINA',
+            propriedade || 'PROPRIO',
             id_categoria || null,
             id_setor || null,
             status || 'ATIVO',
@@ -55,7 +57,8 @@ router.post('/maquinas', async (req, res) => {
             fotos ? JSON.stringify(fotos) : '[]',
             documentos_pdf ? JSON.stringify(documentos_pdf) : '[]',
             checklists_vinculados ? JSON.stringify(checklists_vinculados) : '[]',
-            operadores_vinculados ? JSON.stringify(operadores_vinculados) : '[]'
+            operadores_vinculados ? JSON.stringify(operadores_vinculados) : '[]',
+            dados_aluguel ? JSON.stringify(dados_aluguel) : '{}'
         ]);
         res.json({ success: true, id: result.insertId });
     } catch (err) {
@@ -68,18 +71,19 @@ router.post('/maquinas', async (req, res) => {
 router.put('/maquinas/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { nome, numero_serie, tag_identificacao, tipo, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados } = req.body;
+        const { nome, numero_serie, tag_identificacao, tipo, propriedade, id_categoria, id_setor, status, status_operacional, fotos, documentos_pdf, checklists_vinculados, operadores_vinculados, dados_aluguel } = req.body;
         await mysqlPool.query(`
             UPDATE pcp_manutencao_maquinas
-            SET nome=?, numero_serie=?, tag_identificacao=?, tipo=?, id_categoria=?, id_setor=?,
+            SET nome=?, numero_serie=?, tag_identificacao=?, tipo=?, propriedade=?, id_categoria=?, id_setor=?,
                 status=?, status_operacional=?, fotos=?, documentos_pdf=?,
-                checklists_vinculados=?, operadores_vinculados=?
+                checklists_vinculados=?, operadores_vinculados=?, dados_aluguel=?
             WHERE id=?
         `, [
             nome,
             numero_serie || null,
             tag_identificacao || null,
             tipo || 'MAQUINA',
+            propriedade || 'PROPRIO',
             id_categoria || null,
             id_setor || null,
             status || 'ATIVO',
@@ -88,6 +92,7 @@ router.put('/maquinas/:id', async (req, res) => {
             documentos_pdf ? JSON.stringify(documentos_pdf) : '[]',
             checklists_vinculados ? JSON.stringify(checklists_vinculados) : '[]',
             operadores_vinculados ? JSON.stringify(operadores_vinculados) : '[]',
+            dados_aluguel ? JSON.stringify(dados_aluguel) : '{}',
             id
         ]);
         res.json({ success: true });
@@ -144,7 +149,8 @@ router.get('/checklists/modelos', async (req, res) => {
         const [rows] = await mysqlPool.query('SELECT * FROM pcp_manutencao_checklists_modelos ORDER BY id DESC');
         const formatados = rows.map(r => ({
             ...r,
-            itens: r.itens ? JSON.parse(r.itens) : []
+            itens: r.itens ? JSON.parse(r.itens) : [],
+            turnos: r.turnos ? JSON.parse(r.turnos) : []
         }));
         res.json(formatados);
     } catch (err) {
@@ -155,10 +161,19 @@ router.get('/checklists/modelos', async (req, res) => {
 
 router.post('/checklists/modelos', async (req, res) => {
     try {
-        const { nome, observacoes, tipo, itens, status } = req.body;
+        const { nome, observacoes, tipo, frequencia_dia, turnos, responsavel, itens, status } = req.body;
         const [result] = await mysqlPool.query(
-            'INSERT INTO pcp_manutencao_checklists_modelos (nome, observacoes, tipo, itens, status) VALUES (?, ?, ?, ?, ?)', 
-            [nome, observacoes || null, tipo || 'DIARIO', itens ? JSON.stringify(itens) : '[]', status || 'ATIVO']
+            'INSERT INTO pcp_manutencao_checklists_modelos (nome, observacoes, tipo, frequencia_dia, turnos, responsavel, itens, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+            [
+                nome, 
+                observacoes || null, 
+                tipo || 'DIARIO', 
+                frequencia_dia || null,
+                turnos ? JSON.stringify(turnos) : '[]',
+                responsavel || 'OPERADOR',
+                itens ? JSON.stringify(itens) : '[]', 
+                status || 'ATIVO'
+            ]
         );
         res.json({ success: true, id: result.insertId });
     } catch (err) {
@@ -171,10 +186,20 @@ router.post('/checklists/modelos', async (req, res) => {
 router.put('/checklists/modelos/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { nome, observacoes, tipo, itens, status } = req.body;
+        const { nome, observacoes, tipo, frequencia_dia, turnos, responsavel, itens, status } = req.body;
         await mysqlPool.query(
-            'UPDATE pcp_manutencao_checklists_modelos SET nome=?, observacoes=?, tipo=?, itens=?, status=? WHERE id=?', 
-            [nome, observacoes || null, tipo || 'DIARIO', itens ? JSON.stringify(itens) : '[]', status || 'ATIVO', id]
+            'UPDATE pcp_manutencao_checklists_modelos SET nome=?, observacoes=?, tipo=?, frequencia_dia=?, turnos=?, responsavel=?, itens=?, status=? WHERE id=?', 
+            [
+                nome, 
+                observacoes || null, 
+                tipo || 'DIARIO', 
+                frequencia_dia || null,
+                turnos ? JSON.stringify(turnos) : '[]',
+                responsavel || 'OPERADOR',
+                itens ? JSON.stringify(itens) : '[]', 
+                status || 'ATIVO', 
+                id
+            ]
         );
         res.json({ success: true });
     } catch (err) {
@@ -649,7 +674,7 @@ router.get('/atividades', async (req, res) => {
             FROM pcp_manutencao_maquinas WHERE status = 'ATIVO'
         `);
         const [modelos] = await mysqlPool.query(`
-            SELECT id, nome, tipo, itens
+            SELECT id, nome, tipo, frequencia_dia, turnos, responsavel, itens
             FROM pcp_manutencao_checklists_modelos WHERE status = 'ATIVO'
         `);
         const [diarios] = await mysqlPool.query(`
@@ -677,6 +702,12 @@ router.get('/atividades', async (req, res) => {
                      o.data_solicitacao ASC
         `);
 
+        // Helpers to determine if a checklist should be executed today
+        const dateObj = new Date(dataRef + "T00:00:00");
+        const daysOfWeek = ['DOMINGO','SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO'];
+        const dayOfWeekStr = daysOfWeek[dateObj.getDay()];
+        const dayOfMonthStr = dateObj.getDate().toString();
+
         const tarefas = [];
         for (const maq of maquinas) {
             let ckIds = [], ops = [];
@@ -686,27 +717,65 @@ router.get('/atividades', async (req, res) => {
             for (const idModelo of ckIds) {
                 const modelo = modelos.find(m => m.id == idModelo);
                 if (!modelo) continue;
-                const feito = diarios.find(d => d.id_maquina == maq.id && d.id_modelo_checklist == idModelo);
+
+                // Frequence Check
+                let shouldExecuteToday = true;
+                if (modelo.tipo === 'SEMANAL') {
+                    if (modelo.frequencia_dia !== dayOfWeekStr) shouldExecuteToday = false;
+                } else if (modelo.tipo === 'MENSAL') {
+                    if (modelo.frequencia_dia !== dayOfMonthStr && modelo.frequencia_dia !== dayOfMonthStr.padStart(2, '0')) shouldExecuteToday = false;
+                } else if (modelo.tipo === 'QUINZENAL') {
+                    const days = modelo.frequencia_dia ? modelo.frequencia_dia.split(',').map(s => s.trim()) : [];
+                    if (!days.includes(dayOfMonthStr) && !days.includes(dayOfMonthStr.padStart(2, '0'))) shouldExecuteToday = false;
+                } else if (modelo.tipo === 'TRIMESTRAL' || modelo.tipo === 'ANUAL') {
+                    const monthStr = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const dayMonthStr = dayOfMonthStr.padStart(2, '0') + '/' + monthStr;
+                    const validDates = modelo.frequencia_dia ? modelo.frequencia_dia.split(',').map(s => s.trim()) : [];
+                    if (!validDates.includes(dayMonthStr)) shouldExecuteToday = false;
+                }
+                
+                if (!shouldExecuteToday && modelo.tipo !== 'PREVENTIVA') continue;
+
+                let turnos_req = [];
+                if (modelo.tipo === 'DIARIO') {
+                    try { turnos_req = modelo.turnos ? JSON.parse(modelo.turnos) : []; } catch(e) {}
+                }
+                
+                if (turnos_req.length === 0) {
+                    turnos_req = [null]; // Executa 1 vez independente do turno
+                }
+
                 let itens = [];
                 try { itens = modelo.itens ? JSON.parse(modelo.itens) : []; } catch(e) {}
-                tarefas.push({
-                    key: `${maq.id}-${idModelo}`,
-                    id_maquina:          maq.id,
-                    maquina_nome:        maq.nome,
-                    maquina_tag:         maq.tag_identificacao,
-                    maquina_tipo:        maq.tipo || 'MAQUINA',
-                    status_operacional:  maq.status_operacional,
-                    operadores:          ops,
-                    id_modelo:           modelo.id,
-                    modelo_nome:         modelo.nome,
-                    modelo_tipo:         modelo.tipo,
-                    num_itens:           itens.length,
-                    itens,
-                    status:              feito ? feito.status_geral : 'PENDENTE',
-                    id_preenchimento:    feito ? feito.id : null,
-                    operador_nome:       feito ? feito.operador_nome : null,
-                    data_preenchimento:  feito ? feito.criado_em : null
-                });
+
+                for (const t of turnos_req) {
+                    const feito = diarios.find(d => 
+                        d.id_maquina == maq.id && 
+                        d.id_modelo_checklist == idModelo &&
+                        (d.turno == t || (!d.turno && !t))
+                    );
+
+                    tarefas.push({
+                        key: `${maq.id}-${idModelo}${t ? '-' + t : ''}`,
+                        id_maquina:          maq.id,
+                        maquina_nome:        maq.nome,
+                        maquina_tag:         maq.tag_identificacao,
+                        maquina_tipo:        maq.tipo || 'MAQUINA',
+                        status_operacional:  maq.status_operacional,
+                        operadores:          ops,
+                        id_modelo:           modelo.id,
+                        modelo_nome:         modelo.nome,
+                        modelo_tipo:         modelo.tipo,
+                        turno_req:           t,
+                        responsavel:         modelo.responsavel || 'OPERADOR',
+                        num_itens:           itens.length,
+                        itens,
+                        status:              feito ? feito.status_geral : 'PENDENTE',
+                        id_preenchimento:    feito ? feito.id : null,
+                        operador_nome:       feito ? feito.operador_nome : null,
+                        data_preenchimento:  feito ? feito.criado_em : null
+                    });
+                }
             }
         }
 
@@ -720,16 +789,17 @@ router.get('/atividades', async (req, res) => {
 // POST /api/manutencao/checklists/diarios — salva preenchimento do dia
 router.post('/checklists/diarios', async (req, res) => {
     try {
-        const { id_maquina, id_modelo_checklist, id_operador, data_verificacao, status_geral, respostas } = req.body;
+        const { id_maquina, id_modelo_checklist, id_operador, data_verificacao, turno, status_geral, respostas } = req.body;
         const [result] = await mysqlPool.query(`
             INSERT INTO pcp_manutencao_checklists_diarios
-            (id_maquina, id_modelo_checklist, id_operador, data_verificacao, status_geral, respostas)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (id_maquina, id_modelo_checklist, id_operador, data_verificacao, turno, status_geral, respostas)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [
             id_maquina,
             id_modelo_checklist || null,
             id_operador || null,
             data_verificacao,
+            turno || null,
             status_geral,
             JSON.stringify(respostas || [])
         ]);

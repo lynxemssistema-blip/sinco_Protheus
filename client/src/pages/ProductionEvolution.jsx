@@ -219,7 +219,7 @@ export default function ProductionEvolution() {
                         {loading ? (
                             <div className="h-full flex items-center justify-center text-slate-400">Carregando dados...</div>
                         ) : (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <AreaChart data={data}>
                                     <defs>
                                         <linearGradient id="colorQtd" x1="0" y1="0" x2="0" y2="1">

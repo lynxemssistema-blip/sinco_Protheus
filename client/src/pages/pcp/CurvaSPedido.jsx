@@ -159,7 +159,7 @@ export default function CurvaSPedido({ filters }) {
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                         <h2 className="text-lg font-bold text-slate-800 mb-6">Gráfico Evolutivo de Apontamento (Curva S)</h2>
                         <div className="h-[500px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <LineChart data={data.curva} margin={{ top: 20, right: 30, left: 30, bottom: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                                     <XAxis 

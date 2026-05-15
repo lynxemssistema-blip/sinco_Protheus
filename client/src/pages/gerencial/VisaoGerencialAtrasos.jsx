@@ -290,7 +290,7 @@ const VisaoGerencialAtrasos = () => {
                             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
                                 <h3 className="text-base font-bold text-slate-800 mb-4">Top 5 Clientes c/ Atrasos</h3>
                                 <div className="h-64">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={processedData.charts.clientes} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
                                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
                                             <XAxis 
@@ -311,7 +311,7 @@ const VisaoGerencialAtrasos = () => {
                             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
                                 <h3 className="text-base font-bold text-slate-800 mb-4">Atrasos por Mês</h3>
                                 <div className="h-64">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={processedData.charts.meses} margin={{ top: 5, right: 5, left: 20, bottom: 20 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                                             <XAxis 

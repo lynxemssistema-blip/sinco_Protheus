@@ -152,6 +152,9 @@ app.use('/api/produtos', require('./routes/produtos'));
 app.use('/api/docs', require('./routes/docs'));
 app.use('/api/users', require('./routes/users'));
 const sgqRoutes = require('./routes/sgq');
+app.use('/api/sgq/assets', require('./routes/sgq_assets'));
+app.use('/api/sgq/romaneios', require('./routes/sgq_romaneios'));
+app.use('/api/sgq/fornecedores', require('./routes/sgq_fornecedores'));
 app.use('/api/sgq', sgqRoutes);
 app.use('/api/protheus', require('./routes/protheus'));
 
@@ -267,6 +270,7 @@ app.use('/api/system-errors', require('./routes/systemErrors'));
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
 app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
 app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/romaneios'), { maxAge: '7d' }));
+app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/certificados'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 
 // Rota de Health Check

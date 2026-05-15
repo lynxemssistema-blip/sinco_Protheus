@@ -10,8 +10,8 @@ import {
     Plus,
     GraduationCap
 } from 'lucide-react';
-import ProcessMappingForm from '../components/ProcessMappingForm';
-import OrganogramBuilder from '../components/OrganogramBuilder';
+import ProcessMappingForm from '../../components/ProcessMappingForm';
+import OrganogramBuilder from '../../components/OrganogramBuilder';
 
 const SGQTraining = () => {
     const navigate = useNavigate();

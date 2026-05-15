@@ -175,53 +175,65 @@ export default function HelpDrawer() {
                                 <span className={`text-[10px] font-black uppercase tracking-widest ${categoryStyle?.text || 'text-gray-600'}`}>
                                     {helpData.category || 'Geral'}
                                 </span>
-                                <p className="mt-1.5 text-sm text-slate-700 font-medium leading-relaxed">
-                                    {content?.description || 'Nenhum detalhe adicional disponível para este item.'}
-                                </p>
+                                {!content?.document_content && (
+                                    <p className="mt-1.5 text-sm text-slate-700 font-medium leading-relaxed">
+                                        {content?.description || 'Nenhum detalhe adicional disponível para este item.'}
+                                    </p>
+                                )}
                             </div>
 
-                            {/* Steps */}
-                            {content?.steps && Array.isArray(content.steps) && content.steps.length > 0 && (
-                                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <List className="h-4 w-4 text-slate-400" />
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">
-                                            Como usar
-                                        </h3>
-                                    </div>
-                                    <ol className="space-y-3">
-                                        {content.steps.map((step, i) => (
-                                            <li key={i} className="flex gap-3 items-start">
-                                                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-black flex items-center justify-center mt-0.5 shadow-sm">
-                                                    {i + 1}
-                                                </span>
-                                                <p className="text-[13px] text-slate-600 font-medium leading-relaxed">{step}</p>
-                                            </li>
-                                        ))}
-                                    </ol>
-                                </div>
-                            )}
+                            {/* Document Content from SGQ */}
+                            {content?.document_content ? (
+                                <div 
+                                    className="sgq-document-content animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-5 rounded-xl border border-slate-200 shadow-sm"
+                                    dangerouslySetInnerHTML={{ __html: content.document_content }}
+                                />
+                            ) : (
+                                <>
+                                    {/* Steps (Legacy fallback) */}
+                                    {content?.steps && Array.isArray(content.steps) && content.steps.length > 0 && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <List className="h-4 w-4 text-slate-400" />
+                                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">
+                                                    Como usar
+                                                </h3>
+                                            </div>
+                                            <ol className="space-y-3">
+                                                {content.steps.map((step, i) => (
+                                                    <li key={i} className="flex gap-3 items-start">
+                                                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-black flex items-center justify-center mt-0.5 shadow-sm">
+                                                            {i + 1}
+                                                        </span>
+                                                        <p className="text-[13px] text-slate-600 font-medium leading-relaxed">{step}</p>
+                                                    </li>
+                                                ))}
+                                            </ol>
+                                        </div>
+                                    )}
 
-                            {/* Tips */}
-                            {content?.tips && Array.isArray(content.tips) && content.tips.length > 0 && (
-                                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 animate-in fade-in zoom-in-95 duration-500">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <Lightbulb className="h-4 w-4 text-amber-600" />
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-amber-700">
-                                            Dicas Pro
-                                        </h3>
-                                    </div>
-                                    <ul className="space-y-2.5">
-                                        {content.tips.map((tip, i) => (
-                                            <li key={i} className="flex gap-2.5 items-start">
-                                                <div className="bg-amber-400/20 p-1 rounded-md mt-0.5 shadow-xs">
-                                                    <Zap className="h-3 w-3 text-amber-600 flex-shrink-0" />
-                                                </div>
-                                                <p className="text-xs text-amber-900 font-semibold leading-relaxed">{tip}</p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
+                                    {/* Tips (Legacy fallback) */}
+                                    {content?.tips && Array.isArray(content.tips) && content.tips.length > 0 && (
+                                        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 animate-in fade-in zoom-in-95 duration-500">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <Lightbulb className="h-4 w-4 text-amber-600" />
+                                                <h3 className="text-xs font-black uppercase tracking-widest text-amber-700">
+                                                    Dicas Pro
+                                                </h3>
+                                            </div>
+                                            <ul className="space-y-2.5">
+                                                {content.tips.map((tip, i) => (
+                                                    <li key={i} className="flex gap-2.5 items-start">
+                                                        <div className="bg-amber-400/20 p-1 rounded-md mt-0.5 shadow-xs">
+                                                            <Zap className="h-3 w-3 text-amber-600 flex-shrink-0" />
+                                                        </div>
+                                                        <p className="text-xs text-amber-900 font-semibold leading-relaxed">{tip}</p>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </>
                             )}
 
                             {/* Related links */}

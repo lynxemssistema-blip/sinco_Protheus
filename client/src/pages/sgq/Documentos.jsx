@@ -19,7 +19,7 @@ import {
     Loader2,
     Trash2
 } from 'lucide-react';
-import api from '../services/api';
+import api from '../../services/api';
 import DOMPurify from 'dompurify';
 
 const SGQDocuments = () => {
@@ -446,7 +446,7 @@ const SGQDocuments = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto w-full flex justify-center pb-32 pt-8 relative">
-                    <div className="w-[210mm] min-h-[297mm] bg-white shadow-2xl border border-slate-300 relative group flex flex-col mb-12">
+                    <div className="sgq-document-content w-[210mm] min-h-[297mm] bg-white shadow-2xl border border-slate-300 relative group flex flex-col mb-12">
                         <style dangerouslySetInnerHTML={{
                             __html: `
                         .custom-quill-editor {
@@ -456,28 +456,38 @@ const SGQDocuments = () => {
                             }
                         .ql-toolbar.ql-snow {
                             position: sticky !important;
-                        top: 0 !important;
-                        z-index: 50 !important;
-                        background: #f8fafc;
-                        border: none !important;
-                        border-bottom: 1px solid #e2e8f0 !important;
-                        padding: 12px 24px !important;
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 4px;
-                            }
+                            top: 0 !important;
+                            z-index: 50 !important;
+                            background: white;
+                            border: 1px solid #e2e8f0 !important;
+                            border-radius: 8px;
+                            margin-bottom: 16px;
+                            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                            padding: 12px 24px !important;
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 4px;
+                        }
                         .ql-container.ql-snow {
                             border: none !important;
-                        flex: 1;
-                        padding: 40px 60px 80px 60px;
-                        font-family: 'Arial', sans-serif;
-                        font-size: 11pt;
-                        line-height: 1.5;
-                        color: #1e293b;
-                            }
+                            flex: 1;
+                            font-family: 'Arial', sans-serif;
+                            font-size: 11pt;
+                            line-height: 1.5;
+                            color: #1e293b;
+                            /* Indicador visual de quebra de página para impressão (linha sutil) */
+                            background-image: repeating-linear-gradient(
+                                to bottom,
+                                transparent 0mm,
+                                transparent 296.8mm,
+                                #cbd5e1 296.8mm,
+                                #cbd5e1 297mm
+                            );
+                        }
                         .ql-editor {
                             min-height: 100%;
-                            }
+                            padding: 40px 60px 80px 60px !important;
+                        }
                         .ql-editor h1 {font-family: 'Arial', sans-serif; color: #1e3a8a; font-weight: bold; }
                         .ql-editor h2 {font-family: 'Arial', sans-serif; color: #2563eb; font-weight: bold; margin-top: 1.5em; margin-bottom: 0.5em; border-left: 4px solid #2563eb; padding-left: 10px; }
                         `

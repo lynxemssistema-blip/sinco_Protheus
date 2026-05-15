@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Save, Plus, Trash2, Users, FileText, Layers, ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function SgqProcessModal({ process, onClose, onSave }) {
@@ -6,8 +7,8 @@ export default function SgqProcessModal({ process, onClose, onSave }) {
         title: process.title || '',
         description: process.description || '',
         responsables: Array.isArray(process.responsables) ? [...process.responsables] : [],
-        steps: Array.isArray(process.steps) ? [...process.steps] : [],
     });
+    const navigate = useNavigate();
 
     const handleResponsableChange = (index, val) => {
         const newArr = [...formData.responsables];
@@ -25,21 +26,7 @@ export default function SgqProcessModal({ process, onClose, onSave }) {
         setFormData({ ...formData, responsables: newArr });
     };
 
-    const handleStepChange = (index, val) => {
-        const newArr = [...formData.steps];
-        newArr[index] = val;
-        setFormData({ ...formData, steps: newArr });
-    };
-
-    const moveStep = (index, direction) => {
-        if (direction === -1 && index === 0) return;
-        if (direction === 1 && index === formData.steps.length - 1) return;
-        const newArr = [...formData.steps];
-        const temp = newArr[index];
-        newArr[index] = newArr[index + direction];
-        newArr[index + direction] = temp;
-        setFormData({ ...formData, steps: newArr });
-    };
+    // steps e tips agora são editados no módulo Documentos SGQ
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 print:hidden backdrop-blur-sm">
@@ -101,35 +88,33 @@ export default function SgqProcessModal({ process, onClose, onSave }) {
                            </div>
                        </div>
 
-                       <div>
-                           <div className="flex items-center justify-between mb-3">
-                               <label className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                    <Layers className="h-4 w-4 text-blue-600" />
-                                    Procedimento Operacional (POP)
+                       <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                           <div className="flex items-center justify-between">
+                               <label className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-indigo-600" />
+                                    Conteúdo do Manual / POP
                                </label>
-                               <button onClick={() => setFormData({...formData, steps: [...formData.steps, '']})}
-                                   className="text-xs font-semibold flex items-center gap-1 text-blue-700 hover:bg-blue-100 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors">
-                                   <Plus className="h-3 w-3" /> Adicionar Passo
-                               </button>
                            </div>
-                           {formData.steps.length === 0 && <p className="text-sm text-slate-400 italic mb-2">Nenhum procedimento documentado.</p>}
-                           <div className="space-y-3">
-                               {formData.steps.map((step, i) => (
-                                   <div key={i} className="flex gap-2 group">
-                                       <div className="pt-2.5 font-bold text-slate-400 text-sm w-6 text-right select-none">{i+1}.</div>
-                                       <textarea className="flex-1 border border-slate-300 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-blue-500 resize-none bg-white" value={step}
-                                           onChange={(e) => handleStepChange(i, e.target.value)} placeholder={`Descreva o passo ${i+1}...`} />
-                                       <div className="flex flex-col sm:flex-row gap-1 self-start">
-                                           <button onClick={() => moveStep(i, -1)} disabled={i === 0} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-100 disabled:opacity-30 transition-colors"><ArrowUp className="h-4 w-4" /></button>
-                                           <button onClick={() => moveStep(i, 1)} disabled={i === formData.steps.length - 1} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-100 disabled:opacity-30 transition-colors"><ArrowDown className="h-4 w-4" /></button>
-                                           <button onClick={() => {
-                                               const newArr = formData.steps.filter((_, idx) => idx !== i);
-                                               setFormData({...formData, steps: newArr});
-                                           }} className="p-1.5 text-red-400 group-hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-colors"><Trash2 className="h-4 w-4" /></button>
-                                       </div>
-                                   </div>
-                               ))}
-                           </div>
+                           <p className="text-sm text-indigo-700 mt-2 mb-4 leading-relaxed">
+                               Os passos e dicas de como operar esta tela agora são gerenciados como um <strong>Documento Oficial do SGQ</strong>. 
+                               Isto permite o uso de imagens, formatação rica e auxílio da Inteligência Artificial.
+                           </p>
+                           <button 
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    onClose();
+                                    navigate('/sgq/documentos');
+                                }}
+                                className="w-full bg-white border border-indigo-200 text-indigo-700 py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-bold shadow-sm hover:bg-indigo-600 hover:text-white transition-colors"
+                           >
+                               <FileText className="h-4 w-4" />
+                               Abrir Módulo de Documentos SGQ
+                           </button>
+                           {process.document_id && (
+                               <p className="text-xs text-indigo-400 mt-3 text-center font-semibold">
+                                   Documento Vinculado: ID {process.document_id}
+                               </p>
+                           )}
                        </div>
                   </div>
 

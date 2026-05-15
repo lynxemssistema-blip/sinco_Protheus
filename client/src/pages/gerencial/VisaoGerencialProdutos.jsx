@@ -278,7 +278,7 @@ const VisaoGerencialProdutos = () => {
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm xl:col-span-2">
                         <h4 className="text-sm font-bold text-slate-600 mb-3">Distribuição de Carga</h4>
                         <div className="h-16">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <BarChart data={processedData.chartData} layout="vertical">
                                     <XAxis type="number" hide />
                                     <YAxis dataKey="name" type="category" width={90} fontSize={10} tick={{fill: '#64748b'}} />
@@ -297,7 +297,7 @@ const VisaoGerencialProdutos = () => {
                         <h4 className="text-sm font-bold text-slate-600 mb-1">Status (Itens a Faturar)</h4>
                         <div className="h-36">
                             {kpiData && kpiData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                     <PieChart>
                                         <Pie
                                             data={kpiData}

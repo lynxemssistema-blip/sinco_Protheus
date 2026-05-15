@@ -16,11 +16,15 @@ const safeParse = (data) => {
 router.get('/processos', async (req, res) => {
     try {
         const { path } = req.query;
-        let query = 'SELECT * FROM app_sgq_processos';
+        let query = `
+            SELECT p.*, d.content as document_content, d.title as document_title 
+            FROM app_sgq_processos p
+            LEFT JOIN sgq_documents d ON p.document_id = d.id
+        `;
         let params = [];
 
         if (path) {
-            query += ' WHERE route_path = ?';
+            query += ' WHERE p.route_path = ?';
             params.push(path);
         }
 
@@ -46,11 +50,11 @@ router.get('/processos', async (req, res) => {
 router.put('/processos/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, steps, tips, links, responsables } = req.body;
+        const { title, description, steps, tips, links, responsables, document_id } = req.body;
 
         await db.query(`
             UPDATE app_sgq_processos 
-            SET title = ?, description = ?, steps = ?, tips = ?, links = ?, responsables = ?
+            SET title = ?, description = ?, steps = ?, tips = ?, links = ?, responsables = ?, document_id = ?
             WHERE id = ?
         `, [
             title, 
@@ -59,6 +63,7 @@ router.put('/processos/:id', async (req, res) => {
             JSON.stringify(tips || []), 
             JSON.stringify(links || []), 
             JSON.stringify(responsables || []), 
+            document_id || null,
             id
         ]);
 

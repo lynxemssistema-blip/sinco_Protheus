@@ -17,7 +17,7 @@ const FloatingAvisos = () => {
     const fetchAvisos = async () => {
         if (!signed || !user?.id) return;
         try {
-            const token = localStorage.getItem('@metalfisa:token');
+            const token = localStorage.getItem('@MetalFisa:token');
             const res = await api.get(`/avisos/nao-concluidos/${user.id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -48,7 +48,8 @@ const FloatingAvisos = () => {
         // ==== TEMPO REAL (SOCKET.IO) - lazy import para evitar Illegal constructor ====
         let socket = null;
         import('socket.io-client').then(({ io }) => {
-            socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+            const socketUrl = api.defaults.baseURL.replace(/\/api\/?$/, '');
+            socket = io(socketUrl, { transports: ['websocket', 'polling'] });
 
             socket.on('connect', () => {
                 socket.emit('join_user', user.id);
@@ -80,7 +81,7 @@ const FloatingAvisos = () => {
 
     const handleConcluir = async (idAviso) => {
         try {
-            const token = localStorage.getItem('@metalfisa:token');
+            const token = localStorage.getItem('@MetalFisa:token');
             await api.put(`/avisos/${idAviso}/concluir`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -106,7 +107,7 @@ const FloatingAvisos = () => {
     const handleReply = async (aviso) => {
         if (!replyText.trim()) return;
         try {
-            const token = localStorage.getItem('@metalfisa:token');
+            const token = localStorage.getItem('@MetalFisa:token');
             await api.post('/avisos', {
                 idRemetente: user.id,
                 idDestinatario: aviso.idRemetente,

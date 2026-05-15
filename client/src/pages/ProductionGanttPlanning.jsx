@@ -34,8 +34,8 @@ export default function ProductionGanttPlanning() {
     const fetchData = async () => {
         setLoading(true);
         setApiError(null);
+        const params = new URLSearchParams();
         try {
-            const params = new URLSearchParams();
             if (pedido) params.append('pedido_venda', pedido);
             if (filters.cliente) params.append('cliente', filters.cliente);
             if (filters.pedCliente) params.append('ped_cliente', filters.pedCliente);

@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -74,16 +74,11 @@ export const MENU_GROUPS = [
             { id: 'planejamento_estrutura_routing', label: 'Explosão BOM + Roteiro (Pull)', path: '/pcp/planejamento-estrutura-routing', icon: GitMerge },
             { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
-            { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText }
-        ]
-    },
-    {
-        id: 'pcp_setor',
-        label: 'PCP Setor',
-        items: [
+            { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText },
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
             { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
-            { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link }
+            { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link },
+            { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight }
         ]
     },
     {
@@ -142,6 +137,9 @@ export const MENU_GROUPS = [
         label: 'Qualidade',
         items: [
             { id: 'sgq', label: 'Gestão SGQ', path: '/sgq', icon: Building2 },
+            { id: 'sgq_ativos', label: 'Gestão de Ativos', path: '/sgq/ativos', icon: Wrench },
+            { id: 'sgq_caixas', label: 'Caixas de Ferramenta', path: '/sgq/caixas', icon: Package },
+            { id: 'sgq_romaneios', label: 'Romaneios SGQ', path: '/sgq/romaneios', icon: Truck },
             { id: 'sgq_mapeamento', label: 'Mapeamento de Processos', path: '/sgq/mapeamento-processos', icon: Network },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
             { id: 'ppaps_buscar_produto', label: 'Buscar Produto (PPAPs)', path: '/ppaps/buscar-produto', icon: Database },
@@ -154,6 +152,7 @@ export const MENU_GROUPS = [
         items: [
             { id: 'rh_vagas', label: 'Gestão de Vagas', path: '/rh/vagas', icon: ClipboardList },
             { id: 'rh_curriculos', label: 'Análise de Currículos (IA)', path: '/rh/curriculos', icon: FileText },
+            { id: 'rh_offboarding', label: 'Offboarding (Custódia)', path: '/rh/offboarding', icon: UserMinus },
             { id: 'sgq_cargos_funcoes', label: 'Cargos e Funções', path: '/sgq/cargos-funcoes', icon: Users }
         ]
     },

@@ -49,8 +49,8 @@ Em caso de problemas:
 
 ---
 
-**Versão**: 1.5.0 (Configuração de Apontamento Multi-Operação)  
-**Build**: 12/05/2026 07:40
+**Versão**: 1.5.1 (Estabilização Fila-Dependências e Ajuda Contextual)  
+**Build**: 15/05/2026 10:18
 
 **Comando de Publicação no servidor**
 scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa -r ./linux-deployment/* sinco@192.168.1.77:/var/www/metalfisa/

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import api from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import PCPMetalConfig from './PCPMetalConfig';
 import EmailClient from '../components/EmailClient';
 import MonitoringDashboard from '../components/MonitoringDashboard';
+import DBAMonitoringTab from '../components/DBAMonitoringTab';
 import ErrorListTab from '../components/ErrorListTab';
 
 export default function Settings() {
@@ -28,7 +29,7 @@ export default function Settings() {
         { id: 'errors', label: 'Lista de Erros', icon: Bug },
         { id: 'email', label: 'E-mail Corporativo', icon: Mail },
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
-        { id: 'monitoring', label: 'Monitoramento', icon: Activity },
+        { id: 'monitoring', label: 'Monitoramento do Sistema', icon: Activity },
     ];
 
     const formatPhone = (val) => {
@@ -650,7 +651,10 @@ export default function Settings() {
 
                 {/* MONITORING TAB */}
                 {activeTab === 'monitoring' && (
-                    <MonitoringDashboard />
+                    <div className="space-y-6">
+                        <MonitoringDashboard />
+                        <DBAMonitoringTab />
+                    </div>
                 )}
 
                 {/* GENERAL TAB */}
@@ -1033,6 +1037,47 @@ export default function Settings() {
                                 <div className="mt-4 flex gap-2">
                                     <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_maintenance_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
                                         Status: {companyForm.general_config?.module_maintenance_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            {/* Módulo SGQ */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Qualidade (SGQ)</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Controle de ativos, certificados de calibração, manuais e documentações de treinamento.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={loadingCompany}
+                                        onClick={async () => {
+                                            const newValue = !companyForm.general_config?.module_sgq_active;
+                                            const newGeneralConfig = { ...companyForm.general_config, module_sgq_active: newValue };
+                                            try {
+                                                setLoadingCompany(true);
+                                                await updateGeneralSettings({ general_config: newGeneralConfig });
+                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
+                                                    window.location.reload();
+                                                }
+                                            } catch (err) {
+                                                alert('Erro ao alterar status do módulo: ' + err.message);
+                                            } finally {
+                                                setLoadingCompany(false);
+                                            }
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_sgq_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        title={companyForm.general_config?.module_sgq_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_sgq_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-4 flex gap-2">
+                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_sgq_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+                                        Status: {companyForm.general_config?.module_sgq_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
                                     </span>
                                 </div>
                             </div>

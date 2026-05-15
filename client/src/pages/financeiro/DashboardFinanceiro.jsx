@@ -350,7 +350,7 @@ const DashboardFinanceiro = () => {
                             <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
                                 <Calendar className="w-4 h-4 text-indigo-500" /> Projeção de Pagamentos por Mês
                             </h3>
-                            <ResponsiveContainer width="100%" height={250}>
+                            <ResponsiveContainer width="100%" height={250} minWidth={1} minHeight={1}>
                                 <BarChart data={chartTimeline} margin={{ bottom: 20 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -368,7 +368,7 @@ const DashboardFinanceiro = () => {
                                 <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                                     <BarChart2 className="w-4 h-4 text-indigo-500" /> Por Status (Saldo)
                                 </h3>
-                                <ResponsiveContainer width="100%" height={200}>
+                                <ResponsiveContainer width="100%" height={200} minWidth={1} minHeight={1}>
                                     <PieChart>
                                         <Pie data={chartStatus} dataKey="value" nameKey="name"
                                             cx="50%" cy="50%" outerRadius={70} innerRadius={40}
@@ -390,7 +390,7 @@ const DashboardFinanceiro = () => {
                                 <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                                     <BarChart2 className="w-4 h-4 text-indigo-500" /> Top Naturezas (Saldo Aberto)
                                 </h3>
-                                <ResponsiveContainer width="100%" height={200}>
+                                <ResponsiveContainer width="100%" height={200} minWidth={1} minHeight={1}>
                                     <BarChart data={chartNatureza} layout="vertical" margin={{ left: 0, right: 8 }}>
                                         <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={formatMoneyShort} width={60} />
                                         <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100}
@@ -406,7 +406,7 @@ const DashboardFinanceiro = () => {
                                 <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                                     <BarChart2 className="w-4 h-4 text-indigo-500" /> Top Fornecedores (Saldo Aberto)
                                 </h3>
-                                <ResponsiveContainer width="100%" height={200}>
+                                <ResponsiveContainer width="100%" height={200} minWidth={1} minHeight={1}>
                                     <BarChart data={chartFornecedor} layout="vertical" margin={{ left: 0, right: 8 }}>
                                         <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={formatMoneyShort} width={60} />
                                         <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={100}

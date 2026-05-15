@@ -741,6 +741,50 @@ router.post('/processos/:id/apontar', async (req, res) => {
 
         await connection.beginTransaction();
 
+        // ------------------------------------------------------------------------------------------
+        // [SGQ - GESTÃO DE ATIVOS] - BLOQUEIO DE CALIBRAÇÃO VENCIDA
+        // ------------------------------------------------------------------------------------------
+        try {
+            // Verifica se o módulo SGQ está ativo no general_config
+            const [configRows] = await connection.query(`SELECT general_config FROM app_company_settings WHERE id = 1 LIMIT 1`);
+            let sgqActive = false;
+            
+            if (configRows.length > 0 && configRows[0].general_config) {
+                try {
+                    const parsed = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+                    sgqActive = String(parsed.sgq_module_active) === 'true';
+                } catch(e) { }
+            }
+
+            if (sgqActive) {
+                const [userCheck] = await connection.query(`SELECT idUsuario FROM usuario WHERE Login = ? LIMIT 1`, [usuario]);
+                if (userCheck.length > 0) {
+                    const idUsuario = userCheck[0].idUsuario;
+                    const [expiredAssets] = await connection.query(`
+                        SELECT a.name, a.patrimonio 
+                        FROM sgq_assets a
+                        JOIN sgq_asset_toolbox t ON a.id = t.asset_id
+                        JOIN sgq_toolboxes tb ON t.toolbox_id = tb.id
+                        WHERE tb.employee_cpf = ?
+                          AND a.calibration_next_date IS NOT NULL 
+                          AND a.calibration_next_date < CURDATE()
+                    `, [idUsuario]);
+
+                    if (expiredAssets && expiredAssets.length > 0) {
+                        const expiredNames = expiredAssets.map(a => a.name).join(', ');
+                        await connection.rollback();
+                        return res.status(403).json({ 
+                            error: `[SGQ] Apontamento bloqueado: Você possui instrumentos com calibração vencida (${expiredNames}). Procure a Qualidade para regularizar.` 
+                        });
+                    }
+                }
+            }
+        } catch (sgqError) {
+            console.error('[SGQ BLOQUEIO] Erro ao verificar calibração:', sgqError);
+            // Non-blocking error, we log and continue if SGQ check fails
+        }
+        // ------------------------------------------------------------------------------------------
+
         const [procRows] = await connection.query(
             `
             SELECT

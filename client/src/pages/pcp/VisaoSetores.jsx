@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     PieChart, Loader2, RefreshCw,
-    Search, TrendingUp, ExternalLink
+    Search, TrendingUp, ExternalLink, MessageCircle, Mail
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -98,8 +98,85 @@ export default function VisaoSetores() {
         return { setoresHeaders: headers, pedidosRows: rows };
     }, [data]);
 
+    // ─── Notificações (WhatsApp e Email) ─────────────────────────────────────────────
+    const [modalNotify, setModalNotify] = useState(false);
+    const [notifyCanal, setNotifyCanal] = useState('whatsapp');
+    const [sending, setSending] = useState(false);
+
+    const handleNotify = async (tipo) => {
+        setModalNotify(false);
+        setSending(true);
+        toast.info(`Iniciando disparos via ${notifyCanal}...`, { autoClose: 2000 });
+        try {
+            const payload = { filters, tipo, canal: notifyCanal };
+            if (tipo === 'me') {
+                const meuUserStr = localStorage.getItem('@metalfisa:user');
+                if (meuUserStr) {
+                    const u = JSON.parse(meuUserStr);
+                    payload.telefone = u.telefone;
+                    payload.email = u.email;
+                    payload.nome = u.nome || u.NomeCompleto || u.login;
+                    if (notifyCanal === 'whatsapp' && !payload.telefone) {
+                        toast.error('Você não tem um celular cadastrado no perfil.');
+                        setSending(false);
+                        return;
+                    }
+                    if (notifyCanal === 'email' && !payload.email) {
+                        toast.error('Você não tem um e-mail cadastrado no perfil.');
+                        setSending(false);
+                        return;
+                    }
+                }
+            }
+
+            const res = await api.post('/pcp-setores/visao/notify', payload);
+            if (res.data.success) {
+                toast.success(res.data.message || 'Relatórios enviados!');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || 'Erro ao enviar relatórios.');
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const openModal = (canal) => {
+        setNotifyCanal(canal);
+        setModalNotify(true);
+    };
+
     return (
         <div className="bg-slate-50 h-screen overflow-hidden p-4 md:p-6 font-sans flex flex-col">
+            {/* MODAL NOTIFICAR */}
+            {modalNotify && (
+                <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                {notifyCanal === 'whatsapp' ? <MessageCircle className="w-5 h-5 text-emerald-500" /> : <Mail className="w-5 h-5 text-blue-500" />}
+                                Enviar Relatório ({notifyCanal === 'whatsapp' ? 'WhatsApp' : 'E-mail'})
+                            </h3>
+                            <button onClick={() => setModalNotify(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <button onClick={() => handleNotify('responsibles')} className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors group">
+                                <div className="font-bold text-slate-800 group-hover:text-emerald-700">Para cada responsável</div>
+                                <div className="text-xs text-slate-500 mt-1">Cada responsável receberá apenas o resumo do seu próprio setor.</div>
+                            </button>
+                            <button onClick={() => handleNotify('all')} className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors group">
+                                <div className="font-bold text-slate-800 group-hover:text-emerald-700">Resumo Geral para Todos</div>
+                                <div className="text-xs text-slate-500 mt-1">Todos os responsáveis recebem o relatório completo de todos os setores.</div>
+                            </button>
+                            <button onClick={() => handleNotify('me')} className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group">
+                                <div className="font-bold text-slate-800 group-hover:text-blue-700">Apenas para mim</div>
+                                <div className="text-xs text-slate-500 mt-1">Enviar o resumo geral apenas para o meu próprio {notifyCanal === 'whatsapp' ? 'WhatsApp' : 'E-mail'}.</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col space-y-5 min-h-0">
 
                 {/* Header */}
@@ -111,14 +188,32 @@ export default function VisaoSetores() {
                         </h1>
                         <p className="text-xs text-slate-500 mt-0.5">Visão matricial da evolução dos pedidos dentro de cada grupo produtivo</p>
                     </div>
-                    <button
-                        onClick={load}
-                        disabled={loading}
-                        className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 text-sm font-semibold px-4 py-2 rounded-xl transition-colors shadow-sm"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                        Atualizar
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => openModal('whatsapp')}
+                            disabled={loading || sending}
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors shadow-sm disabled:opacity-60"
+                        >
+                            {sending && notifyCanal === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+                            WhatsApp
+                        </button>
+                        <button
+                            onClick={() => openModal('email')}
+                            disabled={loading || sending}
+                            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-blue-50 text-sm font-semibold px-4 py-2 rounded-xl transition-colors shadow-sm disabled:opacity-60"
+                        >
+                            {sending && notifyCanal === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                            E-mail
+                        </button>
+                        <button
+                            onClick={load}
+                            disabled={loading || sending}
+                            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 text-sm font-semibold px-4 py-2 rounded-xl transition-colors shadow-sm"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                            Atualizar
+                        </button>
+                    </div>
                 </div>
 
                 {/* Filtros */}

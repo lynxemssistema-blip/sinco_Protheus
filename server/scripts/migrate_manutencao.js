@@ -34,6 +34,7 @@ async function migrate() {
                 numero_serie          VARCHAR(100),
                 tag_identificacao     VARCHAR(50),
                 tipo                  VARCHAR(20)  DEFAULT 'MAQUINA',
+                propriedade           VARCHAR(50)  DEFAULT 'PROPRIO',
                 id_categoria          INT,
                 id_setor              INT,
                 status                VARCHAR(20)  DEFAULT 'ATIVO',
@@ -42,6 +43,7 @@ async function migrate() {
                 documentos_pdf        LONGTEXT,
                 checklists_vinculados LONGTEXT,
                 operadores_vinculados LONGTEXT,
+                dados_aluguel         LONGTEXT,
                 criado_em             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8
         `);
@@ -50,6 +52,8 @@ async function migrate() {
         await addCol("ALTER TABLE pcp_manutencao_maquinas ADD COLUMN documentos_pdf LONGTEXT");
         await addCol("ALTER TABLE pcp_manutencao_maquinas ADD COLUMN checklists_vinculados LONGTEXT");
         await addCol("ALTER TABLE pcp_manutencao_maquinas ADD COLUMN operadores_vinculados LONGTEXT");
+        await addCol("ALTER TABLE pcp_manutencao_maquinas ADD COLUMN propriedade VARCHAR(50) DEFAULT 'PROPRIO'");
+        await addCol("ALTER TABLE pcp_manutencao_maquinas ADD COLUMN dados_aluguel LONGTEXT");
         console.log("✓ pcp_manutencao_maquinas");
 
         // ── 3. MODELOS DE CHECKLIST ─────────────────────────────────
@@ -59,12 +63,18 @@ async function migrate() {
                 nome        VARCHAR(150) NOT NULL,
                 observacoes TEXT,
                 tipo        VARCHAR(50)  DEFAULT 'DIARIO',
+                frequencia_dia VARCHAR(50) DEFAULT NULL,
+                turnos      LONGTEXT,
+                responsavel VARCHAR(50)  DEFAULT 'OPERADOR',
                 status      VARCHAR(20)  DEFAULT 'ATIVO',
                 itens       LONGTEXT NOT NULL,
                 criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8
         `);
         await addCol("ALTER TABLE pcp_manutencao_checklists_modelos ADD COLUMN observacoes TEXT");
+        await addCol("ALTER TABLE pcp_manutencao_checklists_modelos ADD COLUMN frequencia_dia VARCHAR(50) DEFAULT NULL");
+        await addCol("ALTER TABLE pcp_manutencao_checklists_modelos ADD COLUMN turnos LONGTEXT");
+        await addCol("ALTER TABLE pcp_manutencao_checklists_modelos ADD COLUMN responsavel VARCHAR(50) DEFAULT 'OPERADOR'");
         console.log("✓ pcp_manutencao_checklists_modelos");
 
         // ── 4. OPERADORES ───────────────────────────────────────────
@@ -93,6 +103,7 @@ async function migrate() {
         `);
         await addCol("ALTER TABLE pcp_manutencao_checklists_diarios ADD COLUMN id_modelo_checklist INT");
         await addCol("ALTER TABLE pcp_manutencao_checklists_diarios MODIFY COLUMN id_operador INT");
+        await addCol("ALTER TABLE pcp_manutencao_checklists_diarios ADD COLUMN turno VARCHAR(50) DEFAULT NULL");
         console.log("✓ pcp_manutencao_checklists_diarios");
 
         // ── 6. ATIVIDADES ───────────────────────────────────────────

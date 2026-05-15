@@ -141,8 +141,7 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
         setLoading(true);
         try {
             const resU = await api.get('/users');
-            const validUsers = resU.data.filter(u => u.aprovado === 1 && u.email && u.telefone);
-            setUsuarios(validUsers);
+            setUsuarios(resU.data);
 
             const resR = await api.get(`/pcp-setores/${setor.id}/responsaveis`);
             setVinculos(resR.data);
@@ -218,7 +217,7 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
                                     <div key={v.vinculo_id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
                                         <div>
                                             <p className="text-sm font-bold text-slate-800">{v.NomeCompleto}</p>
-                                            <p className="text-xs text-slate-500">{v.email} • {v.telefone}</p>
+                                            <p className="text-xs text-slate-500">{v.email || 'Sem e-mail'} • {v.telefone || 'Sem telefone'}</p>
                                         </div>
                                         <button onClick={() => handleRemove(v.vinculo_id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remover responsável">
                                             <Trash2 className="w-4 h-4" />
@@ -250,7 +249,7 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
                                         <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50">
                                             <div className="min-w-0 pr-2">
                                                 <p className="text-sm font-semibold text-slate-800 truncate">{u.NomeCompleto}</p>
-                                                <p className="text-[10px] text-slate-500 truncate">{u.email} • {u.telefone}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{u.email || 'Sem e-mail'} • {u.telefone || 'Sem telefone'}</p>
                                             </div>
                                             <button 
                                                 onClick={() => handleAdd(u.idUsuario)}
@@ -264,9 +263,6 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
                                 )}
                             </div>
                         )}
-                        <p className="text-[10px] text-slate-500 mt-2">
-                            Apenas usuários com <strong>Celular</strong> e <strong>E-mail</strong> cadastrados no sistema podem ser vinculados.
-                        </p>
                     </div>
                 </div>
             </div>

@@ -576,5 +576,12 @@ export const reportSystemError = async (moduleName, error, filters = {}) => {
 
 export const getOpRoteiroSaldo = (op, item, sequencia, produto) => api.get('/producao/op-roteiro-saldo', { params: { op, item, sequencia, produto } }).then(res => res.data);
 
+// SGQ Romaneios
+export const getSgqAssets = () => api.get('/sgq/assets').then(res => res.data);
+export const getSgqRomaneios = () => api.get('/sgq/romaneios').then(res => res.data);
+export const getSgqRomaneioDetails = (id) => api.get(`/sgq/romaneios/${id}`).then(res => res.data);
+export const createSgqRomaneio = (data) => api.post('/sgq/romaneios', data).then(res => res.data);
+export const markSgqRomaneioReturned = (id) => api.put(`/sgq/romaneios/${id}/retorno`).then(res => res.data);
+
 export { api };
 export default api;

@@ -3,7 +3,7 @@ import { X, Save, ArrowRight, User, Box, FileText, CheckSquare, Target } from 'l
 import './ProcessMappingForm.css'; // We'll create simple styles
 
 const generateId = () => {
-    return (typeof crypto !== 'undefined' && crypto.randomUUID) 
+    return (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') 
         ? crypto.randomUUID() 
         : Date.now().toString(36) + Math.random().toString(36).substring(2);
 };

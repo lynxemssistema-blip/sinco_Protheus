@@ -302,7 +302,7 @@ const FluxoCaixa = () => {
                         <TrendingUp className="w-5 h-5 text-indigo-600"/> Entradas vs Saídas Mensais
                     </h3>
                     <div className="h-[320px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                             <BarChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
                                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8',fontSize:12}} dy={10}/>
@@ -320,7 +320,7 @@ const FluxoCaixa = () => {
                         <LineChartIcon className="w-5 h-5 text-indigo-600"/> Evolução do Saldo Acumulado
                     </h3>
                     <div className="h-[320px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                             <AreaChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
                                 <defs>
                                     <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">

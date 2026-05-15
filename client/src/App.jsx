@@ -41,13 +41,18 @@ const PurchaseRequests = React.lazy(() => import('./pages/PurchaseRequests'));
 const PurchaseOrdersWithClientPO = React.lazy(() => import('./pages/PurchaseOrdersWithClientPO'));
 const PurchaseFlowToInvoice = React.lazy(() => import('./pages/PurchaseFlowToInvoice'));
 const Reports = React.lazy(() => import('./pages/Reports'));
-const SGQDashboard = React.lazy(() => import('./pages/SGQDashboard'));
-const SGQTraining = React.lazy(() => import('./pages/SGQTraining'));
-const SGQDocuments = React.lazy(() => import('./pages/SGQDocuments'));
+const SGQDashboard = React.lazy(() => import('./pages/sgq/Dashboard'));
+const SGQAtivos = React.lazy(() => import('./pages/sgq/GestaoAtivos'));
+const SGQCaixas = React.lazy(() => import('./pages/sgq/CaixasFerramenta'));
+const SGQRomaneios = React.lazy(() => import('./pages/sgq/Romaneios'));
+const SGQTraining = React.lazy(() => import('./pages/sgq/Treinamentos'));
+const SGQDocuments = React.lazy(() => import('./pages/sgq/Documentos'));
 const MapeamentoProcessos = React.lazy(() => import('./pages/sgq/MapeamentoProcessos'));
 const CargosFuncoes = React.lazy(() => import('./pages/sgq/CargosFuncoes'));
+const ControleCalibracao = React.lazy(() => import('./pages/sgq/ControleCalibracao'));
 const CurriculosAnalyzer = React.lazy(() => import('./pages/rh/CurriculosAnalyzer'));
 const VagasManager = React.lazy(() => import('./pages/rh/VagasManager'));
+const OffboardingRH = React.lazy(() => import('./pages/rh/OffboardingRH'));
 const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const MaterialManagementPage = React.lazy(() => import('./pages/MaterialManagementPage'));
 const WhereUsedPage = React.lazy(() => import('./pages/WhereUsedPage'));
@@ -90,6 +95,7 @@ const SetoresCadastro = React.lazy(() => import('./pages/pcp/SetoresCadastro'));
 const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
 const VisaoSetores = React.lazy(() => import('./pages/pcp/VisaoSetores'));
 const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
+const PcpFilaDependencias = React.lazy(() => import('./pages/pcp/PcpFilaDependencias'));
 
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
@@ -302,6 +308,11 @@ function App() {
                                                 <CurriculosAnalyzer />
                                             </Layout>
                                         } />
+                                        <Route path="/rh/offboarding" element={
+                                            <Layout fullWidth={true}>
+                                                <OffboardingRH />
+                                            </Layout>
+                                        } />
                                         <Route path="/engenharia/pedidos" element={
                                             <Layout fullWidth={true}>
                                                 <EngineeringOrdersPage />
@@ -402,6 +413,11 @@ function App() {
                                                 <Settings />
                                             </Layout>
                                         } />
+                                        <Route path="/admin/protheus-estudo" element={
+                                            <Layout fullWidth={true}>
+                                                <ProtheusOverview />
+                                            </Layout>
+                                        } />
                                         <Route path="/producao/relatorios" element={
                                             <Layout>
                                                 <Reports />
@@ -415,6 +431,21 @@ function App() {
                                         <Route path="/sgq" element={
                                             <Layout>
                                                 <SGQDashboard />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sgq/ativos" element={
+                                            <Layout fullWidth={true}>
+                                                <SGQAtivos />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sgq/caixas" element={
+                                            <Layout fullWidth={true}>
+                                                <SGQCaixas />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sgq/romaneios" element={
+                                            <Layout fullWidth={true}>
+                                                <SGQRomaneios />
                                             </Layout>
                                         } />
                                         <Route path="/sgq/mapeamento-processos" element={
@@ -446,8 +477,8 @@ function App() {
                                             </Layout>
                                         } />
                                         <Route path="/sgq/calibracoes" element={
-                                            <Layout>
-                                                <div className="p-8 text-center text-gray-500">Módulo em desenvolvimento: Calibrações</div>
+                                            <Layout fullWidth={true}>
+                                                <ControleCalibracao />
                                             </Layout>
                                         } />
                                         <Route path="/sgq/indicadores" element={
@@ -671,6 +702,11 @@ function App() {
                                         <Route path="/pcp/curva-s" element={
                                             <Layout fullWidth={true}>
                                                 <CurvaSPedido />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/fila-dependencias" element={
+                                            <Layout fullWidth={true}>
+                                                <PcpFilaDependencias />
                                             </Layout>
                                         } />
                                         {/* PPAPs Routes */}

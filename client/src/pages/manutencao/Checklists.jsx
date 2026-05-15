@@ -17,6 +17,9 @@ export default function ManutencaoChecklists() {
         nome: '',
         observacoes: '',
         tipo: 'DIARIO',
+        frequencia_dia: '',
+        turnos: [],
+        responsavel: 'OPERADOR',
         status: 'ATIVO',
         itens: []
     });
@@ -46,6 +49,9 @@ export default function ManutencaoChecklists() {
                 nome: modelo.nome,
                 observacoes: modelo.observacoes || '',
                 tipo: modelo.tipo,
+                frequencia_dia: modelo.frequencia_dia || '',
+                turnos: modelo.turnos || [],
+                responsavel: modelo.responsavel || 'OPERADOR',
                 status: modelo.status,
                 itens: modelo.itens || []
             });
@@ -55,6 +61,9 @@ export default function ManutencaoChecklists() {
                 nome: '',
                 observacoes: '',
                 tipo: 'DIARIO',
+                frequencia_dia: '',
+                turnos: [],
+                responsavel: 'OPERADOR',
                 status: 'ATIVO',
                 itens: []
             });
@@ -228,18 +237,102 @@ export default function ManutencaoChecklists() {
                                         />
                                     </div>
                                     <div className="col-span-3 md:col-span-1">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Responsável</label>
+                                        <select 
+                                            value={formData.responsavel}
+                                            onChange={e => setFormData({...formData, responsavel: e.target.value})}
+                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 bg-white"
+                                        >
+                                            <option value="OPERADOR">Operador</option>
+                                            <option value="TECNICO">Técnico de Manutenção</option>
+                                        </select>
+                                    </div>
+                                    <div className="col-span-3 md:col-span-1">
                                         <label className="block text-sm font-semibold text-slate-700 mb-1">Frequência</label>
                                         <select 
                                             value={formData.tipo}
-                                            onChange={e => setFormData({...formData, tipo: e.target.value})}
-                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
+                                            onChange={e => setFormData({...formData, tipo: e.target.value, turnos: [], frequencia_dia: ''})}
+                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 bg-white"
                                         >
                                             <option value="DIARIO">Diário</option>
                                             <option value="SEMANAL">Semanal</option>
+                                            <option value="QUINZENAL">Quinzenal</option>
                                             <option value="MENSAL">Mensal</option>
+                                            <option value="TRIMESTRAL">Trimestral</option>
+                                            <option value="ANUAL">Anual</option>
                                             <option value="PREVENTIVA">Preventiva (Agendada)</option>
                                         </select>
                                     </div>
+
+                                    {formData.tipo === 'SEMANAL' && (
+                                        <div className="col-span-3 md:col-span-2">
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Dia da Semana</label>
+                                            <select
+                                                value={formData.frequencia_dia}
+                                                onChange={e => setFormData({...formData, frequencia_dia: e.target.value})}
+                                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 bg-white"
+                                            >
+                                                <option value="">Selecione o Dia...</option>
+                                                <option value="SEGUNDA">Segunda-feira</option>
+                                                <option value="TERCA">Terça-feira</option>
+                                                <option value="QUARTA">Quarta-feira</option>
+                                                <option value="QUINTA">Quinta-feira</option>
+                                                <option value="SEXTA">Sexta-feira</option>
+                                                <option value="SABADO">Sábado</option>
+                                                <option value="DOMINGO">Domingo</option>
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {['MENSAL', 'QUINZENAL', 'TRIMESTRAL', 'ANUAL'].includes(formData.tipo) && (
+                                        <div className="col-span-3 md:col-span-2">
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                                {formData.tipo === 'MENSAL' ? 'Dia do Mês (1-31)' : 
+                                                 formData.tipo === 'QUINZENAL' ? 'Dias da Quinzena (ex: 15, 30)' : 
+                                                 formData.tipo === 'TRIMESTRAL' ? 'Dias/Meses Trimestrais (ex: 15/01, 15/04, 15/07, 15/10)' : 
+                                                 'Dia e Mês Anual (ex: 15/05)'}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={formData.frequencia_dia}
+                                                onChange={e => setFormData({...formData, frequencia_dia: e.target.value})}
+                                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
+                                                placeholder={
+                                                    formData.tipo === 'MENSAL' ? "Ex: 10" : 
+                                                    formData.tipo === 'QUINZENAL' ? "Ex: 15, 30" : 
+                                                    formData.tipo === 'TRIMESTRAL' ? "Ex: 10/03, 10/06, 10/09, 10/12" : 
+                                                    "Ex: 20/11"
+                                                }
+                                            />
+                                        </div>
+                                    )}
+
+                                    {formData.tipo === 'DIARIO' && (
+                                        <div className="col-span-3 md:col-span-2">
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Turnos de Execução (Opcional)</label>
+                                            <div className="flex flex-wrap gap-3 mt-2">
+                                                {['COMERCIAL', 'MANHA', 'TARDE', 'NOITE'].map(turno => (
+                                                    <label key={turno} className="flex items-center gap-2 cursor-pointer text-sm">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={formData.turnos.includes(turno)}
+                                                            onChange={e => {
+                                                                if(e.target.checked) {
+                                                                    setFormData({...formData, turnos: [...formData.turnos, turno]});
+                                                                } else {
+                                                                    setFormData({...formData, turnos: formData.turnos.filter(t => t !== turno)});
+                                                                }
+                                                            }}
+                                                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        {turno === 'COMERCIAL' ? 'Comercial' : turno === 'MANHA' ? 'Manhã' : turno === 'TARDE' ? 'Tarde' : 'Noite'}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-1">Se nenhum for selecionado, será exigido uma vez por dia independente do turno.</p>
+                                        </div>
+                                    )}
+
                                     <div className="col-span-3">
                                         <label className="block text-sm font-semibold text-slate-700 mb-1">Observações / Instruções Gerais</label>
                                         <textarea
