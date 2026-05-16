@@ -1,0 +1,30 @@
+2026-05-15T21:36:53.157Z | ERRO 500 LOGIN | {"login":"edson","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+
+2026-05-15T21:37:01.206Z | ERRO 500 LOGIN | {"login":"edson","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+
+2026-05-15T21:39:37.042Z | ERRO 500 LOGIN | {"login":"EDSON","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+
+2026-05-15T21:39:49.209Z | ERRO 500 LOGIN | {"login":"Edson","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+
+2026-05-15T21:40:40.658Z | ERRO 500 LOGIN | {"login":"Edson","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+
+2026-05-15T21:40:45.064Z | ERRO 500 LOGIN | {"login":"Edson","senha":"edsonmetal"} | Data too long for column 'Senha' at row 1
+Error: Data too long for column 'Senha' at row 1
+    at PromiseConnection.execute (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:60:34
+

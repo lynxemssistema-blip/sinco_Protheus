@@ -1,0 +1,31 @@
+{
+  "dependencies": {
+    "@google/genai": "^1.46.0",
+    "@google/generative-ai": "^0.24.1",
+    "archiver": "^7.0.1",
+    "axios": "^1.13.4",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "docx": "^9.5.3",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "form-data": "^4.0.5",
+    "imap-simple": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mailparser": "^3.9.4",
+    "mammoth": "^1.11.0",
+    "multer": "^2.1.1",
+    "mysql2": "^3.16.0",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.3",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.1",
+    "pdfmake": "^0.3.3",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.3",
+    "ssh2": "^1.17.0",
+    "systeminformation": "^5.31.5",
+    "xlsx": "^0.18.5"
+  }
+}

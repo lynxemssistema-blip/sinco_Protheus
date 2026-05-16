@@ -1,70 +1,66 @@
 const mysqlPool = require('../services/mysqlService');
 
 /**
- * Middleware para validar permissões de acesso (RBAC).
- * 
- * @param {string} pageId - ID do módulo/página (ex: 'ROMANEIO', 'ENG_ORDERS')
- * @param {string} requiredAction - Ação requerida: 'view', 'create', 'edit', 'delete'
+ * Middleware para validar permissões de acesso baseadas em RBAC
+ * @param {string} pageId - ID da página (ex: 'users', 'pcp', 'faturamento')
+ * @param {string} action - Ação solicitada: 'view', 'create', 'edit', 'delete'
  */
-const requirePermission = (pageId, requiredAction = 'view') => {
+const requirePermission = (pageId, action = 'view') => {
     return async (req, res, next) => {
         try {
-            const user = req.user;
-            
-            // Requer que o usuário já tenha passado pelo authenticateToken
+            const user = req.user; // Obtido pelo middleware authenticateToken
             if (!user) {
-                return res.status(401).json({ error: 'Usuário não autenticado no middleware RBAC' });
+                return res.status(401).json({ error: 'Usuário não autenticado' });
             }
 
-            // Administradores (Tipo 'A') têm acesso total, ignoram checagem de banco
-            // JWT payload usa o campo "tipo" (não TipoUsuario)
-            const tipoUsuario = (user.tipo || user.TipoUsuario || '').toString().trim().toUpperCase();
-            if (tipoUsuario === 'A' || tipoUsuario === 'SA') {
+            const tipo = (user.tipo || '').trim();
+
+            // Regra hardcoded: A (Admin) e SA (SuperAdmin) têm acesso total
+            if (tipo === 'A' || tipo === 'SA') {
                 return next();
             }
 
-            const userId = user.id || user.idUsuario;
-
-            if (!userId) {
-                return res.status(401).json({ error: 'User ID não pôde ser identificado' });
+            // Consultar configurações da empresa para Perfis Customizados isAdmin
+            const [companyRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings LIMIT 1');
+            if (companyRows.length > 0) {
+                try {
+                    let gc = companyRows[0].general_config;
+                    if (typeof gc === 'string') gc = JSON.parse(gc);
+                    if (gc && gc.custom_profiles) {
+                        const profile = gc.custom_profiles.find(p => p.code === tipo);
+                        if (profile && profile.isAdmin) {
+                            return next();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[RBAC] Erro ao parsear general_config', e);
+                }
             }
 
-            // Verifica as permissões do usuário comum no DB
-            let rows = [];
-            try {
-                [rows] = await mysqlPool.query(
-                    `SELECT can_view, can_create, can_edit, can_delete
-                     FROM app_user_permissions
-                     WHERE user_id = ? AND page_id = ?`,
-                    [userId, pageId]
-                );
-            } catch (dbError) {
-                // MySQL indisponível ou tabela inexistente → permite por padrão
-                console.warn(`⚠️ [RBAC] Falha ao consultar permissões (${pageId}/${requiredAction}): ${dbError.message} — permitindo por padrão`);
-                return next();
+            // Consultar permissão explícita na tabela app_user_permissions
+            const [permRows] = await mysqlPool.query(
+                'SELECT can_view, can_create, can_edit, can_delete FROM app_user_permissions WHERE user_id = ? AND page_id = ?',
+                [user.id, pageId]
+            );
+
+            if (permRows.length === 0) {
+                return res.status(403).json({ error: `Acesso negado: Nenhuma permissão configurada para a página '${pageId}'.` });
             }
 
-            // Sem linha cadastrada = política "default allow"
-            // Só bloqueia se houver entrada explícita com can_X = 0/false
-            if (rows.length === 0) {
-                return next();
-            }
+            const perm = permRows[0];
+            const hasAccess = !!perm[`can_${action}`];
 
-            const perm = rows[0];
-            const key = `can_${requiredAction}`;
-
-            if (perm[key] === 0 || perm[key] === false) {
-                return res.status(403).json({
-                    error: `Acesso negado: você não possui permissão para realizar esta ação (${requiredAction}) neste módulo.`
+            if (!hasAccess) {
+                return res.status(403).json({ 
+                    error: `Acesso negado: Você não possui privilégios de '${action}' para a página '${pageId}'.` 
                 });
             }
 
+            // Acesso liberado
             next();
-
         } catch (error) {
-            console.error(`Erro no middleware RBAC para modulo ${pageId}:`, error);
-            // Erro inesperado → permite para não bloquear o sistema
-            next();
+            console.error('[RBAC] Erro no middleware de autorização:', error);
+            res.status(500).json({ error: 'Erro interno ao validar permissões.' });
         }
     };
 };

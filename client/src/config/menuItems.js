@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -142,6 +142,7 @@ export const MENU_GROUPS = [
             { id: 'sgq_romaneios', label: 'Romaneios SGQ', path: '/sgq/romaneios', icon: Truck },
             { id: 'sgq_mapeamento', label: 'Mapeamento de Processos', path: '/sgq/mapeamento-processos', icon: Network },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
+            { id: 'sgq_rncs', label: 'Gestão de RNCs', path: '/sgq/gestao-rncs', icon: AlertTriangle },
             { id: 'ppaps_buscar_produto', label: 'Buscar Produto (PPAPs)', path: '/ppaps/buscar-produto', icon: Database },
             { id: 'relatorios', label: 'Relatórios Gerais', path: '/relatorios', icon: FileText }
         ]

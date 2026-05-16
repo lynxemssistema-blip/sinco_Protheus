@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
 const mysqlPool = require('../services/mysqlService');
 const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+const { requirePermission } = require('../middlewares/rbac');
 
 const SMTP_CONFIG = {
     host: 'smtp.task.com.br',
@@ -58,7 +60,7 @@ router.get('/', async (req, res) => {
 });
 
 // CREATE USER (POST /)
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('config', 'create'), async (req, res) => {
     try {
         const { nome, login, senha, tipo, telefone, email, whatsapp } = req.body;
 
@@ -79,9 +81,11 @@ router.post('/', async (req, res) => {
              }
         }
 
+        const hashedPwd = await bcrypt.hash(senha, 10);
+
         const [result] = await mysqlPool.query(
             'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null]
+            [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null]
         );
 
         res.json({ message: 'Usuário cadastrado com sucesso!', id: result.insertId });
@@ -93,7 +97,7 @@ router.post('/', async (req, res) => {
 });
 
 // UPDATE USER (PUT /:id)
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
     try {
         const { id } = req.params;
         const { nome, login, senha, tipo, telefone, email, whatsapp } = req.body;
@@ -125,9 +129,10 @@ router.put('/:id', async (req, res) => {
 
         if (senha && senha.trim() !== '') {
             // Update WITH password
+            const hashedPwd = await bcrypt.hash(senha, 10);
             await mysqlPool.query(
                 'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ? WHERE idUsuario = ?',
-                [nome, login, senha, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, id]
+                [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, id]
             );
         } else {
             // Update WITHOUT password
@@ -136,6 +141,12 @@ router.put('/:id', async (req, res) => {
                 [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, id]
             );
         }
+
+        const loggedUserId = req.user ? req.user.id : 0;
+        await mysqlPool.query(
+            'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [loggedUserId, 'UPDATE_USER_DATA', JSON.stringify({ targetUserId: id, newRole: tipo, approved: aprovadoVal })]
+        );
 
         res.json({ message: 'Usuário atualizado com sucesso!' });
 
@@ -146,7 +157,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE USER (DELETE /:id)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('config', 'delete'), async (req, res) => {
     try {
         const { id } = req.params;
         await mysqlPool.query('DELETE FROM usuario WHERE idUsuario = ?', [id]);
@@ -242,10 +253,11 @@ router.get('/permissions/:userId', async (req, res) => {
 });
 
 // PUT /permissions/:userId — admin bulk-saves permissions for a user
-router.put('/permissions/:userId', async (req, res) => {
+router.put('/permissions/:userId', requirePermission('config', 'edit'), async (req, res) => {
     try {
         const { userId } = req.params;
         const { permissions } = req.body; // array of { page_id, can_view, can_create, can_edit, can_delete }
+        const loggedUserId = req.user ? req.user.id : 0;
 
         if (!Array.isArray(permissions)) {
             return res.status(400).json({ error: 'permissions deve ser um array' });
@@ -283,6 +295,12 @@ router.put('/permissions/:userId', async (req, res) => {
                         );
                     }
                 }
+                
+                // Audit Log for profile update
+                await conn.query(
+                    'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+                    [loggedUserId, 'UPDATE_PROFILE_PERMISSIONS', JSON.stringify({ profileType, permissionsCount: permissions.length })]
+                );
             } else {
                 await conn.query('DELETE FROM app_user_permissions WHERE user_id = ?', [userId]);
 
@@ -300,6 +318,12 @@ router.put('/permissions/:userId', async (req, res) => {
                         [values]
                     );
                 }
+
+                // Audit Log for user update
+                await conn.query(
+                    'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+                    [loggedUserId, 'UPDATE_USER_PERMISSIONS', JSON.stringify({ targetUserId: userId, permissionsCount: permissions.length })]
+                );
             }
 
             await conn.commit();
@@ -319,7 +343,7 @@ router.put('/permissions/:userId', async (req, res) => {
 // ──── Send Credentials Email ───────────────────────────────────────────────────
 
 // POST /send-credentials — sends access credentials via email to selected users
-router.post('/send-credentials', async (req, res) => {
+router.post('/send-credentials', requirePermission('config', 'edit'), async (req, res) => {
     try {
         const { userIds } = req.body;
 

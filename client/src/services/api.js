@@ -583,5 +583,13 @@ export const getSgqRomaneioDetails = (id) => api.get(`/sgq/romaneios/${id}`).the
 export const createSgqRomaneio = (data) => api.post('/sgq/romaneios', data).then(res => res.data);
 export const markSgqRomaneioReturned = (id) => api.put(`/sgq/romaneios/${id}/retorno`).then(res => res.data);
 
+// SGQ RNCs
+export const getSgqNaoConformidades = () => api.get('/sgq/nao-conformidades').then(res => res.data);
+export const getOpRncs = (params) => api.get('/sgq/rncs', { params }).then(res => res.data);
+export const getAllRncs = (params) => api.get('/sgq/rncs/all', { params }).then(res => res.data);
+export const createRnc = (data) => api.post('/sgq/rncs', data).then(res => res.data);
+export const updateRnc = (id, data) => api.put(`/sgq/rncs/${id}`, data).then(res => res.data);
+export const deleteRnc = (id) => api.delete(`/sgq/rncs/${id}`).then(res => res.data);
+
 export { api };
 export default api;

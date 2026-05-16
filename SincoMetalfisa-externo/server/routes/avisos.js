@@ -1,0 +1,328 @@
+const express = require('express');
+const router = express.Router();
+const mysqlPool = require('../services/mysqlService');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+// --- Multer disk storage for media uploads ---
+const uploadsDir = path.join(__dirname, '..', 'uploads', 'avisos');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname) || '.bin';
+        const uniqueName = `${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`;
+        cb(null, uniqueName);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|gif|webp|mp3|ogg|webm|wav|m4a|pdf|doc|docx|xls|xlsx|txt|zip/;
+        const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+        cb(null, allowed.test(ext));
+    }
+});
+
+// --- Database init ---
+const initDB = async () => {
+    try {
+        // Tabela de Grupos
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS sistema_avisos_grupos (
+                idGrupo INT AUTO_INCREMENT PRIMARY KEY,
+                nome VARCHAR(100) NOT NULL,
+                descricao TEXT,
+                fotoGrupo VARCHAR(255),
+                idCriador INT UNSIGNED NOT NULL,
+                data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (idCriador) REFERENCES usuario(idUsuario)
+            )
+        `);
+
+        // Tabela de Membros de Grupos
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS sistema_avisos_grupos_membros (
+                idGrupo INT NOT NULL,
+                idUsuario INT UNSIGNED NOT NULL,
+                data_entrada DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (idGrupo, idUsuario),
+                FOREIGN KEY (idGrupo) REFERENCES sistema_avisos_grupos(idGrupo),
+                FOREIGN KEY (idUsuario) REFERENCES usuario(idUsuario)
+            )
+        `);
+
+        // Verificar/adicionar colunas de grupo na tabela de mensagens
+        const [columns] = await mysqlPool.query('SHOW COLUMNS FROM sistema_avisos');
+        const colNames = columns.map(c => c.Field);
+
+        if (!colNames.includes('idGrupo')) {
+            await mysqlPool.query('ALTER TABLE sistema_avisos ADD COLUMN idGrupo INT DEFAULT NULL AFTER idDestinatario');
+            await mysqlPool.query('ALTER TABLE sistema_avisos MODIFY COLUMN idDestinatario INT UNSIGNED DEFAULT NULL');
+            await mysqlPool.query('ALTER TABLE sistema_avisos ADD FOREIGN KEY (idGrupo) REFERENCES sistema_avisos_grupos(idGrupo)');
+        }
+
+        // --- Colunas de mídia ---
+        if (!colNames.includes('tipo_midia')) {
+            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN tipo_midia ENUM('text','image','audio','file') DEFAULT 'text' AFTER mensagem");
+        }
+        if (!colNames.includes('midia_url')) {
+            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN midia_url VARCHAR(500) DEFAULT NULL AFTER tipo_midia");
+        }
+        if (!colNames.includes('midia_nome')) {
+            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN midia_nome VARCHAR(255) DEFAULT NULL AFTER midia_url");
+        }
+
+        console.log('✅ Tabelas de avisos, grupos e mídia verificadas/atualizadas.');
+    } catch (e) {
+        console.error('❌ Erro ao inicializar tabelas de avisos:', e.message);
+    }
+};
+
+initDB();
+
+// ========== UPLOAD ENDPOINT ==========
+router.post('/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo recebido.' });
+        }
+
+        const file = req.file;
+        const ext = path.extname(file.originalname).toLowerCase();
+        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+        const audioExts = ['.mp3', '.ogg', '.webm', '.wav', '.m4a'];
+
+        let tipo_midia = 'file';
+        if (imageExts.includes(ext)) tipo_midia = 'image';
+        else if (audioExts.includes(ext)) tipo_midia = 'audio';
+
+        const midia_url = `/uploads/avisos/${file.filename}`;
+
+        res.json({
+            url: midia_url,
+            tipo_midia,
+            nome_original: file.originalname,
+            tamanho: file.size
+        });
+    } catch (error) {
+        console.error('Erro no upload:', error);
+        res.status(500).json({ error: 'Erro ao processar upload' });
+    }
+});
+
+// 1. Enviar nova mensagem (Usuário ou Grupo) — agora com mídia
+router.post('/', async (req, res) => {
+    try {
+        const { idRemetente, idDestinatario, idGrupo, mensagem, idRespostaDe, tipo_midia, midia_url, midia_nome } = req.body;
+
+        if (!idRemetente || (!idDestinatario && !idGrupo)) {
+            return res.status(400).json({ error: 'Remetente, destinatário/grupo são obrigatórios.' });
+        }
+
+        // Texto ou mídia deve existir
+        if (!mensagem && !midia_url) {
+            return res.status(400).json({ error: 'Mensagem ou mídia é obrigatória.' });
+        }
+
+        const [result] = await mysqlPool.query(
+            `INSERT INTO sistema_avisos (idRemetente, idDestinatario, idGrupo, mensagem, idRespostaDe, tipo_midia, midia_url, midia_nome) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [idRemetente, idDestinatario || null, idGrupo || null, mensagem || '', idRespostaDe || null,
+                tipo_midia || 'text', midia_url || null, midia_nome || null]
+        );
+
+        // Socket.io broadcast
+        const io = req.app.get('io');
+        if (io) {
+            const queryData = `
+                SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente 
+                FROM sistema_avisos a
+                JOIN usuario ur ON a.idRemetente = ur.idUsuario
+                WHERE a.idAviso = ?
+            `;
+            const [rows] = await mysqlPool.query(queryData, [result.insertId]);
+            if (rows.length > 0) {
+                const novoAviso = rows[0];
+                if (idGrupo) {
+                    io.to(`grupo_${idGrupo}`).emit('novo_aviso', novoAviso);
+                } else {
+                    io.to(`usuario_${idDestinatario}`).emit('novo_aviso', novoAviso);
+                }
+            }
+        }
+
+        res.status(201).json({ success: true, idAviso: result.insertId });
+    } catch (error) {
+        console.error('Erro ao enviar aviso:', error);
+        res.status(500).json({ error: 'Erro ao enviar aviso' });
+    }
+});
+
+// 2. Buscar avisos não concluídos (popups) - Apenas mensagens diretas
+router.get('/nao-concluidos/:idUsuario', async (req, res) => {
+    try {
+        const { idUsuario } = req.params;
+
+        let hasIdGrupo = false;
+        try {
+            const [cols] = await mysqlPool.query('SHOW COLUMNS FROM sistema_avisos LIKE \'idGrupo\'');
+            hasIdGrupo = cols.length > 0;
+        } catch (_) { }
+
+        const grupoFilter = hasIdGrupo ? 'AND a.idGrupo IS NULL' : '';
+
+        const query = `
+            SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente 
+            FROM sistema_avisos a
+            JOIN usuario ur ON a.idRemetente = ur.idUsuario
+            WHERE a.idDestinatario = ? AND a.concluido = 0 ${grupoFilter}
+            ORDER BY a.data_envio ASC
+        `;
+        const [rows] = await mysqlPool.query(query, [idUsuario]);
+
+        if (rows.length > 0) {
+            const ids = rows.map(r => r.idAviso);
+            await mysqlPool.query(`UPDATE sistema_avisos SET lido = 1 WHERE idAviso IN (?)`, [ids]);
+        }
+
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao buscar avisos ativos:', error);
+        res.status(500).json({ error: 'Erro ao buscar avisos' });
+    }
+});
+
+
+// 3. Concluir um aviso
+router.put('/:idAviso/concluir', async (req, res) => {
+    try {
+        const { idAviso } = req.params;
+        await mysqlPool.query(
+            'UPDATE sistema_avisos SET concluido = 1, data_conclusao = CURRENT_TIMESTAMP WHERE idAviso = ?',
+            [idAviso]
+        );
+        res.json({ success: true, message: 'Aviso concluído.' });
+    } catch (error) {
+        console.error('Erro ao concluir aviso:', error);
+        res.status(500).json({ error: 'Erro ao concluir aviso' });
+    }
+});
+
+// 4. Histórico Completo (Mensagens diretas e Grupos)
+router.get('/historico/:idUsuario', async (req, res) => {
+    try {
+        const { idUsuario } = req.params;
+        const query = `
+            SELECT a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, 
+                   a.data_envio, a.data_conclusao, a.idRespostaDe,
+                   a.tipo_midia, a.midia_url, a.midia_nome,
+                   ur.NomeCompleto as remetenteNome, 
+                   ud.NomeCompleto as destinatarioNome,
+                   g.nome as grupoNome
+            FROM sistema_avisos a
+            JOIN usuario ur ON a.idRemetente = ur.idUsuario
+            LEFT JOIN usuario ud ON a.idDestinatario = ud.idUsuario
+            LEFT JOIN sistema_avisos_grupos g ON a.idGrupo = g.idGrupo
+            WHERE a.idRemetente = ? 
+               OR a.idDestinatario = ? 
+               OR a.idGrupo IN (SELECT idGrupo FROM sistema_avisos_grupos_membros WHERE idUsuario = ?)
+            ORDER BY a.data_envio DESC
+        `;
+        const [rows] = await mysqlPool.query(query, [idUsuario, idUsuario, idUsuario]);
+        res.json(rows);
+    } catch (error) {
+        console.error('❌ Erro ao buscar histórico:', error);
+        res.status(500).json({ error: 'Erro ao buscar histórico', details: error.message });
+    }
+});
+
+// 5. Criar Grupo
+router.post('/grupos', async (req, res) => {
+    try {
+        const { nome, descricao, idCriador, membros } = req.body;
+
+        const [result] = await mysqlPool.query(
+            'INSERT INTO sistema_avisos_grupos (nome, descricao, idCriador) VALUES (?, ?, ?)',
+            [nome, descricao || null, idCriador]
+        );
+
+        const idGrupo = result.insertId;
+
+        const allMembros = Array.from(new Set([idCriador, ...(membros || [])]));
+
+        const membrosValues = allMembros.map(id => [idGrupo, id]);
+        await mysqlPool.query(
+            'INSERT INTO sistema_avisos_grupos_membros (idGrupo, idUsuario) VALUES ?',
+            [membrosValues]
+        );
+
+        res.status(201).json({ success: true, idGrupo, nome });
+    } catch (error) {
+        console.error('Erro ao criar grupo:', error);
+        res.status(500).json({ error: 'Erro ao criar grupo' });
+    }
+});
+
+// 6. Listar Grupos do Usuário
+router.get('/grupos/usuario/:idUsuario', async (req, res) => {
+    try {
+        const { idUsuario } = req.params;
+        const query = `
+            SELECT g.*, 
+                   (SELECT COUNT(*) FROM sistema_avisos_grupos_membros WHERE idGrupo = g.idGrupo) as totalMembros
+            FROM sistema_avisos_grupos g
+            JOIN sistema_avisos_grupos_membros gm ON g.idGrupo = gm.idGrupo
+            WHERE gm.idUsuario = ?
+            ORDER BY g.nome ASC
+        `;
+        const [rows] = await mysqlPool.query(query, [idUsuario]);
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao listar grupos:', error);
+        res.status(500).json({ error: 'Erro ao listar grupos' });
+    }
+});
+
+// 7. Busca Global de Conteúdo
+router.get('/search/conteudo', async (req, res) => {
+    try {
+        const { q, idUsuario } = req.query;
+        if (!q || !idUsuario) return res.status(400).json({ error: 'Parâmetros insuficientes.' });
+
+        const query = `
+            SELECT a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, 
+                   a.data_envio, a.data_conclusao, a.idRespostaDe,
+                   a.tipo_midia, a.midia_url, a.midia_nome,
+                   ur.NomeCompleto as remetenteNome, 
+                   ud.NomeCompleto as destinatarioNome,
+                   g.nome as grupoNome
+            FROM sistema_avisos a
+            JOIN usuario ur ON a.idRemetente = ur.idUsuario
+            LEFT JOIN usuario ud ON a.idDestinatario = ud.idUsuario
+            LEFT JOIN sistema_avisos_grupos g ON a.idGrupo = g.idGrupo
+            WHERE a.mensagem LIKE ?
+              AND (
+                a.idRemetente = ? 
+                OR a.idDestinatario = ? 
+                OR a.idGrupo IN (SELECT idGrupo FROM sistema_avisos_grupos_membros WHERE idUsuario = ?)
+              )
+            ORDER BY a.data_envio DESC
+            LIMIT 50
+        `;
+        const [rows] = await mysqlPool.query(query, [`%${q}%`, idUsuario, idUsuario, idUsuario]);
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro na busca global:', error);
+        res.status(500).json({ error: 'Erro na busca global' });
+    }
+});
+
+module.exports = router;

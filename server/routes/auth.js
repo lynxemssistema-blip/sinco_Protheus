@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
@@ -33,10 +34,9 @@ router.post('/login', async (req, res) => {
     try {
         connection = await mysql.createConnection(dbConfig);
 
-        // Query user from database - PLAIN TEXT PASSWORD as per request
         const [rows] = await connection.execute(
-            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado FROM usuario WHERE Login = ? AND Senha = ?',
-            [login, senha]
+            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, Senha FROM usuario WHERE Login = ?',
+            [login]
         );
 
         if (rows.length === 0) {
@@ -44,6 +44,30 @@ router.post('/login', async (req, res) => {
         }
 
         const user = rows[0];
+
+        // Check password
+        const isBcrypt = user.Senha && (user.Senha.startsWith('$2b$') || user.Senha.startsWith('$2a$'));
+        let passwordMatch = false;
+
+        if (isBcrypt) {
+            passwordMatch = await bcrypt.compare(senha, user.Senha);
+        } else {
+            passwordMatch = (senha === user.Senha);
+            
+            // Auto-migration: hash the password and update it in the database
+            if (passwordMatch) {
+                try {
+                    const hashedPwd = await bcrypt.hash(senha, 10);
+                    await connection.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPwd, user.idUsuario]);
+                } catch (migrationError) {
+                    console.warn('Falha na migração da senha para bcrypt (provavelmente a coluna Senha é muito curta):', migrationError.message);
+                }
+            }
+        }
+
+        if (!passwordMatch) {
+            return res.status(401).json({ error: 'Credenciais inválidas' });
+        }
 
         // Bloqueio de self-registration pending
         if (user.aprovado === 0) {
@@ -96,6 +120,13 @@ router.post('/recuperar-senha', async (req, res) => {
 
         const user = rows[0];
 
+        // Generate temporary password
+        const tempPassword = Math.random().toString(36).slice(-8);
+        const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
+
+        // Update DB with hashed temp password
+        await connection.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, user.idUsuario || (user.Login ? await connection.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [user.Login]).then(res => res[0][0].idUsuario) : null)]);
+
         const transporter = nodemailer.createTransport({
             host: 'smtp.task.com.br',
             port: 587,
@@ -114,12 +145,12 @@ router.post('/recuperar-senha', async (req, res) => {
             html: getCorporateEmailTemplate(`
                 <h2 style="color: #0284c7; margin-top: 0; font-family: Arial, sans-serif;">Recuperação de Acesso</h2>
                 <p>Olá, <b>${user.NomeCompleto}</b>!</p>
-                <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Seguem seus dados de login atualizados:</p>
+                <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Foi gerada uma senha temporária para você:</p>
                 <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
                     <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
-                    <p style="margin: 0; font-size: 16px;"><b>Senha:</b> ${user.Senha}</p>
+                    <p style="margin: 0; font-size: 16px;"><b>Senha Temporária:</b> ${tempPassword}</p>
                 </div>
-                <p style="font-size: 14px;">Recomendamos que você guarde sua senha em um local seguro e exclua esta mensagem caso ninguém a tenha solicitado.</p>
+                <p style="font-size: 14px;">Recomendamos que você acesse o sistema e altere esta senha imediatamente.</p>
             `)
         });
 
@@ -220,10 +251,12 @@ router.post('/register', async (req, res) => {
         const [existingEmail] = await connection.execute('SELECT idUsuario FROM usuario WHERE email = ?', [email]);
         if (existingEmail.length > 0) return res.status(409).json({ error: 'Este endereço de E-mail já está em uso em nossa base.' });
 
+        const hashedPwd = await bcrypt.hash(senha, 10);
+
         // Insert as pending (aprovado = 0) with a standard role
         await connection.execute(
             'INSERT INTO usuario (NomeCompleto, Login, Senha, email, aprovado, TipoUsuario) VALUES (?, ?, ?, ?, 0, "Basico")',
-            [nome, login, senha, email]
+            [nome, login, hashedPwd, email]
         );
 
         res.json({ message: 'Seu usuário foi criado com sucesso! Ele foi encaminhado para a análise do Controle de Administração da Metalfisa.' });

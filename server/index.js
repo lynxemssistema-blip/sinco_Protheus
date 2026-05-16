@@ -396,6 +396,9 @@ cron.schedule('0 6,15 * * *', async () => {
     }
 });
 
+const { startFaturamentoCron } = require('./services/faturamentoCron');
+startFaturamentoCron();
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 

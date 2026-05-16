@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
+import RNCModal from '../components/RNCModal';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import useStickyState from '../hooks/useStickyState';
 import { generateVerticalPendingPdf } from '../services/verticalPendingPdfGenerator';
@@ -37,6 +38,7 @@ export default function VerticalAppointmentPage() {
 
     const [appointingOp, setAppointingOp] = useState(null);
     const [historyTarget, setHistoryTarget] = useState(null);
+    const [rncTarget, setRncTarget] = useState(null);
     const [appointmentMode, setAppointmentMode] = useState(null);
 
     // Estado local para datas de planejamento em edição
@@ -184,6 +186,9 @@ export default function VerticalAppointmentPage() {
         desc_operacao: row.operacao_desc || row.operacao_codigo,
         qtd_planejada_op: parseFloat(row.qtd_op) || 0,
         qtd_produzida_real: row.qtd_apontada || 0,
+        pedido: row.pedido,
+        item_pedido: row.item_pedido,
+        cliente: row.cliente || row.nome_cliente,
     });
 
     const handleOpenAppointment = (row) => {
@@ -192,6 +197,10 @@ export default function VerticalAppointmentPage() {
 
     const handleOpenHistory = (row) => {
         setHistoryTarget(buildOpObj(row));
+    };
+
+    const handleOpenRnc = (row) => {
+        setRncTarget(buildOpObj(row));
     };
 
     const handleAppointmentSave = async (payload) => {
@@ -637,6 +646,14 @@ export default function VerticalAppointmentPage() {
                                                     >
                                                         <History className="w-3.5 h-3.5" />
                                                     </button>
+                                                    {/* RNC */}
+                                                    <button
+                                                        onClick={() => handleOpenRnc(row)}
+                                                        className="text-sm font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50 px-2 py-1.5 rounded border border-slate-200 hover:border-amber-200 transition-colors flex items-center gap-1.5"
+                                                        title="Registro de Não-Conformidade (RNC)"
+                                                    >
+                                                        <AlertTriangle className="w-3.5 h-3.5" /> RNC
+                                                    </button>
                                                     {/* Apontar — disponível mesmo para CONCLUIDO (apontamento extra) */}
                                                     <button
                                                         onClick={() => handleOpenAppointment(row)}
@@ -686,6 +703,13 @@ export default function VerticalAppointmentPage() {
                 <ProductionHistoryModal
                     opData={historyTarget}
                     onClose={() => setHistoryTarget(null)}
+                />
+            )}
+
+            {rncTarget && (
+                <RNCModal
+                    op={rncTarget}
+                    onClose={() => setRncTarget(null)}
                 />
             )}
         </div>

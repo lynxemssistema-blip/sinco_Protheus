@@ -66,20 +66,20 @@ async function calcularKPIMeuCanal(userId, userLogin, userName, baseDate = null)
             } else {
                 // 2. Tentar achar no Protheus (sc2010)
                 const pgRes = await db.query(`
-                    SELECT c2_datprf, c2_datini 
+                    SELECT c2_datprf, c2_datpri 
                     FROM sc2010 
                     WHERE c2_num=$1 AND c2_item=$2 AND c2_sequen=$3 AND COALESCE(d_e_l_e_t_,' ')=' '
                 `, [(ap.op_numero||'').trim().padStart(6, '0'), (ap.op_item||'').trim().padStart(2, '0'), (ap.op_sequencia||'').trim().padStart(3, '0')]);
                 
                 if (pgRes.rows.length > 0) {
                     const datprf = pgRes.rows[0].c2_datprf?.trim();
-                    const datini = pgRes.rows[0].c2_datini?.trim();
+                    const datpri = pgRes.rows[0].c2_datpri?.trim();
                     if (datprf && datprf !== '20000101' && datprf !== '') {
                         temDataPlanejada = true;
                         // Converter AAAAMMDD do Protheus para Date
                         dataPlanejadaFim = new Date(`${datprf.slice(0,4)}-${datprf.slice(4,6)}-${datprf.slice(6,8)}`);
-                        if (datini && datini !== '20000101' && datini !== '') {
-                            dataPlanejadaInicio = new Date(`${datini.slice(0,4)}-${datini.slice(4,6)}-${datini.slice(6,8)}`);
+                        if (datpri && datpri !== '20000101' && datpri !== '') {
+                            dataPlanejadaInicio = new Date(`${datpri.slice(0,4)}-${datpri.slice(4,6)}-${datpri.slice(6,8)}`);
                         }
                     }
                 }
@@ -471,6 +471,7 @@ router.get('/kpi', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('[MEUCANAL /kpi] ERRO:', err.message);
         console.error('[MEUCANAL /kpi] STACK:', err.stack);
+        require('fs').writeFileSync('meucanal_error.log', err.stack);
         res.status(500).json({ error: 'Erro interno ao processar Meu Canal', detail: err.message });
     }
 });

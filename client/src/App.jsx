@@ -50,6 +50,8 @@ const SGQDocuments = React.lazy(() => import('./pages/sgq/Documentos'));
 const MapeamentoProcessos = React.lazy(() => import('./pages/sgq/MapeamentoProcessos'));
 const CargosFuncoes = React.lazy(() => import('./pages/sgq/CargosFuncoes'));
 const ControleCalibracao = React.lazy(() => import('./pages/sgq/ControleCalibracao'));
+const NaoConformidades = React.lazy(() => import('./pages/sgq/NaoConformidades'));
+const GestaoRNCs = React.lazy(() => import('./pages/sgq/GestaoRNCs'));
 const CurriculosAnalyzer = React.lazy(() => import('./pages/rh/CurriculosAnalyzer'));
 const VagasManager = React.lazy(() => import('./pages/rh/VagasManager'));
 const OffboardingRH = React.lazy(() => import('./pages/rh/OffboardingRH'));
@@ -462,8 +464,13 @@ function App() {
                                             <SGQDocuments />
                                         } />
                                         <Route path="/sgq/nao-conformidades" element={
-                                            <Layout>
-                                                <div className="p-8 text-center text-gray-500">Módulo em desenvolvimento: Não Conformidades</div>
+                                            <Layout fullWidth={true}>
+                                                <NaoConformidades />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sgq/gestao-rncs" element={
+                                            <Layout fullWidth={true}>
+                                                <GestaoRNCs />
                                             </Layout>
                                         } />
                                         <Route path="/sgq/treinamento" element={

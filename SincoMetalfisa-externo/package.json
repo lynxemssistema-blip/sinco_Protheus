@@ -1,0 +1,12 @@
+{
+  "name": "metalfisa-hostinger",
+  "version": "1.0.0",
+  "description": "Metalfisa External App for Hostinger",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "postinstall": "cd server && npm install"
+  },
+  "author": "Antigravity",
+  "license": "ISC"
+}

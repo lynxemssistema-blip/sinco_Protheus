@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar } from 'lucide-react';
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus } from '../services/api';
 import api from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
@@ -877,6 +877,143 @@ export default function Settings() {
                                         {usersList.filter(u => u.aprovado === 1 && u.email).length === 0 && (
                                             <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário com e-mail válido cadastrado no sistema.</p>
                                         )}
+                                    </div>
+                                </div>
+
+                                {/* Automação: Relatório de Faturamento Diário */}
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-4">
+                                    <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Calendar className="w-5 h-5 text-emerald-500" /> Automação de Relatório Faturamento Diário</h4>
+                                    <p className="text-sm text-slate-500 mb-4">Configure o grupo de usuários e os horários para o envio automático do consolidado diário de faturamento via E-mail e WhatsApp.</p>
+                                    
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Horário de Envio (Ex: 15:00)</label>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="time" 
+                                                    className="p-2 border rounded-lg text-sm bg-white focus:ring-emerald-500 focus:border-emerald-500"
+                                                    value={(companyForm.general_config?.faturamento_automation?.times || ['15:00'])[0]}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setCompanyForm(prev => ({
+                                                            ...prev,
+                                                            general_config: { 
+                                                                ...prev.general_config, 
+                                                                faturamento_automation: { 
+                                                                    ...(prev.general_config?.faturamento_automation || { days: [1,2,3,4,5], users: [] }), 
+                                                                    times: [newVal] 
+                                                                } 
+                                                            }
+                                                        }));
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Dias da Semana</label>
+                                            <div className="flex gap-1 flex-wrap">
+                                                {[{id: 1, label: 'Seg'}, {id: 2, label: 'Ter'}, {id: 3, label: 'Qua'}, {id: 4, label: 'Qui'}, {id: 5, label: 'Sex'}, {id: 6, label: 'Sáb'}, {id: 0, label: 'Dom'}].map(day => {
+                                                    const activeDays = companyForm.general_config?.faturamento_automation?.days || [1,2,3,4,5];
+                                                    const isActive = activeDays.includes(day.id);
+                                                    return (
+                                                        <button
+                                                            key={day.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                let newDays;
+                                                                if (isActive) newDays = activeDays.filter(d => d !== day.id);
+                                                                else newDays = [...activeDays, day.id];
+                                                                setCompanyForm(prev => ({
+                                                                    ...prev,
+                                                                    general_config: { 
+                                                                        ...prev.general_config, 
+                                                                        faturamento_automation: { 
+                                                                            ...(prev.general_config?.faturamento_automation || { times: ['15:00'], users: [] }), 
+                                                                            days: newDays 
+                                                                        } 
+                                                                    }
+                                                                }));
+                                                            }}
+                                                            className={`px-2 py-1 text-xs font-medium rounded border ${isActive ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-500'}`}
+                                                        >
+                                                            {day.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Usuários e Canais de Recebimento</label>
+                                    <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
+                                        {usersList.filter(u => u.aprovado === 1).map(u => {
+                                            const autoConfig = companyForm.general_config?.faturamento_automation || { times: ['15:00'], days: [1,2,3,4,5], users: [] };
+                                            const userPref = autoConfig.users.find(x => x.id === u.idUsuario);
+                                            const isInGroup = !!userPref;
+                                            
+                                            return (
+                                                <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded border-b border-gray-50 last:border-0">
+                                                    <label className="flex items-center gap-3 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={isInGroup}
+                                                            onChange={(e) => {
+                                                                let newUsers = [...autoConfig.users];
+                                                                if (e.target.checked) {
+                                                                    newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
+                                                                } else {
+                                                                    newUsers = newUsers.filter(x => x.id !== u.idUsuario);
+                                                                }
+                                                                setCompanyForm(prev => ({
+                                                                    ...prev,
+                                                                    general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                                }));
+                                                            }}
+                                                            className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
+                                                            <span className="text-xs text-slate-500">{u.email || 'Sem e-mail'} | {u.telefone || 'Sem telefone'}</span>
+                                                        </div>
+                                                    </label>
+                                                    
+                                                    {isInGroup && (
+                                                        <div className="flex items-center gap-4 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={userPref.email}
+                                                                    disabled={!u.email}
+                                                                    onChange={(e) => {
+                                                                        const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
+                                                                        setCompanyForm(prev => ({
+                                                                            ...prev,
+                                                                            general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                                        }));
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
+                                                                /> E-mail
+                                                            </label>
+                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={userPref.whatsapp}
+                                                                    disabled={!u.telefone}
+                                                                    onChange={(e) => {
+                                                                        const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
+                                                                        setCompanyForm(prev => ({
+                                                                            ...prev,
+                                                                            general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                                        }));
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 text-green-500 rounded border-gray-300"
+                                                                /> WhatsApp
+                                                            </label>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </div>
