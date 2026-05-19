@@ -123,11 +123,20 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
             const plannedItem = group.items.find(i => i.data_planejada_inicio && i.data_planejada_fim);
             if (plannedItem) {
-                // FIX #1: Extrai a string de data diretamente, sem passar por new Date()
-                // O driver MySQL retorna strings ISO UTC (ex: "2026-05-15T03:00:00.000Z").
-                // new Date().toISOString() converte para UTC e causa shift de -1 dia no UTC-3.
-                existingStart = String(plannedItem.data_planejada_inicio).substring(0, 10);
-                existingEnd   = String(plannedItem.data_planejada_fim).substring(0, 10);
+                const parseSafeDate = (val) => {
+                    const str = String(val);
+                    if (str.includes('T')) {
+                        const d = new Date(str);
+                        if (!isNaN(d)) {
+                            const pad = n => n.toString().padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        }
+                    }
+                    return str.substring(0, 10);
+                };
+                
+                existingStart = parseSafeDate(plannedItem.data_planejada_inicio);
+                existingEnd   = parseSafeDate(plannedItem.data_planejada_fim);
                 // Força meio-dia para evitar ambiguidade de DST na contagem de dias úteis
                 const s = new Date(existingStart + 'T12:00:00');
                 const e = new Date(existingEnd   + 'T12:00:00');
@@ -734,7 +743,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         const { minDate, dateArray } = getGanttDates();
         const CELL_WIDTH = 40;
         // Dimensões da linha e barra — centralizadas verticalmente
-        const ROW_H    = 48;  // altura total da linha (px)
+        const ROW_H    = 56;  // altura total da linha (px)
         const BAR_H    = 28;  // altura da barra (px)
         const BAR_TOP  = (ROW_H - BAR_H) / 2; // offset topo para centralizar: 10px
 
@@ -788,7 +797,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             return (
                                 <div
                                     key={group.code}
-                                    className="flex relative border-b border-slate-200 group/gantt hover:bg-blue-50/20 transition-colors"
+                                    className="flex relative border-b border-slate-200 group/gantt hover:bg-blue-50/20 transition-colors shrink-0"
                                     style={{ height: `${ROW_H}px` }}
                                 >
                                     {/* Sticky Label */}
@@ -803,7 +812,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                     : <span className="text-[6px] font-bold px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 uppercase leading-none">Novo</span>
                                                 }
                                             </div>
-                                            <span className="text-[10px] text-slate-600 font-medium truncate mt-0.5 leading-tight" title={group.desc}>{group.desc}</span>
+                                            <span className="text-[10px] text-slate-600 font-medium overflow-hidden text-ellipsis whitespace-nowrap mt-0.5" title={group.desc}>{group.desc}</span>
                                         </div>
                                     </div>
 

@@ -148,9 +148,9 @@ export default function ProductionControl() {
     const [selectedOps, setSelectedOps] = useState([]);
 
     const toggleOpSelection = (op) => {
-        const id = op.op + op.item_op;
-        setSelectedOps(prev => prev.some(p => p.op + p.item_op === id)
-            ? prev.filter(p => p.op + p.item_op !== id)
+        const id = `${op.op}|${op.item_op}|${op.sequen}|${op.operacao}`;
+        setSelectedOps(prev => prev.some(p => `${p.op}|${p.item_op}|${p.sequen}|${p.operacao}` === id)
+            ? prev.filter(p => `${p.op}|${p.item_op}|${p.sequen}|${p.operacao}` !== id)
             : [...prev, op]);
     };
 
@@ -654,7 +654,7 @@ export default function ProductionControl() {
                                             <td className="p-3 text-center">
                                                 <input 
                                                     type="checkbox" 
-                                                    checked={selectedOps.some(p => p.op === op.op && p.item_op === op.item_op)}
+                                                    checked={selectedOps.some(p => p.op === op.op && p.item_op === op.item_op && p.sequen === op.sequen && p.operacao === op.operacao)}
                                                     onChange={() => toggleOpSelection(op)}
                                                     className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" 
                                                 />
@@ -743,7 +743,7 @@ export default function ProductionControl() {
                                             <td className="p-3 text-right">
                                                 <div className="flex justify-end gap-1">
                                                     <button onClick={() => {
-                                                        const isSelected = selectedOps.some(s => s.op === op.op && s.item_op === op.item_op);
+                                                        const isSelected = selectedOps.some(s => s.op === op.op && s.item_op === op.item_op && s.sequen === op.sequen && s.operacao === op.operacao);
                                                         setPlanningOp(isSelected && selectedOps.length > 0 ? selectedOps : [op]);
                                                     }}
                                                         className="p-1.5 hover:bg-white border border-transparent hover:border-slate-200 hover:shadow-sm rounded text-slate-600 transition-all" title="Planejar Operação">

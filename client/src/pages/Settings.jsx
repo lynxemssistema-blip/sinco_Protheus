@@ -118,7 +118,15 @@ export default function Settings() {
 
         if (userId.startsWith('PROFILE_')) {
             setPermSelectedUser(userId);
-            setPermMatrix({}); // Empty matrix for bulk definition
+            const profileType = userId.replace('PROFILE_', '');
+            const targetUsers = usersList.filter(u => u.TipoUsuario === profileType);
+            
+            if (targetUsers.length > 0) {
+                // Load permissions from the first user of this profile as a template
+                loadUserPermissions(targetUsers[0].idUsuario);
+            } else {
+                setPermMatrix({}); // Empty matrix if no users exist in this profile
+            }
             return;
         }
 
@@ -547,30 +555,44 @@ export default function Settings() {
         }
     };
 
-    const handleSendCredentials = async () => {
+    const handleSendCredentials = async (method = 'email') => {
         if (selectedUsers.size === 0) return;
 
         const selectedList = usersList.filter(u => selectedUsers.has(u.idUsuario));
-        const withoutEmail = selectedList.filter(u => !u.email);
-        const withEmail = selectedList.filter(u => u.email);
+        const missingContact = method === 'whatsapp' 
+            ? selectedList.filter(u => !u.whatsapp)
+            : selectedList.filter(u => !u.email);
+            
+        const withContact = method === 'whatsapp'
+            ? selectedList.filter(u => u.whatsapp)
+            : selectedList.filter(u => u.email);
 
-        if (withEmail.length === 0) {
-            alert('Nenhum dos usuários selecionados possui e-mail cadastrado.');
+        if (withContact.length === 0) {
+            alert(`Nenhum dos usuários selecionados possui ${method === 'whatsapp' ? 'WhatsApp' : 'e-mail'} cadastrado.`);
             return;
         }
 
-        let confirmMsg = `Deseja enviar os dados de acesso por e-mail para ${withEmail.length} usuário(s)?`;
-        if (withoutEmail.length > 0) {
-            confirmMsg += `\n\n⚠️ ${withoutEmail.length} usuário(s) SEM e-mail serão ignorados:\n` + withoutEmail.map(u => `  • ${u.NomeCompleto}`).join('\n');
+        let confirmMsg = `Deseja enviar os dados de acesso por ${method === 'whatsapp' ? 'WhatsApp' : 'e-mail'} para ${withContact.length} usuário(s)?`;
+        if (missingContact.length > 0) {
+            confirmMsg += `\n\n⚠️ ${missingContact.length} usuário(s) SEM ${method === 'whatsapp' ? 'WhatsApp' : 'e-mail'} serão ignorados:\n` + missingContact.map(u => `  • ${u.NomeCompleto}`).join('\n');
         }
-        confirmMsg += `\n\nSerão enviados para:\n` + withEmail.map(u => `  ✉️ ${u.NomeCompleto} → ${u.email}`).join('\n');
+        confirmMsg += `\n\nSerão enviados para:\n` + withContact.map(u => `  ${method === 'whatsapp' ? '📱' : '✉️'} ${u.NomeCompleto} → ${method === 'whatsapp' ? u.whatsapp : u.email}`).join('\n');
 
         if (!window.confirm(confirmMsg)) return;
 
-        setSendingCredentials(true);
+        const passwordDisplay = window.prompt(
+            "⚠️ ATENÇÃO: Enviar as credenciais irá REDEFINIR a senha do(s) usuário(s).\n\n" +
+            "Se você quer definir uma nova senha específica (ex: '123456'), digite-a abaixo.\n\n" +
+            "Se você deixar em branco, o sistema gerará uma senha aleatória de 6 dígitos para cada usuário.", 
+            "123456"
+        );
+
+        if (passwordDisplay === null) return; // User cancelled prompt
+
+        setSendingCredentials(method);
         try {
-            const result = await sendUserCredentials([...selectedUsers]);
-            let msg = `✅ ${result.results.success.length} e-mail(s) enviado(s) com sucesso!`;
+            const result = await sendUserCredentials([...selectedUsers], method, passwordDisplay);
+            let msg = `✅ ${result.results.success.length} mensagem(ns) enviada(s) com sucesso via ${method === 'whatsapp' ? 'WhatsApp' : 'E-mail'}!`;
             if (result.results.failed.length > 0) {
                 msg += `\n\n❌ ${result.results.failed.length} falharam:\n` + result.results.failed.map(f => `  • ${f.nome}: ${f.reason}`).join('\n');
             }
@@ -579,7 +601,7 @@ export default function Settings() {
         } catch (err) {
             alert('Erro ao enviar credenciais: ' + (err.response?.data?.error || err.message));
         } finally {
-            setSendingCredentials(false);
+            setSendingCredentials(null);
         }
     };
 
@@ -1397,7 +1419,7 @@ export default function Settings() {
                                 
                                 try {
                                     setLoadingCompany(true);
-                                    await updateGeneralSettings(newGeneralConfig);
+                                    await updateGeneralSettings({ general_config: newGeneralConfig });
                                     setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
                                     e.target.reset();
                                     alert('Perfil salvo com sucesso!');
@@ -1465,7 +1487,7 @@ export default function Settings() {
                                                                 const newGeneralConfig = { ...companyForm.general_config, custom_profiles: newProfiles };
                                                                 try {
                                                                     setLoadingCompany(true);
-                                                                    await updateGeneralSettings(newGeneralConfig);
+                                                                    await updateGeneralSettings({ general_config: newGeneralConfig });
                                                                     setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
                                                                 } catch (err) {
                                                                     alert('Erro ao excluir: ' + err.message);
@@ -1557,6 +1579,11 @@ export default function Settings() {
                                         className="w-full p-2 border rounded-lg"
                                         value={userForm.telefone}
                                         onChange={e => setUserForm({ ...userForm, telefone: formatPhone(e.target.value) })}
+                                        onBlur={e => {
+                                            if (!userForm.whatsapp && userForm.telefone) {
+                                                setUserForm({ ...userForm, whatsapp: userForm.telefone });
+                                            }
+                                        }}
                                         placeholder="(99) 99999-9999"
                                         maxLength="15"
                                     />
@@ -1699,15 +1726,26 @@ export default function Settings() {
                                     <h3 className="text-lg font-bold text-slate-800">Usuários Cadastrados</h3>
                                     <div className="flex items-center gap-3">
                                         {selectedUsers.size > 0 && (
-                                            <button
-                                                onClick={handleSendCredentials}
-                                                disabled={sendingCredentials}
-                                                className="bg-sky-600 text-white pl-3 pr-4 py-1.5 rounded-lg text-sm font-medium hover:bg-sky-700 disabled:opacity-60 flex items-center gap-2 transition-all shadow-sm"
-                                                title={`Enviar dados de acesso para ${selectedUsers.size} usuário(s) selecionado(s)`}
-                                            >
-                                                {sendingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                                {sendingCredentials ? 'Enviando...' : `Enviar Credenciais (${selectedUsers.size})`}
-                                            </button>
+                                            <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
+                                                <button
+                                                    onClick={() => handleSendCredentials('email')}
+                                                    disabled={!!sendingCredentials}
+                                                    className="bg-sky-600 text-white pl-3 pr-4 py-1.5 rounded-lg text-sm font-medium hover:bg-sky-700 disabled:opacity-60 flex items-center gap-2 transition-all shadow-sm"
+                                                    title={`Enviar por E-mail para ${selectedUsers.size} usuário(s)`}
+                                                >
+                                                    {sendingCredentials === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                                    {sendingCredentials === 'email' ? 'Enviando...' : `E-mail`}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSendCredentials('whatsapp')}
+                                                    disabled={!!sendingCredentials}
+                                                    className="bg-emerald-600 text-white pl-3 pr-4 py-1.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2 transition-all shadow-sm"
+                                                    title={`Enviar por WhatsApp para ${selectedUsers.size} usuário(s)`}
+                                                >
+                                                    {sendingCredentials === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                                                    {sendingCredentials === 'whatsapp' ? 'Enviando...' : `WhatsApp`}
+                                                </button>
+                                            </div>
                                         )}
                                         <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
                                             {filteredUsers.length} de {usersList.length} Usuários
@@ -1804,6 +1842,8 @@ export default function Settings() {
                                             </th>
                                             <th className="px-6 py-3">Nome</th>
                                             <th className="px-6 py-3">Login</th>
+                                            <th className="px-6 py-3">WhatsApp</th>
+                                            <th className="px-6 py-3">E-mail</th>
                                             <th className="px-6 py-3">Setor/Função</th>
                                             <th className="px-6 py-3 min-w-[150px]">Observações</th>
                                             <th className="px-6 py-3 text-center">Tem PC?</th>
@@ -1833,11 +1873,12 @@ export default function Settings() {
                                                         )}
                                                         <div>
                                                             <div>{u.NomeCompleto}</div>
-                                                            {u.email && <div className="text-xs text-slate-400 font-normal">{u.email}</div>}
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-3">{u.Login}</td>
+                                                <td className="px-6 py-3 whitespace-nowrap">{u.whatsapp || '-'}</td>
+                                                <td className="px-6 py-3 whitespace-nowrap">{u.email || '-'}</td>
                                                 <td className="px-6 py-3 text-xs w-48">
                                                     <div className="text-slate-700 font-medium">{u.Setor || '-'}</div>
                                                     <div className="text-slate-500">{u.Funcao || '-'}</div>

@@ -383,4 +383,76 @@ router.post('/ordem-producao/incluir', async (req, res) => {
     }
 });
 
+// =========================================================================
+// ROTA: Editar Estrutura de Produtos via API POST
+// =========================================================================
+router.post('/estrutura-produtos/editar', async (req, res) => {
+    try {
+        const { noper, empresa, filial, produto, quantidade, estrutura } = req.body;
+
+        if (!produto || !estrutura || !Array.isArray(estrutura)) {
+            return res.status(400).json({ error: 'Produto e estrutura são obrigatórios.' });
+        }
+
+        // 1. Requisitar Token (Login)
+        let accessToken = '';
+        try {
+            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
+            accessToken = tokenRes.data.access_token;
+        } catch (authError) {
+            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
+        }
+
+        if (!accessToken) {
+            throw new Error('Token JWT retornado estava em branco.');
+        }
+
+        // 2. Montagem do Payload
+        const payload = {
+            data: {
+                NOPER: noper || 4, // 4 = Alterar (default), 3 = Incluir
+                EMPRESA: empresa || "01",
+                CFILANT: filial || "0101",
+                G1_COD: produto,
+                G1_QUANT: quantidade || 1,
+                estrutura: estrutura.map(item => ({
+                    G1_COD: produto,
+                    G1_COMP: item.G1_COMP,
+                    G1_TRT: item.G1_TRT || "   ",
+                    G1_QUANT: item.G1_QUANT,
+                    G1_PERDA: item.G1_PERDA || 0,
+                    G1_INI: item.G1_INI || "19000101",
+                    G1_FIM: item.G1_FIM || "20491231",
+                    OPCAO: item.OPCAO // "INCLUIR", "ALTERAR" ou "EXCLUIR"
+                }))
+            }
+        };
+
+        console.log('🚀 [ESTRUTURA] Payload enviado para o Protheus:', JSON.stringify(payload, null, 2));
+
+        // 3. Envio POST
+        const createUrl = 'https://192.168.1.60:47500/estrutura-produtos/editar';
+        const createRes = await axios.post(createUrl, payload, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            httpsAgent,
+            timeout: 30000
+        });
+
+        const responseData = createRes.data;
+        console.log('📬 [ESTRUTURA] Resposta Protheus:', responseData);
+
+        // Se o status da API for OK, mas o conteúdo for um erro
+        if (responseData.status === "error") {
+            return res.status(400).json({ error: 'Erro ao processar estrutura no Protheus', details: responseData.message || responseData });
+        }
+
+        res.json({ success: true, message: 'Estrutura atualizada com sucesso', raw: responseData });
+
+    } catch (error) {
+        console.error('❌ Protheus Integrador Erro [Estrutura]:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Erro ao Submeter Estrutura à API.', details: error.response?.data || error.message });
+    }
+});
+
 module.exports = router;

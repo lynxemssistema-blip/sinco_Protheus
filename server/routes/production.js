@@ -1427,7 +1427,7 @@ router.get('/matrix', async (req, res) => {
 
                 // Fetch Planning
                 const [p] = await mysqlPool.query(
-                    `SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
+                    `SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim, lote_id, usuario_planejador, observacao_lote
                      FROM app_production_planning
                      WHERE op_numero IN(${mysqlPlaceholders})`,
                     uniqueOps
@@ -2735,33 +2735,36 @@ const trackingEvolutionHandler = async (req, res) => {
                     c2.c2_produto AS cod_produto,
         c2.c2_quant::numeric AS qtd_planejada,
 
-            --Robust Linking to Pedido(Handles Splits)
-COALESCE(
-    NULLIF(TRIM(c2.c2_pedido), ''),
-    (SELECT TRIM(parent.c2_pedido) 
-                         FROM public.sc2010 parent 
-                         WHERE parent.c2_num = c2.c2_num 
-                           AND parent.c2_item = c2.c2_item 
-                           AND TRIM(parent.c2_sequen) IN('01', '001', '1')
-                           AND COALESCE(parent.d_e_l_e_t_, '') IN('', ' ')
-                         LIMIT 1)
-                    ) AS pedido,
+            -- Robust Linking to Pedido (Handles Splits and Child OPs)
+            COALESCE(
+                NULLIF(TRIM(c2.c2_pedido), ''),
+                (SELECT TRIM(parent.c2_pedido) 
+                 FROM public.sc2010 parent 
+                 WHERE parent.c2_num = c2.c2_num 
+                   AND TRIM(parent.c2_item) IN ('01', '001', '1')
+                   AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
+                 LIMIT 1)
+            ) AS pedido,
 
-    COALESCE(
-        NULLIF(TRIM(c2.c2_itempv), ''),
-        (SELECT parent.c2_itempv 
-                         FROM public.sc2010 parent 
-                         WHERE parent.c2_num = c2.c2_num 
-                           AND parent.c2_item = c2.c2_item 
-                           AND TRIM(parent.c2_sequen) IN('01', '001', '1')
-                           AND COALESCE(parent.d_e_l_e_t_, '') IN('', ' ')
-                         LIMIT 1)
-                    ) AS item_pedido
+            COALESCE(
+                NULLIF(TRIM(c2.c2_itempv), ''),
+                (SELECT parent.c2_itempv 
+                 FROM public.sc2010 parent 
+                 WHERE parent.c2_num = c2.c2_num 
+                   AND TRIM(parent.c2_item) IN ('01', '001', '1')
+                   AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
+                 LIMIT 1)
+            ) AS item_pedido
 
-                FROM public.sc2010 c2
-                INNER JOIN ItensPedido ip ON btrim(c2.c2_produto) = btrim(ip.cod_produto)-- OPTIMIZATION: Scan only relevant products
-                WHERE COALESCE(c2.d_e_l_e_t_, '') IN('', ' ')
-            ),
+            FROM public.sc2010 c2
+            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+              AND c2.c2_num IN (
+                  SELECT DISTINCT c2_inner.c2_num
+                  FROM public.sc2010 c2_inner
+                  INNER JOIN PedidosBase pb ON TRIM(c2_inner.c2_pedido) = pb.pedido
+                  WHERE COALESCE(c2_inner.d_e_l_e_t_, '') IN ('', ' ')
+              )
+        ),
 --4. JOIN with SG2(Roteiro) to Explode Operations
 --This fixes the "Sequence Mixing" by explicitly listing operations
             OPsRoteiro AS(
@@ -2849,11 +2852,36 @@ SUM(quantidade) as total_produzido,
             appointmentsMap[key] = a;
         });
 
+        // 3.5 Fetch PCP Forecasts
+        const pcpForecastMap = {};
+        const pedidoItems = rows
+            .filter(r => (r.pedido || '').trim() && (r.item || '').trim())
+            .map(r => `('${r.pedido.trim()}', '${r.item.trim()}')`);
+            
+        if (pedidoItems.length > 0) {
+            const uniquePedidoItems = [...new Set(pedidoItems)].join(',');
+            const [forecastRows] = await mysqlPool.query(`
+                SELECT pedido, item, data_entrega_pcp
+                FROM app_pcp_delivery_forecasts
+                WHERE (TRIM(pedido), TRIM(item)) IN (${uniquePedidoItems})
+                ORDER BY id ASC
+            `);
+            forecastRows.forEach(f => {
+                const key = `${f.pedido.trim()}_${f.item.trim()}`;
+                if (!pcpForecastMap[key]) {
+                    pcpForecastMap[key] = f.data_entrega_pcp;
+                }
+            });
+        }
+
         // 4. Build hierarchical structure
         const pedidosMap = {};
 
         rows.forEach(row => {
             const pedidoNum = row.pedido;
+            
+            const emissaoRaw = row.data_emissao ? String(row.data_emissao).trim() : '';
+            const emissaoFormatada = emissaoRaw.length === 8 ? `${emissaoRaw.substring(0, 4)}-${emissaoRaw.substring(4, 6)}-${emissaoRaw.substring(6, 8)}` : emissaoRaw;
 
             // Initialize pedido if not exists
             if (!pedidosMap[pedidoNum]) {
@@ -2865,13 +2893,18 @@ SUM(quantidade) as total_produzido,
                         nome: row.nome_cliente,
                         fantasia: row.fantasia_cliente
                     },
-                    data_emissao: row.data_emissao,
+                    data_emissao: emissaoFormatada,
                     itens: {}
                 };
             }
 
             // Initialize item if exists and not added yet
             if (row.item && !pedidosMap[pedidoNum].itens[row.item]) {
+                const pcpData = pcpForecastMap[`${pedidoNum.trim()}_${row.item.trim()}`];
+                
+                const entregaRaw = row.data_entrega ? String(row.data_entrega).trim() : '';
+                const entregaFormatada = entregaRaw.length === 8 ? `${entregaRaw.substring(0, 4)}-${entregaRaw.substring(4, 6)}-${entregaRaw.substring(6, 8)}` : entregaRaw;
+
                 pedidosMap[pedidoNum].itens[row.item] = {
                     item: row.item,
                     produto: {
@@ -2879,7 +2912,7 @@ SUM(quantidade) as total_produzido,
                         descricao: row.desc_produto
                     },
                     quantidade_item: parseFloat(row.qtd_item) || 0,
-                    data_entrega: row.data_entrega,
+                    data_entrega: pcpData || entregaFormatada,
                     ops: []
                 };
             }
@@ -2987,9 +3020,7 @@ SUM(quantidade) as total_produzido,
     }
 };
 
-router.get('/tracking-evolution', trackingEvolutionHandler);
 router.get('/pedidos-evolution', trackingEvolutionHandler);
-
 
 // GET /api/production/appointments/:op - Get Detailed History
 router.get('/appointments/:op', async (req, res) => {

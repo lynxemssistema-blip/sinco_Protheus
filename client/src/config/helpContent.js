@@ -1974,14 +1974,16 @@ export const HELP_CONTENT = {
     categoryColor: '#06b6d4',
     title: 'Formulário SINCO',
     icon: 'FormInput',
-    description: 'Cadastros e formulários de apoio originados diretamente do software de engenharia.',
+    description: 'Visualização e edição avançada de estruturas (BOM), operações e restrições integradas ao Protheus.',
     steps: [
-      'Utilize esta tela para inputs de parâmetros adicionais não cobertos na árvore principal de engenharia.',
-      'Acompanhe o lançamento final gerado pelas macro/tarefas no Solid Edge.',
-      'Exiba os formulários finais para garantir a qualidade de lançamento das peças.'
+      'Edite a "Árvore do Produto" clicando em "Editar". O sistema permite alterar quantidades, remover peças e incluir novos materiais.',
+      'Utilize a **Lupa de Busca** ao adicionar um novo componente para pesquisar materiais diretamente no Protheus por código ou descrição.',
+      'Ao salvar a árvore, o sistema executa validações anti-duplicidade e anti-concorrência para garantir a integridade dos dados no Protheus.',
+      'Adicione ou edite restrições técnicas e acompanhe as macros originadas no Solid Edge.'
     ],
     tips: [
-      'Confira os formulários após alterações estruturais de projetos customizados SINCO para confirmar persistência perante o banco de dados.',
+      'A busca pela Lupa exibe até 50 resultados em tempo real. Digite sempre pelo menos 3 letras ou números.',
+      'O sistema bloqueia salvar estruturas caso detecte materiais com quantidade zero ou códigos não cadastrados no Protheus.',
     ],
     links: [
       { path: '/engenharia/sinco/os', label: 'SINCO – OS' },
@@ -2714,6 +2716,31 @@ export const HELP_CONTENT = {
     links: [
       { path: '/manutencao/checklists', label: 'Checklists Diários' },
       { path: '/manutencao/ordens', label: 'Ordens de Manutenção' }
+    ]
+  },
+
+  // ── Módulo WabTec (Importação e Estrutura) ──────────────────────────────────
+  '/wabtec/estrutura': {
+    category: 'Engenharia / Integração',
+    categoryColor: '#14b8a6',
+    title: 'Importação de Estrutura WabTec',
+    icon: 'FileSpreadsheet',
+    description: 'Módulo dedicado à importação de planilhas Excel da WabTec para gerar e verificar estruturas (BOM) em paralelo com o ERP Protheus.',
+    steps: [
+      'Aba 1 (Importação e Base): Faça o upload da planilha Excel da WabTec. O sistema fará a validação obrigatória das colunas (Level, ID, Revision, Name, Quantity).',
+      'Aba 2 (Mapeamento Protheus): Nesta aba, clique em "Mapear c/ Protheus". O sistema cruzará os desenhos do cliente carregados no Excel com a base de dados para encontrar os códigos de produto equivalentes no ERP.',
+      'Aba 3 (Lista de Materiais - BOM): Selecione o lote e clique em "Extrair / Atualizar do Protheus". O sistema irá explodir a árvore de cada produto mapeado em até 20 níveis para recuperar toda a matéria-prima e os componentes.',
+      'Visões (Aba 3): Alterne entre a visão "Detalhada" (nível a nível da engenharia) ou "Aglutinada" (soma das matérias-primas consolidadas).',
+      'Exportação (Aba 3): Utilize os botões "Exportar Excel" para gerar uma planilha com as abas Detalhada e Resumo de Materiais, ou "Exportar PDF" para criar um documento formatado e pronto para impressão da visualização atual.'
+    ],
+    tips: [
+      'Erros de Template: Se a planilha não subir na Aba 1, verifique se a linha de cabeçalho contém as palavras exatas em inglês: "Level", "ID", "Revision", "Name" e "Quantity".',
+      'Otimização de Performance: Uma vez extraída, a Lista de Materiais é salva no servidor. Isso significa que exportar para Excel ou PDF é um processo instantâneo e não depende de novas consultas ao Protheus.',
+      'A visão aglutinada é excelente para o setor de compras e almoxarifado, pois unifica toda a quantidade requerida de cada componente em uma única linha.'
+    ],
+    links: [
+      { path: '/produtos', label: 'Catálogo de Produtos' },
+      { path: '/estrutura', label: 'Consulta Estrutural Padrão' }
     ]
   }
 

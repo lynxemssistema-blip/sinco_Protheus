@@ -6,7 +6,7 @@ import {
     ArrowRightLeft, FileSpreadsheet, ArrowRight, Users
 } from 'lucide-react';
 import {
-    getPedidosEvolution,
+    getTrackingEvolution,
     getTrackingHistory,
     getTrackingComparison
 } from '../../services/api';
@@ -61,10 +61,10 @@ export default function TrackingEvolution() {
 
     // Evolution Data states
     const [summary, setSummary] = useState({
-        total_pedidos: 0,
-        concluidos: 0,
-        em_andamento: 0,
-        nao_iniciados: 0
+        total_pecas: 0,
+        pedidos_unicos: 0,
+        operacoes_unicas: 0,
+        colaboradores_unicos: 0
     });
     const [groupedData, setGroupedData] = useState([]);
 
@@ -93,7 +93,7 @@ export default function TrackingEvolution() {
                 data_inicio: filters.data_inicio ? filters.data_inicio.replace(/-/g, '') : '',
                 data_fim: filters.data_fim ? filters.data_fim.replace(/-/g, '') : ''
             };
-            const response = await getPedidosEvolution(params);
+            const response = await getTrackingEvolution(params);
             setSummary(response.resumo);
             setGroupedData(response.agrupado || []);
         } catch (error) {
@@ -365,29 +365,29 @@ export default function TrackingEvolution() {
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-blue-500 relative overflow-hidden group">
                                     <div className="relative z-10">
-                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Pedidos</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.total_pedidos || 0).toLocaleString()}</p>
+                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Peças</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.total_pecas || 0).toLocaleString()}</p>
                                     </div>
                                     <Package className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-blue-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-emerald-500 relative overflow-hidden group">
                                     <div className="relative z-10">
-                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Concluídos</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.concluidos || 0).toLocaleString()}</p>
+                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Pedidos Únicos</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.pedidos_unicos || 0).toLocaleString()}</p>
                                     </div>
                                     <FileSpreadsheet className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-emerald-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-yellow-500 relative overflow-hidden group">
                                     <div className="relative z-10">
-                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Em Andamento</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.em_andamento || 0).toLocaleString()}</p>
+                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Operações</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.operacoes_unicas || 0).toLocaleString()}</p>
                                     </div>
-                                    <Users className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-yellow-50 transition-colors" />
+                                    <Factory className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-yellow-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-slate-500 relative overflow-hidden group">
                                     <div className="relative z-10">
-                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Não Iniciados</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.nao_iniciados || 0).toLocaleString()}</p>
+                                        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Colaboradores</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.colaboradores_unicos || 0).toLocaleString()}</p>
                                     </div>
                                     <Users className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-slate-50 transition-colors" />
                                 </div>
@@ -430,58 +430,40 @@ export default function TrackingEvolution() {
                                         <table className="w-full text-left text-sm border-collapse">
                                             <thead className="bg-slate-50 border-b border-slate-200">
                                                 <tr>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Pedido</th>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Cliente</th>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Progresso</th>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Status</th>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Entrega</th>
-                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Ações</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Agrupamento</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Peças Produzidas</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Apontamentos</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Pedidos Envolvidos</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Operações</th>
+                                                    <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Colaboradores</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {groupedData.map((pedido, index) => (
+                                                {groupedData.map((item, index) => (
                                                     <tr key={index} className="hover:bg-slate-50 transition-colors group">
                                                         <td className="px-4 py-3 font-semibold text-slate-700 bg-slate-50/50">
-                                                            {pedido.numero}
+                                                            {item.chave}
                                                         </td>
-                                                        <td className="px-4 py-3 text-slate-600">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-medium text-slate-900">{pedido.cliente?.fantasia || pedido.cliente?.nome || 'N/A'}</span>
-                                                                <span className="text-xs text-slate-400">{pedido.cliente?.loja ? `Loja ${pedido.cliente.loja}` : ''}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3 align-middle">
-                                                            <div className="w-full max-w-xs mx-auto">
-                                                                <div className="flex justify-between text-xs mb-1">
-                                                                    <span className="font-semibold text-slate-700">{pedido.percentual_geral}%</span>
-                                                                    <span className="text-slate-400">{pedido.total_itens} itens</span>
-                                                                </div>
-                                                                <div className="w-full bg-slate-200 rounded-full h-2">
-                                                                    <div
-                                                                        className={`h-2 rounded-full ${pedido.percentual_geral >= 100 ? 'bg-emerald-500' :
-                                                                            pedido.percentual_geral > 0 ? 'bg-blue-500' : 'bg-slate-300'
-                                                                            }`}
-                                                                        style={{ width: `${pedido.percentual_geral}%` }}
-                                                                    ></div>
-                                                                </div>
-                                                            </div>
+                                                        <td className="px-4 py-3 text-slate-600 text-right font-mono text-sm font-semibold">
+                                                            {item.total_pecas?.toLocaleString()}
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
-                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pedido.status === 'concluido' ? 'bg-emerald-100 text-emerald-800' :
-                                                                pedido.status === 'em_andamento' ? 'bg-blue-100 text-blue-800' :
-                                                                    'bg-slate-100 text-slate-800'
-                                                                }`}>
-                                                                {pedido.status === 'concluido' ? 'Concluído' :
-                                                                    pedido.status === 'em_andamento' ? 'Em Andamento' : 'Não Iniciado'}
+                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                {item.num_apontamentos}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 text-right text-slate-600 font-mono text-xs">
-                                                            {pedido.data_entrega ? new Date(pedido.data_entrega).toLocaleDateString() : '-'}
+                                                        <td className="px-4 py-3 text-slate-600 text-xs">
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {item.pedidos?.map(p => (
+                                                                    <span key={p} className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{p}</span>
+                                                                ))}
+                                                            </div>
                                                         </td>
-                                                        <td className="px-4 py-3 text-right">
-                                                            <button className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-blue-600 transition-colors">
-                                                                <ArrowRight className="w-4 h-4" />
-                                                            </button>
+                                                        <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate" title={item.operacoes?.join(', ')}>
+                                                            {item.operacoes?.join(', ') || '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate" title={item.colaboradores?.join(', ')}>
+                                                            {item.colaboradores?.join(', ') || '-'}
                                                         </td>
                                                     </tr>
                                                 ))}

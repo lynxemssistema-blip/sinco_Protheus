@@ -234,6 +234,9 @@ app.use('/api/protheus-study', require('./routes/protheusStudy'));
 app.use('/api/vmi', require('./routes/vmi'));
 app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
 
+// WabTec — Escopos e Engenharia
+app.use('/api/wabtec', require('./routes/wabtec'));
+
 // Expedição e Faturamento
 app.use('/api/faturamento', require('./routes/faturamento'));
 

@@ -9,6 +9,7 @@ import NotesDrawer from '../components/NotesDrawer';
 import MeetingReportModal from '../components/MeetingReportModal';
 import { useAuth } from '../contexts/AuthContext';
 import { getProductionReportData, getSalesPlanningReportData, getResourceEvolutionReportData, getReportDownloadUrl, getSystemSetting, saveSystemSetting } from '../services/api';
+import { generateProductionReportPdf } from '../services/productionReportPdfGenerator';
 
 // --- SUB-COMPONENTS ---
 
@@ -89,7 +90,7 @@ const ProductionReportView = ({ onExport, filters, setFilters }) => {
                         <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm font-medium transition-colors">
                             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Filtrar
                         </button>
-                        <ExportButtons onExport={(type) => onExport(type, filters, 'production')} />
+                        <ExportButtons onExport={(type) => onExport(type, filters, 'production')} showPdf={true} />
                     </div>
                 </form>
             </div>
@@ -101,6 +102,7 @@ const ProductionReportView = ({ onExport, filters, setFilters }) => {
                         <thead className="bg-slate-50 text-slate-700 font-bold border-b sticky top-0 z-20 shadow-sm">
                             <tr>
                                 <th className="p-4">OP</th>
+                                <th className="p-4">Produto</th>
                                 <th className="p-4">Cliente</th>
                                 <th className="p-4">Pedido</th>
                                 <th className="p-4 text-center">Entrega Prev.</th>
@@ -109,11 +111,12 @@ const ProductionReportView = ({ onExport, filters, setFilters }) => {
                             </tr>
                         </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {loading ? <LoadingRow cols={6} /> : data.map((row, idx) => (
+                        {loading ? <LoadingRow cols={7} /> : data.map((row, idx) => (
                             <tr key={idx} className="hover:bg-slate-50">
-                                <td className="p-4 font-mono font-medium">{row.op}</td>
+                                <td className="p-4 font-mono font-medium whitespace-nowrap">{row.op_completa}</td>
+                                <td className="p-4 truncate max-w-[200px]" title={row.descricao}>{row.produto} <br/><span className="text-xs text-slate-500 font-normal">{row.descricao}</span></td>
                                 <td className="p-4 truncate max-w-[200px]" title={row.cliente}>{row.cliente}</td>
-                                <td className="p-4">{row.pedido}</td>
+                                <td className="p-4 font-mono">{row.pedido}</td>
                                 <td className="p-4 text-center font-mono">{formatDate(row.data_entrega)}</td>
                                 <td className="p-4"><ProgressBar value={row.progresso} /></td>
                                 <td className="p-4 text-center"><StatusBadge status={row.status} /></td>
@@ -659,6 +662,10 @@ export default function Reports() {
     }, '@metalfisa:reports_sharedFilters');
 
     const handleExport = (type, filters, category) => {
+        if (type === 'pdf' && category === 'production') {
+            generateProductionReportPdf(filters);
+            return;
+        }
         const url = getReportDownloadUrl(type, filters, category);
         window.open(url, '_blank');
     };
@@ -739,11 +746,13 @@ const KPICard = ({ icon: Icon, color, label, value }) => (
     </div>
 );
 
-const ExportButtons = ({ onExport }) => (
+const ExportButtons = ({ onExport, showPdf }) => (
     <>
-        <button type="button" onClick={() => onExport('pdf')} className="cursor-pointer bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-            PDF
-        </button>
+        {showPdf && (
+            <button type="button" onClick={() => onExport('pdf')} className="cursor-pointer bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                PDF
+            </button>
+        )}
         <button type="button" onClick={() => onExport('excel')} className="cursor-pointer bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
             Excel
         </button>
@@ -785,10 +794,16 @@ const StatusBadge = ({ status }) => (
 
 function formatDate(str) {
     if (!str) return '-';
-    // If ISO or Date obj
     try {
-        if (str.length === 8) { // YYYYMMDD
+        if (String(str).length === 8 && !String(str).includes('-')) { // YYYYMMDD
             return `${str.substr(6, 2)}/${str.substr(4, 2)}/${str.substr(0, 4)}`;
+        }
+        // Handle ISO string safely to avoid timezone offset issues (-1 day)
+        const dateStr = String(str);
+        const ymd = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.substring(0, 10);
+        if (ymd.length === 10 && ymd.includes('-')) {
+            const [y, m, d] = ymd.split('-');
+            return `${d}/${m}/${y}`;
         }
         return new Date(str).toLocaleDateString();
     } catch (e) { return str; }

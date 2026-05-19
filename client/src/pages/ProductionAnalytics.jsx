@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getPedidosEvolution } from '../services/api';
-import { RefreshCw, Search, ChevronDown, ChevronRight, Package, TrendingUp, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { RefreshCw, Search, ChevronDown, ChevronRight, Package, TrendingUp, CheckCircle2, Clock, AlertCircle, FileText } from 'lucide-react';
+import { generateProductionReportPdf } from '../services/productionReportPdfGenerator';
 
 export default function ProductionAnalytics() {
     const [data, setData] = useState({ pedidos: [], resumo: {} });
@@ -60,6 +61,11 @@ export default function ProductionAnalytics() {
             newExpanded.add(key);
         }
         setExpandedItens(newExpanded);
+    };
+
+    const handleGeneratePdf = () => {
+        if (data.pedidos.length === 0) return;
+        generateProductionReportPdf(data.pedidos, filters);
     };
 
     const getStatusColor = (status) => {
@@ -165,6 +171,15 @@ export default function ProductionAnalytics() {
                             Soma Qtd
                         </button>
                     </div>
+
+                    <button
+                        onClick={handleGeneratePdf}
+                        className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-md hover:bg-red-100 font-medium transition-colors text-sm flex items-center gap-2 shadow-sm"
+                        disabled={loading || data.pedidos.length === 0}
+                    >
+                        <FileText className="w-4 h-4" />
+                        Gerar PDF
+                    </button>
 
                     <button
                         onClick={loadData}
@@ -310,13 +325,13 @@ export default function ProductionAnalytics() {
                                         <div className="flex justify-between">
                                             <span className="font-medium text-slate-500">Entrada:</span>
                                             <span className="font-mono text-slate-800">
-                                                {pedido.data_emissao ? new Date(pedido.data_emissao).toLocaleDateString('pt-BR') : '-'}
+                                                {pedido.data_emissao ? new Date(pedido.data_emissao).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}
                                             </span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="font-medium text-slate-500">Entrega:</span>
                                             <span className="font-mono text-slate-800">
-                                                {pedido.data_entrega ? new Date(pedido.data_entrega).toLocaleDateString('pt-BR') : '-'}
+                                                {pedido.data_entrega ? new Date(pedido.data_entrega).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}
                                             </span>
                                         </div>
                                     </div>
@@ -348,9 +363,12 @@ export default function ProductionAnalytics() {
                                                                 <p className="font-semibold text-slate-800">
                                                                     Item {item.item} - {item.produto.codigo}
                                                                 </p>
-                                                                <p className="text-sm text-slate-600">
-                                                                    {item.produto.descricao}
-                                                                </p>
+                                                                <div className="flex items-center gap-4 text-sm text-slate-600 mt-1">
+                                                                    <span>{item.produto.descricao}</span>
+                                                                    <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-xs">
+                                                                        Entrega: {item.data_entrega ? new Date(item.data_entrega).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div className="w-1/3">
@@ -361,35 +379,35 @@ export default function ProductionAnalytics() {
 
                                                 {/* OPs (Expanded) */}
                                                 {expandedItens.has(itemKey) && item.ops.length > 0 && (
-                                                    <div className="bg-white p-4 pl-20">
-                                                        <table className="w-full text-sm">
-                                                            <thead className="border-b border-slate-200">
+                                                    <div className="bg-white p-4 pl-20 overflow-x-auto">
+                                                        <table className="w-full text-sm min-w-max">
+                                                            <thead className="border-b border-slate-200 bg-slate-50">
                                                                 <tr className="text-left text-slate-600">
-                                                                    <th className="pb-2">OP</th>
-                                                                    <th className="pb-2">Produto</th>
-                                                                    <th className="pb-2">Operação</th>
-                                                                    <th className="pb-2 text-right">Planejado</th>
-                                                                    <th className="pb-2 text-right">Apontado</th>
-                                                                    <th className="pb-2 text-right">%</th>
-                                                                    <th className="pb-2">Última Atualização</th>
+                                                                    <th className="p-2 font-medium">OP</th>
+                                                                    <th className="p-2 font-medium">Produto</th>
+                                                                    <th className="p-2 font-medium">Operação</th>
+                                                                    <th className="p-2 font-medium text-right">Planejado</th>
+                                                                    <th className="p-2 font-medium text-right">Apontado</th>
+                                                                    <th className="p-2 font-medium text-right">%</th>
+                                                                    <th className="p-2 font-medium">Última Atualização</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
                                                                 {item.ops.map((op, idx) => (
-                                                                    <tr key={idx} className="border-b border-slate-100 last:border-b-0">
-                                                                        <td className="py-2 font-mono text-slate-700">{op.op}</td>
-                                                                        <td className="py-2 text-slate-600">{op.cod_produto}</td>
-                                                                        <td className="py-2 text-slate-600 italic text-xs">{op.operacao}</td>
-                                                                        <td className="py-2 text-right text-slate-700">{op.qtd_planejada.toFixed(2)}</td>
-                                                                        <td className="py-2 text-right text-slate-700">{op.qtd_apontada.toFixed(2)}</td>
-                                                                        <td className="py-2 text-right">
-                                                                            <span className={`font-semibold ${op.percentual >= 100 ? 'text-green-600' :
-                                                                                op.percentual > 0 ? 'text-blue-600' : 'text-gray-500'
+                                                                    <tr key={idx} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors">
+                                                                        <td className="p-2 font-mono text-slate-700">{op.op}</td>
+                                                                        <td className="p-2 text-slate-600">{op.cod_produto}</td>
+                                                                        <td className="p-2 text-slate-600 italic text-xs">{op.operacao}</td>
+                                                                        <td className="p-2 text-right text-slate-700">{op.qtd_planejada.toFixed(2)}</td>
+                                                                        <td className="p-2 text-right text-slate-700">{op.qtd_apontada.toFixed(2)}</td>
+                                                                        <td className="p-2 text-right">
+                                                                            <span className={`font-semibold px-2 py-0.5 rounded-full text-xs ${op.percentual >= 100 ? 'bg-green-100 text-green-700' :
+                                                                                op.percentual > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
                                                                                 }`}>
                                                                                 {op.percentual}%
                                                                             </span>
                                                                         </td>
-                                                                        <td className="py-2 text-slate-500">
+                                                                        <td className="p-2 text-slate-500 text-xs">
                                                                             {op.ultima_atualizacao ?
                                                                                 new Date(op.ultima_atualizacao).toLocaleString('pt-BR') :
                                                                                 '-'
@@ -413,7 +431,7 @@ export default function ProductionAnalytics() {
 
             {/* Info Note */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <strong>Nota:</strong> Os percentuais são calculados com base nos apontamentos realizados no sistema de controle de produção.
+                <strong>Nota:</strong> Os percentuais são calculados com base nos apontamentos realizados no sistema de controle de produção. O relatório em PDF reflete o estado atual dos dados expandidos.
             </div>
         </div>
     );

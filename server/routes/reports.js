@@ -46,24 +46,29 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
     }
 
     // PROTHEUS Query (Simplified for Reports)
-    // Grouping by OP (aggregated items)
-    // FIXED: Joined via SC5 (Sales Order) because C2 (OP) usually lacks C2_CLIENTE directly
+    // Removed GROUP BY c2.c2_num to show all OP items individually
     const sql = `
         SELECT
-            c2.c2_num as op,
+            TRIM(c2.c2_num) as op,
+            TRIM(c2.c2_item) as item,
+            TRIM(c2.c2_sequen) as sequen,
+            TRIM(c2.c2_produto) as produto,
+            TRIM(sb1.b1_desc) as descricao,
             MAX(c5.c5_cliente) as cod_cliente,
             MAX(a1.a1_nome) as cliente_nome,
             MAX(c2.c2_pedido) as raw_pedido,
+            MAX(c2.c2_itempv) as raw_item_pedido,
             MAX(c2.c2_obs) as obs_venda,
             MAX(c2.c2_datpri) as data_entrega_prevista,
-            SUM(c2.c2_quant::numeric) as qtd_total_planejada,
-            SUM(c2.c2_quje::numeric) as qtd_total_apontada_erp
+            MAX(c2.c2_quant::numeric) as qtd_total_planejada,
+            MAX(c2.c2_quje::numeric) as qtd_total_apontada_erp
         FROM sc2010 c2
         LEFT JOIN sc5010 c5 ON c5.c5_num = c2.c2_pedido AND c5.d_e_l_e_t_ = ''
         LEFT JOIN sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.d_e_l_e_t_ = ''
+        LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND sb1.d_e_l_e_t_ = ''
         ${whereClause}
-        GROUP BY c2.c2_num
-        ORDER BY c2.c2_num DESC
+        GROUP BY c2.c2_num, c2.c2_item, c2.c2_sequen, c2.c2_produto, sb1.b1_desc
+        ORDER BY c2.c2_num DESC, c2.c2_item ASC, c2.c2_sequen ASC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
 
@@ -72,7 +77,7 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
 
     // Execute Count Query (for pagination)
     const countSql = `
-        SELECT COUNT(DISTINCT c2.c2_num) as total
+        SELECT COUNT(c2.r_e_c_n_o_) as total
         FROM sc2010 c2
         LEFT JOIN sc5010 c5 ON c5.c5_num = c2.c2_pedido AND c5.d_e_l_e_t_ = ''
         LEFT JOIN sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.d_e_l_e_t_ = ''
@@ -83,36 +88,65 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
 
     // 2. Enhance with MySQL Data (Status & Progress)
     // Fetch aggregated progress from MySQL for these OPs
-    const opNumbers = results.rows.map(r => r.op);
     let mysqlMap = {};
-
-    if (opNumbers.length > 0) {
-        const placeholders = opNumbers.map(() => '?').join(',');
+    let pcpForecastMap = {};
+    if (results.rows.length > 0) {
+        const opKeys = results.rows.map(r => `('${r.op}', '${r.item}', '${r.sequen}')`).join(',');
         const [mysqlRows] = await mysqlPool.query(`
             SELECT 
                 p.op_numero,
+                p.op_item,
+                p.op_sequencia,
                 MIN(p.data_planejada_inicio) as plan_inicio,
                 MAX(p.data_planejada_fim) as plan_fim,
                 COALESCE(stats.total_produzido, 0) as total_produzido
             FROM app_production_planning p
             LEFT JOIN (
-                SELECT op_numero, SUM(quantidade) as total_produzido
+                SELECT op_numero, op_item, op_sequencia, SUM(quantidade) as total_produzido
                 FROM app_production_appointments
-                GROUP BY op_numero
-            ) stats ON stats.op_numero = p.op_numero
-            WHERE p.op_numero IN (${placeholders})
-            GROUP BY p.op_numero
-        `, opNumbers);
+                GROUP BY op_numero, op_item, op_sequencia
+            ) stats ON stats.op_numero = p.op_numero AND stats.op_item = p.op_item AND stats.op_sequencia = p.op_sequencia
+            WHERE (p.op_numero, p.op_item, p.op_sequencia) IN (${opKeys})
+            GROUP BY p.op_numero, p.op_item, p.op_sequencia
+        `);
 
         mysqlRows.forEach(row => {
-            mysqlMap[row.op_numero] = row;
+            mysqlMap[`${row.op_numero}_${row.op_item}_${row.op_sequencia}`] = row;
         });
+
+        // Fetch PCP Forecasts
+        const pedidoItems = results.rows
+            .filter(r => (r.raw_pedido || '').trim() && (r.raw_item_pedido || '').trim())
+            .map(r => `('${r.raw_pedido.trim()}', '${r.raw_item_pedido.trim()}')`);
+        
+        if (pedidoItems.length > 0) {
+            const uniquePedidoItems = [...new Set(pedidoItems)].join(',');
+            const [forecastRows] = await mysqlPool.query(`
+                SELECT pedido, item, data_entrega_pcp, quantidade_pcp
+                FROM app_pcp_delivery_forecasts
+                WHERE (TRIM(pedido), TRIM(item)) IN (${uniquePedidoItems})
+                ORDER BY id ASC
+            `);
+            
+            forecastRows.forEach(row => {
+                const key = `${row.pedido.trim()}_${row.item.trim()}`;
+                if (!pcpForecastMap[key]) {
+                    pcpForecastMap[key] = row; // Keep the first one, matching OrdersTable logic
+                }
+            });
+        }
     }
 
     // Merge Data
     const rows = results.rows.map(pgRow => {
-        const myData = mysqlMap[pgRow.op] || {};
-        const qtdPlan = parseFloat(pgRow.qtd_total_planejada) || 0;
+        const key = `${pgRow.op}_${pgRow.item}_${pgRow.sequen}`;
+        const myData = mysqlMap[key] || {};
+        const rawP = (pgRow.raw_pedido || '').trim();
+        const rawItemP = (pgRow.raw_item_pedido || '').trim();
+        
+        const forecast = pcpForecastMap[`${rawP}_${rawItemP}`];
+        
+        const qtdPlan = forecast && forecast.quantidade_pcp ? parseFloat(forecast.quantidade_pcp) : (parseFloat(pgRow.qtd_total_planejada) || 0);
         const qtdProd = parseFloat(myData.total_produzido) || parseFloat(pgRow.qtd_total_apontada_erp) || 0; // Fallback to ERP
         const percent = qtdPlan > 0 ? (qtdProd / qtdPlan) * 100 : 0;
 
@@ -125,14 +159,18 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
         if (percent >= 100) status = 'CONCLUIDO';
         else if (percent > 0) status = 'EM_ANDAMENTO';
 
-        const rawP = (pgRow.raw_pedido || '').trim();
         const rawO = (pgRow.obs_venda || '').trim();
 
         return {
-            op: pgRow.op.trim(),
+            op_completa: `${pgRow.op}-${pgRow.item}-${pgRow.sequen}`,
+            op: pgRow.op,
+            item: pgRow.item,
+            sequen: pgRow.sequen,
+            produto: pgRow.produto,
+            descricao: pgRow.descricao || '',
             cliente: pgRow.cliente_nome?.trim() || 'N/A',
             pedido: rawP || (rawO.match(/^\d+/)?.[0] || 'N/A'),
-            data_entrega: pgRow.data_entrega_prevista,
+            data_entrega: forecast ? forecast.data_entrega_pcp : (myData.plan_fim || pgRow.data_entrega_prevista),
             plan_inicio: myData.plan_inicio,
             plan_fim: myData.plan_fim,
             qtd_plan: qtdPlan,
@@ -204,7 +242,9 @@ router.get(['/production/excel', '/production/xlsx'], async (req, res) => {
         const sheet = workbook.addWorksheet('Dados de Produção');
 
         sheet.columns = [
-            { header: 'OP', key: 'op', width: 15 },
+            { header: 'OP Completa', key: 'op_completa', width: 20 },
+            { header: 'Produto', key: 'produto', width: 20 },
+            { header: 'Descrição', key: 'descricao', width: 40 },
             { header: 'Cliente', key: 'cliente', width: 40 },
             { header: 'Pedido Venda', key: 'pedido', width: 15 },
             { header: 'Entrega Prev.', key: 'entrega', width: 15 },
@@ -224,7 +264,9 @@ router.get(['/production/excel', '/production/xlsx'], async (req, res) => {
 
         rows.forEach(r => {
             sheet.addRow({
-                op: r.op,
+                op_completa: r.op_completa,
+                produto: r.produto,
+                descricao: r.descricao,
                 cliente: r.cliente,
                 pedido: r.pedido,
                 entrega: parseDate(r.data_entrega),

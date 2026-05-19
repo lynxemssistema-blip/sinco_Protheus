@@ -106,58 +106,84 @@ router.post('/login', async (req, res) => {
 
 // Password Recovery Route
 router.post('/recuperar-senha', async (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'O E-mail é obrigatório' });
+    const { email } = req.body; // 'email' parameter acts as generic contact info (email or phone) from frontend
+    if (!email) return res.status(400).json({ error: 'O E-mail ou WhatsApp é obrigatório' });
 
     let connection;
     try {
         connection = await mysql.createConnection(dbConfig);
-        const [rows] = await connection.execute('SELECT NomeCompleto, Login, Senha FROM usuario WHERE email = ?', [email]);
+        
+        // Clean phone number if it looks like one (keep only numbers)
+        const isPhone = /^[0-9()\-\s+]+$/.test(email) && email.replace(/\D/g, '').length >= 10;
+        const cleanContact = isPhone ? email.replace(/\D/g, '') : email;
+
+        let rows = [];
+        if (isPhone) {
+            // Find by whatsapp (removing non-digits from DB column just to match safely, or simply match right-padded/unpadded)
+            [rows] = await connection.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE whatsapp LIKE ? OR telefone LIKE ?', [`%${cleanContact.slice(-8)}%`, `%${cleanContact.slice(-8)}%`]);
+        } else {
+            [rows] = await connection.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE email = ?', [email]);
+        }
         
         if (rows.length === 0) {
-            return res.status(404).json({ error: 'Nenhum usuário encontrado com este e-mail no sistema.' });
+            return res.status(404).json({ error: 'Nenhum usuário encontrado com este contato no sistema.' });
         }
 
         const user = rows[0];
 
         // Generate temporary password
-        const tempPassword = Math.random().toString(36).slice(-8);
+        const tempPassword = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit PIN
         const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
 
         // Update DB with hashed temp password
         await connection.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, user.idUsuario || (user.Login ? await connection.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [user.Login]).then(res => res[0][0].idUsuario) : null)]);
 
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false, 
-            auth: {
-                user: 'sincometal@metalfisa.com.br',
-                pass: 'Pro1042@sm'
-            },
-            tls: { rejectUnauthorized: false }
-        });
+        // Send via WhatsApp if matched phone, otherwise via Email
+        if (isPhone && user.whatsapp) {
+            const { sendText } = require('../services/whatsapp');
+            const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
+            const textMessage = `*Recuperação de Acesso*\n\nOlá, *${user.NomeCompleto}*!\nVocê solicitou a recuperação de senha do *Sistema ERP da Metalfisa*.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Nova Senha Temporária:* ${tempPassword}\n\n🌐 *Como Acessar*\n${serverUrl}\n\n_Recomendamos que você altere sua senha após o primeiro login._`;
+            
+            try {
+                await sendText(user.whatsapp, textMessage, 'Recuperação de Acesso via Login');
+                res.json({ message: 'Os dados de acesso foram enviados para o seu WhatsApp!' });
+            } catch (err) {
+                console.error('Erro WhatsApp recovery:', err);
+                return res.status(500).json({ error: 'Erro ao disparar mensagem para seu WhatsApp.' });
+            }
+        } else {
+            const transporter = nodemailer.createTransport({
+                host: 'smtp.task.com.br',
+                port: 587,
+                secure: false, 
+                auth: {
+                    user: 'sincometal@metalfisa.com.br',
+                    pass: 'Pro1042@sm'
+                },
+                tls: { rejectUnauthorized: false }
+            });
 
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
-            to: email,
-            subject: 'Recuperação de Acesso - MetalFisa ERP',
-            html: getCorporateEmailTemplate(`
-                <h2 style="color: #0284c7; margin-top: 0; font-family: Arial, sans-serif;">Recuperação de Acesso</h2>
-                <p>Olá, <b>${user.NomeCompleto}</b>!</p>
-                <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Foi gerada uma senha temporária para você:</p>
-                <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
-                    <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
-                    <p style="margin: 0; font-size: 16px;"><b>Senha Temporária:</b> ${tempPassword}</p>
-                </div>
-                <p style="font-size: 14px;">Recomendamos que você acesse o sistema e altere esta senha imediatamente.</p>
-            `)
-        });
+            await transporter.sendMail({
+                from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                to: user.email || email,
+                subject: 'Recuperação de Acesso - MetalFisa ERP',
+                html: getCorporateEmailTemplate(`
+                    <h2 style="color: #0284c7; margin-top: 0; font-family: Arial, sans-serif;">Recuperação de Acesso</h2>
+                    <p>Olá, <b>${user.NomeCompleto}</b>!</p>
+                    <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Foi gerada uma senha temporária para você:</p>
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
+                        <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
+                        <p style="margin: 0; font-size: 16px;"><b>Senha Temporária:</b> ${tempPassword}</p>
+                    </div>
+                    <p style="font-size: 14px;">Recomendamos que você acesse o sistema e altere esta senha imediatamente.</p>
+                `)
+            });
 
-        res.json({ message: 'Os dados de acesso foram enviados para o seu e-mail!' });
+            res.json({ message: 'Os dados de acesso foram enviados para o seu E-mail!' });
+        }
     } catch (err) {
-        console.error('Erro ao recuperar senha SMTP:', err);
-        res.status(500).json({ error: 'Erro no servidor de E-mail ao disparar recuperação.' });
+        console.error('Erro ao recuperar senha:', err);
+        res.status(500).json({ error: 'Erro no servidor ao processar a recuperação de senha.' });
     } finally {
         if (connection) await connection.end();
     }

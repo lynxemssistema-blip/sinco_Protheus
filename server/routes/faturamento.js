@@ -461,8 +461,15 @@ router.get('/solicitacoes', async (req, res) => {
             });
         }
 
+        // Pós-filtro: se o status mudou via Auto-Faturamento, não o retornamos
+        let finalRows = rows;
+        if (status) {
+            const requestedStatuses = status.split(',').map(s => s.trim());
+            finalRows = rows.filter(r => requestedStatuses.includes(r.status));
+        }
+
         res.json({
-            data: rows,
+            data: finalRows,
             meta: {
                 total: countResult[0].total,
                 page: pageParsed,

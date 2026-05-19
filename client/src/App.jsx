@@ -103,6 +103,8 @@ const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto'));
 const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
+const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
+const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -129,7 +131,7 @@ const PrivateRoute = () => {
     const pageId = PATH_TO_PAGE_ID[location.pathname];
 
     // If there's a mapped page and user is NOT admin,    // Check permissions
-    if (pageId && pageId !== 'protheus-estudo' && !isAdmin && !hasPermission(pageId, 'view')) {
+    if (pageId && pageId !== 'protheus-estudo' && pageId !== 'ajuda' && !isAdmin && !hasPermission(pageId, 'view')) {
         // allow basic access fallback if no specific page found?     
         return (
             <Layout>
@@ -664,6 +666,18 @@ function App() {
                                         <Route path="/vmi/historico" element={
                                             <Layout fullWidth={true}>
                                                 <VMIHistoricoPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* WabTec Routes */}
+                                        <Route path="/wabtec/escopo" element={
+                                            <Layout fullWidth={true}>
+                                                <WabtecEscopoPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/wabtec/estrutura" element={
+                                            <Layout fullWidth={true}>
+                                                <WabtecEstruturaContainer />
                                             </Layout>
                                         } />
 

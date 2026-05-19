@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle } from 'lucide-react';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone } from 'lucide-react';
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
@@ -21,6 +21,7 @@ const Login = () => {
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showRecoveryHint, setShowRecoveryHint] = useState(false);
     
     const [view, setView] = useState('login'); // 'login', 'recover', 'register'
 
@@ -41,6 +42,9 @@ const Login = () => {
         } else {
             setError(result.message);
             setLoading(false);
+            if (result.message && result.message.toLowerCase().includes('credenciais')) {
+                setShowRecoveryHint(true);
+            }
         }
     };
 
@@ -114,21 +118,28 @@ const Login = () => {
                     {error && (
                         <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm border border-red-100 text-center mb-6">
                             {error}
+                            {showRecoveryHint && view === 'login' && (
+                                <div className="mt-3 pt-3 border-t border-red-200 text-orange-700 bg-orange-50/50 p-2 rounded text-xs font-medium text-left leading-relaxed">
+                                    💡 <b>Dica:</b> Se sua senha foi redefinida recentemente pelo administrador, clique no botão <b className="text-orange-800">"Esqueceu a senha?"</b> logo abaixo para receber seu novo acesso via WhatsApp ou E-mail.
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {view === 'recover' && (
                         <form onSubmit={handleRecover} className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Seu E-mail de Cadastro</label>
-                                <p className="text-xs text-gray-500 mb-3">Sua senha atual será enviada para o seu e-mail corporativo.</p>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Seu WhatsApp ou E-mail</label>
+                                <p className="text-xs text-gray-500 mb-3">Uma nova senha temporária será gerada e enviada para você.</p>
                                 <div className="relative">
-                                    <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                                    <div className="absolute left-3 top-3 text-gray-400 flex gap-1">
+                                        <Smartphone className="h-5 w-5" />
+                                    </div>
                                     <input
-                                        type="email"
+                                        type="text"
                                         required
                                         className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                                        placeholder="usuario@metalfisa.com.br"
+                                        placeholder="(99) 99999-9999 ou usuario@email.com"
                                         value={recoverEmail}
                                         onChange={(e) => setRecoverEmail(e.target.value)}
                                     />
@@ -145,7 +156,7 @@ const Login = () => {
                                 ) : (
                                     <>
                                         <Send className="h-5 w-5" />
-                                        Receber Senha por E-mail
+                                        Receber Nova Senha
                                     </>
                                 )}
                             </button>
@@ -248,8 +259,8 @@ const Login = () => {
                                     <label className="block text-sm font-medium text-gray-700">Senha</label>
                                     <button 
                                         type="button" 
-                                        onClick={() => { setView('recover'); setError(''); setSuccessMsg(''); }}
-                                        className="text-xs text-blue-600 hover:text-blue-800 font-medium transition"
+                                        onClick={() => { setView('recover'); setError(''); setSuccessMsg(''); setShowRecoveryHint(false); }}
+                                        className={`text-xs font-medium transition-all ${showRecoveryHint ? 'text-orange-600 animate-pulse font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-200 shadow-sm' : 'text-blue-600 hover:text-blue-800'}`}
                                     >
                                         Esqueceu a senha?
                                     </button>

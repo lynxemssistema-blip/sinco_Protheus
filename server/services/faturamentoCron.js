@@ -42,6 +42,9 @@ async function startFaturamentoCron() {
             console.log(`[COMPRAS] Iniciando geração do relatório automático de compras para as ${currentHourMin}`);
             await processComprasReport(autoConfig.users);
 
+            console.log(`[ACUMULADO] Iniciando geração do relatório acumulado do mês para as ${currentHourMin}`);
+            await processMonthlyAccumulatedReport(autoConfig.users);
+
         } catch (err) {
             console.error('[CRON FATURAMENTO] Erro ao verificar rotina:', err.message);
         }
@@ -419,4 +422,167 @@ async function processComprasReport(users) {
     }
 }
 
-module.exports = { startFaturamentoCron, processDailyReport, processComprasReport };
+async function processMonthlyAccumulatedReport(users) {
+    try {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        
+        const dateStartProtheus = `${yyyy}${mm}01`;
+        const dateEndProtheus = `${yyyy}${mm}${dd}`;
+        const periodBr = `01/${mm}/${yyyy} até ${dd}/${mm}/${yyyy}`;
+
+        // 1. Busca Totais de Faturamento do Mês
+        const queryFaturamento = `
+            SELECT 
+                F2_TIPO as tipo,
+                COUNT(*) as qtd_notas,
+                SUM(F2_VALBRUT) as total_valor
+            FROM SF2010
+            WHERE F2_EMISSAO >= $1 AND F2_EMISSAO <= $2 AND COALESCE(D_E_L_E_T_,' ') = ' '
+            GROUP BY F2_TIPO
+        `;
+        const resFat = await db.query(queryFaturamento, [dateStartProtheus, dateEndProtheus]);
+        
+        const mapTipo = (tipo) => {
+            const t = (tipo || '').trim().toUpperCase();
+            if (t === 'N') return 'Faturamento';
+            if (t === 'C') return 'Complemento';
+            if (t === 'P') return 'Devolução';
+            if (t === 'I') return 'Importação';
+            if (t === 'B') return 'Beneficiamento';
+            if (t === 'D') return 'Remessa';
+            return t || 'Faturamento';
+        };
+
+        let faturamentoDetalhesHTML = '';
+        let faturamentoDetalhesWA = '';
+        let totalGeralFaturamento = 0;
+        let qtdGeralFaturamento = 0;
+
+        resFat.rows.forEach(r => {
+            const val = parseFloat(r.total_valor || 0);
+            totalGeralFaturamento += val;
+            qtdGeralFaturamento += parseInt(r.qtd_notas || 0);
+        });
+
+        // 2. Busca Totais de Compras do Mês
+        const queryCompras = `
+            SELECT 
+                COUNT(*) as qtd_pedidos,
+                SUM(C7_TOTAL) as total_valor
+            FROM SC7010
+            WHERE C7_EMISSAO >= $1 AND C7_EMISSAO <= $2 AND COALESCE(D_E_L_E_T_,' ') = ' '
+        `;
+        const resComp = await db.query(queryCompras, [dateStartProtheus, dateEndProtheus]);
+        const compras = resComp.rows[0];
+        
+        const totalGeralCompras = parseFloat(compras?.total_valor || 0);
+        const qtdGeralCompras = parseInt(compras?.qtd_pedidos || 0);
+
+        const formatBRL = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+        // Monta as strings de detalhamento HTML/WA
+        faturamentoDetalhesHTML = resFat.rows.sort((a,b) => b.total_valor - a.total_valor).map(r => `
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #475569;">${mapTipo(r.tipo)} (${r.qtd_notas} notas)</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight:bold; color: #0f172a;">${formatBRL(r.total_valor)}</td>
+            </tr>
+        `).join('');
+
+        resFat.rows.sort((a,b) => b.total_valor - a.total_valor).forEach(r => {
+            faturamentoDetalhesWA += `▪️ *${mapTipo(r.tipo)}* (${r.qtd_notas}): ${formatBRL(r.total_valor)}\n`;
+        });
+
+        const waMsg = `*📈 ACUMULADO DO MÊS*\n📅 *Período:* ${periodBr}\n\n*🟢 FATURAMENTO*\n📦 *Total Emitido:* ${qtdGeralFaturamento} notas\n💰 *Valor Total:* ${formatBRL(totalGeralFaturamento)}\n\n_Detalhamento por tipo:_\n${faturamentoDetalhesWA}\n*🔴 DESPESAS (COMPRAS)*\n📦 *Total Pedidos:* ${qtdGeralCompras}\n💰 *Valor Comprometido:* ${formatBRL(totalGeralCompras)}\n\n_Mensagem gerencial gerada pelo MetalFisa ERP_`;
+
+        // Busca dados de cada usuario para disparo
+        const userIds = users.map(u => u.id);
+        const [uRows] = await mysql.query(`SELECT idUsuario, email, telefone, NomeCompleto FROM usuario WHERE idUsuario IN (?)`, [userIds]);
+
+        let transporter;
+        try {
+            transporter = nodemailer.createTransport({
+                host: 'smtp.task.com.br',
+                port: 587,
+                secure: false,
+                auth: {
+                    user: 'sincometal@metalfisa.com.br',
+                    pass: 'Pro1042@sm'
+                },
+                tls: { rejectUnauthorized: false }
+            });
+        } catch(e) {
+            console.error('[CRON ACUMULADO] Erro ao configurar nodemailer', e);
+        }
+
+        for (const userConfig of users) {
+            const dbUser = uRows.find(u => u.idUsuario === userConfig.id);
+            if (!dbUser) continue;
+
+            // WhatsApp
+            if (userConfig.whatsapp && dbUser.telefone) {
+                let tel = dbUser.telefone.replace(/\D/g, '');
+                if (tel.length === 11 || tel.length === 10) tel = '55' + tel;
+                try {
+                    await sendText(`${tel}@s.whatsapp.net`, waMsg);
+                    console.log(`[ACUMULADO] Relatório WA enviado para ${dbUser.NomeCompleto}`);
+                } catch(e) {
+                    console.error(`[ACUMULADO] Erro WA para ${dbUser.NomeCompleto}`, e.message);
+                }
+            }
+
+            // Email
+            if (userConfig.email && dbUser.email && transporter) {
+                try {
+                    const htmlContent = `
+                        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                            <div style="background-color: #6366f1; color: #fff; padding: 20px; text-align: center;">
+                                <h2 style="margin: 0;">Acumulado do Mês - Faturamento e Compras</h2>
+                                <p style="margin: 5px 0 0 0;">${periodBr}</p>
+                            </div>
+                            <div style="padding: 20px;">
+                                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                    <div style="flex: 1; background: #f0fdf4; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #bbf7d0;">
+                                        <div style="font-size: 12px; color: #166534; text-transform: uppercase; font-weight: bold;">Total Faturado</div>
+                                        <div style="font-size: 24px; font-weight: bold; color: #14532d; margin-top: 5px;">${formatBRL(totalGeralFaturamento)}</div>
+                                        <div style="font-size: 11px; color: #166534; margin-top: 5px;">${qtdGeralFaturamento} notas de saída</div>
+                                    </div>
+                                    <div style="flex: 1; background: #fef2f2; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #fecaca;">
+                                        <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; font-weight: bold;">Total Compras</div>
+                                        <div style="font-size: 24px; font-weight: bold; color: #7f1d1d; margin-top: 5px;">${formatBRL(totalGeralCompras)}</div>
+                                        <div style="font-size: 11px; color: #991b1b; margin-top: 5px;">${qtdGeralCompras} pedidos de despesa</div>
+                                    </div>
+                                </div>
+                                <h3 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">Detalhamento das Notas de Saída (Faturamento)</h3>
+                                <table style="width:100%; border-collapse: collapse; margin-top: 15px;">
+                                    <tbody>
+                                        ${faturamentoDetalhesHTML}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
+                                <p>Este é um e-mail automático gerado pelo MetalFisa ERP. Por favor, não responda.</p>
+                            </div>
+                        </div>
+                    `;
+
+                    await transporter.sendMail({
+                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                        to: dbUser.email,
+                        subject: `📈 Acumulado do Mês (Faturamento e Compras) - ${periodBr}`,
+                        html: htmlContent
+                    });
+                    console.log(`[ACUMULADO] Relatório E-mail enviado para ${dbUser.NomeCompleto}`);
+                } catch(e) {
+                    console.error(`[ACUMULADO] Erro E-mail para ${dbUser.NomeCompleto}`, e.message);
+                }
+            }
+        }
+    } catch(err) {
+        console.error('[CRON ACUMULADO] Erro ao processar relatório acumulado:', err);
+    }
+}
+
+module.exports = { startFaturamentoCron, processDailyReport, processComprasReport, processMonthlyAccumulatedReport };

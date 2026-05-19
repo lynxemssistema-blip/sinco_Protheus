@@ -19,6 +19,7 @@ async function migrate() {
                 tips TEXT,
                 links TEXT,
                 responsables TEXT,
+                document_id INT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

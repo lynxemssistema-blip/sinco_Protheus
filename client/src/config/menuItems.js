@@ -171,6 +171,14 @@ export const MENU_GROUPS = [
     },
 
     {
+        id: 'wabtec',
+        label: 'WabTec',
+        items: [
+            { id: 'wabtec_escopo', label: 'Escopo de Fornecimento', path: '/wabtec/escopo', icon: FileText },
+            { id: 'wabtec_estrutura', label: 'Estrutura (Importação)', path: '/wabtec/estrutura', icon: GitMerge }
+        ]
+    },
+    {
         id: 'manutencao',
         label: 'Manutenção de Equip.',
         items: [

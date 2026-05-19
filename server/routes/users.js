@@ -152,7 +152,7 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao atualizar usuário:', error);
-        res.status(500).json({ error: 'Erro ao atualizar usuário' });
+        res.status(500).json({ error: 'Erro ao atualizar usuário: ' + error.message });
     }
 });
 
@@ -342,19 +342,18 @@ router.put('/permissions/:userId', requirePermission('config', 'edit'), async (r
 
 // ──── Send Credentials Email ───────────────────────────────────────────────────
 
-// POST /send-credentials — sends access credentials via email to selected users
+// POST /send-credentials — sends access credentials via email or whatsapp to selected users
 router.post('/send-credentials', requirePermission('config', 'edit'), async (req, res) => {
     try {
-        const { userIds } = req.body;
+        const { userIds, method = 'email', passwordDisplay } = req.body;
 
         if (!Array.isArray(userIds) || userIds.length === 0) {
             return res.status(400).json({ error: 'Selecione ao menos um usuário.' });
         }
 
-        // Fetch users with their passwords (plain text stored in DB)
         const placeholders = userIds.map(() => '?').join(',');
         const [users] = await mysqlPool.query(
-            `SELECT idUsuario, NomeCompleto, Login, Senha, email, TipoUsuario, Setor, Funcao 
+            `SELECT idUsuario, NomeCompleto, Login, email, whatsapp, TipoUsuario, Setor, Funcao 
              FROM usuario WHERE idUsuario IN (${placeholders})`,
             userIds
         );
@@ -363,17 +362,28 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
             return res.status(404).json({ error: 'Nenhum usuário encontrado.' });
         }
 
-        const transporter = nodemailer.createTransport(SMTP_CONFIG);
         const results = { success: [], failed: [] };
-
-        // Determine access URL
-        const serverUrl = process.env.APP_URL || 'https://metalfisa.lynxems.com.br';
+        const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
 
         for (const user of users) {
-            if (!user.email) {
+            // Check delivery method contact info first to avoid resetting password if it will fail
+            if (method === 'whatsapp' && !user.whatsapp) {
+                results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: 'Sem WhatsApp cadastrado' });
+                continue;
+            }
+            if (method === 'email' && !user.email) {
                 results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: 'Sem e-mail cadastrado' });
                 continue;
             }
+
+            // Generate or use provided password
+            const newPassword = passwordDisplay && passwordDisplay.trim() !== '' 
+                ? passwordDisplay.trim() 
+                : Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit random password
+
+            // Hash and update the password in DB
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            await mysqlPool.query('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPassword, user.idUsuario]);
 
             const tipoLabel = {
                 'SA': 'SuperAdmin',
@@ -384,70 +394,91 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
                 'CLI': 'Cliente'
             }[user.TipoUsuario] || user.TipoUsuario;
 
-            const emailHtml = `
-                <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Seus Dados de Acesso ao Sistema</h2>
-                <p style="font-size: 15px;">Olá, <b>${user.NomeCompleto}</b>!</p>
-                <p style="font-size: 15px; color: #475569;">Você está recebendo os seus dados de acesso ao <b>Sistema ERP da Metalfisa</b>. Utilize as informações abaixo para efetuar seu login:</p>
-                
-                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
-                    <table style="border-collapse: collapse; width: 100%;">
-                        <tr>
-                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário:</b></td>
-                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Login}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>🔑 Senha:</b></td>
-                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Senha}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏷️ Perfil:</b></td>
-                            <td style="padding: 8px 0; font-size: 14px; color: #334155;">${tipoLabel}</td>
-                        </tr>
-                        ${user.Setor ? `
-                        <tr>
-                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏢 Setor:</b></td>
-                            <td style="padding: 8px 0; font-size: 14px; color: #334155;">${user.Setor}${user.Funcao ? ` — ${user.Funcao}` : ''}</td>
-                        </tr>
-                        ` : ''}
-                    </table>
-                </div>
+            if (method === 'whatsapp') {
+                const { sendText } = require('../services/whatsapp');
+                const textMessage = `*Seus Dados de Acesso ao Sistema*\n\nOlá, *${user.NomeCompleto}*!\nSua senha do *ERP da Metalfisa* foi redefinida.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Senha:* ${newPassword}\n\n🌐 *Como Acessar*\nAbra o navegador e acesse: ${serverUrl}\n\n⚠️ _Importante: Estas credenciais são pessoais e intransferíveis._`;
 
-                <div style="background: #f8fafc; border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #0ea5e9;">
-                    <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #0369a1;">🌐 Como Acessar</p>
-                    <p style="margin: 0; font-size: 14px; color: #475569;">
-                        Abra o navegador e acesse: <a href="${serverUrl}" style="color: #0284c7; text-decoration: underline; font-weight: bold;">${serverUrl}</a>
-                    </p>
-                </div>
+                try {
+                    const waResults = await sendText(user.whatsapp, textMessage, 'Recuperação de Senha');
+                    const waRes = waResults[0];
 
-                <div style="background: #fffbeb; border-radius: 8px; padding: 14px 18px; margin-top: 20px; border: 1px solid #fde68a;">
-                    <p style="margin: 0; font-size: 13px; color: #92400e;">
-                        ⚠️ <b>Importante:</b> Estas credenciais são pessoais e intransferíveis. Por segurança, recomendamos que você exclua este e-mail após anotar seus dados ou guarde-o em local seguro.
-                    </p>
-                </div>
-            `;
+                    if (waRes && waRes.ok) {
+                        results.success.push({ id: user.idUsuario, nome: user.NomeCompleto, whatsapp: user.whatsapp });
+                    } else {
+                        const errReason = waRes ? JSON.stringify(waRes.error) : 'Unknown Error';
+                        results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: errReason });
+                    }
+                } catch (whatsErr) {
+                    console.error(`[WhatsApp] Erro ao enviar para ${user.whatsapp}:`, whatsErr.message);
+                    results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: whatsErr.message });
+                }
+            } else {
+                const transporter = nodemailer.createTransport(SMTP_CONFIG);
+                const emailHtml = `
+                    <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Recuperação de Senha</h2>
+                    <p style="font-size: 15px;">Olá, <b>${user.NomeCompleto}</b>!</p>
+                    <p style="font-size: 15px; color: #475569;">Sua senha de acesso ao <b>Sistema ERP da Metalfisa</b> foi redefinida. Utilize as novas informações abaixo para efetuar seu login:</p>
+                    
+                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
+                        <table style="border-collapse: collapse; width: 100%;">
+                            <tr>
+                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário:</b></td>
+                                <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Login}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>🔑 Nova Senha:</b></td>
+                                <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${newPassword}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏷️ Perfil:</b></td>
+                                <td style="padding: 8px 0; font-size: 14px; color: #334155;">${tipoLabel}</td>
+                            </tr>
+                            ${user.Setor ? `
+                            <tr>
+                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏢 Setor:</b></td>
+                                <td style="padding: 8px 0; font-size: 14px; color: #334155;">${user.Setor}${user.Funcao ? ` — ${user.Funcao}` : ''}</td>
+                            </tr>
+                            ` : ''}
+                        </table>
+                    </div>
 
-            try {
-                await transporter.sendMail({
-                    from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
-                    to: user.email,
-                    subject: '🔐 Seus Dados de Acesso — MetalFisa ERP',
-                    html: getCorporateEmailTemplate(emailHtml)
-                });
+                    <div style="background: #f8fafc; border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #0ea5e9;">
+                        <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #0369a1;">🌐 Como Acessar</p>
+                        <p style="margin: 0; font-size: 14px; color: #475569;">
+                            Abra o navegador e acesse: <a href="${serverUrl}" style="color: #0284c7; text-decoration: underline; font-weight: bold;">${serverUrl}</a>
+                        </p>
+                    </div>
 
-                results.success.push({ id: user.idUsuario, nome: user.NomeCompleto, email: user.email });
-            } catch (emailErr) {
-                console.error(`[SMTP] Erro ao enviar credenciais para ${user.email}:`, emailErr.message);
-                results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: emailErr.message });
+                    <div style="background: #fffbeb; border-radius: 8px; padding: 14px 18px; margin-top: 20px; border: 1px solid #fde68a;">
+                        <p style="margin: 0; font-size: 13px; color: #92400e;">
+                            ⚠️ <b>Importante:</b> Estas credenciais são pessoais e intransferíveis. Por segurança, recomendamos que você exclua este e-mail após anotar seus dados ou guarde-o em local seguro.
+                        </p>
+                    </div>
+                `;
+
+                try {
+                    await transporter.sendMail({
+                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                        to: user.email,
+                        subject: '🔐 Nova Senha de Acesso — MetalFisa ERP',
+                        html: getCorporateEmailTemplate(emailHtml)
+                    });
+
+                    results.success.push({ id: user.idUsuario, nome: user.NomeCompleto, email: user.email });
+                } catch (emailErr) {
+                    console.error(`[SMTP] Erro ao enviar credenciais para ${user.email}:`, emailErr.message);
+                    results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: emailErr.message });
+                }
             }
         }
 
         res.json({
-            message: `Envio concluído: ${results.success.length} enviado(s), ${results.failed.length} falha(s).`,
+            message: `Redefinição concluída: ${results.success.length} enviado(s), ${results.failed.length} falha(s).`,
             results
         });
     } catch (error) {
         console.error('Erro ao enviar credenciais:', error);
-        res.status(500).json({ error: 'Erro ao enviar credenciais: ' + error.message });
+        res.status(500).json({ error: 'Erro ao redefinir e enviar credenciais: ' + error.message });
     }
 });
 

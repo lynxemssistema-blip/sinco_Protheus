@@ -94,6 +94,16 @@ export const getVisaoGerencialFabrica = async (params, config = {}) => {
     return response.data;
 };
 
+export const updateSincoProductStructure = async (payload) => {
+    const response = await api.post('/protheus/estrutura-produtos/editar', payload);
+    return response.data;
+};
+
+export const searchSincoProdutos = async (query) => {
+    const response = await api.get('/sinco/produtos/busca', { params: { q: query } });
+    return response.data;
+};
+
 export const saveSnapshotFabrica = async (data) => {
     const response = await api.post('/pedidos/snapshot-fabrica', data);
     return response.data;
@@ -331,7 +341,7 @@ export const saveUserPreference = (key, value) => api.put(`/users/preferences/${
 export const getMyPermissions = () => api.get('/users/my-permissions').then(res => res.data);
 export const getUserPermissions = (userId) => api.get(`/users/permissions/${userId}`).then(res => res.data);
 export const saveUserPermissions = (userId, permissions) => api.put(`/users/permissions/${userId}`, { permissions }).then(res => res.data);
-export const sendUserCredentials = (userIds) => api.post('/users/send-credentials', { userIds }).then(res => res.data);
+export const sendUserCredentials = (userIds, method = 'email', passwordDisplay = '') => api.post('/users/send-credentials', { userIds, method, passwordDisplay }).then(res => res.data);
 
 // PRODUCT EXTRAS
 // PRODUCT EXTRAS
@@ -391,7 +401,8 @@ export const submitConferenciaBulk = ({ ids, status, observacao, conferido_por, 
 };
 export const getProductionAnalytics = (params) => api.get('/production/analytics', { params }).then(res => res.data);
 export const getProcessList = () => api.get('/production/processes').then(res => res.data);
-export const getPedidosEvolution = (params) => api.get('/production/tracking-evolution', { params }).then(res => ({ ...res.data, pedidos: res.data.agrupado || [] }));
+export const getPedidosEvolution = (params) => api.get('/production/pedidos-evolution', { params }).then(res => ({ ...res.data, pedidos: res.data.agrupado || [] }));
+export const getTrackingEvolution = (params) => api.get('/production/tracking-evolution', { params }).then(res => res.data);
 export const getTrackingHistory = (params) => api.get('/production/tracking-history', { params }).then(res => res.data);
 export const getTrackingComparison = (params) => api.get('/production/tracking-comparison', { params }).then(res => res.data);
 export const getProductionAnalyticsDashboard = (params) => api.get('/production/analytics-dashboard', { params }).then(res => res.data);

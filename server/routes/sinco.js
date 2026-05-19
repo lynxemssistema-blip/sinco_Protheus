@@ -688,6 +688,10 @@ router.get('/arvore/:codigo', async (req, res) => {
                 TRIM(g.g1_niv)    AS nivel,
                 TRIM(g.g1_comp)   AS componente,
                 g.g1_quant        AS quantidade,
+                TRIM(g.g1_trt)    AS trt,
+                g.g1_ini          AS ini,
+                g.g1_fim          AS fim,
+                g.g1_perda        AS perda,
                 TRIM(b.b1_desc)   AS descricao,
                 TRIM(b.b1_um)     AS unidade,
                 TRIM(b.b1_tipo)   AS tipo
@@ -736,6 +740,34 @@ router.get('/produto/:codigo', async (req, res) => {
         res.json(rows[0]);
     } catch (err) {
         console.error('Erro ao buscar produto (Protheus):', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/sinco/produtos/busca?q=... — busca produtos por código ou descrição
+router.get('/produtos/busca', async (req, res) => {
+    const termo = req.query.q ? req.query.q.trim().toUpperCase() : '';
+    if (!termo || termo.length < 3) {
+        return res.json([]);
+    }
+    
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                TRIM(sb1.b1_cod)     AS codigo,
+                TRIM(sb1.b1_desc)    AS titulo,
+                TRIM(sb1.b1_tipo)    AS tipo,
+                TRIM(sb1.b1_um)      AS unidade
+            FROM public.sb1010 sb1
+            WHERE (TRIM(sb1.b1_cod) LIKE $1 OR TRIM(sb1.b1_desc) LIKE $1)
+              AND COALESCE(sb1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY sb1.b1_cod
+            LIMIT 50
+        `, [`%${termo}%`]);
+        
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar produtos:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
