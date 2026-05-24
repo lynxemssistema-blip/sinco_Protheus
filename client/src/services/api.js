@@ -99,6 +99,11 @@ export const updateSincoProductStructure = async (payload) => {
     return response.data;
 };
 
+export const updateSincoRoteiro = async (payload) => {
+    const response = await api.post('/protheus/roteiro-produtivo/editar', payload);
+    return response.data;
+};
+
 export const searchSincoProdutos = async (query) => {
     const response = await api.get('/sinco/produtos/busca', { params: { q: query } });
     return response.data;
@@ -116,6 +121,17 @@ export const getItensPedido = async (pedidoId) => {
         return [];
     }
     const response = await api.get(`/pedidos/${encodeURIComponent(String(pedidoId).trim())}/itens`);
+    return response.data;
+};
+
+// Fetches lightweight status classification (Restrição/Revisão/Novo/PCP) for each item of an order.
+// Uses the dedicated /item-status endpoint (Option B) — does NOT trigger the heavy /:id/itens enrichment.
+export const getItemStatus = async (pedidoId) => {
+    if (!pedidoId || String(pedidoId).trim() === '') {
+        console.warn('[getItemStatus] pedidoId inválido — chamada cancelada:', pedidoId);
+        return { items: [] };
+    }
+    const response = await api.get(`/pedidos/${encodeURIComponent(String(pedidoId).trim())}/item-status`);
     return response.data;
 };
 
@@ -342,6 +358,7 @@ export const getMyPermissions = () => api.get('/users/my-permissions').then(res 
 export const getUserPermissions = (userId) => api.get(`/users/permissions/${userId}`).then(res => res.data);
 export const saveUserPermissions = (userId, permissions) => api.put(`/users/permissions/${userId}`, { permissions }).then(res => res.data);
 export const sendUserCredentials = (userIds, method = 'email', passwordDisplay = '') => api.post('/users/send-credentials', { userIds, method, passwordDisplay }).then(res => res.data);
+export const changePassword = (newPassword, confirmPassword) => api.put('/users/change-password', { newPassword, confirmPassword }).then(res => res.data);
 
 // PRODUCT EXTRAS
 // PRODUCT EXTRAS
@@ -566,7 +583,7 @@ export const saveSystemSetting = async (key, value) => {
 export const reportSystemError = async (moduleName, error, filters = {}) => {
     try {
         const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
-        await api.post('/email/send', {
+        await api.post('/email/system-error', {
             to: 'edsonmanoel2012@gmail.com',
             subject: `⚠️ ERRO NO SISTEMA - ${moduleName}`,
             html: `
@@ -601,6 +618,11 @@ export const getAllRncs = (params) => api.get('/sgq/rncs/all', { params }).then(
 export const createRnc = (data) => api.post('/sgq/rncs', data).then(res => res.data);
 export const updateRnc = (id, data) => api.put(`/sgq/rncs/${id}`, data).then(res => res.data);
 export const deleteRnc = (id) => api.delete(`/sgq/rncs/${id}`).then(res => res.data);
+
+// Apontamentos de RNC
+export const getRncApontamentos = (rncId) => api.get(`/sgq/rncs/${rncId}/apontamentos`).then(res => res.data);
+export const createRncApontamento = (rncId, data) => api.post(`/sgq/rncs/${rncId}/apontamentos`, data).then(res => res.data);
+export const deleteRncApontamento = (id) => api.delete(`/sgq/rncs/apontamentos/${id}`).then(res => res.data);
 
 export { api };
 export default api;

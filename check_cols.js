@@ -1,1 +1,0 @@
-require('dotenv').config({path:'./server/.env'}); const db = require('./server/db'); db.query(\SELECT column_name FROM information_schema.columns WHERE table_name = 'sb1010' AND (column_name LIKE '%peso%' OR column_name LIKE '%area%')\).then(r=>console.table(r.rows)).catch(console.error).finally(()=>process.exit());

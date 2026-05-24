@@ -7,7 +7,40 @@ const { getInactiveOrdersFilter } = require('./pedidoFilterHelper');
 async function getVisaoGerencial(req, res, isAtrasos) {
     try {
         const getInactiveFilter = await getInactiveOrdersFilter();
-        
+        const { startDate, endDate } = req.query;
+
+        let dateFilterClause = '';
+        if (startDate && endDate) {
+            const startStr = startDate.replace(/-/g, '');
+            const endStr = endDate.replace(/-/g, '');
+
+            let pcpPedidos = [];
+            try {
+                // Consultar o MySQL para obter pedidos que têm previsão PCP no intervalo
+                const [pcpRows] = await mysqlPool.query(
+                    'SELECT DISTINCT TRIM(pedido) as pedido FROM app_pcp_delivery_forecasts WHERE data_entrega_pcp BETWEEN ? AND ?',
+                    [startDate, endDate]
+                );
+                pcpPedidos = pcpRows.map(r => r.pedido).filter(Boolean);
+            } catch (err) {
+                console.error('Erro ao buscar pedidos do PCP no MySQL:', err);
+            }
+
+            if (pcpPedidos.length > 0) {
+                const pedList = pcpPedidos.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+                dateFilterClause = `
+                    AND (
+                        (TRIM(c6.c6_entreg) BETWEEN '${startStr}' AND '${endStr}')
+                        OR (TRIM(c5.c5_num) IN (${pedList}))
+                    )
+                `;
+            } else {
+                dateFilterClause = `
+                    AND (TRIM(c6.c6_entreg) BETWEEN '${startStr}' AND '${endStr}')
+                `;
+            }
+        }
+
         // 1. Fetch only sc5010 and sc6010 first. This avoids massive nested loops with sa1010/sb1010
         const query = `
             SELECT
@@ -33,10 +66,11 @@ async function getVisaoGerencial(req, res, isAtrasos) {
               AND (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0
               AND NULLIF(TRIM(c6.c6_entreg), '') IS NOT NULL
               ${isAtrasos ? "AND TRIM(c6.c6_entreg) < TO_CHAR(CURRENT_DATE, 'YYYYMMDD')" : ""}
+              ${dateFilterClause}
               ${getInactiveFilter('c5.c5_num')}
         `;
         const result = await db.query(query);
-        
+
         if (result.rows.length === 0) {
             return res.json({ data: [] });
         }
@@ -44,8 +78,9 @@ async function getVisaoGerencial(req, res, isAtrasos) {
         // 2 + 3. Enrich with Clients (sa1010) and Products (sb1010) — in parallel
         const clientCodes = [...new Set(result.rows.map(r => r.cod_cliente))];
         const productCodes = [...new Set(result.rows.map(r => r.codigo))];
+        const uniquePedidos = [...new Set(result.rows.map(r => r.pedido))];
 
-        const [sa1Result, sb1Result] = await Promise.all([
+        const [sa1Result, sb1Result, forecastResult] = await Promise.all([
             db.query(`
                 SELECT TRIM(a1_cod) as cod, a1_loja as loja, TRIM(a1_nome) as nome
                 FROM sa1010
@@ -55,7 +90,13 @@ async function getVisaoGerencial(req, res, isAtrasos) {
                 SELECT TRIM(b1_cod) as cod, TRIM(b1_desc) as descricao
                 FROM sb1010
                 WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
-            `, [productCodes])
+            `, [productCodes]),
+            uniquePedidos.length > 0 ? mysqlPool.query(`
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, quantidade_pcp
+                FROM app_pcp_delivery_forecasts
+                WHERE TRIM(pedido) IN (${uniquePedidos.map(() => '?').join(',')})
+                ORDER BY id ASC
+            `, uniquePedidos) : Promise.resolve([[]])
         ]);
 
         const clientMap = {};
@@ -67,7 +108,15 @@ async function getVisaoGerencial(req, res, isAtrasos) {
         sb1Result.rows.forEach(p => {
             productMap[p.cod] = p.descricao;
         });
-        
+
+        const forecastsMap = {};
+        if (forecastResult && forecastResult[0]) {
+            forecastResult[0].forEach(f => {
+                const key = `${f.pedido}|${f.item}`;
+                forecastsMap[key] = f;
+            });
+        }
+
         const data = result.rows.map(row => {
             const parseDate = (dStr) => {
                 if (!dStr || dStr.trim() === '' || dStr.length < 8) return '';
@@ -81,11 +130,14 @@ async function getVisaoGerencial(req, res, isAtrasos) {
                 const y = parseInt(dStr.substring(0, 4), 10);
                 const targetDate = new Date(y, m, d);
                 if (isNaN(targetDate.getTime())) return 0;
-                
+
                 const today = new Date();
-                today.setHours(0,0,0,0);
+                today.setHours(0, 0, 0, 0);
                 return Math.floor((today - targetDate) / (1000 * 60 * 60 * 24));
             };
+
+            const key = `${row.pedido}|${row.item}`;
+            const forecast = forecastsMap[key];
 
             return {
                 ...row,
@@ -99,7 +151,9 @@ async function getVisaoGerencial(req, res, isAtrasos) {
                 qtd_entreg: parseFloat(row.qtd_entreg || 0),
                 qtd_faturar: parseFloat(row.qtd_faturar || 0),
                 valor_unitario: parseFloat(row.valor_unitario || 0),
-                valor_saldo: parseFloat(row.valor_saldo || 0)
+                valor_saldo: parseFloat(row.valor_saldo || 0),
+                data_entrega_pcp: forecast ? forecast.data_entrega_pcp : null,
+                quantidade_pcp: forecast ? parseFloat(forecast.quantidade_pcp) : null
             };
         });
 

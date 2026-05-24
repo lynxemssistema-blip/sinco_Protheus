@@ -501,6 +501,8 @@ const ProductStructure = () => {
                     structure={structure}
                     routesMap={routes}
                     codigo={codigo}
+                    initialPedido={location.state?.pedido}
+                    initialItem={location.state?.item}
                 />
             </div>
         </div>

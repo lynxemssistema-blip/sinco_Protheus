@@ -1183,7 +1183,7 @@ const OrdersTable = () => {
                                                                                                     <td className="px-4 py-2 font-mono text-xs">
                                                                                                         <Link
                                                                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}`}
-                                                                                                            state={{ from: location.pathname }}
+                                                                                                            state={{ from: location.pathname, pedido: item.pedido, item: item.item }}
                                                                                                             className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                                                                                                         >
                                                                                                             {item.codigo} <Layers className="h-3 w-3" />

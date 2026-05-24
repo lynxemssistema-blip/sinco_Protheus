@@ -851,57 +851,85 @@ router.get('/kpi-faturar', async (req, res) => {
         const getInactiveFilter = await getInactiveOrdersFilter();
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
 
-        const query = `
+        // 1. Busca os itens ativos primeiro
+        const queryActive = `
             SELECT
-                COUNT(*)::integer AS total,
-                CASE
-                    WHEN sb1.b1_msblql IN ('1','S','T','Y')
-                      OR EXISTS (
-                            SELECT 1 FROM public.sz0010
-                            WHERE TRIM(z0_produto) = TRIM(c6.c6_produto)
-                              AND COALESCE(d_e_l_e_t_, '') <> '*'
-                              AND z0_status = 'P'
-                            LIMIT 1
-                         ) THEN 'Restrição'
-                    WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                    WHEN NOT EXISTS (
-                            SELECT 1 FROM public.sg1010
-                            WHERE TRIM(g1_cod) = TRIM(c6.c6_produto)
-                              AND COALESCE(d_e_l_e_t_, '') <> '*'
-                            LIMIT 1
-                         )
-                     AND NOT EXISTS (
-                            SELECT 1 FROM public.sg2010
-                            WHERE TRIM(g2_produto) = TRIM(c6.c6_produto)
-                              AND COALESCE(d_e_l_e_t_, '') <> '*'
-                            LIMIT 1
-                         ) THEN 'Novo'
-                    WHEN EXISTS (
-                            SELECT 1 FROM public.sc2010
-                            WHERE TRIM(c2_pedido) = TRIM(c5.c5_num)
-                              AND TRIM(c2_itempv) = TRIM(c6.c6_item)
-                              AND COALESCE(d_e_l_e_t_, '') = ''
-                            LIMIT 1
-                         ) THEN 'PCP (Com OP)'
-                    ELSE 'PCP (Sem OP) - Urgente Liberação'
-                END AS status_tipo_item
+                TRIM(c5.c5_num) as pedido,
+                TRIM(c6.c6_item) as item,
+                TRIM(c6.c6_produto) as codigo,
+                TRIM(c6.c6_xrevm) as revm,
+                TRIM(c6.c6_xrevc) as revc
             FROM public.sc5010 c5
             JOIN public.sc6010 c6
                 ON c6.c6_filial = c5.c5_filial
                 AND c6.c6_num   = c5.c5_num
                 AND COALESCE(c6.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sb1010 sb1
-                ON sb1.b1_cod = c6.c6_produto
-                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             WHERE COALESCE(c5.d_e_l_e_t_, '') = ''
               AND c5.c5_tipo <> 'B'
               AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
               ${inactiveFilterSql}
-            GROUP BY 2
         `;
+        const activeRes = await db.query(queryActive);
+        
+        if (activeRes.rows.length === 0) {
+            return res.json({ data: [] });
+        }
 
-        const result = await db.query(query);
-        res.json({ data: result.rows });
+        const productCodes = [...new Set(activeRes.rows.map(r => r.codigo).filter(Boolean))];
+        const pedidosList = [...new Set(activeRes.rows.map(r => r.pedido).filter(Boolean))];
+
+        // 2. Busca flags de restrição e PCP em batch
+        const [sb1Res, sz0Res, sg1Res, sg2Res, sc2Res] = await Promise.all([
+            db.query(`SELECT TRIM(b1_cod) as cod, TRIM(b1_msblql) as msblql FROM public.sb1010 WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''`, [productCodes]),
+            db.query(`SELECT DISTINCT TRIM(z0_produto) as cod FROM public.sz0010 WHERE TRIM(z0_produto) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'`, [productCodes]),
+            db.query(`SELECT DISTINCT TRIM(g1_cod) as cod FROM public.sg1010 WHERE TRIM(g1_cod) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [productCodes]),
+            db.query(`SELECT DISTINCT TRIM(g2_produto) as cod FROM public.sg2010 WHERE TRIM(g2_produto) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [productCodes]),
+            db.query(`SELECT DISTINCT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item FROM public.sc2010 WHERE TRIM(c2_pedido) = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''`, [pedidosList])
+        ]);
+
+        const sb1Map = {}; sb1Res.rows.forEach(r => sb1Map[r.cod] = r.msblql);
+        const sz0Set = new Set(sz0Res.rows.map(r => r.cod));
+        const sg1Set = new Set(sg1Res.rows.map(r => r.cod));
+        const sg2Set = new Set(sg2Res.rows.map(r => r.cod));
+        const sc2Set = new Set(sc2Res.rows.map(r => `${r.pedido}-${r.item}`));
+
+        const counts = {
+            'Restrição': 0,
+            'Revisão': 0,
+            'Novo': 0,
+            'PCP (Com OP)': 0,
+            'PCP (Sem OP) - Urgente Liberação': 0
+        };
+
+        // 3. Processamento em memória
+        for (const row of activeRes.rows) {
+            const b1 = sb1Map[row.codigo] || '';
+            const inSz0 = sz0Set.has(row.codigo);
+            const inSg1 = sg1Set.has(row.codigo);
+            const inSg2 = sg2Set.has(row.codigo);
+            const inSc2 = sc2Set.has(`${row.pedido}-${row.item}`);
+            const revm = row.revm || '';
+            const revc = row.revc || '';
+
+            if (['1', 'S', 'T', 'Y'].includes(b1) || inSz0) {
+                counts['Restrição']++;
+            } else if (revm !== revc) {
+                counts['Revisão']++;
+            } else if (!inSg1 && !inSg2) {
+                counts['Novo']++;
+            } else if (inSc2) {
+                counts['PCP (Com OP)']++;
+            } else {
+                counts['PCP (Sem OP) - Urgente Liberação']++;
+            }
+        }
+
+        const dataOut = Object.keys(counts).map(key => ({
+            status_tipo_item: key,
+            total: counts[key]
+        }));
+
+        res.json({ data: dataOut });
     } catch (err) {
         console.error('Erro na rota kpi-faturar:', err);
         res.status(500).json({ error: 'Erro interno.', details: err.message });
@@ -965,6 +993,118 @@ router.post('/snapshot-fabrica', async (req, res) => {
     } catch (err) {
         console.error('Erro ao salvar snapshot da fábrica:', err);
         res.status(500).json({ error: 'Erro interno ao salvar snapshot.', details: err.message });
+    }
+});
+
+// GET /api/pedidos/:id/item-status
+// Returns lightweight status classification (Restrição/Revisão/Novo/PCP) per item.
+// Used by the Visão Geral tree-mode expand to show the correct status badge.
+router.get('/:id/item-status', async (req, res) => {
+    try {
+        const pedido = String(req.params.id || '').trim();
+        if (!pedido) {
+            return res.status(400).json({ error: 'Parâmetro pedido inválido ou ausente.' });
+        }
+
+        // Fetch all items for this order with only the fields needed for status classification
+        const itemsResult = await db.query(`
+            SELECT
+                TRIM(c6.c6_item)    AS item,
+                TRIM(c6.c6_produto) AS codigo,
+                TRIM(c6.c6_xrevm)   AS rev_codigo,
+                TRIM(c6.c6_xrevc)   AS c6_rev_cliente,
+                COALESCE(sb1.b1_msblql, '') AS b1_msblql
+            FROM public.sc5010 c5
+            JOIN public.sc6010 c6
+                ON COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND c6.c6_filial = c5.c5_filial
+                AND c6.c6_num = c5.c5_num
+            LEFT JOIN public.sb1010 sb1
+                ON COALESCE(sb1.d_e_l_e_t_, '') = ''
+                AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
+            WHERE c5.c5_num = $1
+              AND COALESCE(c5.d_e_l_e_t_, '') = ''
+              AND c5.c5_tipo <> 'B'
+            ORDER BY c6.c6_item ASC
+        `, [pedido]);
+
+        const items = itemsResult.rows;
+        if (items.length === 0) {
+            return res.json({ pedido, items: [] });
+        }
+
+        // Deduplicate product codes and fetch SG1, SG2, SZ0 in one batch query
+        const productCodes = [...new Set(items.map(i => i.codigo).filter(Boolean))];
+
+        const pgStatusResult = await db.query(`
+            SELECT 'sg1' AS type, TRIM(g1_cod) AS cod
+              FROM public.sg1010
+             WHERE TRIM(g1_cod) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+            UNION ALL
+            SELECT 'sg2' AS type, TRIM(g2_produto) AS cod
+              FROM public.sg2010
+             WHERE TRIM(g2_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+            UNION ALL
+            SELECT 'sz0' AS type, TRIM(z0_produto) AS cod
+              FROM public.sz0010
+             WHERE TRIM(z0_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+        `, [productCodes]);
+
+        const sg1Set = new Set();
+        const sg2Set = new Set();
+        const sz0Set = new Set();
+        pgStatusResult.rows.forEach(r => {
+            if (r.type === 'sg1') sg1Set.add(r.cod);
+            if (r.type === 'sg2') sg2Set.add(r.cod);
+            if (r.type === 'sz0') sz0Set.add(r.cod);
+        });
+
+        // Classify each item using the same hierarchy as /flat and /:id/itens
+        const classified = items.map(item => {
+            const isBlocked     = ['1', 'S', 'T', 'Y'].includes(item.b1_msblql);
+            const hasRestriction = sz0Set.has(item.codigo);
+            const revDiff       = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
+            const isNew         = !sg1Set.has(item.codigo) && !sg2Set.has(item.codigo);
+
+            let status_tipo_item, status_tipo_detalhe;
+
+            if (isBlocked || hasRestriction) {
+                status_tipo_item   = 'Restrição';
+                const reason = isBlocked
+                    ? 'Produto bloqueado no cadastro SB1 (b1_msblql).'
+                    : 'Restrição pendente no cadastro SZ0 (status=P).';
+                status_tipo_detalhe = `${reason} Rev. MF: ${item.rev_codigo || '-'} / Rev. Cli: ${item.c6_rev_cliente || '-'}`;
+            } else if (revDiff) {
+                status_tipo_item   = 'Revisão';
+                status_tipo_detalhe = `Diferença de revisão. Rev. MF: ${item.rev_codigo || '-'} / Rev. Cli: ${item.c6_rev_cliente || '-'}`;
+            } else if (isNew) {
+                status_tipo_item   = 'Novo';
+                status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
+            } else {
+                status_tipo_item   = 'PCP';
+                status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+            }
+
+            // Return diagnostic payload
+            return {
+                item: item.item,
+                codigo: item.codigo,
+                rev_codigo: item.rev_codigo,
+                c6_rev_cliente: item.c6_rev_cliente,
+                b1_msblql: item.b1_msblql,
+                has_sg1: sg1Set.has(item.codigo),
+                has_sg2: sg2Set.has(item.codigo),
+                has_sz0: sz0Set.has(item.codigo),
+                status_tipo_item,
+                status_tipo_detalhe,
+            };
+        });
+
+        console.log(`[item-status/${pedido}] ✅ ${classified.length} itens classificados.`);
+        return res.json({ pedido, items: classified });
+    } catch (err) {
+        console.error(`[item-status] ❌ Erro:`, err.message);
+        return res.status(500).json({ error: 'Erro ao calcular status dos itens.', details: err.message });
     }
 });
 

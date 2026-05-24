@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const db = require('../services/mysqlService');
 
+// Alter tables to add reposicao_op column
+(async () => {
+    try {
+        await db.query(`ALTER TABLE app_sgq_rncs ADD COLUMN reposicao_op VARCHAR(50) DEFAULT NULL`);
+        console.log('✅ Coluna reposicao_op adicionada à tabela app_sgq_rncs com sucesso (ou já existia).');
+    } catch (e) {
+        // Ignora se a coluna já existir
+    }
+})();
+
 // Auxiliar: Parse seguro para Strings tipo JSON Text
 const safeParse = (data) => {
     try {
@@ -231,7 +241,8 @@ router.get('/rncs', async (req, res) => {
     try {
         const { op, pedido, item_op, sequen_op } = req.query;
         let query = `
-            SELECT r.*, nc.descricao as nc_descricao, nc.tipo as nc_tipo, nc.gravidade as nc_gravidade 
+            SELECT r.*, nc.descricao as nc_descricao, nc.tipo as nc_tipo, nc.gravidade as nc_gravidade,
+                   (SELECT COALESCE(SUM(tempo_minutos), 0) FROM app_sgq_rnc_apontamentos WHERE rnc_id = r.id) as tempo_gasto_total
             FROM app_sgq_rncs r
             LEFT JOIN app_sgq_nao_conformidades nc ON r.nao_conformidade_id = nc.id
             WHERE 1=1
@@ -258,7 +269,8 @@ router.get('/rncs/all', async (req, res) => {
     try {
         const { status, periodo } = req.query;
         let query = `
-            SELECT r.*, nc.descricao as nc_descricao, nc.tipo as nc_tipo, nc.gravidade as nc_gravidade 
+            SELECT r.*, nc.descricao as nc_descricao, nc.tipo as nc_tipo, nc.gravidade as nc_gravidade,
+                   (SELECT COALESCE(SUM(tempo_minutos), 0) FROM app_sgq_rnc_apontamentos WHERE rnc_id = r.id) as tempo_gasto_total
             FROM app_sgq_rncs r
             LEFT JOIN app_sgq_nao_conformidades nc ON r.nao_conformidade_id = nc.id
             WHERE 1=1
@@ -270,6 +282,40 @@ router.get('/rncs/all', async (req, res) => {
         query += ' ORDER BY r.data_criacao DESC LIMIT 1000';
 
         const [results] = await db.query(query, params);
+
+        // Enrichment with drawings/PDF from produtos_docs
+        if (results && results.length > 0) {
+            const codigos = [...new Set(results.map(r => r.produto).filter(c => c))];
+            if (codigos.length > 0) {
+                const placeholders = codigos.map(() => '?').join(',');
+                const [docsResult] = await db.query(
+                    `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${placeholders})`,
+                    codigos
+                );
+                
+                const docsMap = {};
+                docsResult.forEach(d => {
+                    if (!docsMap[d.produto_codigo]) {
+                        docsMap[d.produto_codigo] = [];
+                    }
+                    docsMap[d.produto_codigo].push(d);
+                });
+
+                results.forEach(r => {
+                    const docs = docsMap[r.produto] || [];
+                    r.tem_arquivos = docs.length > 0;
+                    r.arquivos_count = docs.length;
+                    r.primeiro_arquivo = docs.length > 0 ? docs[0].url_arquivo : null;
+                });
+            } else {
+                results.forEach(r => {
+                    r.tem_arquivos = false;
+                    r.arquivos_count = 0;
+                    r.primeiro_arquivo = null;
+                });
+            }
+        }
+
         res.json(results);
     } catch (error) {
         console.error('Erro ao buscar todas RNCs:', error);
@@ -283,23 +329,24 @@ router.post('/rncs', async (req, res) => {
         const {
             pedido, op, item_op, sequen_op, produto, desc_produto, cliente,
             recurso_origem, recurso_inconformidade, nao_conformidade_id,
-            observacao, imagem_evidencia, criado_por, f097_dados, fotos_registro
+            observacao, imagem_evidencia, criado_por, f097_dados, fotos_registro, data_limite
         } = req.body;
 
         const [result] = await db.query(
             `INSERT INTO app_sgq_rncs (
                 pedido, op, item_op, sequen_op, produto, desc_produto, cliente,
                 recurso_origem, recurso_inconformidade, nao_conformidade_id,
-                observacao, imagem_evidencia, criado_por, status, f097_dados, fotos_registro
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ABERTO', ?, ?)`,
+                observacao, imagem_evidencia, criado_por, status, f097_dados, fotos_registro, data_limite
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ABERTO', ?, ?, ?)`,
             [
                 pedido || null, op || null, item_op || null, sequen_op || null,
                 produto || null, desc_produto || null, cliente || null,
                 recurso_origem || null, recurso_inconformidade || null,
                 nao_conformidade_id || null, observacao || null,
                 imagem_evidencia || null, criado_por || 'Operador',
-                f097_dados ? JSON.stringify(f097_dados) : null,
-                fotos_registro ? JSON.stringify(fotos_registro) : null
+                f097_dados ? (typeof f097_dados === 'string' ? f097_dados : JSON.stringify(f097_dados)) : null,
+                fotos_registro ? (typeof fotos_registro === 'string' ? fotos_registro : JSON.stringify(fotos_registro)) : null,
+                data_limite || null
             ]
         );
         res.status(201).json({ message: 'RNC criada com sucesso.', id: result.insertId });
@@ -313,7 +360,12 @@ router.post('/rncs', async (req, res) => {
 router.put('/rncs/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, tratativa_resposta, tratado_por, f097_dados, fotos_tratativa, recurso_inconformidade, nao_conformidade_id, observacao } = req.body;
+        const { 
+            status, tratativa_resposta, tratado_por, f097_dados, fotos_tratativa, 
+            recurso_inconformidade, nao_conformidade_id, observacao, data_limite,
+            reposicao_solicitada, reposicao_liberada, reposicao_data_solicitacao,
+            reposicao_data_liberacao, reposicao_usuario_liberou, reposicao_op
+        } = req.body;
 
         const queryParams = [status || 'EM ANDAMENTO', tratativa_resposta || null, tratado_por || 'Sistema'];
         let queryStr = `UPDATE app_sgq_rncs SET status = ?, tratativa_resposta = ?, tratado_por = ?, data_tratativa = CURRENT_TIMESTAMP`;
@@ -338,27 +390,95 @@ router.put('/rncs/:id', async (req, res) => {
             queryStr += `, observacao = ?`;
             queryParams.push(observacao);
         }
+        if (data_limite !== undefined) {
+            queryStr += `, data_limite = ?`;
+            queryParams.push(data_limite);
+        }
+        if (reposicao_solicitada !== undefined) {
+            queryStr += `, reposicao_solicitada = ?`;
+            queryParams.push(reposicao_solicitada);
+        }
+        if (reposicao_liberada !== undefined) {
+            queryStr += `, reposicao_liberada = ?`;
+            queryParams.push(reposicao_liberada);
+        }
+        if (reposicao_data_solicitacao !== undefined) {
+            queryStr += `, reposicao_data_solicitacao = ?`;
+            queryParams.push(reposicao_data_solicitacao);
+        }
+        if (reposicao_data_liberacao !== undefined) {
+            queryStr += `, reposicao_data_liberacao = ?`;
+            queryParams.push(reposicao_data_liberacao);
+        }
+        if (reposicao_usuario_liberou !== undefined) {
+            queryStr += `, reposicao_usuario_liberou = ?`;
+            queryParams.push(reposicao_usuario_liberou);
+        }
+        if (reposicao_op !== undefined) {
+            queryStr += `, reposicao_op = ?`;
+            queryParams.push(reposicao_op);
+        }
 
         queryStr += ` WHERE id = ?`;
         queryParams.push(id);
 
         await db.query(queryStr, queryParams);
-        res.json({ message: 'RNC atualizada com sucesso.' });
+        res.json({ message: 'RNC updated successfully' });
     } catch (error) {
         console.error('Erro ao atualizar RNC:', error);
         res.status(500).json({ error: 'Erro ao atualizar RNC.' });
     }
 });
 
-// DELETE /api/sgq/rncs/:id
-router.delete('/rncs/:id', async (req, res) => {
+// --- APONTAMENTOS DE PRODUÇÃO PARA RNC ---
+
+// GET /api/sgq/rncs/:id/apontamentos
+router.get('/rncs/:id/apontamentos', async (req, res) => {
     try {
         const { id } = req.params;
-        await db.query('DELETE FROM app_sgq_rncs WHERE id = ?', [id]);
-        res.json({ message: 'RNC excluída com sucesso.' });
+        const [rows] = await db.query(
+            'SELECT * FROM app_sgq_rnc_apontamentos WHERE rnc_id = ? ORDER BY data_apontamento DESC',
+            [id]
+        );
+        res.json(rows);
     } catch (error) {
-        console.error('Erro ao excluir RNC:', error);
-        res.status(500).json({ error: 'Erro ao excluir RNC.' });
+        console.error('Erro ao buscar apontamentos de RNC:', error);
+        res.status(500).json({ error: 'Erro ao buscar apontamentos.' });
+    }
+});
+
+// POST /api/sgq/rncs/:id/apontamentos
+router.post('/rncs/:id/apontamentos', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { operacao_recurso, descricao, tempo_minutos, usuario } = req.body;
+        
+        if (!operacao_recurso || !tempo_minutos || !usuario) {
+            return res.status(400).json({ error: 'Operação/Recurso, tempo em minutos e usuário são obrigatórios.' });
+        }
+
+        const [result] = await db.query(
+            `INSERT INTO app_sgq_rnc_apontamentos (rnc_id, operacao_recurso, descricao, tempo_minutos, usuario)
+             VALUES (?, ?, ?, ?, ?)`,
+            [id, operacao_recurso, descricao || '', parseInt(tempo_minutos, 10), usuario]
+        );
+
+        res.status(201).json({ message: 'Apontamento registrado com sucesso.', id: result.insertId });
+    } catch (error) {
+        console.error('Erro ao registrar apontamento de RNC:', error);
+        res.status(500).json({ error: 'Erro ao registrar apontamento.' });
+    }
+});
+
+// DELETE /api/sgq/rncs/apontamentos/:id
+router.delete('/rncs/apontamentos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await db.query('DELETE FROM app_sgq_rnc_apontamentos WHERE id = ?', [id]);
+        res.json({ message: 'Apontamento excluído com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao excluir apontamento de RNC:', error);
+        res.status(500).json({ error: 'Erro ao excluir apontamento.' });
     }
 });
 

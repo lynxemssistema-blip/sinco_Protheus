@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
 import { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
 import logo from '../assets/metalfisa-logo.png';
+import ChangePasswordModal from './ChangePasswordModal';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
@@ -18,6 +19,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const [expandedGroups, setExpandedGroups] = useState({});
     const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
     const [searchTerm, setSearchTerm] = useState('');
+    const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
     // Helper to toggle sidebar size
     const toggleSidebarSize = () => {
@@ -311,17 +313,33 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                             </div>
                         )}
                         {!isCollapsed && (
-                            <button
-                                onClick={logout}
-                                className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
-                                title="Desconectar"
-                            >
-                                <LogOut className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setIsChangePasswordOpen(true)}
+                                    className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors"
+                                    title="Alterar Senha"
+                                >
+                                    <Key className="h-4 w-4" />
+                                </button>
+                                <button
+                                    onClick={logout}
+                                    className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
+                                    title="Desconectar"
+                                >
+                                    <LogOut className="h-4 w-4" />
+                                </button>
+                            </div>
                         )}
                     </div>
                     {isCollapsed && (
-                        <div className="mt-2 flex justify-center border-t border-slate-700 pt-2">
+                        <div className="mt-2 flex flex-col items-center gap-1.5 border-t border-slate-700 pt-2">
+                            <button
+                                onClick={() => setIsChangePasswordOpen(true)}
+                                className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors"
+                                title="Alterar Senha"
+                            >
+                                <Key className="h-4 w-4" />
+                            </button>
                             <button
                                 onClick={logout}
                                 className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
@@ -333,6 +351,11 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                     )}
                 </div>
             </aside>
+
+            <ChangePasswordModal 
+                isOpen={isChangePasswordOpen}
+                onClose={() => setIsChangePasswordOpen(false)}
+            />
         </>
     );
 };

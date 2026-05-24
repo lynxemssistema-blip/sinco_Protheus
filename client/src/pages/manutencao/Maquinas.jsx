@@ -343,7 +343,7 @@ export default function ManutencaoMaquinas() {
                                                 <span className={`px-2 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${
                                                     m.tipo === 'VEICULO' ? 'bg-blue-100 text-blue-700' : 
                                                     m.tipo === 'EQUIPAMENTO' ? 'bg-orange-100 text-orange-700' :
-                                                    m.tipo === 'ALUGADO' ? 'bg-purple-100 text-purple-700' :
+                                                    m.tipo === 'ALUGADO' ? 'bg-emerald-100 text-emerald-700' :
                                                     'bg-slate-100 text-slate-600'
                                                 }`}>
                                                     {m.tipo === 'VEICULO' ? '🚗 Veículo' : m.tipo === 'EQUIPAMENTO' ? '🔧 Equip.' : m.tipo === 'ALUGADO' ? '🤝 Alugado' : '⚙️ Máquina'}
@@ -463,8 +463,8 @@ export default function ManutencaoMaquinas() {
                                     </div>
 
                                     {formData.tipo === 'ALUGADO' && (
-                                        <div className="col-span-2 bg-purple-50/50 border border-purple-100 rounded-xl p-5 mt-2 mb-2">
-                                            <h3 className="text-sm font-bold text-purple-800 mb-4 flex items-center gap-2">
+                                        <div className="col-span-2 bg-emerald-50/50 border border-emerald-100 rounded-xl p-5 mt-2 mb-2">
+                                            <h3 className="text-sm font-bold text-emerald-800 mb-4 flex items-center gap-2">
                                                 <AlertCircle size={16} /> Dados do Contrato de Locação
                                             </h3>
                                             <div className="grid grid-cols-2 gap-4">
@@ -474,7 +474,7 @@ export default function ManutencaoMaquinas() {
                                                         type="text" 
                                                         value={formData.dados_aluguel.numero_serie_locador}
                                                         onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, numero_serie_locador: e.target.value}})}
-                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        className="w-full border border-emerald-200 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 text-sm"
                                                         placeholder="Ex: LOC-9988"
                                                     />
                                                 </div>
@@ -484,7 +484,7 @@ export default function ManutencaoMaquinas() {
                                                         type="text" 
                                                         value={formData.dados_aluguel.valor_mensal}
                                                         onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, valor_mensal: e.target.value}})}
-                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        className="w-full border border-emerald-200 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 text-sm"
                                                         placeholder="Ex: 1500,00"
                                                     />
                                                 </div>
@@ -494,7 +494,7 @@ export default function ManutencaoMaquinas() {
                                                         type="date" 
                                                         value={formData.dados_aluguel.data_inicio}
                                                         onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, data_inicio: e.target.value}})}
-                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        className="w-full border border-emerald-200 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 text-sm"
                                                     />
                                                 </div>
                                                 <div className="col-span-2 md:col-span-1">
@@ -503,7 +503,7 @@ export default function ManutencaoMaquinas() {
                                                         type="date" 
                                                         value={formData.dados_aluguel.data_validade}
                                                         onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, data_validade: e.target.value}})}
-                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        className="w-full border border-emerald-200 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 text-sm"
                                                     />
                                                 </div>
                                                 <div className="col-span-2 md:col-span-1">
@@ -512,7 +512,7 @@ export default function ManutencaoMaquinas() {
                                                         type="date" 
                                                         value={formData.dados_aluguel.previsao_entrega}
                                                         onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, previsao_entrega: e.target.value}})}
-                                                        className="w-full border border-purple-200 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 text-sm"
+                                                        className="w-full border border-emerald-200 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 text-sm"
                                                     />
                                                 </div>
                                                 <div className="col-span-2 md:col-span-1 flex items-center mt-6">
@@ -521,7 +521,7 @@ export default function ManutencaoMaquinas() {
                                                             type="checkbox" 
                                                             checked={formData.dados_aluguel.certificacao_inclusa}
                                                             onChange={e => setFormData({...formData, dados_aluguel: {...formData.dados_aluguel, certificacao_inclusa: e.target.checked}})}
-                                                            className="w-4 h-4 text-purple-600 border-purple-300 rounded focus:ring-purple-500"
+                                                            className="w-4 h-4 text-emerald-600 border-emerald-300 rounded focus:ring-emerald-500"
                                                         />
                                                         <span className="ml-2 text-sm font-semibold text-slate-700">Certificação/Calibração inclusa no aluguel?</span>
                                                     </label>

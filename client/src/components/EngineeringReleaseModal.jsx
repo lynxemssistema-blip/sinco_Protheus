@@ -1,23 +1,91 @@
-import React, { useState } from 'react';
-import { X, Send, Stamp, Download, Plus, Trash2, Mail, FileText, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Send, Stamp, Download, Plus, Trash2, Mail, FileText, AlertCircle, CheckCircle, Loader2, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
 import api from '../services/api';
 
-const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo }) => {
+const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo, initialPedido, initialItem }) => {
     const { user } = useAuth();
     const [pedido, setPedido] = useState('');
     const [item, setItem] = useState('');
+    const [observacao, setObservacao] = useState('');
     const [emails, setEmails] = useState(['']);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [result, setResult] = useState(null); // { type: 'success' | 'error', message }
     const [mode, setMode] = useState('full'); // 'full' or 'n1'
 
-    if (!isOpen) return null;
+    const [showSearchModal, setShowSearchModal] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchType, setSearchType] = useState('pedido');
+    const [searchResults, setSearchResults] = useState([]);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [searchError, setSearchError] = useState('');
 
     const userName = user?.nome || user?.NomeCompleto || user?.username || 'Usuário';
     const today = new Date().toLocaleDateString('pt-BR');
+
+    useEffect(() => {
+        if (isOpen) {
+            setPedido(initialPedido || '');
+            setItem(initialItem || '');
+        }
+    }, [isOpen, initialPedido, initialItem]);
+
+    useEffect(() => {
+        if (isOpen && userName) {
+            const savedEmails = localStorage.getItem(`metalfisa_eng_emails_${userName}`);
+            if (savedEmails) {
+                try {
+                    const parsed = JSON.parse(savedEmails);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setEmails(parsed);
+                    } else {
+                        setEmails(['']);
+                    }
+                } catch(e) {
+                    setEmails(['']);
+                }
+            } else {
+                setEmails(['']);
+            }
+        }
+    }, [isOpen, userName]);
+
+    const handleSearchOrders = async (e) => {
+        if (e) e.preventDefault();
+        if (!searchQuery.trim()) return;
+        setSearchLoading(true);
+        setSearchError('');
+        try {
+            const params = {
+                limit: 30,
+                only_active: 'false'
+            };
+            if (searchType === 'pedido') {
+                params.pedido = searchQuery.trim();
+            } else if (searchType === 'produto') {
+                params.produto = searchQuery.trim();
+            } else if (searchType === 'cliente') {
+                params.cliente = searchQuery.trim();
+            }
+            const response = await api.get('/pedidos/flat', { params });
+            if (response.data && Array.isArray(response.data.data)) {
+                setSearchResults(response.data.data);
+            } else if (Array.isArray(response.data)) {
+                setSearchResults(response.data);
+            } else {
+                setSearchResults([]);
+            }
+        } catch (err) {
+            console.error('Erro ao buscar pedidos:', err);
+            setSearchError('Falha ao buscar pedidos. Tente novamente.');
+        } finally {
+            setSearchLoading(false);
+        }
+    };
+
+    if (!isOpen) return null;
 
     const addEmailField = () => {
         setEmails(prev => [...prev, '']);
@@ -46,7 +114,8 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                 usuario: userName,
                 pedido: pedido.trim() || null,
                 item: item.trim() || null,
-                codigo_liberacao: codigoLiberacao
+                codigo_liberacao: codigoLiberacao,
+                observacao: observacao.trim() || null
             },
             returnBytes: true,
         };
@@ -197,6 +266,15 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                     </tr>
                 </table>
 
+                ${observacao.trim() ? `
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 4px; margin-bottom: 20px;">
+                    <p style="margin: 0; color: #334155; font-weight: bold; font-size: 14px;">
+                        📝 Observações Adicionais
+                    </p>
+                    <p style="margin: 5px 0 0; color: #475569; font-size: 13px; white-space: pre-wrap;">${observacao.trim()}</p>
+                </div>
+                ` : ''}
+
                 <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid #dc2626; padding: 14px 18px; border-radius: 4px; margin-bottom: 20px;">
                     <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 14px;">
                         ✅ LIBERADO PARA FABRICAÇÃO
@@ -229,6 +307,10 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                 codigo_liberacao: nextCode 
             });
 
+            // 7. Save valid emails for next time
+            const emailsToSave = validEmails.length > 0 ? validEmails : [''];
+            localStorage.setItem(`metalfisa_eng_emails_${userName}`, JSON.stringify(emailsToSave));
+
             setResult({
                 type: 'success',
                 message: `E-mail de liberação enviado com sucesso para: ${toList}`
@@ -258,6 +340,12 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                             <h3 className="text-lg font-bold text-white">Liberação de Engenharia</h3>
                             <p className="text-red-100 text-sm">Carimbo de liberação para fabricação</p>
                         </div>
+                        {codigo && (
+                            <div className="ml-4 bg-white/15 border border-white/25 rounded-xl px-3.5 py-1.5 flex flex-col justify-center shadow-inner">
+                                <span className="text-[9px] text-red-100 font-bold uppercase tracking-wider">Produto Liberado</span>
+                                <span className="font-mono text-xs font-black text-white leading-none mt-0.5 select-all">{codigo.trim()}</span>
+                            </div>
+                        )}
                     </div>
                     <button
                         onClick={onClose}
@@ -289,6 +377,11 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                                     </p>
                                 )}
                                 <p className="text-red-600 text-[10px] italic mt-1">Cód. Lib: LEN-2026-XXXXX</p>
+                                {observacao.trim() && (
+                                    <p className="text-red-600 text-[10px] italic mt-1.5 border-t border-red-200 pt-1 break-words">
+                                        Obs: {observacao.trim()}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -323,16 +416,31 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                     {/* Pedido / Item */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5 block">
-                                Nº Pedido <span className="text-gray-400 font-normal">(opcional)</span>
+                            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5 block flex items-center justify-between">
+                                <span>Nº Pedido <span className="text-gray-400 font-normal">(opcional)</span></span>
+                                {initialPedido && pedido === initialPedido && (
+                                    <span className="text-[10px] text-emerald-600 font-semibold normal-case bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                        Origem
+                                    </span>
+                                )}
                             </label>
-                            <input
-                                type="text"
-                                placeholder="Ex: 123456"
-                                value={pedido}
-                                onChange={e => setPedido(e.target.value)}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
-                            />
+                            <div className="flex gap-1.5">
+                                <input
+                                    type="text"
+                                    placeholder="Ex: 123456"
+                                    value={pedido}
+                                    onChange={e => setPedido(e.target.value)}
+                                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none min-w-0"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSearchModal(true)}
+                                    className="px-2.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg flex items-center justify-center text-gray-600 hover:text-gray-800 transition-colors shrink-0"
+                                    title="Pesquisar Pedido de Venda"
+                                >
+                                    <Search className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                         <div>
                             <label className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5 block">
@@ -346,6 +454,20 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
                             />
                         </div>
+                    </div>
+
+                    {/* Observação / Mensagem Adicional */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5 block">
+                            Observação / Mensagem Adicional <span className="text-gray-400 font-normal">(opcional)</span>
+                        </label>
+                        <textarea
+                            placeholder="Adicione um comentário para o e-mail ou uma observação para aparecer no carimbo do PDF..."
+                            value={observacao}
+                            onChange={e => setObservacao(e.target.value)}
+                            rows={2}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none resize-y"
+                        />
                     </div>
 
                     {/* Email Recipients */}
@@ -455,6 +577,125 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                     </div>
                 </div>
             </div>
+
+            {/* Modal de Pesquisa de Pedido */}
+            {showSearchModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[80vh]">
+                        {/* Header */}
+                        <div className="bg-slate-100 px-5 py-4 flex justify-between items-center border-b border-slate-200">
+                            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Search className="w-4 h-4 text-blue-600" />
+                                Pesquisar Pedido de Venda
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowSearchModal(false);
+                                    setSearchResults([]);
+                                    setSearchQuery('');
+                                }}
+                                className="p-1 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Search Input Box */}
+                        <div className="p-5 flex flex-col flex-1 overflow-hidden space-y-4">
+                            <form onSubmit={handleSearchOrders} className="flex gap-2">
+                                <select
+                                    value={searchType}
+                                    onChange={e => setSearchType(e.target.value)}
+                                    className="border border-slate-300 rounded-lg px-2 py-2 text-sm outline-none bg-slate-50 text-slate-700 focus:ring-2 focus:ring-blue-500 font-medium"
+                                >
+                                    <option value="pedido">Nº Pedido</option>
+                                    <option value="produto">Cód. Produto</option>
+                                    <option value="cliente">Cliente</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    placeholder={
+                                        searchType === 'pedido' ? "Digite o número exato do pedido..." :
+                                        searchType === 'produto' ? "Digite o código do produto..." :
+                                        "Digite parte do nome do cliente..."
+                                    }
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={searchLoading}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors disabled:bg-blue-400"
+                                >
+                                    {searchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buscar'}
+                                </button>
+                            </form>
+
+                            {searchError && (
+                                <p className="text-xs text-red-600 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    {searchError}
+                                </p>
+                            )}
+
+                            {/* Results Table */}
+                            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg bg-slate-50/50">
+                                {searchLoading ? (
+                                    <div className="py-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                                        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                                        <span className="text-sm font-medium">Buscando itens na base...</span>
+                                    </div>
+                                ) : searchResults.length === 0 ? (
+                                    <div className="py-12 text-center text-slate-400 text-sm">
+                                        {searchQuery ? 'Nenhum resultado encontrado.' : 'Selecione o filtro e faça sua busca.'}
+                                    </div>
+                                ) : (
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead className="bg-slate-100 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                            <tr>
+                                                <th className="p-3 font-bold text-slate-700 uppercase tracking-wider w-24">Pedido</th>
+                                                <th className="p-3 font-bold text-slate-700 uppercase tracking-wider w-16">Item</th>
+                                                <th className="p-3 font-bold text-slate-700 uppercase tracking-wider">Cliente</th>
+                                                <th className="p-3 font-bold text-slate-700 uppercase tracking-wider">Produto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {searchResults.map((row, idx) => (
+                                                <tr
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        setPedido(String(row.pedido || '').trim());
+                                                        setItem(String(row.item || '').trim());
+                                                        setShowSearchModal(false);
+                                                        setSearchResults([]);
+                                                        setSearchQuery('');
+                                                    }}
+                                                    className="border-b border-slate-200 bg-white hover:bg-blue-50 cursor-pointer transition-colors"
+                                                >
+                                                    <td className="p-3 font-mono text-blue-600 font-bold">{row.pedido}</td>
+                                                    <td className="p-3 font-mono text-slate-500 font-semibold">{row.item}</td>
+                                                    <td className="p-3 font-medium text-slate-800 truncate max-w-[140px]" title={row.nome_cliente}>
+                                                        {row.nome_cliente || '-'}
+                                                    </td>
+                                                    <td className="p-3 font-mono text-slate-600">
+                                                        <div className="font-bold text-slate-700">{row.codigo}</div>
+                                                        <div className="text-[10px] text-slate-400 truncate max-w-[200px] font-sans" title={row.descricao}>
+                                                            {row.descricao}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

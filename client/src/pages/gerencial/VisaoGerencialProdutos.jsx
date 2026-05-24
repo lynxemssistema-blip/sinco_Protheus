@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend
 } from 'recharts';
-import { Factory, Calendar, DollarSign, Lock, ChevronDown, ChevronRight, Package, Download, Camera, CheckSquare, Clock, Loader2 } from 'lucide-react';
+import { Factory, Calendar, DollarSign, Lock, ChevronDown, ChevronRight, Package, Download, Camera, CheckSquare, Clock, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import ErrorStateOverlay from '../../components/ErrorStateOverlay';
@@ -26,18 +26,38 @@ const VisaoGerencialProdutos = () => {
     const [expandedProducts, setExpandedProducts] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
 
+    // Gantt UI State
+    const [ganttGroupMode, setGanttGroupMode] = useState('cliente'); // 'cliente' | 'pedido'
+    const [expandedGantt, setExpandedGantt] = useState({});
+    const [ganttStartDate, setGanttStartDate] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 15);
+        return d.toISOString().split('T')[0];
+    });
+    const [ganttEndDate, setGanttEndDate] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() + 75);
+        return d.toISOString().split('T')[0];
+    });
+
+    const [isGanttFullscreen, setIsGanttFullscreen] = useState(false);
+
+    const toggleGanttNode = (key) => {
+        setExpandedGantt(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
     const canViewFinance = isAdmin || hasPermission('financeiro', 'view');
 
-    useEffect(() => {
-        fetchData();
-    }, []);
-
-    const fetchData = async () => {
+    const fetchData = async (startDate = null, endDate = null) => {
         setLoading(true);
         setError(null);
         try {
+            const params = {};
+            if (startDate) params.startDate = startDate;
+            if (endDate) params.endDate = endDate;
+
             const [resp, kpiResp] = await Promise.all([
-                getVisaoGerencialFabrica({}),
+                getVisaoGerencialFabrica(params),
                 getKpiFaturar()
             ]);
             setData(resp.data || []);
@@ -49,6 +69,14 @@ const VisaoGerencialProdutos = () => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (activeTab === 'gantt') {
+            fetchData(ganttStartDate, ganttEndDate);
+        } else {
+            fetchData();
+        }
+    }, [activeTab, ganttStartDate, ganttEndDate]);
 
     const handleSnapshot = async () => {
         setSavingSnapshot(true);
@@ -201,6 +229,284 @@ const VisaoGerencialProdutos = () => {
 
         return result;
     }, [data, searchTerm]);
+
+    const parseDateObjGlobal = (dStr) => {
+        if (!dStr || dStr.trim() === '' || dStr.length < 8) return null;
+        const y = parseInt(dStr.substring(0, 4), 10);
+        const m = parseInt(dStr.substring(4, 6), 10) - 1;
+        const d = parseInt(dStr.substring(6, 8), 10);
+        return new Date(y, m, d);
+    };
+
+    const parsePcpDateObjGlobal = (val) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    };
+
+    const weeksList = useMemo(() => {
+        const weeks = [];
+        if (!ganttStartDate || !ganttEndDate) return weeks;
+        const start = new Date(ganttStartDate + 'T00:00:00');
+        const end = new Date(ganttEndDate + 'T23:59:59');
+
+        const startDay = start.getDay();
+        const startDiff = start.getDate() - startDay + (startDay === 0 ? -6 : 1);
+        const current = new Date(start);
+        current.setDate(startDiff);
+        current.setHours(0, 0, 0, 0);
+
+        while (current <= end) {
+            const weekStart = new Date(current);
+            const weekEnd = new Date(current);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            
+            const label = weekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const monthLabel = weekStart.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+
+            weeks.push({
+                start: weekStart,
+                end: weekEnd,
+                label,
+                monthLabel
+            });
+            current.setDate(current.getDate() + 7);
+        }
+        return weeks;
+    }, [ganttStartDate, ganttEndDate]);
+
+    const ganttData = useMemo(() => {
+        if (!ganttStartDate || !ganttEndDate || weeksList.length === 0) return [];
+        const timelineStart = weeksList[0].start;
+        const timelineEnd = weeksList[weeksList.length - 1].end;
+
+        const term = searchTerm.toLowerCase();
+        
+        const filtered = data.filter(item => {
+            const matchesText = !term || 
+                (item.codigo && item.codigo.toLowerCase().includes(term)) || 
+                (item.descricao && item.descricao.toLowerCase().includes(term)) ||
+                (item.nome_cliente && item.nome_cliente.toLowerCase().includes(term)) ||
+                (item.pedido && item.pedido.toLowerCase().includes(term));
+
+            if (!matchesText) return false;
+
+            const emission = parseDateObjGlobal(item.c5_emissao_raw);
+            const delivery = parseDateObjGlobal(item.c6_entreg_raw);
+            const pcp = parsePcpDateObjGlobal(item.data_entrega_pcp);
+
+            let start = emission;
+            let end = pcp || delivery;
+
+            if (!end) {
+                if (start) {
+                    end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+                } else {
+                    return false;
+                }
+            }
+            if (!start) {
+                start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+            }
+            if (start > end) {
+                start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+            }
+
+            return start <= timelineEnd && end >= timelineStart;
+        });
+
+        if (ganttGroupMode === 'cliente') {
+            const clientGroup = {};
+            filtered.forEach(item => {
+                const clientKey = `${item.cod_cliente} - ${item.nome_cliente || 'Cliente Sem Nome'}`;
+                if (!clientGroup[clientKey]) {
+                    clientGroup[clientKey] = {
+                        key: clientKey,
+                        name: item.nome_cliente || item.cod_cliente,
+                        code: item.cod_cliente,
+                        orders: {},
+                        totalQtd: 0,
+                        totalSaldo: 0,
+                        totalOriginalQtd: 0,
+                        totalDeliveredQtd: 0
+                    };
+                }
+                const cg = clientGroup[clientKey];
+                cg.totalQtd += parseFloat(item.qtd_faturar || 0);
+                cg.totalSaldo += parseFloat(item.valor_saldo || 0);
+                cg.totalOriginalQtd += parseFloat(item.quantidade || 0);
+                cg.totalDeliveredQtd += parseFloat(item.qtd_entreg || 0);
+
+                const orderKey = item.pedido;
+                if (!cg.orders[orderKey]) {
+                    cg.orders[orderKey] = {
+                        key: `${clientKey}_${orderKey}`,
+                        pedido: item.pedido,
+                        items: [],
+                        totalQtd: 0,
+                        totalSaldo: 0,
+                        totalOriginalQtd: 0,
+                        totalDeliveredQtd: 0
+                    };
+                }
+                const og = cg.orders[orderKey];
+                og.totalQtd += parseFloat(item.qtd_faturar || 0);
+                og.totalSaldo += parseFloat(item.valor_saldo || 0);
+                og.totalOriginalQtd += parseFloat(item.quantidade || 0);
+                og.totalDeliveredQtd += parseFloat(item.qtd_entreg || 0);
+                og.items.push(item);
+            });
+
+            return Object.values(clientGroup).map(cg => {
+                const orders = Object.values(cg.orders).map(og => {
+                    let minEmissionObj = null;
+                    let maxDeliveryObj = null;
+                    let maxPcpObj = null;
+                    let hasPcpForecast = false;
+
+                    og.items.forEach(item => {
+                        const em = parseDateObjGlobal(item.c5_emissao_raw);
+                        const de = parseDateObjGlobal(item.c6_entreg_raw);
+                        const pc = parsePcpDateObjGlobal(item.data_entrega_pcp);
+
+                        if (em) {
+                            if (!minEmissionObj || em < minEmissionObj) minEmissionObj = em;
+                        }
+                        if (de) {
+                            if (!maxDeliveryObj || de > maxDeliveryObj) maxDeliveryObj = de;
+                        }
+                        
+                        const pcVal = pc || de;
+                        if (pc) hasPcpForecast = true;
+                        if (pcVal) {
+                            if (!maxPcpObj || pcVal > maxPcpObj) maxPcpObj = pcVal;
+                        }
+                    });
+
+                    return {
+                        ...og,
+                        minEmissionObj,
+                        maxDeliveryObj,
+                        maxPcpObj,
+                        hasPcpForecast,
+                        evolutionPct: og.totalOriginalQtd > 0 ? (og.totalDeliveredQtd / og.totalOriginalQtd) * 100 : 0
+                    };
+                });
+
+                return {
+                    ...cg,
+                    orders,
+                    evolutionPct: cg.totalOriginalQtd > 0 ? (cg.totalDeliveredQtd / cg.totalOriginalQtd) * 100 : 0
+                };
+            }).sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+            const orderGroup = {};
+            filtered.forEach(item => {
+                const orderKey = item.pedido;
+                if (!orderGroup[orderKey]) {
+                    orderGroup[orderKey] = {
+                        key: orderKey,
+                        pedido: item.pedido,
+                        nome_cliente: item.nome_cliente || item.cod_cliente,
+                        items: [],
+                        totalQtd: 0,
+                        totalSaldo: 0,
+                        totalOriginalQtd: 0,
+                        totalDeliveredQtd: 0
+                    };
+                }
+                const og = orderGroup[orderKey];
+                og.totalQtd += parseFloat(item.qtd_faturar || 0);
+                og.totalSaldo += parseFloat(item.valor_saldo || 0);
+                og.totalOriginalQtd += parseFloat(item.quantidade || 0);
+                og.totalDeliveredQtd += parseFloat(item.qtd_entreg || 0);
+                og.items.push(item);
+            });
+
+            return Object.values(orderGroup).map(og => {
+                let minEmissionObj = null;
+                let maxDeliveryObj = null;
+                let maxPcpObj = null;
+                let hasPcpForecast = false;
+
+                og.items.forEach(item => {
+                    const em = parseDateObjGlobal(item.c5_emissao_raw);
+                    const de = parseDateObjGlobal(item.c6_entreg_raw);
+                    const pc = parsePcpDateObjGlobal(item.data_entrega_pcp);
+
+                    if (em) {
+                        if (!minEmissionObj || em < minEmissionObj) minEmissionObj = em;
+                    }
+                    if (de) {
+                        if (!maxDeliveryObj || de > maxDeliveryObj) maxDeliveryObj = de;
+                    }
+                    
+                    const pcVal = pc || de;
+                    if (pc) hasPcpForecast = true;
+                    if (pcVal) {
+                        if (!maxPcpObj || pcVal > maxPcpObj) maxPcpObj = pcVal;
+                    }
+                });
+
+                return {
+                    ...og,
+                    minEmissionObj,
+                    maxDeliveryObj,
+                    maxPcpObj,
+                    hasPcpForecast,
+                    evolutionPct: og.totalOriginalQtd > 0 ? (og.totalDeliveredQtd / og.totalOriginalQtd) * 100 : 0
+                };
+            }).sort((a, b) => a.pedido.localeCompare(b.pedido));
+        }
+    }, [data, searchTerm, ganttGroupMode, ganttStartDate, ganttEndDate, weeksList]);
+
+    const timelineStart = weeksList[0]?.start;
+    const timelineEnd = weeksList[weeksList.length - 1]?.end;
+    const timelineDuration = timelineStart && timelineEnd ? timelineEnd.getTime() - timelineStart.getTime() : 0;
+
+    const getBarStyles = (startDateVal, endDateVal, isPcp = false, fallbackEndDateVal = null) => {
+        if (!timelineStart || !timelineEnd || !timelineDuration) return null;
+        
+        let sDate = startDateVal instanceof Date ? startDateVal : parseDateObjGlobal(startDateVal);
+        let eDate = null;
+        
+        if (endDateVal) {
+            eDate = endDateVal instanceof Date ? endDateVal : (isPcp ? parsePcpDateObjGlobal(endDateVal) : parseDateObjGlobal(endDateVal));
+        }
+
+        if (isPcp && !eDate && fallbackEndDateVal) {
+            eDate = fallbackEndDateVal instanceof Date ? fallbackEndDateVal : parseDateObjGlobal(fallbackEndDateVal);
+        }
+
+        if (!eDate) {
+            if (sDate) {
+                eDate = new Date(sDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+            } else {
+                return null;
+            }
+        }
+
+        if (!sDate) {
+            sDate = new Date(eDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+        }
+
+        if (sDate > eDate) {
+            sDate = new Date(eDate.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        const startMs = Math.max(timelineStart.getTime(), sDate.getTime());
+        const endMs = Math.min(timelineEnd.getTime(), eDate.getTime());
+
+        if (startMs >= endMs) return null;
+
+        const leftPercent = ((startMs - timelineStart.getTime()) / timelineDuration) * 100;
+        const widthPercent = ((endMs - startMs) / timelineDuration) * 100;
+
+        return {
+            left: `${leftPercent}%`,
+            width: `${widthPercent}%`
+        };
+    };
 
 
     if (loading) {
@@ -364,6 +670,12 @@ const VisaoGerencialProdutos = () => {
                             <DollarSign className="w-4 h-4" /> Visão Financeira (Tudo)
                             {!canViewFinance && <Lock className="w-3 h-3 ml-1 text-slate-400" />}
                         </button>
+                        <button
+                            onClick={() => setActiveTab('gantt')}
+                            className={`flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'gantt' ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        >
+                            <Calendar className="w-4 h-4" /> Cronograma (Gantt)
+                        </button>
                         
                         <div className="ml-auto pr-4 flex-shrink-0">
                             <input 
@@ -378,118 +690,691 @@ const VisaoGerencialProdutos = () => {
                         </div>
                     </div>
 
-                    {/* Table View */}
-                    <div className="flex-1 overflow-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="sticky top-0 z-10 shadow-sm bg-slate-50">
-                                <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50">
-                                    <th className="p-3 pl-4 font-semibold w-12 bg-slate-50">Exp.</th>
-                                    <th className="p-3 font-semibold bg-slate-50">Agrupamento (Quinzena / Produto / Pedido)</th>
-                                    <th className="p-3 font-semibold text-center bg-slate-50">Data Entrada</th>
-                                    <th className="p-3 font-semibold text-center bg-slate-50">Data Entrega</th>
-                                    <th className="p-3 font-semibold text-right bg-slate-50">Qtd</th>
-                                    {isShowingFinance && <th className="p-3 font-semibold text-right text-indigo-600 bg-slate-50">Valor (R$)</th>}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {isShowingFinance ? (
-                                    <tr className="bg-white"><td colSpan={10} className="p-8 text-center text-slate-500"><DollarSign className="w-12 h-12 text-slate-200 mx-auto mb-2" />A aba financeira exibe os gráficos R$ e totais monetários no painel acima.</td></tr>
-                                ) : currentTree.length === 0 ? (
-                                    <tr className="bg-white"><td colSpan={10} className="p-4 text-center text-slate-400">Nenhum dado encontrado com o filtro atual na aba {activeTab}.</td></tr>
-                                ) : (
-                                    currentTree.map(grp => {
-                                        const isGrpOpen = expandedGroups[grp.groupKey];
-                                        return (
-                                            <React.Fragment key={grp.groupKey}>
-                                                {/* ROW 1: QUINZENA */}
-                                                <tr 
-                                                    onClick={() => toggleGroup(grp.groupKey)}
-                                                    className="bg-white border-b border-slate-100 hover:bg-slate-50 cursor-pointer group transition-colors"
-                                                >
-                                                    <td className="p-3 pl-4 text-slate-400">{isGrpOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
-                                                    <td className="p-3 font-bold text-slate-800" colSpan={3}>
-                                                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs mr-2 border border-slate-200">Período</span>
-                                                        {grp.groupKey}
-                                                    </td>
-                                                    <td className="p-3 text-right font-bold text-slate-800">
-                                                        {grp.totalQtd.toLocaleString()} pçs
-                                                    </td>
-                                                    {isShowingFinance && <td className="p-3 text-right font-bold text-indigo-700">{formatBRL(grp.totalBrl)}</td>}
-                                                </tr>
+                    {/* Table / Gantt View */}
+                    <div className="flex-1 overflow-auto flex flex-col min-h-0">
+                        {activeTab === 'gantt' ? (
+                            <div className={`flex flex-col flex-1 min-h-0 bg-white ${
+                                isGanttFullscreen 
+                                    ? 'fixed inset-0 z-[9999] p-6 w-screen h-screen bg-slate-50' 
+                                    : 'relative'
+                            }`}>
+                                {/* Gantt Header Controls */}
+                                <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4 flex-none">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
+                                            <button
+                                                onClick={() => setGanttGroupMode('cliente')}
+                                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${ganttGroupMode === 'cliente' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                            >
+                                                Agrupar por Cliente
+                                            </button>
+                                            <button
+                                                onClick={() => setGanttGroupMode('pedido')}
+                                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${ganttGroupMode === 'pedido' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                            >
+                                                Agrupar por Pedido
+                                            </button>
+                                        </div>
 
-                                                {/* PRODUCTS INSIDE QUINZENA */}
-                                                {isGrpOpen && Object.values(grp.products).map(prd => {
-                                                    const productUniqueKey = `${grp.groupKey}_${prd.prodKey}`;
-                                                    const isPrdOpen = expandedProducts[productUniqueKey];
+                                        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                                            <span>Legenda:</span>
+                                            <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2.5 h-2.5 rounded bg-blue-500/20 border border-blue-400 block"></span>
+                                                    <span className="text-[11px] text-slate-700">Comercial (Protheus)</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400 block"></span>
+                                                    <span className="text-[11px] text-slate-700">PCP (No Prazo)</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 block"></span>
+                                                    <span className="text-[11px] text-slate-700">PCP (Desvio)</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2.5 h-2.5 rounded border border-dashed border-slate-400 bg-slate-50/50 block"></span>
+                                                    <span className="text-[11px] text-slate-700">Sem Previsão PCP</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Date range filters + Fullscreen toggle */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                            <span className="text-slate-400 text-[10px] font-bold uppercase px-1">De</span>
+                                            <input 
+                                                type="date" 
+                                                value={ganttStartDate}
+                                                onChange={(e) => setGanttStartDate(e.target.value)}
+                                                className="border-none bg-transparent outline-none text-xs font-semibold text-slate-700 cursor-pointer"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                            <span className="text-slate-400 text-[10px] font-bold uppercase px-1">Até</span>
+                                            <input 
+                                                type="date" 
+                                                value={ganttEndDate}
+                                                onChange={(e) => setGanttEndDate(e.target.value)}
+                                                className="border-none bg-transparent outline-none text-xs font-semibold text-slate-700 cursor-pointer"
+                                            />
+                                        </div>
+                                        
+                                        <button
+                                            onClick={() => setIsGanttFullscreen(!isGanttFullscreen)}
+                                            className={`p-2 border border-slate-200 bg-white rounded-lg shadow-sm hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 text-xs font-semibold ${
+                                                isGanttFullscreen 
+                                                    ? 'text-red-600 hover:text-red-700 border-red-200 bg-red-50/20' 
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                            title={isGanttFullscreen ? "Voltar ao normal" : "Ver em tela cheia"}
+                                        >
+                                            {isGanttFullscreen ? (
+                                                <>
+                                                    <Minimize2 className="w-4 h-4" />
+                                                    <span>Sair</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Maximize2 className="w-4 h-4" />
+                                                    <span>Tela Cheia</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Gantt Chart Core Table */}
+                                <div className="flex-1 overflow-auto relative">
+                                    <div className="flex flex-col min-w-max">
+                                        {/* Calendar Header Row */}
+                                        <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-20">
+                                            <div className="w-[320px] p-3 font-semibold text-[11px] text-slate-500 uppercase border-r border-slate-200 bg-slate-50 sticky left-0 z-30 flex items-center justify-between shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                                                <span>Estrutura de Vendas</span>
+                                                <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-normal lowercase">faturamento pendente</span>
+                                            </div>
+                                            <div className="flex relative" style={{ width: `${weeksList.length * 100}px` }}>
+                                                {weeksList.map((week, idx) => (
+                                                    <div 
+                                                        key={idx} 
+                                                        className="flex-shrink-0 text-center border-r border-slate-200/50 py-2 flex flex-col justify-center"
+                                                        style={{ width: '100px' }}
+                                                    >
+                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{week.monthLabel}</span>
+                                                        <span className="text-[11px] text-slate-700 font-bold">{week.label}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Body Rows */}
+                                        <div className="divide-y divide-slate-100">
+                                            {ganttData.length === 0 ? (
+                                                <div className="p-8 text-center text-slate-400 bg-white">Nenhum dado encontrado para o período ou busca selecionada.</div>
+                                            ) : ganttGroupMode === 'cliente' ? (
+                                                // RENDER CLIENT GROUP MODE
+                                                ganttData.map(client => {
+                                                    const isClientOpen = expandedGantt[client.key];
                                                     return (
-                                                        <React.Fragment key={productUniqueKey}>
-                                                            <tr 
-                                                                onClick={() => toggleProduct(productUniqueKey)}
-                                                                className="bg-slate-50/50 border-b border-slate-100 hover:bg-slate-100 cursor-pointer"
-                                                            >
-                                                                <td className="p-3 pl-8 text-indigo-500 border-l-[3px] border-l-indigo-500">
-                                                                    {isPrdOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                                                </td>
-                                                                <td className="p-2 font-semibold text-indigo-900 text-sm" colSpan={3}>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <Package size={14} className="text-indigo-500" />
-                                                                        {prd.prodKey}
+                                                        <React.Fragment key={client.key}>
+                                                            {/* CUSTOMER ROW */}
+                                                            <div className="flex hover:bg-slate-50/40 transition-colors group">
+                                                                <div 
+                                                                    onClick={() => toggleGanttNode(client.key)}
+                                                                    className="w-[320px] p-3 border-r border-slate-200 bg-white sticky left-0 z-10 flex items-center gap-2 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none"
+                                                                >
+                                                                    <div className="text-slate-400">{isClientOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</div>
+                                                                    <div className="truncate flex-1">
+                                                                        <div className="font-bold text-slate-800 text-xs truncate" title={client.name}>{client.name}</div>
+                                                                        <div className="text-[10px] text-slate-400">Cód: {client.code}</div>
                                                                     </div>
-                                                                </td>
-                                                                <td className="p-2 text-right text-sm font-semibold text-slate-700">
-                                                                    {prd.totalQtd.toLocaleString()} pçs
-                                                                </td>
-                                                                {isShowingFinance && <td className="p-2 text-right text-sm text-indigo-600">{formatBRL(prd.totalBrl)}</td>}
-                                                            </tr>
+                                                                    <div className="text-right flex-shrink-0 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold">
+                                                                        {client.totalQtd.toLocaleString()} pçs
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                {/* Blank timeline cell for customer row */}
+                                                                <div className="flex relative items-center bg-slate-50/20" style={{ width: `${weeksList.length * 100}px`, height: '46px' }}>
+                                                                    <div className="absolute inset-0 flex pointer-events-none">
+                                                                        {weeksList.map((_, idx) => (
+                                                                            <div key={idx} className="h-full border-r border-slate-100/70" style={{ width: '100px' }} />
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
 
-                                                            {/* ITEMS (CLIENTS/ORDERS) INSIDE PRODUCT */}
-                                                            {isPrdOpen && prd.items.map((item, idx) => {
-                                                                // Heatmap Badge definition
-                                                                let badgeBg = 'bg-slate-100 text-slate-600 border-slate-200';
-                                                                const diasAtraso = parseInt(item.dias_atraso || 0, 10);
-                                                                if (diasAtraso > 15) badgeBg = 'bg-red-100 text-red-700 border-red-200';
-                                                                else if (diasAtraso > 0) badgeBg = 'bg-orange-100 text-orange-700 border-orange-200';
-                                                                else if (diasAtraso >= -7 && diasAtraso <= 0) badgeBg = 'bg-yellow-100 text-yellow-700 border-yellow-200';
-                                                                else badgeBg = 'bg-emerald-100 text-emerald-700 border-emerald-200';
-
-                                                                const heatmapText = diasAtraso > 0 ? `Atraso de ${diasAtraso}d` : (diasAtraso === 0 ? 'Para Hoje' : `Faltam ${Math.abs(diasAtraso)}d`);
-
+                                                            {/* ORDERS UNDER CUSTOMER */}
+                                                            {isClientOpen && client.orders.map(order => {
+                                                                const isOrderOpen = expandedGantt[order.key];
                                                                 return (
-                                                                    <tr key={`${item.pedido}-${item.item}-${idx}`} className="bg-white hover:bg-slate-50 transition-colors border-b border-slate-100">
-                                                                        <td></td>
-                                                                        <td className="p-2 pl-12 text-sm text-slate-600">
-                                                                            <div className="flex items-center justify-between">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <span className="font-medium text-slate-700">{item.nome_cliente || item.cod_cliente}</span>
-                                                                                    <span className="text-slate-400 text-xs tracking-wide">(Ped: {item.pedido})</span>
+                                                                    <React.Fragment key={order.key}>
+                                                                        <div className="flex hover:bg-slate-50/40 transition-colors">
+                                                                            <div 
+                                                                                onClick={() => toggleGanttNode(order.key)}
+                                                                                className="w-[320px] p-3 pl-8 border-r border-slate-200 bg-slate-50/50 sticky left-0 z-10 flex items-center gap-2 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none border-l-[3px] border-l-indigo-400"
+                                                                            >
+                                                                                <div className="text-slate-400">{isOrderOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</div>
+                                                                                <div className="truncate flex-1">
+                                                                                    <div className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+                                                                                        <span>Pedido: {order.pedido}</span>
+                                                                                        {order.evolutionPct > 0 && (
+                                                                                            <span className="text-[9px] bg-emerald-100 border border-emerald-300 text-emerald-800 px-1 rounded-full font-bold">
+                                                                                                {order.evolutionPct.toFixed(0)}%
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="text-[10px] text-slate-400">{order.items.length} itens pendentes</div>
                                                                                 </div>
-                                                                                <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${badgeBg}`}>
-                                                                                    {heatmapText}
-                                                                                </span>
+                                                                                <div className="text-right flex-shrink-0 text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">
+                                                                                    {order.totalQtd.toLocaleString()} pçs
+                                                                                </div>
                                                                             </div>
-                                                                        </td>
-                                                                        <td className="p-2 text-sm text-center text-slate-400">
-                                                                            {item.emissao_formatada}
-                                                                        </td>
-                                                                        <td className="p-2 text-sm text-center text-slate-700 font-semibold">
-                                                                            {item.entrega_formatada}
-                                                                        </td>
-                                                                        <td className="p-2 text-sm text-right text-slate-600">
-                                                                            {parseFloat(item.qtd_faturar).toLocaleString()} pçs
-                                                                        </td>
-                                                                        {isShowingFinance && <td className="p-2 text-sm text-right">{formatBRL(item.valor_saldo)}</td>}
-                                                                    </tr>
+
+                                                                            <div className="flex relative items-center bg-slate-50/10" style={{ width: `${weeksList.length * 100}px`, height: '56px' }}>
+                                                                                <div className="absolute inset-0 flex pointer-events-none">
+                                                                                    {weeksList.map((_, idx) => (
+                                                                                        <div key={idx} className="h-full border-r border-slate-100/70" style={{ width: '100px' }} />
+                                                                                    ))}
+                                                                                </div>
+
+                                                                                {/* Consolidated Gantt Bars for the Order */}
+                                                                                {(() => {
+                                                                                    const orderBarCom = getBarStyles(order.minEmissionObj, order.maxDeliveryObj, false);
+                                                                                    const orderBarPcp = getBarStyles(order.minEmissionObj, order.maxPcpObj || order.maxDeliveryObj, true);
+                                                                                    const isOrderPcpDelayed = order.maxPcpObj && order.maxDeliveryObj && order.maxPcpObj > order.maxDeliveryObj;
+                                                                                    
+                                                                                    return (
+                                                                                        <div className="w-full h-full relative flex flex-col justify-center gap-1.5 py-1 pointer-events-none">
+                                                                                            {orderBarCom && (
+                                                                                                <div 
+                                                                                                    className="absolute h-3 bg-blue-500/15 border border-blue-400 rounded shadow-sm flex items-center justify-center top-[10px] select-none hover:bg-blue-500/30 transition-all group/bar pointer-events-auto cursor-help"
+                                                                                                    style={orderBarCom}
+                                                                                                >
+                                                                                                    <span className="text-[7px] text-blue-700 font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">COM: {order.minEmissionObj?.toLocaleDateString('pt-BR')} - {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</span>
+                                                                                                    
+                                                                                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                        <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Total Pedido)</div>
+                                                                                                        <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                                        <div>📅 <strong>Início:</strong> {order.minEmissionObj?.toLocaleDateString('pt-BR')}</div>
+                                                                                                        <div>📅 <strong>Entrega:</strong> {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</div>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            )}
+
+                                                                                            {orderBarPcp && (
+                                                                                                <div
+                                                                                                    className={`absolute h-3 rounded shadow-sm flex items-center justify-center bottom-[10px] border select-none hover:brightness-95 transition-all group/bar pointer-events-auto cursor-help ${
+                                                                                                        !order.maxPcpObj
+                                                                                                            ? 'bg-slate-50/50 border-dashed border-slate-400 text-slate-500'
+                                                                                                            : isOrderPcpDelayed
+                                                                                                                ? 'bg-amber-100 border-amber-400 text-amber-800'
+                                                                                                                : 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                                                                                                    }`}
+                                                                                                    style={orderBarPcp}
+                                                                                                >
+                                                                                                    {!order.maxPcpObj && (
+                                                                                                        <span className="text-[7px] text-slate-500 font-bold truncate px-1">Sem Previsão PCP</span>
+                                                                                                    )}
+
+                                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-slate-300">Sem Previsão PCP (Total)</div>
+                                                                                                            <div className="text-slate-300 mt-1">Nenhum item deste pedido possui cronograma PCP. Usando prazo comercial como referência.</div>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* ITEMS UNDER ORDER */}
+                                                                        {isOrderOpen && order.items.map((item, itemIdx) => {
+                                                                            const barCom = getBarStyles(item.c5_emissao_raw, item.c6_entreg_raw, false);
+                                                                            const barPcp = getBarStyles(item.c5_emissao_raw, item.data_entrega_pcp, true, item.c6_entreg_raw);
+                                                                            
+                                                                            const deliveryDateObj = parseDateObjGlobal(item.c6_entreg_raw);
+                                                                            const pcpDateObj = parsePcpDateObjGlobal(item.data_entrega_pcp);
+                                                                            const isPcpDelayed = pcpDateObj && deliveryDateObj && pcpDateObj > deliveryDateObj;
+                                                                            const hasPcpDate = !!item.data_entrega_pcp;
+                                                                            const displayPcpDateStr = hasPcpDate 
+                                                                                ? new Date(item.data_entrega_pcp).toLocaleDateString('pt-BR') 
+                                                                                : (deliveryDateObj ? deliveryDateObj.toLocaleDateString('pt-BR') : 'N/A');
+
+                                                                            return (
+                                                                                <div key={`${item.pedido}_${item.item}_${itemIdx}`} className="flex hover:bg-slate-50 transition-colors">
+                                                                                    <div className="w-[320px] p-3 pl-14 border-r border-slate-200 bg-white sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                                                        <div className="flex items-center justify-between gap-1">
+                                                                                            <span className="font-semibold text-slate-700 text-xs truncate max-w-[170px]" title={item.codigo}>{item.codigo}</span>
+                                                                                            <span className="text-[10px] text-slate-500 font-bold bg-slate-100 border px-1.5 py-0.5 rounded">item {item.item}</span>
+                                                                                        </div>
+                                                                                        <div className="text-[10px] text-slate-400 truncate max-w-[240px] mt-0.5" title={item.descricao}>{item.descricao}</div>
+                                                                                        <div className="flex justify-between items-center text-[10px] mt-1 text-slate-500">
+                                                                                            <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString()} pçs</strong></span>
+                                                                                            <span className="text-[9px] text-indigo-600 font-semibold">{formatBRL(item.valor_saldo)}</span>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* GANTT TIMELINE LINE CELL */}
+                                                                                    <div className="flex relative items-center bg-white" style={{ width: `${weeksList.length * 100}px`, height: '56px' }}>
+                                                                                        {/* Background week columns grid */}
+                                                                                        <div className="absolute inset-0 flex pointer-events-none">
+                                                                                            {weeksList.map((_, idx) => (
+                                                                                                <div key={idx} className="h-full border-r border-slate-100" style={{ width: '100px' }} />
+                                                                                            ))}
+                                                                                        </div>
+
+                                                                                        {/* GANTT BARS CONTAINER */}
+                                                                                        <div className="w-full h-full relative flex flex-col justify-center gap-1.5 py-1">
+                                                                                            {/* Commercial Bar */}
+                                                                                            {barCom && (
+                                                                                                <div 
+                                                                                                    className="absolute h-3 bg-blue-500/10 border border-blue-400 rounded shadow-sm flex items-center justify-center top-[10px] select-none hover:bg-blue-500/25 transition-all group/bar pointer-events-auto cursor-help"
+                                                                                                    style={barCom}
+                                                                                                >
+                                                                                                    <span className="text-[8px] text-blue-700 font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">COM: {item.entrega_formatada}</span>
+                                                                                                    
+                                                                                                    {/* Tooltip */}
+                                                                                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                        <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Protheus)</div>
+                                                                                                        <div>📦 <strong>Item:</strong> {item.codigo}</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                                        <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
+                                                                                                        <div>📅 <strong>Entrega Contratual:</strong> {item.entrega_formatada}</div>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            )}
+
+                                                                                            {/* PCP Planned Bar */}
+                                                                                            {barPcp ? (
+                                                                                                <div 
+                                                                                                    className={`absolute h-3 rounded shadow-sm flex items-center justify-center bottom-[10px] border select-none hover:brightness-95 transition-all group/bar pointer-events-auto cursor-help ${
+                                                                                                        !hasPcpDate
+                                                                                                            ? 'bg-emerald-50/70 border-dashed border-emerald-400/80 text-emerald-800'
+                                                                                                            : isPcpDelayed 
+                                                                                                                ? 'bg-amber-100 border-amber-400 text-amber-800' 
+                                                                                                                : 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                                                                                                    }`}
+                                                                                                    style={barPcp}
+                                                                                                >
+                                                                                                    <span className="text-[8px] font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">
+                                                                                                        {hasPcpDate ? `PCP: ${displayPcpDateStr}` : `PCP (Comercial): ${displayPcpDateStr}`}
+                                                                                                    </span>
+                                                                                                    
+                                                                                                    {/* Tooltip */}
+                                                                                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-56 leading-relaxed flex flex-col gap-1">
+                                                                                                        <div className={`font-bold border-b border-slate-700 pb-1 mb-1 text-xs ${!hasPcpDate ? 'text-emerald-300' : isPcpDelayed ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                                                            {hasPcpDate ? 'Previsão de Entrega (PCP)' : 'Previsão PCP (Prazo Comercial)'}
+                                                                                                        </div>
+                                                                                                        <div>📦 <strong>Item:</strong> {item.codigo}</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                                        <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
+                                                                                                        <div>📅 <strong>Previsão PCP:</strong> {displayPcpDateStr} {!hasPcpDate && '(Fallback)'}</div>
+                                                                                                        {hasPcpDate && isPcpDelayed && (
+                                                                                                            <div className="text-amber-400 font-bold mt-1">⚠️ Desvio de prazo do cronograma!</div>
+                                                                                                        )}
+                                                                                                        {!hasPcpDate && (
+                                                                                                            <div className="text-slate-300 text-[10px] mt-1 italic">Sem previsão formal do PCP. Usando data comercial.</div>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            ) : (
+                                                                                                /* Dotted fallback if PCP is not scheduled */
+                                                                                                barCom && (
+                                                                                                    <div 
+                                                                                                        className="absolute h-3 border border-dashed border-slate-400 rounded bottom-[10px] flex items-center justify-center select-none hover:border-slate-500 bg-slate-50/50 group/bar pointer-events-auto cursor-help"
+                                                                                                        style={barCom}
+                                                                                                    >
+                                                                                                        <span className="text-[7px] text-slate-500 font-bold truncate px-1">Sem Previsão PCP</span>
+                                                                                                        
+                                                                                                        {/* Tooltip */}
+                                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-slate-300">Programação Ausente</div>
+                                                                                                            <div className="text-slate-300 mt-1">Este item ainda não possui previsão de entrega agendada pelo PCP.</div>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </React.Fragment>
                                                                 );
                                                             })}
                                                         </React.Fragment>
                                                     );
-                                                })}
-                                            </React.Fragment>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+                                                })
+                                            ) : (
+                                                // RENDER ORDER GROUP MODE
+                                                ganttData.map(order => {
+                                                    const isOrderOpen = expandedGantt[order.key];
+                                                    return (
+                                                        <React.Fragment key={order.key}>
+                                                            {/* ORDER LEVEL ROW */}
+                                                            <div className="flex hover:bg-slate-50/40 transition-colors group">
+                                                                <div 
+                                                                    onClick={() => toggleGanttNode(order.key)}
+                                                                    className="w-[320px] p-3 border-r border-slate-200 bg-white sticky left-0 z-10 flex items-center gap-2 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none"
+                                                                >
+                                                                    <div className="text-slate-400">{isOrderOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</div>
+                                                                    <div className="truncate flex-1">
+                                                                        <div className="font-bold text-slate-800 text-xs truncate flex items-center gap-1.5">
+                                                                            <span>Pedido: {order.pedido}</span>
+                                                                            {order.evolutionPct > 0 && (
+                                                                                <span className="text-[9px] bg-emerald-100 border border-emerald-300 text-emerald-800 px-1 rounded-full font-bold">
+                                                                                    {order.evolutionPct.toFixed(0)}%
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-slate-400 truncate" title={order.nome_cliente}>{order.nome_cliente}</div>
+                                                                    </div>
+                                                                    <div className="text-right flex-shrink-0 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold">
+                                                                        {order.totalQtd.toLocaleString()} pçs
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="flex relative items-center bg-slate-50/20" style={{ width: `${weeksList.length * 100}px`, height: '56px' }}>
+                                                                    <div className="absolute inset-0 flex pointer-events-none">
+                                                                        {weeksList.map((_, idx) => (
+                                                                            <div key={idx} className="h-full border-r border-slate-100/70" style={{ width: '100px' }} />
+                                                                        ))}
+                                                                    </div>
+
+                                                                    {/* Consolidated Gantt Bars for the Order */}
+                                                                    {(() => {
+                                                                        const orderBarCom = getBarStyles(order.minEmissionObj, order.maxDeliveryObj, false);
+                                                                        const orderBarPcp = getBarStyles(order.minEmissionObj, order.maxPcpObj, true);
+                                                                        const isOrderPcpDelayed = order.maxPcpObj && order.maxDeliveryObj && order.maxPcpObj > order.maxDeliveryObj;
+                                                                        
+                                                                        return (
+                                                                            <div className="w-full h-full relative flex flex-col justify-center gap-1.5 py-1 pointer-events-none">
+                                                                                {orderBarCom && (
+                                                                                    <div 
+                                                                                        className="absolute h-3 bg-blue-500/15 border border-blue-400 rounded shadow-sm flex items-center justify-center top-[10px] select-none hover:bg-blue-500/30 transition-all group/bar pointer-events-auto cursor-help"
+                                                                                        style={orderBarCom}
+                                                                                    >
+                                                                                        <span className="text-[7px] text-blue-700 font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">COM: {order.minEmissionObj?.toLocaleDateString('pt-BR')} - {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</span>
+                                                                                        
+                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Total Pedido)</div>
+                                                                                            <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                            <div>📅 <strong>Início:</strong> {order.minEmissionObj?.toLocaleDateString('pt-BR')}</div>
+                                                                                            <div>📅 <strong>Entrega:</strong> {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {orderBarPcp ? (
+                                                                                    <div 
+                                                                                        className={`absolute h-3 rounded shadow-sm flex items-center justify-center bottom-[10px] border select-none hover:brightness-95 transition-all group/bar pointer-events-auto cursor-help ${
+                                                                                            isOrderPcpDelayed 
+                                                                                                ? 'bg-amber-100 border-amber-400 text-amber-800' 
+                                                                                                : 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                                                                                        }`}
+                                                                                        style={orderBarPcp}
+                                                                                    >
+                                                                                        <span className="text-[7px] font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">PCP: {order.maxPcpObj?.toLocaleDateString('pt-BR')}</span>
+                                                                                        
+                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-56 leading-relaxed flex flex-col gap-1">
+                                                                                            <div className={`font-bold border-b border-slate-700 pb-1 mb-1 text-xs ${isOrderPcpDelayed ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                                                Previsão PCP (Total Pedido)
+                                                                                            </div>
+                                                                                            <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                            <div>📅 <strong>Previsão PCP:</strong> {order.maxPcpObj?.toLocaleDateString('pt-BR')}</div>
+                                                                                            {isOrderPcpDelayed && (
+                                                                                                <div className="text-amber-400 font-bold mt-1">⚠️ Desvio de prazo do cronograma!</div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    orderBarCom && (
+                                                                                        <div 
+                                                                                            className="absolute h-3 border border-dashed border-slate-400 rounded bottom-[10px] flex items-center justify-center select-none hover:border-slate-500 bg-slate-50/50 group/bar pointer-events-auto cursor-help"
+                                                                                            style={orderBarCom}
+                                                                                        >
+                                                                                            <span className="text-[7px] text-slate-500 font-bold truncate px-1">Sem Previsão PCP</span>
+                                                                                            
+                                                                                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-slate-300">Sem Previsão PCP (Total)</div>
+                                                                                                <div className="text-slate-300 mt-1">Nenhum item deste pedido possui cronograma PCP. Usando prazo comercial como referência.</div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* ITEMS UNDER ORDER */}
+                                                            {isOrderOpen && order.items.map((item, itemIdx) => {
+                                                                const barCom = getBarStyles(item.c5_emissao_raw, item.c6_entreg_raw, false);
+                                                                const barPcp = getBarStyles(item.c5_emissao_raw, item.data_entrega_pcp, true, item.c6_entreg_raw);
+                                                                
+                                                                const deliveryDateObj = parseDateObjGlobal(item.c6_entreg_raw);
+                                                                const pcpDateObj = parsePcpDateObjGlobal(item.data_entrega_pcp);
+                                                                const isPcpDelayed = pcpDateObj && deliveryDateObj && pcpDateObj > deliveryDateObj;
+                                                                const hasPcpDate = !!item.data_entrega_pcp;
+                                                                const displayPcpDateStr = hasPcpDate 
+                                                                    ? new Date(item.data_entrega_pcp).toLocaleDateString('pt-BR') 
+                                                                    : (deliveryDateObj ? deliveryDateObj.toLocaleDateString('pt-BR') : 'N/A');
+
+                                                                return (
+                                                                    <div key={`${item.pedido}_${item.item}_${itemIdx}`} className="flex hover:bg-slate-50 transition-colors">
+                                                                        <div className="w-[320px] p-3 pl-8 border-r border-slate-200 bg-white sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                                            <div className="flex items-center justify-between gap-1">
+                                                                                <span className="font-semibold text-slate-700 text-xs truncate max-w-[170px]" title={item.codigo}>{item.codigo}</span>
+                                                                                <span className="text-[10px] text-slate-500 font-bold bg-slate-100 border px-1.5 py-0.5 rounded">item {item.item}</span>
+                                                                            </div>
+                                                                            <div className="text-[10px] text-slate-400 truncate max-w-[240px] mt-0.5" title={item.descricao}>{item.descricao}</div>
+                                                                            <div className="flex justify-between items-center text-[10px] mt-1 text-slate-500">
+                                                                                <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString()} pçs</strong></span>
+                                                                                <span className="text-[9px] text-indigo-600 font-semibold">{formatBRL(item.valor_saldo)}</span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="flex relative items-center bg-white" style={{ width: `${weeksList.length * 100}px`, height: '56px' }}>
+                                                                            <div className="absolute inset-0 flex pointer-events-none">
+                                                                                {weeksList.map((_, idx) => (
+                                                                                    <div key={idx} className="h-full border-r border-slate-100" style={{ width: '100px' }} />
+                                                                                ))}
+                                                                            </div>
+
+                                                                            <div className="w-full h-full relative flex flex-col justify-center gap-1.5 py-1">
+                                                                                {barCom && (
+                                                                                    <div 
+                                                                                        className="absolute h-3 bg-blue-500/10 border border-blue-400 rounded shadow-sm flex items-center justify-center top-[10px] select-none hover:bg-blue-500/25 transition-all group/bar pointer-events-auto cursor-help"
+                                                                                        style={barCom}
+                                                                                    >
+                                                                                        <span className="text-[8px] text-blue-700 font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">COM: {item.entrega_formatada}</span>
+                                                                                        
+                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Protheus)</div>
+                                                                                            <div>📦 <strong>Item:</strong> {item.codigo}</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                            <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
+                                                                                            <div>📅 <strong>Entrega Contratual:</strong> {item.entrega_formatada}</div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {barPcp ? (
+                                                                                    <div 
+                                                                                        className={`absolute h-3 rounded shadow-sm flex items-center justify-center bottom-[10px] border select-none hover:brightness-95 transition-all group/bar pointer-events-auto cursor-help ${
+                                                                                            !hasPcpDate
+                                                                                                ? 'bg-emerald-50/70 border-dashed border-emerald-400/80 text-emerald-800'
+                                                                                                : isPcpDelayed 
+                                                                                                    ? 'bg-amber-100 border-amber-400 text-amber-800' 
+                                                                                                    : 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                                                                                        }`}
+                                                                                        style={barPcp}
+                                                                                    >
+                                                                                        <span className="text-[8px] font-bold truncate px-1 opacity-0 group-hover/bar:opacity-100 transition-opacity">
+                                                                                            {hasPcpDate ? `PCP: ${displayPcpDateStr}` : `PCP (Comercial): ${displayPcpDateStr}`}
+                                                                                        </span>
+                                                                                        
+                                                                                        {/* Tooltip */}
+                                                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-56 leading-relaxed flex flex-col gap-1">
+                                                                                            <div className={`font-bold border-b border-slate-700 pb-1 mb-1 text-xs ${!hasPcpDate ? 'text-emerald-300' : isPcpDelayed ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                                                {hasPcpDate ? 'Previsão de Entrega (PCP)' : 'Previsão PCP (Prazo Comercial)'}
+                                                                                            </div>
+                                                                                            <div>📦 <strong>Item:</strong> {item.codigo}</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                            <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
+                                                                                            <div>📅 <strong>Previsão PCP:</strong> {displayPcpDateStr} {!hasPcpDate && '(Fallback)'}</div>
+                                                                                            {hasPcpDate && isPcpDelayed && (
+                                                                                                <div className="text-amber-400 font-bold mt-1">⚠️ Desvio de prazo do cronograma!</div>
+                                                                                            )}
+                                                                                            {!hasPcpDate && (
+                                                                                                <div className="text-slate-300 text-[10px] mt-1 italic">Sem previsão formal do PCP. Usando data comercial.</div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    barCom && (
+                                                                                        <div 
+                                                                                            className="absolute h-3 border border-dashed border-slate-400 rounded bottom-[10px] flex items-center justify-center select-none hover:border-slate-500 bg-slate-50/50 group/bar pointer-events-auto cursor-help"
+                                                                                            style={barCom}
+                                                                                        >
+                                                                                            <span className="text-[7px] text-slate-500 font-bold truncate px-1">Sem Previsão PCP</span>
+                                                                                            
+                                                                                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
+                                                                                                <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-slate-300">Programação Ausente</div>
+                                                                                                <div className="text-slate-300 mt-1">Este item ainda não possui previsão de entrega agendada pelo PCP.</div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </React.Fragment>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <table className="w-full text-left border-collapse">
+                                <thead className="sticky top-0 z-10 shadow-sm bg-slate-50">
+                                    <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50">
+                                        <th className="p-3 pl-4 font-semibold w-12 bg-slate-50">Exp.</th>
+                                        <th className="p-3 font-semibold bg-slate-50">Agrupamento (Quinzena / Produto / Pedido)</th>
+                                        <th className="p-3 font-semibold text-center bg-slate-50">Data Entrada</th>
+                                        <th className="p-3 font-semibold text-center bg-slate-50">Data Entrega</th>
+                                        <th className="p-3 font-semibold text-right bg-slate-50">Qtd</th>
+                                        {isShowingFinance && <th className="p-3 font-semibold text-right text-indigo-600 bg-slate-50">Valor (R$)</th>}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isShowingFinance ? (
+                                        <tr className="bg-white"><td colSpan={10} className="p-8 text-center text-slate-500"><DollarSign className="w-12 h-12 text-slate-200 mx-auto mb-2" />A aba financeira exibe os gráficos R$ e totais monetários no painel acima.</td></tr>
+                                    ) : currentTree.length === 0 ? (
+                                        <tr className="bg-white"><td colSpan={10} className="p-4 text-center text-slate-400">Nenhum dado encontrado com o filtro atual na aba {activeTab}.</td></tr>
+                                    ) : (
+                                        currentTree.map(grp => {
+                                            const isGrpOpen = expandedGroups[grp.groupKey];
+                                            return (
+                                                <React.Fragment key={grp.groupKey}>
+                                                    {/* ROW 1: QUINZENA */}
+                                                    <tr 
+                                                        onClick={() => toggleGroup(grp.groupKey)}
+                                                        className="bg-white border-b border-slate-100 hover:bg-slate-50 cursor-pointer group transition-colors"
+                                                    >
+                                                        <td className="p-3 pl-4 text-slate-400">{isGrpOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                                                        <td className="p-3 font-bold text-slate-800" colSpan={3}>
+                                                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs mr-2 border border-slate-200">Período</span>
+                                                            {grp.groupKey}
+                                                        </td>
+                                                        <td className="p-3 text-right font-bold text-slate-800">
+                                                            {grp.totalQtd.toLocaleString()} pçs
+                                                        </td>
+                                                        {isShowingFinance && <td className="p-3 text-right font-bold text-indigo-700">{formatBRL(grp.totalBrl)}</td>}
+                                                    </tr>
+
+                                                    {/* PRODUCTS INSIDE QUINZENA */}
+                                                    {isGrpOpen && Object.values(grp.products).map(prd => {
+                                                        const productUniqueKey = `${grp.groupKey}_${prd.prodKey}`;
+                                                        const isPrdOpen = expandedProducts[productUniqueKey];
+                                                        return (
+                                                            <React.Fragment key={productUniqueKey}>
+                                                                <tr 
+                                                                    onClick={() => toggleProduct(productUniqueKey)}
+                                                                    className="bg-slate-50/50 border-b border-slate-100 hover:bg-slate-100 cursor-pointer"
+                                                                >
+                                                                    <td className="p-3 pl-8 text-indigo-500 border-l-[3px] border-l-indigo-500">
+                                                                        {isPrdOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                                                    </td>
+                                                                    <td className="p-2 font-semibold text-indigo-900 text-sm" colSpan={3}>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <Package size={14} className="text-indigo-500" />
+                                                                            {prd.prodKey}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="p-2 text-right text-sm font-semibold text-slate-700">
+                                                                        {prd.totalQtd.toLocaleString()} pçs
+                                                                    </td>
+                                                                    {isShowingFinance && <td className="p-2 text-right text-sm text-indigo-600">{formatBRL(prd.totalBrl)}</td>}
+                                                                </tr>
+
+                                                                {/* ITEMS (CLIENTS/ORDERS) INSIDE PRODUCT */}
+                                                                {isPrdOpen && prd.items.map((item, idx) => {
+                                                                    let badgeBg = 'bg-slate-100 text-slate-600 border-slate-200';
+                                                                    const diasAtraso = parseInt(item.dias_atraso || 0, 10);
+                                                                    if (diasAtraso > 15) badgeBg = 'bg-red-100 text-red-700 border-red-200';
+                                                                    else if (diasAtraso > 0) badgeBg = 'bg-orange-100 text-orange-700 border-orange-200';
+                                                                    else if (diasAtraso >= -7 && diasAtraso <= 0) badgeBg = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+                                                                    else badgeBg = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+
+                                                                    const heatmapText = diasAtraso > 0 ? `Atraso de ${diasAtraso}d` : (diasAtraso === 0 ? 'Para Hoje' : `Faltam ${Math.abs(diasAtraso)}d`);
+
+                                                                    return (
+                                                                        <tr key={`${item.pedido}-${item.item}-${idx}`} className="bg-white hover:bg-slate-50 transition-colors border-b border-slate-100">
+                                                                            <td></td>
+                                                                            <td className="p-2 pl-12 text-sm text-slate-600">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="font-medium text-slate-700">{item.nome_cliente || item.cod_cliente}</span>
+                                                                                        <span className="text-slate-400 text-xs tracking-wide">(Ped: {item.pedido})</span>
+                                                                                    </div>
+                                                                                    <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${badgeBg}`}>
+                                                                                        {heatmapText}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="p-2 text-sm text-center text-slate-400">
+                                                                                {item.emissao_formatada}
+                                                                            </td>
+                                                                            <td className="p-2 text-sm text-center text-slate-700 font-semibold">
+                                                                                {item.entrega_formatada}
+                                                                            </td>
+                                                                            <td className="p-2 text-sm text-right text-slate-600">
+                                                                                {parseFloat(item.qtd_faturar).toLocaleString()} pçs
+                                                                            </td>
+                                                                            {isShowingFinance && <td className="p-2 text-sm text-right">{formatBRL(item.valor_saldo)}</td>}
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             </div>

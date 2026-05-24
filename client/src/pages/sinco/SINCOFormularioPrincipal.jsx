@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil } from 'lucide-react';
+import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProductStructure, searchSincoProdutos } from '../../services/api';
+import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProductStructure, updateSincoRoteiro, searchSincoProdutos, getProcessList } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 const estadoVazio = {
@@ -61,6 +61,20 @@ export default function SINCOFormularioPrincipal() {
     const [editedArvore, setEditedArvore] = useState([]);
     const [savingArvore, setSavingArvore] = useState(false);
 
+    // Edição de Roteiro (Operações)
+    const [isEditingOperacoes, setIsEditingOperacoes] = useState(false);
+    const [editedOperacoes, setEditedOperacoes] = useState([]);
+    const [savingOperacoes, setSavingOperacoes] = useState(false);
+    const [processList, setProcessList] = useState([]);
+
+    useEffect(() => {
+        getProcessList().then(res => {
+            if (res && res.data) {
+                setProcessList(res.data);
+            }
+        }).catch(err => console.error("Erro ao carregar processos:", err));
+    }, []);
+
     // Modal de Busca de Produto
     const [showSearchModal, setShowSearchModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,6 +82,17 @@ export default function SINCOFormularioPrincipal() {
     const [searching, setSearching] = useState(false);
     const [activeRowIndex, setActiveRowIndex] = useState(null);
 
+    // Modal de Busca de Recurso
+    const [showSearchRecursoModal, setShowSearchRecursoModal] = useState(false);
+    const [searchRecursoQuery, setSearchRecursoQuery] = useState('');
+    const [activeRecursoRowIndex, setActiveRecursoRowIndex] = useState(null);
+
+    // Toast Notification
+    const [toast, setToast] = useState(null);
+    const showToast = useCallback((message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+    }, []);
 
     const carregarProtheus = useCallback(async (codigo) => {
         if (!codigo || codigo === estadoVazio.arquivo) {
@@ -97,7 +122,8 @@ export default function SINCOFormularioPrincipal() {
             setEditedArvore(Array.isArray(rA) ? JSON.parse(JSON.stringify(rA)) : []);
             setIsEditingArvore(false);
             setRestricoes(Array.isArray(rR) ? rR : []);
-            setOperacoes(Array.isArray(rO) ? rO : []);
+            const rOMapped = Array.isArray(rO) ? rO.map(o => ({...o, _original_operacao: o.operacao})) : [];
+            setOperacoes(rOMapped);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
         } catch (error) {
             console.error("Erro ao carregar dados do Protheus:", error);
@@ -263,7 +289,7 @@ export default function SINCOFormularioPrincipal() {
             const rSz0 = await getSincoRestricoesSz0(produto);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
         } catch (err) {
-            alert('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message));
+            showToast('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message, 'error'));
         } finally {
             setSavingSz0(false);
         }
@@ -279,7 +305,7 @@ export default function SINCOFormularioPrincipal() {
             .map(e => e.componente.toUpperCase().trim());
         const duplicados = codigosAtivos.filter((item, index) => codigosAtivos.indexOf(item) !== index);
         if (duplicados.length > 0) {
-            alert(`O componente ${duplicados[0]} foi adicionado duas vezes. Agrupe as quantidades antes de salvar.`);
+            showToast(`O componente ${duplicados[0]} foi adicionado duas vezes. Agrupe as quantidades antes de salvar.`, 'warning');
             return;
         }
 
@@ -287,7 +313,7 @@ export default function SINCOFormularioPrincipal() {
         try {
             const arvoreFresca = await getSincoArvore(produtoPai);
             if (Array.isArray(arvoreFresca) && arvoreFresca.length !== arvore.length) {
-                alert(`Atenção: Outro usuário alterou a estrutura do ${produtoPai} enquanto você editava. Por segurança, a edição foi cancelada e a página será atualizada com os dados mais recentes.`);
+                showToast(`Atenção: Outro usuário alterou a estrutura do ${produtoPai} enquanto você editava. Por segurança, a edição foi cancelada e a página será atualizada com os dados mais recentes.`, 'warning');
                 setArvore(arvoreFresca);
                 setIsEditingArvore(false);
                 return;
@@ -314,7 +340,7 @@ export default function SINCOFormularioPrincipal() {
             const qtdNum = Number(itemEdit.quantidade) || 0;
             
             if (!itemEdit.deleted && qtdNum <= 0) {
-                alert(`O componente ${componente} não pode ter quantidade zero ou negativa.`);
+                showToast(`O componente ${componente} não pode ter quantidade zero ou negativa.`, 'warning');
                 hasValidationError = true;
                 break;
             }
@@ -387,7 +413,7 @@ export default function SINCOFormularioPrincipal() {
 
 
         if (estruturaMudancas.length === 0) {
-            alert('Nenhuma mudança detectada na estrutura.');
+            showToast('Nenhuma mudança detectada na estrutura.', 'warning');
             setIsEditingArvore(false);
             return;
         }
@@ -408,17 +434,144 @@ export default function SINCOFormularioPrincipal() {
         setSavingArvore(true);
         try {
             await updateSincoProductStructure(payload);
-            alert('Estrutura atualizada com sucesso no Protheus!');
+            showToast('Estrutura atualizada com sucesso no Protheus!', 'success');
             // Recarrega os dados do ERP
             await carregarProtheus(produtoPai);
         } catch (err) {
-            alert('Erro ao salvar estrutura: ' + (err.response?.data?.error || err.response?.data?.details || err.message));
+            showToast('Erro ao salvar estrutura: ' + (err.response?.data?.error || err.response?.data?.details || err.message, 'error'));
         } finally {
             setSavingArvore(false);
         }
     };
 
+    const handleSalvarOperacoes = async () => {
+        if (!temArquivo) return;
+        const produtoPai = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+        // Se operacoes.length == 0 => Inclusão de roteiro (NOPER = 3)
+        // Se operacoes.length > 0 => Alteração de roteiro (NOPER = 4)
+        const noper = operacoes.length === 0 ? 3 : 4;
+
+        // Construir o payload de operações
+        const roteirosParaEnviar = [];
+
+        for (let i = 0; i < operacoes.length; i++) {
+            const original = operacoes[i];
+            const editada = editedOperacoes.find(op => op._original_operacao === original.operacao && !op.isNew);
+            
+            if (!editada || editada.deleted) {
+                // Foi excluída ou não existe mais
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(original.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: (original.descricao || original.recurso_descricao || '').substring(0, 30),
+                    G2_RECURSO: (original.recurso || '').trim(),
+                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(original.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(original.tempo || 0),
+                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    OPERACAO: "EXCLUIR"
+                });
+            } else if (String(editada.operacao).trim() !== String(original.operacao).trim()) {
+                // Mudou o número da operação: Exclui a original e inclui a nova
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(original.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: (original.descricao || original.recurso_descricao || '').substring(0, 30),
+                    G2_RECURSO: (original.recurso || '').trim(),
+                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(original.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(original.tempo || 0),
+                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    OPERACAO: "EXCLUIR"
+                });
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: (editada.descricao || editada.recurso_descricao || '').substring(0, 30),
+                    G2_RECURSO: (editada.recurso || '').trim(),
+                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(editada.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(editada.tempo || 0),
+                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    OPERACAO: "INCLUIR"
+                });
+            } else {
+                // Mesma operação, verifica se mudou algo
+                if (
+                    String(original.descricao || original.recurso_descricao || '').trim() !== String(editada.descricao || editada.recurso_descricao || '').trim() ||
+                    String(original.recurso).trim() !== String(editada.recurso).trim() ||
+                    Number(original.tempo) !== Number(editada.tempo) ||
+                    Number(original.setup) !== Number(editada.setup)
+                ) {
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
+                        G2_DESCRI: (editada.descricao || editada.recurso_descricao || '').substring(0, 30),
+                        G2_RECURSO: (editada.recurso || '').trim(),
+                        G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(editada.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(editada.tempo || 0),
+                        G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                        OPERACAO: "ALTERAR"
+                    });
+                }
+            }
+        }
+
+        // Inclui as novas operações
+        for (let i = 0; i < editedOperacoes.length; i++) {
+            const op = editedOperacoes[i];
+            if (op.isNew && !op.deleted) {
+                if (!op.operacao || !op.recurso) continue;
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(op.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: (op.descricao || op.recurso_descricao || '').substring(0, 30),
+                    G2_RECURSO: (op.recurso || '').trim(),
+                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(op.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(op.tempo || 0),
+                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    OPERACAO: "INCLUIR"
+                });
+            }
+        }
+
+        if (roteirosParaEnviar.length === 0) {
+            showToast('Nenhuma modificação para salvar no roteiro.', 'warning');
+            setIsEditingOperacoes(false);
+            return;
+        }
+
+        const payload = {
+            data: {
+                NOPER: noper,
+                EMPRESA: "01",
+                CFILANT: "0101",
+                G2_CODIGO: "01",
+                G2_PRODUTO: produtoPai,
+                roteiros: roteirosParaEnviar
+            }
+        };
+
+        setSavingOperacoes(true);
+        try {
+            await updateSincoRoteiro(payload);
+            showToast('Roteiro atualizado com sucesso no Protheus!', 'success');
+            await carregarProtheus(produtoPai);
+        } catch (err) {
+            showToast('Erro ao salvar roteiro: ' + (err.response?.data?.error || err.response?.data?.details || err.message, 'error'));
+        } finally {
+            setSavingOperacoes(false);
+        }
+    };
+
+    const applyReindexOperacoes = (arr) => {
+        const sorted = [...arr].sort((a, b) => parseInt(a.operacao || 0, 10) - parseInt(b.operacao || 0, 10));
+        let nextNum = 10;
+        return sorted.map(op => {
+            if (!op.deleted) {
+                const novoOp = { ...op, operacao: String(nextNum).padStart(2, '0') };
+                nextNum += 10;
+                return novoOp;
+            }
+            return op;
+        });
+    };
+
     const materiais = isEditingArvore ? editedArvore : arvore; 
+    const listOperacoes = isEditingOperacoes ? editedOperacoes : operacoes;
 
     const inputCls = "w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder-slate-400";
     const readCls = "w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-sm font-mono text-slate-600";
@@ -447,7 +600,7 @@ export default function SINCOFormularioPrincipal() {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({ caminho: dados.caminho })
-                                        }).catch(() => alert('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.'));
+                                        }).catch(() => showToast('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.', 'error'));
                                     }}
                                     className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs">
                                     {dados.caminho}
@@ -656,7 +809,7 @@ export default function SINCOFormularioPrincipal() {
                                                                                 throw new Error('Not found');
                                                                             }
                                                                         } catch (err) {
-                                                                            alert(`Componente ${codigo} não encontrado no Protheus.`);
+                                                                            showToast(`Componente ${codigo} não encontrado no Protheus.`, 'warning');
                                                                             const newArr = [...editedArvore];
                                                                             newArr[i].componente = '';
                                                                             newArr[i].descricao = '';
@@ -717,7 +870,7 @@ export default function SINCOFormularioPrincipal() {
                                                                 if (r.isNew) {
                                                                     newArr.splice(i, 1);
                                                                 } else {
-                                                                    newArr[i].deleted = !newArr[i].deleted;
+                                                                    newArr[i] = { ...newArr[i], deleted: !newArr[i].deleted };
                                                                 }
                                                                 setEditedArvore(newArr);
                                                             }}
@@ -798,41 +951,239 @@ export default function SINCOFormularioPrincipal() {
                 </div>
 
                 {/* 3. Operações */}
-                <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden h-full">
-                    <div className={`${boxTitleCls} bg-blue-50 text-blue-700 border-blue-100 flex justify-between items-center`}>
+                <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden h-full ${isEditingOperacoes ? 'border-blue-400 ring-1 ring-blue-400' : 'border-slate-200'}`}>
+                    <div className={`${boxTitleCls} ${isEditingOperacoes ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-700 border-blue-100'} flex justify-between items-center`}>
                         <span>Operações (Roteiro)</span>
-                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-blue-200 text-blue-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                        <div className="flex items-center gap-2">
+                            {temArquivo && !isEditingOperacoes && (
+                                <button
+                                    onClick={() => {
+                                        setEditedOperacoes(JSON.parse(JSON.stringify(operacoes)));
+                                        setIsEditingOperacoes(true);
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                >
+                                    <Pencil className="h-3 w-3" /> Editar
+                                </button>
+                            )}
+                            {isEditingOperacoes && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            setEditedOperacoes(JSON.parse(JSON.stringify(operacoes)));
+                                            setIsEditingOperacoes(false);
+                                        }}
+                                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleSalvarOperacoes}
+                                        disabled={savingOperacoes}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                    >
+                                        <Save className="h-3 w-3" /> {savingOperacoes ? 'Salvando...' : 'Salvar'}
+                                    </button>
+                                </>
+                            )}
+                            <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingOperacoes ? 'border-blue-300 text-blue-700' : 'border-blue-200 text-blue-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto bg-slate-50/50">
                         {loadingOpe ? (
                             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando operações...</div>
                         ) : (
-                            <table className="w-full text-left text-xs bg-white">
-                                <thead>
-                                    <tr>
-                                        <th className={thCls}>Operação</th>
-                                        <th className={thCls}>Descrição</th>
-                                        <th className={thCls}>Recurso</th>
-                                        <th className={thCls + " text-right"}>Tempo Padrão</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {operacoes.length === 0 ? (
+                            <div className="flex flex-col h-full">
+                                <table className="w-full text-left text-xs bg-white">
+                                    <thead>
                                         <tr>
-                                            <td colSpan="4" className="text-center py-12 text-slate-400 italic">
-                                                Nenhuma operação encontrada no Protheus
-                                            </td>
+                                            <th className={thCls}>Operação</th>
+                                            <th className={thCls}>Descrição</th>
+                                            <th className={thCls}>Recurso</th>
+                                            <th className={thCls + " text-right"}>Setup (min)</th>
+                                            <th className={thCls + " text-right"}>Tempo Padrão</th>
+                                            {isEditingOperacoes && <th className={thCls}></th>}
                                         </tr>
-                                    ) : operacoes.map((r, i) => (
-                                        <tr key={i} className="hover:bg-blue-50/30 transition-colors">
-                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.operacao}</td>
-                                            <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.descricao || r.recurso_descricao}>{r.descricao || r.recurso_descricao || r.recurso}</td>
-                                            <td className="px-3 py-2 font-mono text-slate-500">{r.recurso_descricao ? `${r.recurso} - ${r.recurso_descricao}` : (r.recurso || '—')}</td>
-                                            <td className="px-3 py-2 font-mono text-blue-600 font-medium text-right bg-blue-50/50">{Number(r.tempo || 0).toFixed(2)} min</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {listOperacoes.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={isEditingOperacoes ? 5 : 4} className="text-center py-12 text-slate-400 italic">
+                                                    Nenhuma operação encontrada no Protheus
+                                                </td>
+                                            </tr>
+                                        ) : listOperacoes.map((r, i) => (
+                                            <tr key={i} className={`transition-colors ${r.deleted ? 'bg-red-50/50 opacity-50' : 'hover:bg-blue-50/30'}`}>
+                                                <td className="px-3 py-2 font-mono font-medium text-slate-700 w-16">
+                                                    {isEditingOperacoes ? (
+                                                        <input 
+                                                            type="text" 
+                                                            value={r.operacao || ''} 
+                                                            onChange={(e) => {
+                                                                const newArr = [...editedOperacoes];
+                                                                newArr[i] = { ...newArr[i], operacao: e.target.value.replace(/\D/g, '') };
+                                                                setEditedOperacoes(newArr);
+                                                            }}
+                                                            onBlur={() => {
+                                                                setEditedOperacoes(applyReindexOperacoes(editedOperacoes));
+                                                            }}
+                                                            disabled={r.deleted}
+                                                            className="w-full px-1 py-0.5 border border-blue-200 rounded text-xs font-mono disabled:opacity-50"
+                                                            placeholder="Ex: 010"
+                                                        />
+                                                    ) : (
+                                                        <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.operacao}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.descricao || r.recurso_descricao}>
+                                                    {isEditingOperacoes ? (
+                                                        <input 
+                                                            type="text" 
+                                                            value={r.descricao || r.recurso_descricao || ''} 
+                                                            onChange={(e) => {
+                                                                const newArr = [...editedOperacoes];
+                                                                newArr[i].descricao = e.target.value.toUpperCase();
+                                                                // Desassocia recurso_descricao pra forçar uso da descrição manual
+                                                                newArr[i].recurso_descricao = ''; 
+                                                                setEditedOperacoes(newArr);
+                                                            }}
+                                                            disabled={r.deleted}
+                                                            className="w-full px-1 py-0.5 border border-blue-200 rounded text-xs uppercase disabled:opacity-50"
+                                                        />
+                                                    ) : (
+                                                        <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || r.recurso_descricao || r.recurso}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 font-mono text-slate-500">
+                                                    {isEditingOperacoes ? (
+                                                        <div className="flex items-center gap-1">
+                                                            <input 
+                                                                type="text" 
+                                                                value={r.recurso || ''} 
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value.toUpperCase();
+                                                                    const newArr = [...editedOperacoes];
+                                                                    newArr[i].recurso = val;
+                                                                    const processMatch = processList.find(p => p.codigo === val);
+                                                                    if (processMatch) {
+                                                                        newArr[i].descricao = processMatch.descricao;
+                                                                        newArr[i].recurso_descricao = processMatch.descricao;
+                                                                    }
+                                                                    setEditedOperacoes(newArr);
+                                                                }}
+                                                                disabled={r.deleted}
+                                                                className="w-full px-1 py-0.5 border border-blue-200 rounded text-xs uppercase disabled:opacity-50"
+                                                                placeholder="MO0001"
+                                                                list="recursos-list"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onMouseDown={(e) => e.preventDefault()}
+                                                                onClick={() => {
+                                                                    setActiveRecursoRowIndex(i);
+                                                                    setSearchRecursoQuery('');
+                                                                    setShowSearchRecursoModal(true);
+                                                                }}
+                                                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                                title="Buscar Recurso"
+                                                            >
+                                                                <Search className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.recurso_descricao ? `${r.recurso} - ${r.recurso_descricao}` : (r.recurso || '—')}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-right w-28">
+                                                    {isEditingOperacoes ? (
+                                                        <input 
+                                                            type="number" 
+                                                            min="0" 
+                                                            step="0.01"
+                                                            value={r.setup !== undefined ? r.setup : ''} 
+                                                            onChange={(e) => {
+                                                                const newArr = [...editedOperacoes];
+                                                                newArr[i] = { ...newArr[i], setup: e.target.value };
+                                                                setEditedOperacoes(newArr);
+                                                            }}
+                                                            disabled={r.deleted}
+                                                            className="w-20 px-1 py-0.5 border border-amber-200 rounded text-right text-xs font-mono text-amber-700 disabled:opacity-50 bg-amber-50/50"
+                                                        />
+                                                    ) : (
+                                                        <span className={`font-mono font-medium ${r.deleted ? 'line-through text-red-500' : 'text-amber-700 bg-amber-50/50 px-1 py-0.5 rounded'}`}>{Number(r.setup || 0).toFixed(2)} min</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-right w-28">
+                                                    {isEditingOperacoes ? (
+                                                        <input 
+                                                            type="number" 
+                                                            min="0" 
+                                                            step="0.01"
+                                                            value={r.tempo !== undefined ? r.tempo : ''} 
+                                                            onChange={(e) => {
+                                                                const newArr = [...editedOperacoes];
+                                                                newArr[i] = { ...newArr[i], tempo: e.target.value };
+                                                                setEditedOperacoes(newArr);
+                                                            }}
+                                                            disabled={r.deleted}
+                                                            className="w-20 px-1 py-0.5 border border-blue-200 rounded text-right text-xs font-mono text-blue-600 disabled:opacity-50 bg-blue-50/50"
+                                                        />
+                                                    ) : (
+                                                        <span className={`font-mono font-medium ${r.deleted ? 'line-through text-red-500' : 'text-blue-600 bg-blue-50/50 px-1 py-0.5 rounded'}`}>{Number(r.tempo || 0).toFixed(2)} min</span>
+                                                    )}
+                                                </td>
+                                                {isEditingOperacoes && (
+                                                    <td className="px-3 py-2 text-right">
+                                                        <button
+                                                            onClick={() => {
+                                                                let newArr = [...editedOperacoes];
+                                                                if (r.isNew) {
+                                                                    newArr.splice(i, 1);
+                                                                } else {
+                                                                    newArr[i] = { ...newArr[i], deleted: !newArr[i].deleted };
+                                                                }
+                                                                setEditedOperacoes(applyReindexOperacoes(newArr));
+                                                            }}
+                                                            className={`p-1 transition-colors rounded ${r.deleted ? 'bg-slate-200 text-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                                                            title={r.deleted ? "Restaurar" : "Excluir da Estrutura"}
+                                                        >
+                                                            {r.deleted ? <RefreshCw className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {isEditingOperacoes && (
+                                    <>
+                                        <datalist id="recursos-list">
+                                            {processList.map(p => (
+                                                <option key={p.codigo} value={p.codigo}>{p.descricao}</option>
+                                            ))}
+                                        </datalist>
+                                        <div className="p-2 border-t border-blue-100 bg-blue-50/30">
+                                            <button
+                                                onClick={() => {
+                                                    const newArr = [...editedOperacoes, {
+                                                        operacao: '999999', // Para cair no final do sort
+                                                        descricao: '',
+                                                        recurso: '',
+                                                        setup: 0,
+                                                        tempo: 1,
+                                                        isNew: true,
+                                                        deleted: false
+                                                    }];
+                                                    setEditedOperacoes(applyReindexOperacoes(newArr));
+                                                }}
+                                                className="w-full py-1.5 flex items-center justify-center gap-1 text-xs font-medium text-blue-600 hover:bg-blue-100/50 border border-blue-200 border-dashed rounded-md transition-colors"
+                                            >
+                                                <Plus className="h-3.5 w-3.5" /> Adicionar Operação
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1005,7 +1356,7 @@ export default function SINCOFormularioPrincipal() {
                                             setSearching(true);
                                             searchSincoProdutos(searchQuery)
                                                 .then(res => setSearchResults(res || []))
-                                                .catch(err => alert("Erro ao buscar materiais"))
+                                                .catch(err => showToast("Erro ao buscar materiais", 'error'))
                                                 .finally(() => setSearching(false));
                                         }
                                     }}
@@ -1062,6 +1413,110 @@ export default function SINCOFormularioPrincipal() {
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-4 right-4 z-50 max-w-sm w-full bg-white shadow-xl rounded-lg pointer-events-auto flex ring-1 ${toast.type === 'error' ? 'ring-red-500/30' : toast.type === 'warning' ? 'ring-amber-500/30' : 'ring-green-500/30'} overflow-hidden transform transition-all duration-300 ease-in-out`}>
+                    <div className="flex p-4 w-full">
+                        <div className="flex-shrink-0">
+                            {toast.type === 'error' ? (
+                                <XCircle className="h-5 w-5 text-red-500" />
+                            ) : toast.type === 'warning' ? (
+                                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                            ) : (
+                                <CheckCircle className="h-5 w-5 text-green-500" />
+                            )}
+                        </div>
+                        <div className="ml-3 w-0 flex-1 pt-0.5">
+                            <p className="text-sm font-medium text-slate-900">{toast.message}</p>
+                        </div>
+                        <div className="ml-4 flex-shrink-0 flex">
+                            <button
+                                onClick={() => setToast(null)}
+                                className="bg-white rounded-md inline-flex text-slate-400 hover:text-slate-500 focus:outline-none"
+                            >
+                                <span className="sr-only">Close</span>
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
+            {showSearchRecursoModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl flex flex-col h-[70vh] max-h-[500px] animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-sm font-semibold text-slate-800">Buscar Recurso (Operação)</h3>
+                                <p className="text-[11px] text-slate-500 mt-0.5">Pesquise por código ou descrição do recurso.</p>
+                            </div>
+                            <button onClick={() => setShowSearchRecursoModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="p-4 border-b border-slate-100 bg-slate-50">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={searchRecursoQuery}
+                                    onChange={(e) => setSearchRecursoQuery(e.target.value)}
+                                    placeholder="Digite para filtrar os recursos..."
+                                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow"
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-0">
+                            <table className="w-full text-left text-[11px]">
+                                <thead className="bg-slate-50 sticky top-0 border-b border-slate-100 shadow-sm">
+                                    <tr>
+                                        <th className="px-4 py-2 font-medium text-slate-500">CÓDIGO</th>
+                                        <th className="px-4 py-2 font-medium text-slate-500">DESCRIÇÃO</th>
+                                        <th className="px-4 py-2 font-medium text-slate-500 text-center">AÇÃO</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {processList
+                                        .filter(r => !searchRecursoQuery || r.codigo.toLowerCase().includes(searchRecursoQuery.toLowerCase()) || r.descricao.toLowerCase().includes(searchRecursoQuery.toLowerCase()))
+                                        .map((r, i) => (
+                                        <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+                                            <td className="px-4 py-2 font-mono font-medium text-slate-700">{r.codigo}</td>
+                                            <td className="px-4 py-2 text-slate-600 font-medium truncate max-w-[200px]" title={r.descricao}>{r.descricao}</td>
+                                            <td className="px-4 py-2 text-center">
+                                                <button
+                                                    onClick={() => {
+                                                        if (activeRecursoRowIndex !== null) {
+                                                            const newArr = [...editedOperacoes];
+                                                            newArr[activeRecursoRowIndex].recurso = r.codigo;
+                                                            newArr[activeRecursoRowIndex].descricao = r.descricao;
+                                                            newArr[activeRecursoRowIndex].recurso_descricao = r.descricao;
+                                                            setEditedOperacoes(newArr);
+                                                        }
+                                                        setShowSearchRecursoModal(false);
+                                                    }}
+                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded shadow-sm transition-colors"
+                                                >
+                                                    Selecionar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {processList.filter(r => !searchRecursoQuery || r.codigo.toLowerCase().includes(searchRecursoQuery.toLowerCase()) || r.descricao.toLowerCase().includes(searchRecursoQuery.toLowerCase())).length === 0 && (
+                                        <tr>
+                                            <td colSpan="3" className="px-4 py-8 text-center text-slate-400 italic">Nenhum recurso encontrado.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

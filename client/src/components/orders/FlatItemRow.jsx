@@ -130,7 +130,7 @@ const FlatItemRow = ({
             <td className="px-3 py-2 font-mono text-xs whitespace-nowrap sticky left-[680px] z-10 bg-inherit min-w-[140px] max-w-[140px] w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">
                 <Link
                     to={`/estrutura/${encodeURIComponent(item.codigo)}`}
-                    state={{ from: locationPathname }}
+                    state={{ from: locationPathname, pedido: item.pedido, item: item.item }}
                     className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                 >
                     {item.codigo} <Layers className="h-3 w-3" />

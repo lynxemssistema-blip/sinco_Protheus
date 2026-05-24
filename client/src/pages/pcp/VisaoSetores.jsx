@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     PieChart, Loader2, RefreshCw,
-    Search, TrendingUp, ExternalLink, MessageCircle, Mail
+    Search, TrendingUp, ExternalLink, MessageCircle, Mail,
+    Truck, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -13,8 +14,18 @@ import useStickyState from '../../hooks/useStickyState';
 const fmtFull = (iso) => {
     if (!iso) return '—';
     try {
-        const [y, m, d] = iso.split('T')[0].split('-');
-        return `${d}/${m}/${y}`;
+        const str = String(iso).trim().split('T')[0];
+        if (str.includes('-')) {
+            const [y, m, d] = str.split('-');
+            return `${d}/${m}/${y}`;
+        }
+        if (str.length === 8 && /^\d+$/.test(str)) {
+            const y = str.substring(0, 4);
+            const m = str.substring(4, 6);
+            const d = str.substring(6, 8);
+            return `${d}/${m}/${y}`;
+        }
+        return str;
     } catch { return iso; }
 };
 
@@ -36,29 +47,45 @@ export default function VisaoSetores() {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
 
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+
     const [filters, setFilters] = useStickyState({
         pedido: '', cliente: '', produto: '',
         data_inicio: '', data_fim: '',
         status: '', apenas_pendentes: true
     }, '@metalfisa:visao_setores_filters');
 
-    const load = useCallback(async () => {
+    const load = useCallback(async (targetPage = page) => {
         setLoading(true);
         try {
             const params = new URLSearchParams();
             Object.entries(filters).forEach(([k, v]) => {
                 if (v !== '' && v !== false) params.append(k, v);
             });
+            params.append('page', String(targetPage));
+            params.append('limit', '30');
             const res = await api.get(`/pcp-setores/visao?${params}`);
-            setData(res.data);
+            if (res.data && res.data.data) {
+                setData(res.data.data);
+                setTotalPages(res.data.meta.totalPages || 1);
+                setTotalItems(res.data.meta.total || 0);
+                setPage(res.data.meta.page || 1);
+            } else {
+                setData(res.data || []);
+                setTotalPages(1);
+                setTotalItems(res.data ? res.data.length : 0);
+                setPage(1);
+            }
         } catch (err) {
             toast.error('Erro ao carregar visão por setor.');
         } finally {
             setLoading(false);
         }
-    }, [filters]);
+    }, [filters, page]);
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => { load(1); }, []);
 
     // ─── Processamento da Matriz ─────────────────────────────────────────────
     
@@ -80,8 +107,17 @@ export default function VisaoSetores() {
                         pedido: op.pedido_venda || `OP ${op.op}`,
                         cliente: op.nome_cliente,
                         prazo: op.prazo_entrega_pedido,
-                        setoresData: {}
+                        setoresData: {},
+                        romaneios: []
                     };
+                }
+                
+                if (op.romaneios && op.romaneios.length > 0) {
+                    op.romaneios.forEach(r => {
+                        if (!map[pedKey].romaneios.some(x => x.romaneio_id === r.romaneio_id)) {
+                            map[pedKey].romaneios.push(r);
+                        }
+                    });
                 }
                 
                 if (!map[pedKey].setoresData[setor.id]) {
@@ -206,7 +242,7 @@ export default function VisaoSetores() {
                             E-mail
                         </button>
                         <button
-                            onClick={load}
+                            onClick={() => load(page)}
                             disabled={loading || sending}
                             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 text-sm font-semibold px-4 py-2 rounded-xl transition-colors shadow-sm"
                         >
@@ -220,9 +256,10 @@ export default function VisaoSetores() {
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex-none">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                         <input
-                            value={filters.pedido} placeholder="Pedido"
+                            value={filters.pedido} placeholder="Pedidos (ex: 123, 456)"
                             onChange={e => setFilters(p => ({ ...p, pedido: e.target.value }))}
                             className="px-3 py-2 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            title="Buscar por um ou múltiplos pedidos (separados por vírgula)"
                         />
                         <input
                             value={filters.cliente} placeholder="Cliente"
@@ -271,7 +308,7 @@ export default function VisaoSetores() {
                             <span className="text-sm text-slate-600 font-medium select-none">Apenas pendentes</span>
                         </label>
                         <button
-                            onClick={load} disabled={loading}
+                            onClick={() => load(1)} disabled={loading}
                             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-5 py-2 rounded-xl transition-colors disabled:opacity-60"
                         >
                             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
@@ -333,7 +370,18 @@ export default function VisaoSetores() {
                                         return (
                                             <tr key={ped.pedido} className="hover:bg-slate-50 group">
                                                 <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 border-r z-10 shadow-[1px_0_0_0_#e2e8f0]">
-                                                    <div className="font-black text-blue-700">{ped.pedido}</div>
+                                                    <div className="font-black text-blue-700 flex items-center gap-2">
+                                                        {ped.pedido}
+                                                        {ped.romaneios && ped.romaneios.length > 0 && (
+                                                            <span 
+                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                                                                title={`Romaneio(s) em aberto: ${ped.romaneios.map(r => `#${r.romaneio_id} (${r.status}) - Saldo: ${r.saldo}`).join(', ')}`}
+                                                            >
+                                                                <Truck className="w-3 h-3 text-amber-500" />
+                                                                Romaneio
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-slate-500 truncate w-64 mt-0.5" title={ped.cliente}>{ped.cliente || 'Sem cliente associado'}</div>
                                                     <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                                                         <span className="font-semibold text-slate-500">Entrega:</span> 
@@ -371,6 +419,39 @@ export default function VisaoSetores() {
                                     })}
                                 </tbody>
                             </table>
+                        </div>
+                    )}
+                    {/* Paginação */}
+                    {pedidosRows.length > 0 && (
+                        <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 bg-slate-50 rounded-b-2xl flex-none">
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                Exibindo <span className="font-semibold text-slate-700">{(page - 1) * 30 + 1}</span> a{' '}
+                                <span className="font-semibold text-slate-700">
+                                    {Math.min(page * 30, totalItems)}
+                                </span>{' '}
+                                de <span className="font-semibold text-slate-700">{totalItems}</span> pedidos
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => load(page - 1)}
+                                    disabled={page <= 1 || loading}
+                                    className="flex items-center justify-center p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    title="Página Anterior"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                <span className="text-xs font-semibold text-slate-600 px-2 select-none">
+                                    Página {page} de {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => load(page + 1)}
+                                    disabled={page >= totalPages || loading}
+                                    className="flex items-center justify-center p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    title="Próxima Página"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

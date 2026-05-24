@@ -78,7 +78,7 @@ export default function DBAMonitoringTab() {
             {/* Hardware / Node Info */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-4">
-                    <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+                    <div className="p-3 bg-cyan-50 text-cyan-600 rounded-lg">
                         <Server className="w-6 h-6" />
                     </div>
                     <div>

@@ -236,8 +236,9 @@ export default function Settings() {
         general_config: {} // kv pairs
     });
 
-    // Custom Profiles array from general_config or default
+        // Custom Profiles array from general_config or default
     const customProfiles = companyForm.general_config?.custom_profiles || DEFAULT_PROFILES;
+    const availableProfiles = customProfiles.filter(p => p.code !== 'SA' || user?.tipo === 'SA');
 
     const [loading, setLoading] = useState(false);
     const [loadingCompany, setLoadingCompany] = useState(false);
@@ -406,7 +407,11 @@ export default function Settings() {
         }
     };
 
-    const startEditing = (u) => {
+        const startEditing = (u) => {
+        if (u.TipoUsuario === 'SA' && user?.tipo !== 'SA') {
+            alert('Acesso Negado: Apenas SuperAdmins podem editar outros usuários SuperAdmin (SA).');
+            return;
+        }
         setEditingUser(u);
         setUserForm({
             nome: u.NomeCompleto,
@@ -1352,7 +1357,7 @@ export default function Settings() {
                                                         defaultValue={u.TipoUsuario || 'U'}
                                                         id={`role-${u.idUsuario}`}
                                                     >
-                                                        {customProfiles.map(p => (
+                                                        {availableProfiles.map(p => (
                                                             <option key={p.code} value={p.code}>{p.name}</option>
                                                         ))}
                                                     </select>
@@ -1468,7 +1473,7 @@ export default function Settings() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {customProfiles.map(p => (
+                                        {availableProfiles.map(p => (
                                             <tr key={p.code} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-6 py-3 font-mono font-bold text-slate-700">{p.code}</td>
                                                 <td className="px-6 py-3 font-medium text-slate-900">{p.name}</td>
@@ -1633,7 +1638,7 @@ export default function Settings() {
                                         value={userForm.tipo}
                                         onChange={e => setUserForm({ ...userForm, tipo: e.target.value })}
                                     >
-                                        {customProfiles.map(p => (
+                                        {availableProfiles.map(p => (
                                             <option key={p.code} value={p.code}>{p.name}</option>
                                         ))}
                                     </select>
@@ -1910,7 +1915,11 @@ export default function Settings() {
                                                         </button>
                                                         <button
                                                             onClick={async () => {
-                                                                if (window.confirm(`Tem certeza que deseja remover ${u.NomeCompleto}?`)) {
+                                                                if (u.TipoUsuario === 'SA' && user?.tipo !== 'SA') {
+                                                                     alert('Acesso Negado: Apenas SuperAdmins podem remover usuários SuperAdmin (SA).');
+                                                                     return;
+                                                                 }
+                                                                 if (window.confirm(`Tem certeza que deseja remover ${u.NomeCompleto}?`)) {
                                                                     try {
                                                                         await deleteUser(u.idUsuario);
                                                                         loadUsers();
@@ -2057,20 +2066,20 @@ export default function Settings() {
                                     <option value="">-- Selecione --</option>
                                     
                                     <optgroup label="Aplicar a todos de um Perfil (Lote)">
-                                        {customProfiles.map(p => (
+                                        {availableProfiles.map(p => (
                                             <option key={`PROFILE_${p.code}`} value={`PROFILE_${p.code}`}>Todos os(as) {p.name}</option>
                                         ))}
                                     </optgroup>
 
                                     <optgroup label="Usuários Individuais">
-                                    {usersList.filter(u => !(customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA')).map(u => (
+                                    {usersList.filter(u => !(customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA') && (u.TipoUsuario !== 'SA' || user?.tipo === 'SA')).map(u => (
                                         <option key={u.idUsuario} value={u.idUsuario}>
                                             {u.NomeCompleto} ({u.Login}) - {customProfiles.find(p => p.code === u.TipoUsuario)?.name || u.TipoUsuario}
                                         </option>
                                     ))}
                                     </optgroup>
                                     <optgroup label="Administradores (acesso total)">
-                                        {usersList.filter(u => customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA').map(u => (
+                                        {usersList.filter(u => (customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin || u.TipoUsuario === 'A' || u.TipoUsuario === 'SA') && (u.TipoUsuario !== 'SA' || user?.tipo === 'SA')).map(u => (
                                             <option key={u.idUsuario} value={u.idUsuario}>
                                                 {u.NomeCompleto} ({u.Login}) - {customProfiles.find(p => p.code === u.TipoUsuario)?.name || (u.TipoUsuario === 'SA' ? 'SuperAdmin' : 'Admin')}
                                             </option>

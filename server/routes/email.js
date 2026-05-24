@@ -68,12 +68,64 @@ const SMTP_CONFIG = {
 })();
 
 // --- ROTA: ENVIAR EMAIL (SMTP) e GRAVAR NO HISTÓRICO ---
-router.post('/send', authenticateAndCheckPerm('email', 'create'), upload.array('attachments'), async (req, res) => {
+router.post('/send', upload.array('attachments'), async (req, res) => {
     try {
-        const { to, subject, html, text } = req.body;
+        const { to, subject, html, text, localAttachments } = req.body;
         const files = req.files || [];
 
         const transporter = nodemailer.createTransport(SMTP_CONFIG);
+
+        const mailAttachments = files.map(f => ({
+            filename: f.originalname,
+            content: f.buffer
+        }));
+
+        if (localAttachments) {
+            const fs = require('fs').promises;
+            const path = require('path');
+            
+            let pathsArray = [];
+            try {
+                pathsArray = JSON.parse(localAttachments);
+                if (!Array.isArray(pathsArray)) {
+                    pathsArray = [localAttachments];
+                }
+            } catch(e) {
+                pathsArray = [localAttachments];
+            }
+
+            for (const origPath of pathsArray) {
+                if (origPath && typeof origPath === 'string') {
+                    // Normalização do caminho (compatível com a lógica em docs.js)
+                    let filePath = origPath.trim();
+                    filePath = filePath.replace(/^["']+|["']+$/g, '').trim();
+                    
+                    // Q:\ ou Q:/ para caminho UNC padrão
+                    filePath = filePath.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
+                    
+                    if (process.platform !== 'win32') {
+                        filePath = filePath.replace(/\\/g, '/');
+                        filePath = filePath.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+                    } else {
+                        filePath = filePath.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\');
+                        filePath = filePath.replace(/\//g, '\\');
+                    }
+                    
+                    const absolutePath = path.resolve(filePath);
+                    try {
+                        const fileBuffer = await fs.readFile(absolutePath);
+                        const fileName = path.basename(absolutePath);
+                        mailAttachments.push({
+                            filename: fileName,
+                            content: fileBuffer
+                        });
+                        console.log(`📎 Anexado arquivo local: ${absolutePath}`);
+                    } catch(fileErr) {
+                        console.error(`⚠️ Falha ao ler anexo local (${absolutePath}):`, fileErr.message);
+                    }
+                }
+            }
+        }
 
         const mailOptions = {
             from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
@@ -81,10 +133,7 @@ router.post('/send', authenticateAndCheckPerm('email', 'create'), upload.array('
             subject: subject || 'Sem Assunto',
             text: text || '',
             html: getCorporateEmailTemplate(html || ''),
-            attachments: files.map(f => ({
-                filename: f.originalname,
-                content: f.buffer
-            }))
+            attachments: mailAttachments
         };
 
         const info = await transporter.sendMail(mailOptions);
@@ -101,7 +150,7 @@ router.post('/send', authenticateAndCheckPerm('email', 'create'), upload.array('
                 subject || 'Sem Assunto',
                 text || '',
                 html || '',
-                files.length > 0 ? 1 : 0
+                mailAttachments.length > 0 ? 1 : 0
             ]
         );
 
@@ -109,6 +158,44 @@ router.post('/send', authenticateAndCheckPerm('email', 'create'), upload.array('
     } catch (err) {
         console.error('[SMTP] Erro ao enviar e-mail:', err);
         res.status(500).json({ error: 'Erro ao enviar e-mail: ' + err.message });
+    }
+});
+
+// --- ROTA: ENVIAR LOG DE ERRO DO SISTEMA ---
+router.post('/system-error', upload.none(), async (req, res) => {
+    try {
+        const { to, subject, html, text } = req.body;
+
+        const transporter = nodemailer.createTransport(SMTP_CONFIG);
+
+        const mailOptions = {
+            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            to,
+            subject: subject || 'Erro no Sistema',
+            text: text || '',
+            html: getCorporateEmailTemplate(html || '')
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        
+        await mysqlPool.execute(
+            `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_text, body_html, has_attachments, date)
+             VALUES (?, 'SENT', ?, ?, ?, ?, ?, ?, 0, NOW())`,
+            [
+                info.messageId || null,
+                'Sistema - Logger',
+                'sincometal@metalfisa.com.br',
+                to,
+                subject || 'Erro',
+                text || '',
+                html || ''
+            ]
+        );
+
+        res.json({ message: 'Log de erro enviado com sucesso.' });
+    } catch (err) {
+        console.error('[SMTP ERROR LOG]', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -214,6 +301,104 @@ router.get('/message/:id', authenticateAndCheckPerm('email', 'read'), async (req
     }
 });
 
+// --- ROTA: HISTÓRICO DE E-MAILS DE RNC ---
+router.get('/rnc-history', authenticateAndCheckPerm('relatorio_liberacao', 'view'), async (req, res) => {
+    try {
+        const { startDate, endDate, search, rncId, product } = req.query;
+        let query = `
+            SELECT id, uid, message_id, folder, sender_name, sender_email, recipient_email, subject, has_attachments, date, created_at, body_html, body_text
+            FROM app_emails
+            WHERE folder = 'SENT' AND (subject LIKE '[RNC SGQ]%' OR subject LIKE '%RNC SGQ%')
+        `;
+        const params = [];
+
+        if (startDate) {
+            query += ' AND date >= ?';
+            params.push(startDate + ' 00:00:00');
+        }
+        if (endDate) {
+            query += ' AND date <= ?';
+            params.push(endDate + ' 23:59:59');
+        }
+        if (search) {
+            query += ' AND (recipient_email LIKE ? OR subject LIKE ? OR sender_name LIKE ?)';
+            const searchParam = `%${search}%`;
+            params.push(searchParam, searchParam, searchParam);
+        }
+
+        query += ' ORDER BY date DESC LIMIT 1000';
+
+        const [emails] = await mysqlPool.execute(query, params);
+
+        // Extract RNC IDs from subjects
+        const emailList = emails.map(e => {
+            const match = e.subject.match(/\[RNC SGQ\] ID #(\d+)/i);
+            const extractedRncId = match ? parseInt(match[1]) : null;
+            return {
+                ...e,
+                rncId: extractedRncId
+            };
+        });
+
+        // Filter by rncId if requested
+        let filteredEmails = emailList;
+        if (rncId) {
+            filteredEmails = filteredEmails.filter(e => e.rncId === parseInt(rncId));
+        }
+
+        // Fetch RNC details for matching RNC IDs
+        const rncIds = [...new Set(filteredEmails.map(e => e.rncId).filter(id => id !== null))];
+        let rncMap = {};
+
+        if (rncIds.length > 0) {
+            const placeholders = rncIds.map(() => '?').join(',');
+            const [rncs] = await mysqlPool.execute(`
+                SELECT r.*, nc.descricao as nc_descricao, nc.tipo as nc_tipo, nc.gravidade as nc_gravidade 
+                FROM app_sgq_rncs r
+                LEFT JOIN app_sgq_nao_conformidades nc ON r.nao_conformidade_id = nc.id
+                WHERE r.id IN (${placeholders})
+            `, rncIds);
+
+            // Fetch drawing files information for these RNCs to show if drawing attached
+            const productCodes = [...new Set(rncs.map(r => r.produto).filter(p => p))];
+            let docsMap = {};
+            if (productCodes.length > 0) {
+                const docPlaceholders = productCodes.map(() => '?').join(',');
+                const [docs] = await mysqlPool.execute(`
+                    SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${docPlaceholders})
+                `, productCodes);
+                docs.forEach(d => {
+                    if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
+                    docsMap[d.produto_codigo].push(d);
+                });
+            }
+
+            rncs.forEach(r => {
+                const docs = docsMap[r.produto] || [];
+                r.tem_arquivos = docs.length > 0;
+                r.primeiro_arquivo = docs.length > 0 ? docs[0].url_arquivo : null;
+                rncMap[r.id] = r;
+            });
+        }
+
+        // Attach RNC details to each email object
+        let result = filteredEmails.map(e => ({
+            ...e,
+            rnc: e.rncId ? (rncMap[e.rncId] || null) : null
+        }));
+
+        // Filter by product technical code if requested
+        if (product) {
+            result = result.filter(e => e.rnc && e.rnc.produto && e.rnc.produto.toLowerCase().includes(product.toLowerCase()));
+        }
+
+        res.json({ success: true, count: result.length, data: result });
+    } catch (err) {
+        console.error('[SMTP RNC HISTORY]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 function authenticateAndCheckPerm(page, action) {
     // Custom wrapper para nao crashar o boot caso a permissao nao seja perfeitamente validada agora.
     // Ele aproveita o middleware rbac normal:
@@ -221,3 +406,4 @@ function authenticateAndCheckPerm(page, action) {
 }
 
 module.exports = router;
+

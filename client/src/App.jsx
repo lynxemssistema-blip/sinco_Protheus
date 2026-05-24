@@ -62,7 +62,7 @@ const ServiceOrdersPage = React.lazy(() => import('./pages/sinco/ServiceOrdersPa
 const ServiceOrderProductionAppointmentPage = React.lazy(() => import('./pages/sinco/ServiceOrderProductionAppointmentPage'));
 const ServiceOrderProductionMatrixPage = React.lazy(() => import('./pages/sinco/ServiceOrderProductionMatrixPage'));
 const ServiceOrderMaterialsPage = React.lazy(() => import('./pages/sinco/ServiceOrderMaterialsPage'));
-const SINCOActiveDrawing = React.lazy(() => import('./pages/SINCO/SINCOActiveDrawing'));
+const SINCOActiveDrawing = React.lazy(() => import('./pages/sinco/SINCOActiveDrawing'));
 const TrackingEvolution = React.lazy(() => import('./pages/production/TrackingEvolution'));
 const SINCOFormularioPrincipal = React.lazy(() => import('./pages/sinco/SINCOFormularioPrincipal'));
 const DashboardFinanceiro = React.lazy(() => import('./pages/financeiro/DashboardFinanceiro'));
@@ -622,6 +622,11 @@ function App() {
                                             </Layout>
                                         } />
                                         <Route path="/pcp/extrato-op" element={
+                                            <Layout fullWidth={true}>
+                                                <ApontamentoPorUsuarioOpPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/apontamento-por-usuario-op" element={
                                             <Layout fullWidth={true}>
                                                 <ApontamentoPorUsuarioOpPage />
                                             </Layout>

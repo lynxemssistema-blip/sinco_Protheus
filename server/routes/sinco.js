@@ -806,7 +806,8 @@ router.get('/operacoes/:codigo', async (req, res) => {
                 TRIM(h1.h1_descri)                                          AS descricao,
                 TRIM(g2.g2_recurso)                                         AS recurso,
                 TRIM(h1.h1_descri)                                          AS recurso_descricao,
-                g2.g2_tempad                                                AS tempo
+                g2.g2_tempad                                                AS tempo,
+                g2.g2_setup                                                 AS setup
             FROM public.sg2010 g2
             LEFT JOIN public.sh1010 h1
                 ON h1.h1_codigo = g2.g2_recurso
@@ -835,18 +836,18 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
         // z0_restric é bytea (Latin-1 com null terminator) — não usar TRIM() no SQL
         const rows = await queryProtheus(`
             SELECT
-                TRIM(Z0.z0_produto)  AS produto,
-                TRIM(Z0.z0_item)     AS item,
-                TRIM(Z0.z0_status)   AS status,
-                TRIM(Z0.z0_resumo)   AS resumo,
+                Z0.z0_produto        AS produto,
+                Z0.z0_item           AS item,
+                Z0.z0_status         AS status,
+                Z0.z0_resumo         AS resumo,
                 Z0.z0_restric        AS restricao_raw,
-                TRIM(Z0.z0_respons)  AS responsavel,
-                TRIM(Z0.z0_dtultal)  AS dt_ultima_alt,
-                TRIM(Z0.z0_hrultal)  AS hr_ultima_alt,
-                TRIM(B1.b1_desc)     AS descricao_oficial,
-                TRIM(B1.b1_tipo)     AS tipo,
-                TRIM(B1.b1_um)       AS unidade,
-                TRIM(Z0.z0_xrevm)    AS revisao
+                Z0.z0_respons        AS responsavel,
+                Z0.z0_dtultal        AS dt_ultima_alt,
+                Z0.z0_hrultal        AS hr_ultima_alt,
+                B1.b1_desc           AS descricao_oficial,
+                B1.b1_tipo           AS tipo,
+                B1.b1_um             AS unidade,
+                Z0.z0_xrevm          AS revisao
             FROM public.sz0010 Z0
             INNER JOIN public.sb1010 B1
                 ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
@@ -869,8 +870,20 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
                     ? buf.toString('latin1').trim()
                     : asUtf8.trim();
             }
-            const { restricao_raw, ...rest } = row;
-            return { ...rest, restricao };
+            return {
+                produto: (row.produto || '').trim(),
+                item: (row.item || '').trim(),
+                status: (row.status || '').trim(),
+                resumo: (row.resumo || '').trim(),
+                responsavel: (row.responsavel || '').trim(),
+                dt_ultima_alt: (row.dt_ultima_alt || '').trim(),
+                hr_ultima_alt: (row.hr_ultima_alt || '').trim(),
+                descricao_oficial: (row.descricao_oficial || '').trim(),
+                tipo: (row.tipo || '').trim(),
+                unidade: (row.unidade || '').trim(),
+                revisao: (row.revisao || '').trim(),
+                restricao
+            };
         });
 
         res.json(decoded);

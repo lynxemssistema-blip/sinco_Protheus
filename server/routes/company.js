@@ -57,6 +57,24 @@ router.put('/menu', async (req, res) => {
 router.put('/general', async (req, res) => {
     try {
         const { general_config } = req.body;
+
+        // Security check: only SA (SuperAdmin) can change module states
+        const isSuperAdmin = req.user?.tipo === 'SA';
+        if (!isSuperAdmin) {
+            // Fetch current general_config
+            const [rows] = await pool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+            const currentConfig = rows[0]?.general_config ? (typeof rows[0].general_config === 'string' ? JSON.parse(rows[0].general_config) : rows[0].general_config) : {};
+            
+            const currentMaintenance = !!currentConfig?.module_maintenance_active;
+            const newMaintenance = !!general_config?.module_maintenance_active;
+            const currentSgq = !!currentConfig?.module_sgq_active;
+            const newSgq = !!general_config?.module_sgq_active;
+
+            if (currentMaintenance !== newMaintenance || currentSgq !== newSgq) {
+                return res.status(403).json({ error: 'Acesso negado: Apenas SuperAdmins podem alterar o status de ativação de módulos do sistema.' });
+            }
+        }
+
         const configStr = general_config ? JSON.stringify(general_config) : null;
 
         await pool.execute(`

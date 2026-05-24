@@ -61,19 +61,33 @@ async function processDailyReport(users) {
         const dateProtheus = `${yyyy}${mm}${dd}`;
         const dateBr = `${dd}/${mm}/${yyyy}`;
 
-        // Busca NFs faturadas hoje (Exemplo na SF2010 ou SD2010)
-        // Considerando que a SF2 guarda o cabeçalho das NFs de saída
+        // Busca NFs faturadas hoje a nível de itens (filtrando TES que geram duplicatas/faturamento)
         const pgQuery = `
             SELECT 
                 SF2.F2_DOC as nota,
                 SF2.F2_SERIE as serie,
                 SF2.F2_TIPO as tipo,
                 SA1.A1_NOME as cliente_nome,
-                SF2.F2_VALBRUT as valor_total,
-                SF2.F2_VALMERC as valor_mercadoria
+                SUM(SD2.D2_TOTAL) as valor_total,
+                SUM(SD2.D2_TOTAL) as valor_mercadoria
             FROM SF2010 SF2
+            JOIN SD2010 SD2 ON SD2.D2_DOC = SF2.F2_DOC AND SD2.D2_SERIE = SF2.F2_SERIE AND SD2.D2_CLIENTE = SF2.F2_CLIENTE AND COALESCE(SD2.D_E_L_E_T_,' ') = ' '
+            JOIN SF4010 SF4 ON SF4.F4_CODIGO = SD2.D2_TES 
+              AND COALESCE(SF4.D_E_L_E_T_,' ') = ' '
+              AND SF4.F4_FILIAL = (
+                  SELECT CASE WHEN EXISTS(
+                      SELECT 1 FROM SF4010 sub 
+                      WHERE sub.F4_CODIGO = SD2.D2_TES 
+                        AND sub.F4_FILIAL = SD2.D2_FILIAL 
+                        AND COALESCE(sub.D_E_L_E_T_,' ') = ' '
+                  ) THEN SD2.D2_FILIAL ELSE '  ' END
+              )
+              AND SF4.F4_DUPLIC = 'S'
             LEFT JOIN SA1010 SA1 ON SA1.A1_COD = SF2.F2_CLIENTE AND SA1.A1_LOJA = SF2.F2_LOJA AND COALESCE(SA1.D_E_L_E_T_,' ') = ' '
             WHERE SF2.F2_EMISSAO = $1 AND COALESCE(SF2.D_E_L_E_T_,' ') = ' '
+            AND COALESCE(SF2.F2_CHVNFE, ' ') <> ' '
+            AND COALESCE(SF2.F2_STATUS, ' ') NOT IN ('A', 'C')
+            GROUP BY SF2.F2_DOC, SF2.F2_SERIE, SF2.F2_TIPO, SA1.A1_NOME
         `;
         const pgRes = await db.query(pgQuery, [dateProtheus]);
         const nfs = pgRes.rows;
@@ -433,17 +447,60 @@ async function processMonthlyAccumulatedReport(users) {
         const dateEndProtheus = `${yyyy}${mm}${dd}`;
         const periodBr = `01/${mm}/${yyyy} até ${dd}/${mm}/${yyyy}`;
 
-        // 1. Busca Totais de Faturamento do Mês
+        // 1. Busca Totais de Faturamento do Mês (filtrando TES que geram duplicatas/faturamento)
         const queryFaturamento = `
             SELECT 
-                F2_TIPO as tipo,
-                COUNT(*) as qtd_notas,
-                SUM(F2_VALBRUT) as total_valor
-            FROM SF2010
-            WHERE F2_EMISSAO >= $1 AND F2_EMISSAO <= $2 AND COALESCE(D_E_L_E_T_,' ') = ' '
-            GROUP BY F2_TIPO
+                SF2.F2_TIPO as tipo,
+                COUNT(DISTINCT SF2.F2_DOC) as qtd_notas,
+                SUM(SD2.D2_TOTAL) as total_valor
+            FROM SF2010 SF2
+            JOIN SD2010 SD2 ON SD2.D2_DOC = SF2.F2_DOC AND SD2.D2_SERIE = SF2.F2_SERIE AND SD2.D2_CLIENTE = SF2.F2_CLIENTE AND COALESCE(SD2.D_E_L_E_T_,' ') = ' '
+            JOIN SF4010 SF4 ON SF4.F4_CODIGO = SD2.D2_TES 
+              AND COALESCE(SF4.D_E_L_E_T_,' ') = ' '
+              AND SF4.F4_FILIAL = (
+                  SELECT CASE WHEN EXISTS(
+                      SELECT 1 FROM SF4010 sub 
+                      WHERE sub.F4_CODIGO = SD2.D2_TES 
+                        AND sub.F4_FILIAL = SD2.D2_FILIAL 
+                        AND COALESCE(sub.D_E_L_E_T_,' ') = ' '
+                  ) THEN SD2.D2_FILIAL ELSE '  ' END
+              )
+              AND SF4.F4_DUPLIC = 'S'
+            WHERE SF2.F2_EMISSAO >= $1 AND SF2.F2_EMISSAO <= $2 AND COALESCE(SF2.D_E_L_E_T_,' ') = ' '
+            AND COALESCE(SF2.F2_CHVNFE, ' ') <> ' '
+            AND COALESCE(SF2.F2_STATUS, ' ') NOT IN ('A', 'C')
+            GROUP BY SF2.F2_TIPO
         `;
         const resFat = await db.query(queryFaturamento, [dateStartProtheus, dateEndProtheus]);
+
+        // 1.5 Busca Faturamento Detalhado por Cliente (Apenas Tipo N e TES faturáveis)
+        const queryFaturamentoCliente = `
+            SELECT 
+                SA1.A1_NOME as cliente,
+                COUNT(DISTINCT SF2.F2_DOC) as qtd_notas,
+                SUM(SD2.D2_TOTAL) as total_valor
+            FROM SF2010 SF2
+            JOIN SD2010 SD2 ON SD2.D2_DOC = SF2.F2_DOC AND SD2.D2_SERIE = SF2.F2_SERIE AND SD2.D2_CLIENTE = SF2.F2_CLIENTE AND COALESCE(SD2.D_E_L_E_T_,' ') = ' '
+            JOIN SF4010 SF4 ON SF4.F4_CODIGO = SD2.D2_TES 
+              AND COALESCE(SF4.D_E_L_E_T_,' ') = ' '
+              AND SF4.F4_FILIAL = (
+                  SELECT CASE WHEN EXISTS(
+                      SELECT 1 FROM SF4010 sub 
+                      WHERE sub.F4_CODIGO = SD2.D2_TES 
+                        AND sub.F4_FILIAL = SD2.D2_FILIAL 
+                        AND COALESCE(sub.D_E_L_E_T_,' ') = ' '
+                  ) THEN SD2.D2_FILIAL ELSE '  ' END
+              )
+              AND SF4.F4_DUPLIC = 'S'
+            LEFT JOIN SA1010 SA1 ON SA1.A1_COD = SF2.F2_CLIENTE AND SA1.A1_LOJA = SF2.F2_LOJA AND COALESCE(SA1.D_E_L_E_T_,' ') = ' '
+            WHERE SF2.F2_EMISSAO >= $1 AND SF2.F2_EMISSAO <= $2 AND COALESCE(SF2.D_E_L_E_T_,' ') = ' '
+            AND SF2.F2_TIPO = 'N'
+            AND COALESCE(SF2.F2_CHVNFE, ' ') <> ' '
+            AND COALESCE(SF2.F2_STATUS, ' ') NOT IN ('A', 'C')
+            GROUP BY SA1.A1_NOME
+            ORDER BY total_valor DESC
+        `;
+        const resFatCli = await db.query(queryFaturamentoCliente, [dateStartProtheus, dateEndProtheus]);
         
         const mapTipo = (tipo) => {
             const t = (tipo || '').trim().toUpperCase();
@@ -488,6 +545,14 @@ async function processMonthlyAccumulatedReport(users) {
             <tr>
                 <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #475569;">${mapTipo(r.tipo)} (${r.qtd_notas} notas)</td>
                 <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight:bold; color: #0f172a;">${formatBRL(r.total_valor)}</td>
+            </tr>
+        `).join('');
+
+        const faturamentoClienteHTML = resFatCli.rows.map(r => `
+            <tr>
+                <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 12px;">${r.cliente || 'CLIENTE NÃO IDENTIFICADO'}</td>
+                <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 12px; text-align: center;">${r.qtd_notas}</td>
+                <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 12px; text-align: right; font-weight: 500;">${formatBRL(r.total_valor)}</td>
             </tr>
         `).join('');
 
@@ -555,14 +620,28 @@ async function processMonthlyAccumulatedReport(users) {
                                         <div style="font-size: 11px; color: #991b1b; margin-top: 5px;">${qtdGeralCompras} pedidos de despesa</div>
                                     </div>
                                 </div>
-                                <h3 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">Detalhamento das Notas de Saída (Faturamento)</h3>
-                                <table style="width:100%; border-collapse: collapse; margin-top: 15px;">
-                                    <tbody>
-                                        ${faturamentoDetalhesHTML}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
+                                <h3 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">Detalhamento Geral (Por Tipo)</h3>
+                    <table style="width:100%; border-collapse: collapse; margin-top: 15px;">
+                        <tbody>
+                            ${faturamentoDetalhesHTML}
+                        </tbody>
+                    </table>
+
+                    <h3 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-top: 30px;">Faturamento Detalhado por Cliente (Apenas NF Normal)</h3>
+                    <table style="width:100%; border-collapse: collapse; margin-top: 15px;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9;">
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #cbd5e1; font-size: 12px; color: #475569;">Cliente</th>
+                                <th style="padding: 8px; text-align: center; border-bottom: 2px solid #cbd5e1; font-size: 12px; color: #475569;">Qtd Notas</th>
+                                <th style="padding: 8px; text-align: right; border-bottom: 2px solid #cbd5e1; font-size: 12px; color: #475569;">Valor Líquido (R$)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${faturamentoClienteHTML}
+                        </tbody>
+                    </table>
+                </div>
+                <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
                                 <p>Este é um e-mail automático gerado pelo MetalFisa ERP. Por favor, não responda.</p>
                             </div>
                         </div>

@@ -2,6 +2,103 @@ import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import api from './api';
+
+const drawRncStampOnPage = (page, rnc, helveticaFont, helveticaBoldFont) => {
+    const { width, height } = page.getSize();
+    const minSide = Math.min(width, height);
+    const scale = Math.max(1, minSide / 595);
+
+    const W = 150 * scale;
+    const H = 75 * scale;
+    const padding = 6 * scale;
+    const fontSize = 7 * scale;
+    const titleFontSize = 9 * scale;
+    const lineHeight = 9.5 * scale;
+
+    const x = width - W - 10 * scale;
+    const y = 10 * scale;
+
+    // Fundo branco sólido para cobrir o desenho atrás do carimbo
+    page.drawRectangle({
+        x,
+        y,
+        width: W,
+        height: H,
+        color: rgb(1, 1, 1),
+        borderColor: rgb(0.8, 0.1, 0.1),
+        borderWidth: 1.5 * scale,
+    });
+
+    // Borda interna preta fina
+    page.drawRectangle({
+        x: x + 1.5 * scale,
+        y: y + 1.5 * scale,
+        width: W - 3 * scale,
+        height: H - 3 * scale,
+        borderColor: rgb(0.1, 0.1, 0.1),
+        borderWidth: 0.5 * scale,
+    });
+
+    let currY = y + H - padding - titleFontSize;
+
+    // Título do Carimbo
+    page.drawText('RNC - PRODUTO NÃO CONFORME', {
+        x: x + padding,
+        y: currY,
+        size: titleFontSize,
+        font: helveticaBoldFont,
+        color: rgb(0.8, 0.1, 0.1),
+    });
+
+    currY -= lineHeight;
+
+    // Linha divisória
+    page.drawLine({
+        start: { x: x + padding, y: currY + 2 * scale },
+        end: { x: x + W - padding, y: currY + 2 * scale },
+        thickness: 0.5 * scale,
+        color: rgb(0.8, 0.1, 0.1),
+    });
+
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+            return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+        } catch(e) {
+            return dateStr;
+        }
+    };
+
+    const limitLength = (str, len) => {
+        if (!str) return '-';
+        return str.length > len ? str.substring(0, len) + '...' : str;
+    };
+
+    // Dados da RNC
+    const lines = [
+        `RNC ID: #${rnc.id} | Status: ${rnc.status || 'ABERTO'}`,
+        `Abertura: ${formatDate(rnc.data_criacao)} | OP: ${rnc.op || '-'}-${rnc.item_op || '-'}(${rnc.sequen_op || '-'})`,
+        `Produto: ${rnc.produto || '-'}`,
+        `Prazo Limite: ${formatDate(rnc.data_limite)}`,
+        `Recurso/Setor: ${limitLength(rnc.recurso_inconformidade || '-', 25)}`,
+        `Descrição: ${limitLength(rnc.observacao || '-', 38)}`
+    ];
+
+    for (const line of lines) {
+        page.drawText(line, {
+            x: x + padding,
+            y: currY,
+            size: fontSize,
+            font: helveticaFont,
+            color: rgb(0.1, 0.1, 0.1),
+        });
+        currY -= lineHeight;
+    }
+};
 
 export const generateRNCPdf = async (rncs, filters, currentUser) => {
     try {
@@ -91,7 +188,11 @@ export const generateRNCPdf = async (rncs, filters, currentUser) => {
             origem += `OP: ${row.op}-${row.item_op} (${row.sequen_op})\nPV: ${row.pedido || 'N/A'}\nProduto OP: ${row.produto || ''}`;
 
             try {
-                const f097 = row.f097_dados ? JSON.parse(row.f097_dados) : {};
+                let parsed = row.f097_dados ? JSON.parse(row.f097_dados) : {};
+                if (typeof parsed === 'string') {
+                    parsed = JSON.parse(parsed);
+                }
+                const f097 = parsed && typeof parsed === 'object' ? parsed : {};
                 const reg = f097.registro || {};
                 
                 if (reg.is_produto_pai === true) {
@@ -149,7 +250,7 @@ export const generateRNCPdf = async (rncs, filters, currentUser) => {
     }
 };
 
-export const generateSingleRNCPdf = async (rnc) => {
+export const generateSingleRNCPdf = async (rnc, options = {}) => {
     try {
         const doc = new jsPDF('portrait', 'mm', 'a4');
         const pageWidth = doc.internal.pageSize.getWidth();
@@ -189,7 +290,11 @@ export const generateSingleRNCPdf = async (rnc) => {
         currentY += 25;
 
         // PARSER DATA
-        const f097 = rnc.f097_dados ? JSON.parse(rnc.f097_dados) : {};
+        let parsed = rnc.f097_dados ? JSON.parse(rnc.f097_dados) : {};
+        if (typeof parsed === 'string') {
+            parsed = JSON.parse(parsed);
+        }
+        const f097 = parsed && typeof parsed === 'object' ? parsed : {};
         const reg = f097.registro || {};
         const trat = f097.tratativa || {};
 
@@ -201,10 +306,10 @@ export const generateSingleRNCPdf = async (rnc) => {
             styles: { fontSize: 9, cellPadding: 2, textColor: 0 },
             body: [
                 [{ content: '1. IDENTIFICAÇÃO E DESCRIÇÃO DA NÃO CONFORMIDADE', colSpan: 4, styles: { fillColor: [230, 230, 230], fontStyle: 'bold' } }],
-                ['Data Abertura:', new Date(rnc.data_criacao).toLocaleString('pt-BR'), 'Aberto por:', rnc.criado_por || 'Sistema'],
-                ['OP:', `${rnc.op || '-'}-${rnc.item_op || '-'} (${rnc.sequen_op || '-'})`, 'Pedido / PV:', rnc.pedido || '-'],
-                ['Produto OP:', rnc.produto || '-', 'Hierarquia:', reg.is_produto_pai === true ? 'Produto Pai (Faturamento)' : (reg.is_produto_pai === false ? 'Item Filho (Componente)' : 'Não Definido')],
-                ['Produto Pai (PV):', { content: reg.produto_pai || (reg.is_produto_pai ? rnc.produto : 'N/A'), colSpan: 3 }],
+                ['Data Abertura:', new Date(rnc.data_criacao).toLocaleString('pt-BR'), 'Prazo Limite:', rnc.data_limite ? new Date(rnc.data_limite).toLocaleDateString('pt-BR') : 'Não Definido'],
+                ['Aberto por:', rnc.criado_por || 'Sistema', 'Pedido / PV:', rnc.pedido || '-'],
+                ['OP:', `${rnc.op || '-'}-${rnc.item_op || '-'} (${rnc.sequen_op || '-'})`, 'Hierarquia:', reg.is_produto_pai === true ? 'Produto Pai (Faturamento)' : (reg.is_produto_pai === false ? 'Item Filho (Componente)' : 'Não Definido')],
+                ['Produto OP:', rnc.produto || '-', 'Produto Pai (PV):', reg.produto_pai || (reg.is_produto_pai ? rnc.produto : 'N/A')],
                 ['Cliente / Fornec.:', { content: rnc.cliente || '-', colSpan: 3 }],
                 ['Origem RNC:', reg.origem || '-', 'Resp. Qualidade:', reg.responsavel_qualidade || '-'],
                 ['Local Detecção:', reg.local_deteccao || '-', 'Qtd Não Conforme:', reg.qtd_nao_conforme || '-'],
@@ -297,7 +402,63 @@ export const generateSingleRNCPdf = async (rnc) => {
             }
         }
 
-        doc.save(`F097-22_RNC_${rnc.id}.pdf`);
+        const f097Bytes = doc.output('arraybuffer');
+        let finalPdfBytes = f097Bytes;
+
+        let drawingPath = rnc.primeiro_arquivo;
+        if (!drawingPath && rnc.produto) {
+            try {
+                const docsResult = await api.get(`/docs/${encodeURIComponent(rnc.produto)}`);
+                const drawing = docsResult.data.find(d => (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) && d.url_arquivo && d.url_arquivo.toLowerCase().endsWith('.pdf'));
+                if (drawing) {
+                    drawingPath = drawing.url_arquivo;
+                }
+            } catch (err) {
+                console.warn('Erro ao buscar desenho alternativo:', err);
+            }
+        }
+
+        if (drawingPath) {
+            try {
+                const mergedDoc = await PDFDocument.create();
+                
+                // Carregar o PDF principal da RNC (F 097-22)
+                const f097Doc = await PDFDocument.load(f097Bytes);
+                const f097Pages = await mergedDoc.copyPages(f097Doc, f097Doc.getPageIndices());
+                f097Pages.forEach(p => mergedDoc.addPage(p));
+                
+                // Carregar o desenho do produto
+                const resp = await api.get('/docs/view', { params: { path: drawingPath }, responseType: 'arraybuffer' });
+                const drawDoc = await PDFDocument.load(resp.data, { ignoreEncryption: true });
+                
+                const copiedPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
+                
+                const helveticaFont = await mergedDoc.embedFont(StandardFonts.Helvetica);
+                const helveticaBoldFont = await mergedDoc.embedFont(StandardFonts.HelveticaBold);
+                
+                for (const page of copiedPages) {
+                    mergedDoc.addPage(page);
+                    // Aplicar carimbo no canto inferior direito do desenho
+                    drawRncStampOnPage(page, rnc, helveticaFont, helveticaBoldFont);
+                }
+                
+                finalPdfBytes = await mergedDoc.save({ useObjectStreams: false });
+            } catch (err) {
+                console.error('Erro ao anexar desenho ao PDF F 097-22:', err);
+            }
+        }
+
+        if (options.returnBytes) {
+            return { bytes: finalPdfBytes, fileName: `F097-22_RNC_${rnc.id}.pdf` };
+        }
+
+        const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `F097-22_RNC_${rnc.id}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     } catch (err) {
         console.error('Erro ao gerar RNC individual PDF', err);
         throw err;

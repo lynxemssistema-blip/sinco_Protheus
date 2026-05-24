@@ -804,8 +804,20 @@ router.get('/', async (req, res) => {
         if (planned_date_start || planned_date_end) {
             let planSql = `SELECT op_numero, op_item, op_sequencia, operacao_codigo FROM app_production_planning WHERE 1=1`;
             const planParams = [];
-            if (planned_date_start) { planSql += ` AND data_planejada_inicio >= ?`; planParams.push(planned_date_start); }
-            if (planned_date_end)   { planSql += ` AND data_planejada_inicio <= ?`; planParams.push(planned_date_end); }
+            if (req.query.date_filter_type === 'intersection') {
+                if (planned_date_end) {
+                    planSql += ` AND data_planejada_inicio <= ?`;
+                    planParams.push(planned_date_end);
+                }
+                if (planned_date_start) {
+                    planSql += ` AND data_planejada_fim >= ?`;
+                    planParams.push(planned_date_start);
+                }
+            } else {
+                const dateField = req.query.date_filter_type === 'fim' ? 'data_planejada_fim' : 'data_planejada_inicio';
+                if (planned_date_start) { planSql += ` AND ${dateField} >= ?`; planParams.push(planned_date_start); }
+                if (planned_date_end)   { planSql += ` AND ${dateField} <= ?`; planParams.push(planned_date_end); }
+            }
             const [plannedRows] = await mysqlPool.execute(planSql, planParams);
             if (plannedRows.length === 0) return res.json({ data: [], total: 0 });
             plannedOpsFilter = plannedRows;
@@ -833,10 +845,9 @@ router.get('/', async (req, res) => {
             const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa');
             if (fracOps.length > 0) {
                 const bases = fracOps.map(r => r.op_base);
-                const ph = bases.map((_, i) => `$${pn + i}`).join(',');
-                fracExclude = `AND (c2.c2_num || c2.c2_item) NOT IN (${ph})`;
-                params.push(...bases);
-                pn += bases.length;
+                fracExclude = `AND (c2.c2_num || c2.c2_item) <> ALL($${pn})`;
+                params.push(bases);
+                pn++;
             }
         } catch (_) {}
 
@@ -848,10 +859,9 @@ router.get('/', async (req, res) => {
         // Inject planned dates OPs into Postgres to prevent LIMIT truncation
         if (plannedOpsFilter && plannedOpsFilter.length > 0) {
             const plannedOpNums = [...new Set(plannedOpsFilter.map(p => (p.op_numero || '').trim().padEnd(6, ' ')))];
-            const ph = plannedOpNums.map((_, i) => `$${pn + i}`).join(',');
-            s1Conds.push(`c2.c2_num IN (${ph})`);
-            params.push(...plannedOpNums);
-            pn += plannedOpNums.length;
+            s1Conds.push(`c2.c2_num = ANY($${pn})`);
+            params.push(plannedOpNums);
+            pn++;
         }
 
         // Only apply date cutoff when no specific OP/pedido/item/planned filter — those are already selective
@@ -869,10 +879,9 @@ router.get('/', async (req, res) => {
                 params.push(paddedOp);
             } else if (opArr.length > 1) {
                 const paddedOps = opArr.map(s => s.padStart(6, '0'));
-                const ph = paddedOps.map((_, i) => `$${pn + i}`).join(',');
-                s1Conds.push(`TRIM(c2.c2_num) IN (${ph})`);
-                params.push(...paddedOps);
-                pn += paddedOps.length;
+                s1Conds.push(`TRIM(c2.c2_num) = ANY($${pn})`);
+                params.push(paddedOps);
+                pn++;
             }
         }
         if (pedido) { 
@@ -907,15 +916,14 @@ router.get('/', async (req, res) => {
             let sgPn = 1;
 
             if (recursoArray.length > 0) {
-                const ph = recursoArray.map((_, i) => `$${sgPn + i}`).join(',');
-                sgConds.push(`TRIM(g2_recurso) IN (${ph})`);
-                sgParams.push(...recursoArray);
-                sgPn += recursoArray.length;
+                sgConds.push(`TRIM(g2_recurso) = ANY($${sgPn})`);
+                sgParams.push(recursoArray);
+                sgPn++;
             }
             if (operacaoArray.length > 0) {
                 const conds = operacaoArray.map((_, i) => `(TRIM(g2_operac) ILIKE $${sgPn + i} OR g2_descri ILIKE $${sgPn + i} OR TRIM(g2_recurso) ILIKE $${sgPn + i})`);
                 sgConds.push(`(${conds.join(' OR ')})`);
-                sgParams.push(...operacaoArray.map(s => `%${s}%`));
+                for (const s of operacaoArray) sgParams.push(`%${s}%`);
                 sgPn += operacaoArray.length;
             }
 
@@ -948,7 +956,7 @@ router.get('/', async (req, res) => {
 
         // Stage 2 filter: pending_delivery (applied after SC6010 join)
         const pendingClause = req.query.pending_delivery === 'true'
-            ? `AND (COALESCE(c6.c6_qtdven::numeric, 0) - COALESCE(c6.c6_qtdent::numeric, 0)) > 0`
+            ? `AND (COALESCE(NULLIF(TRIM(c6.c6_qtdven::text), '')::numeric, 0) - COALESCE(NULLIF(TRIM(c6.c6_qtdent::text), '')::numeric, 0)) > 0`
             : '';
 
 
@@ -962,8 +970,11 @@ router.get('/', async (req, res) => {
 WITH op_base AS (
     SELECT
         c2.c2_num, c2.c2_item, c2.c2_sequen,
+        c2.c2_produto AS produto_raw,
         TRIM(c2.c2_produto) AS produto,
+        COALESCE(NULLIF(c2.c2_pedido,''), NULLIF(root_op.c2_pedido,'')) AS pedido_raw,
         COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS pedido_resolved,
+        COALESCE(NULLIF(c2.c2_itempv,''), NULLIF(root_op.c2_itempv,'')) AS itempv_raw,
         COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS itempv_resolved,
         c2.c2_filial,
         c2.c2_quant::numeric AS qtd_planejada_op,
@@ -971,7 +982,8 @@ WITH op_base AS (
         TRIM(c2.c2_um)       AS um_op
     FROM public.sc2010 c2
     LEFT JOIN public.sc2010 root_op
-        ON  root_op.c2_num    = c2.c2_num
+        ON  root_op.c2_filial = c2.c2_filial
+        AND root_op.c2_num    = c2.c2_num
         AND root_op.c2_item   = c2.c2_item
         AND root_op.c2_sequen = '001'
         AND COALESCE(root_op.d_e_l_e_t_,'') IN ('', ' ')
@@ -990,11 +1002,11 @@ op_enrich AS (
         TRIM(c6.c6_pedcli)   AS ped_cliente
     FROM op_base ob
     LEFT JOIN public.sb1010 sb1
-        ON  TRIM(sb1.b1_cod) = ob.produto
+        ON  sb1.b1_cod = ob.produto_raw
         AND COALESCE(sb1.d_e_l_e_t_,'') IN ('', ' ')
     LEFT JOIN public.sc5010 c5
         ON  c5.c5_filial = ob.c2_filial
-        AND TRIM(c5.c5_num) = ob.pedido_resolved
+        AND c5.c5_num = ob.pedido_raw
         AND COALESCE(c5.d_e_l_e_t_,'') IN ('', ' ')
     LEFT JOIN public.sa1010 a1
         ON  a1.a1_cod  = c5.c5_cliente
@@ -1002,8 +1014,8 @@ op_enrich AS (
         AND COALESCE(a1.d_e_l_e_t_,'') IN ('', ' ')
     LEFT JOIN public.sc6010 c6
         ON  c6.c6_filial = ob.c2_filial
-        AND TRIM(c6.c6_num)  = ob.pedido_resolved
-        AND TRIM(c6.c6_item) = ob.itempv_resolved
+        AND c6.c6_num  = ob.pedido_raw
+        AND c6.c6_item = ob.itempv_raw
         AND COALESCE(c6.d_e_l_e_t_,'') IN ('', ' ')
     WHERE 1=1
     ${clienteClause}
@@ -1013,7 +1025,7 @@ op_enrich AS (
 )
 SELECT
     oe.c2_num AS op, oe.c2_item AS item_op, oe.c2_sequen AS sequen,
-    oe.produto AS cod_produto_op, oe.pedido_resolved AS pedido_venda,
+    oe.produto_raw AS cod_produto_op_raw, oe.produto AS cod_produto_op, oe.pedido_resolved AS pedido_venda,
     oe.desc_produto, oe.tipo_produto, oe.um_op,
     oe.qtd_planejada_op, oe.qtd_apontada_erp,
     oe.cod_cliente, oe.nome_cliente, oe.nome_fantasia, oe.ped_cliente
@@ -1027,7 +1039,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         // Query 2: roteiro dos produtos distintos (IN clause — muito mais rápido que JOIN em 57K rows)
         let routingByProduto = {};
         if (opRows.length > 0) {
-            const produtos = [...new Set(opRows.map(r => r.cod_produto_op).filter(Boolean))];
+            const produtos = [...new Set(opRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
             if (produtos.length > 0) {
                 const ph2 = produtos.map((_, i) => `$${i + 1}`).join(',');
                 const r2 = await db.query(`
@@ -1036,9 +1048,9 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                            g2.g2_recurso AS recurso, TRIM(h1.h1_descri) AS desc_recurso
                     FROM public.sg2010 g2
                     LEFT JOIN public.sh1010 h1
-                        ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                        ON h1.h1_codigo = g2.g2_recurso
                         AND COALESCE(h1.d_e_l_e_t_,'') IN ('', ' ')
-                    WHERE TRIM(g2.g2_produto) IN (${ph2})
+                    WHERE g2.g2_produto IN (${ph2})
                     AND COALESCE(g2.d_e_l_e_t_,'') IN ('', ' ')
                     ORDER BY g2.g2_produto, g2.g2_operac
                 `, produtos);
@@ -1124,7 +1136,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                 const chunk = relevantOpNums.slice(i, i + CHUNK);
                 const ph = chunk.map(() => '?').join(',');
                 const [pr] = await mysqlPool.execute(`SELECT * FROM app_production_planning WHERE op_numero IN (${ph})`, chunk);
-                plans.push(...pr);
+                for (const r of pr) plans.push(r);
                 const [ar] = await mysqlPool.execute(`
                     SELECT op_numero, op_item, op_sequencia, operacao_codigo,
                            SUM(quantidade) as total_produzido,
@@ -1137,7 +1149,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                     WHERE op_numero IN (${ph})
                     GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
                 `, chunk);
-                appointments.push(...ar);
+                for (const a of ar) appointments.push(a);
             }
         }
 
@@ -1196,15 +1208,19 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         let docsMap = {};
         if (productCodes.length > 0) {
             try {
-                const ph = productCodes.map(() => '?').join(',');
-                const [docs] = await mysqlPool.execute(
-                    `SELECT produto_codigo, url_arquivo, area_pintura_m2, operacao FROM produtos_docs WHERE produto_codigo IN (${ph})`,
-                    productCodes
-                );
-                docs.forEach(d => {
-                    const k = (d.produto_codigo || '').trim().toUpperCase();
-                    if (!docsMap[k]) docsMap[k] = { url: d.url_arquivo, area: d.area_pintura_m2, operacao: d.operacao };
-                });
+                const CHUNK = 500;
+                for (let i = 0; i < productCodes.length; i += CHUNK) {
+                    const chunk = productCodes.slice(i, i + CHUNK);
+                    const ph = chunk.map(() => '?').join(',');
+                    const [docs] = await mysqlPool.execute(
+                        `SELECT produto_codigo, url_arquivo, area_pintura_m2, operacao FROM produtos_docs WHERE produto_codigo IN (${ph})`,
+                        chunk
+                    );
+                    docs.forEach(d => {
+                        const k = (d.produto_codigo || '').trim().toUpperCase();
+                        if (!docsMap[k]) docsMap[k] = { url: d.url_arquivo, area: d.area_pintura_m2, operacao: d.operacao };
+                    });
+                }
             } catch (docErr) { console.error('Doc Error:', docErr.message); }
         }
 

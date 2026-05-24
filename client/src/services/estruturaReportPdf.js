@@ -115,7 +115,17 @@ function drawStamp(doc, carimbo, PW, PH, MR) {
   if (!carimbo || !carimbo.ativo) return;
 
   const W  = 95;
-  const H  = 30; // Altura aumentada para caber o novo código
+  let H  = 30; // Altura base
+  let currentDetailY = 22.5;
+
+  let obsLines = [];
+  if (carimbo.observacao) {
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      obsLines = doc.splitTextToSize(`Obs: ${carimbo.observacao}`, W - 8);
+      H += (obsLines.length * 3) + 4; // Ajusta a altura da caixa
+  }
+
   const x  = PW - MR - W;
   const y  = PH - 14 - H;
 
@@ -149,14 +159,24 @@ function drawStamp(doc, carimbo, PW, PH, MR) {
 
   if (carimbo.pedido) {
     const pedStr = `Pedido: ${carimbo.pedido}${carimbo.item ? '  /  Item: ' + carimbo.item : ''}`;
-    doc.text(pedStr, x + 4, y + 22.5);
+    doc.text(pedStr, x + 4, y + currentDetailY);
+    currentDetailY += 4.5;
   }
 
   // Código de Liberação único
   if (carimbo.codigo_liberacao) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text(`Liberação nº: ${carimbo.codigo_liberacao}`, x + 4, y + 27);
+    doc.text(`Liberação nº: ${carimbo.codigo_liberacao}`, x + 4, y + currentDetailY);
+    currentDetailY += 4.5;
+  }
+  
+  // Observação
+  if (obsLines.length > 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(220, 38, 38);
+    doc.text(obsLines, x + 4, y + currentDetailY);
   }
 }
 

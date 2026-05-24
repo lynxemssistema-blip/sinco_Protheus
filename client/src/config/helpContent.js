@@ -2742,6 +2742,93 @@ export const HELP_CONTENT = {
       { path: '/produtos', label: 'Catálogo de Produtos' },
       { path: '/estrutura', label: 'Consulta Estrutural Padrão' }
     ]
+  },
+
+  // ── Gestão de RNCs (Relatório de Não Conformidade) ───────────────────────────
+  '/sgq/gestao-rncs': {
+    category: 'SGQ',
+    categoryColor: '#14b8a6',
+    title: 'Gestão de RNCs',
+    icon: 'ShieldAlert',
+    description: 'Fluxo completo de registro, tratativa, 5W2H e controle de peças de reposição para Não Conformidades.',
+    tabs: [
+      {
+        id: 'lista',
+        label: 'Aba: Lista de RNCs',
+        description: 'Tabela principal com todas as RNCs registradas, filtros de status, exportação e ações administrativas.',
+        steps: [
+          'Filtro de Status: Use o seletor no topo para filtrar a tabela entre "Todas as RNCs", "Abertas", "Em Andamento" ou "Concluídas".',
+          'Coluna Status: Exibe badges visuais indicando a situação da RNC (Aberto em vermelho, Em Andamento em amarelo, Concluído em verde).',
+          'Coluna Reposição: Exibe se há solicitação de nova peça ativa (ex: badge azul "Solicitado" ou cinza "Não Requerido").',
+          'Rastreabilidade: A tabela mostra o código do Produto, Descrição, OP com item/sequência e o Pedido de Venda associado.',
+          'Desenho Técnico (PDF): Se a RNC possuir um PDF anexado na abertura, um ícone vermelho de PDF ficará disponível na coluna Produto para visualização direta.',
+          'Apontar Tempo (Ícone Relógio): Permite lançar minutos e observações de trabalho dedicados a tratar e corrigir a RNC física.',
+          'Tratar RNC (Botão): Abre o modal completo de tratativa (disposição, análise 5W2H, plano de ação e eficácia) para as RNCs pendentes.',
+          'Enviar E-mail (Ícone Envelope): Abre o modal de envio por e-mail para notificar os responsáveis pelo setor da qualidade ou fábrica.',
+          'Imprimir PDF: Clique no topo da aba para exportar e baixar um relatório PDF formatado com a listagem atual filtrada.'
+        ],
+        tips: [
+          'A coluna Reposição permite verificar a necessidade de novas peças para a produção sem precisar abrir o modal de tratativa.',
+          'O apontamento de tempo é cumulativo por RNC e serve para auditar o custo do retrabalho e o esforço de engenharia no desvio.'
+        ]
+      },
+      {
+        id: 'kpis',
+        label: 'Aba: Painel de KPIs & Gráficos',
+        description: 'Indicadores gerenciais e gráficos dinâmicos para análise do desempenho de qualidade na fábrica.',
+        steps: [
+          'Cards de Resumo: Acompanhe no topo o total de RNCs, total de Abertas, total Em Andamento, Concluídas (com taxa de eficácia) e RNCs com Prazo Excedido (Atrasadas).',
+          'Top Defeitos (Pareto): Analise o gráfico de barras para identificar os tipos de não conformidade mais frequentes.',
+          'Análise de Recursos: Gráfico que quantifica e classifica os desvios agrupados por máquina/operação do Protheus.',
+          'Tempo Médio de Ciclo: Acompanhe a média de dias/horas gastos desde a abertura até o encerramento da RNC.',
+          'Filtros Dinâmicos: Filtre os dados por datas de abertura e setores para segmentar os gráficos de perdas de qualidade.'
+        ],
+        tips: [
+          'Se o card "Prazo Excedido" piscar em vermelho, indica que existem RNCs com a data limite ultrapassada que precisam de atenção urgente.',
+          'A taxa de eficácia reflete a qualidade dos planos de ação implementados. Valores baixos indicam que os desvios estão sendo recorrentes.'
+        ]
+      },
+      {
+        id: 'reposicoes',
+        label: 'Aba: Peças Solicitadas',
+        description: 'Painel administrativo para controle e liberação de fabricação de novas peças para reposição de refugo.',
+        steps: [
+          'Rastreabilidade: A tabela lista o ID da RNC, desenho técnico, código do produto, OP de origem, quantidade e data da solicitação.',
+          'Desenho Técnico (PDF): Clique no ícone de arquivo na coluna "Desenho" para visualizar ou baixar o PDF técnico para produção.',
+          'Status da Liberação: Visualizações claras entre "Aguardando Liberação" (badge vermelho/laranja) e "Liberada para Fabricação" (badge verde).',
+          'Liberação de Fabricação (Botão): O PCP/Qualidade clica em "Liberar Fabricação" para iniciar o processo de reposição.',
+          'Vínculo de OP Protheus: Ao liberar a peça, insira obrigatoriamente o número da OP gerada no Protheus para rastreabilidade.',
+          'Detalhes da Liberação: Após liberar, o status atualiza exibindo a data, o nome do responsável e o número da OP vinculada.'
+        ],
+        tips: [
+          'A inserção da OP é obrigatória no momento da liberação para garantir o vínculo de custos e produção no Protheus.',
+          'O envio da solicitação por e-mail na tratativa pode ser realizado múltiplas vezes para o mesmo item caso ocorram mudanças no projeto ou quantidade.'
+        ]
+      },
+      {
+        id: 'modais',
+        label: 'Processos (Abertura & Tratativa)',
+        description: 'Instruções para os modais internos de registro de ocorrências e definição de planos de ação.',
+        steps: [
+          'Modal Abertura (+ Nova RNC): Selecione a OP afetada (dados integrados ao Protheus) e o produto. Defina o recurso, defeito e prazo.',
+          'Tratativa Seção 1 (Disposição): Determine o destino do produto. Se escolher "Nova Peça", marque o checkbox para ativar o botão de envio.',
+          'Tratativa Seção 2 (5W2H): Preencha a causa raiz respondendo às perguntas fundamentais da metodologia 5W2H.',
+          'Tratativa Seção 3 (Plano de Ação): Detalhe as tarefas preventivas e corretivas com prazos e responsáveis.',
+          'Tratativa Seção 4 (Eficácia): Confirme se as ações solucionaram o desvio e encerre a RNC.'
+        ],
+        tips: [
+          'O botão "Enviar Solicitação de Fabricação de Nova Peça" aparece na Seção 1 do modal de Tratativa após marcar "Nova Peça" e serve para disparar o e-mail de fabricação com o layout do sistema.',
+          'Tanto a abertura quanto a tratativa aceitam o upload de anexos e fotos de evidências.'
+        ]
+      }
+    ],
+    links: [
+      { path: '/sgq/cargos-funcoes', label: 'Cargos e Funções' },
+      { path: '/sgq/romaneios', label: 'Romaneios SGQ' },
+      { path: '/producao', label: 'Ordens de Produção' }
+    ]
   }
 
 };
+
+

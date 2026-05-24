@@ -455,4 +455,61 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
     }
 });
 
+// =========================================================================
+// ROTA: Editar Roteiro Produtivo via API POST
+// =========================================================================
+router.post('/roteiro-produtivo/editar', async (req, res) => {
+    try {
+        const { data } = req.body;
+
+        if (!data || !data.G2_PRODUTO || !data.roteiros || !Array.isArray(data.roteiros)) {
+            return res.status(400).json({ error: 'Produto e roteiros são obrigatórios.' });
+        }
+
+        const activeOps = data.roteiros.filter(r => r.OPERACAO !== "EXCLUIR").map(r => String(r.G2_OPERAC).trim());
+        const uniqueOps = new Set(activeOps);
+        if (uniqueOps.size !== activeOps.length) {
+            return res.status(400).json({ error: 'Existem operações com a mesma sequência. O Protheus rejeita duplicidade. Recarregue a página e tente novamente.' });
+        }
+
+        // 1. Requisitar Token (Login)
+        let accessToken = '';
+        try {
+            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
+            accessToken = tokenRes.data.access_token;
+        } catch (authError) {
+            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
+        }
+
+        if (!accessToken) {
+            throw new Error('Token JWT retornado estava em branco.');
+        }
+
+        console.log('🚀 [ROTEIRO] Payload enviado para o Protheus:', JSON.stringify(req.body, null, 2));
+
+        // 2. Envio POST
+        const createUrl = 'https://192.168.1.60:47500/roteiro-produtivo/editar';
+        const createRes = await axios.post(createUrl, req.body, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            httpsAgent,
+            timeout: 30000
+        });
+
+        const responseData = createRes.data;
+        console.log('📬 [ROTEIRO] Resposta Protheus:', responseData);
+
+        // Se o status da API for OK, mas o conteúdo for um erro
+        if (responseData.status === "error") {
+            return res.status(400).json({ error: 'Erro ao processar roteiro no Protheus', details: responseData.message || responseData });
+        }
+
+        res.json({ success: true, message: 'Roteiro atualizado com sucesso', raw: responseData });
+
+    } catch (error) {
+        console.error('❌ Protheus Integrador Erro [Roteiro]:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Erro ao Submeter Roteiro à API.', details: error.response?.data || error.message });
+    }
+});
+
 module.exports = router;

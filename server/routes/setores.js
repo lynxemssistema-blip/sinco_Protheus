@@ -347,16 +347,103 @@ router.delete('/responsaveis/:vinculoId', async (req, res) => {
     }
 });
 
+// Helper to populate Protheus metadata for OPs (Descriptions, Customers, Operations)
+async function populateMetadata(initialRows) {
+    const rowsWithMeta = [];
+    if (initialRows.length === 0) return rowsWithMeta;
+
+    // Fetch missing descriptions (sb1)
+    const productCodes = [...new Set(initialRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
+    if (productCodes.length > 0) {
+        const sb1Res = await db.query(`SELECT TRIM(b1_cod) as cod, RTRIM(b1_desc) as desc FROM sb1010 WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, ' ') = ' '`, [productCodes]);
+        const productMap = {};
+        sb1Res.rows.forEach(p => productMap[p.cod] = p.desc);
+        initialRows.forEach(r => r.desc_produto = productMap[r.cod_produto_op_raw] || '');
+    }
+
+    // Fetch missing customer & delivery info (sc6 + sc5 + sa1)
+    const pedidosRaw = [...new Set(initialRows.map(r => r.pedido_venda).filter(Boolean))];
+    if (pedidosRaw.length > 0) {
+        const sc6Res = await db.query(`
+            SELECT TRIM(c6.c6_num) as ped, TRIM(c6.c6_item) as item_pv, RTRIM(c6.c6_pedcli) as ped_cliente, RTRIM(c6.c6_entreg) as prazo_entrega_pedido, RTRIM(sa1.a1_nome) as nome_cliente
+            FROM sc6010 c6
+            LEFT JOIN sc5010 sc5 ON sc5.c5_num = c6.c6_num AND COALESCE(sc5.d_e_l_e_t_, ' ') = ' '
+            LEFT JOIN sa1010 sa1 ON sa1.a1_cod = sc5.c5_cliente AND sa1.a1_loja = sc5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '
+            WHERE c6.c6_num = ANY($1) AND COALESCE(c6.d_e_l_e_t_, ' ') = ' '
+        `, [pedidosRaw]);
+        
+        const pedInfoMap = {};
+        sc6Res.rows.forEach(p => pedInfoMap[`${p.ped}|${p.item_pv}`] = p);
+        
+        initialRows.forEach(r => {
+            const info = pedInfoMap[`${r.pedido_venda}|${r.item_pv}`];
+            if (info) {
+                r.ped_cliente = info.ped_cliente;
+                r.prazo_entrega_pedido = info.prazo_entrega_pedido;
+                r.nome_cliente = info.nome_cliente;
+            }
+        });
+    }
+
+    // Filtrar OPs que, mesmo com pedido, não retornaram cliente válido (ou seja, sem cliente associado)
+    const validRows = initialRows.filter(r => r.nome_cliente && r.nome_cliente.trim() !== '');
+
+    const uniqueProducts = [...new Set(validRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
+    let sg2Map = {};
+    
+    if (uniqueProducts.length > 0) {
+        // Chunk sg2010 queries
+        const chunkSize = 1000;
+        for (let i = 0; i < uniqueProducts.length; i += chunkSize) {
+            const chunk = uniqueProducts.slice(i, i + chunkSize);
+            const sg2Result = await db.query(`
+                SELECT 
+                    TRIM(g2.g2_produto) as cod_produto_op_raw,
+                    RTRIM(g2.g2_recurso) as recurso,
+                    RTRIM(g2.g2_descri)  as desc_operacao,
+                    RTRIM(h1.h1_descri)  as desc_recurso,
+                    RTRIM(g2.g2_operac)  as operacao
+                FROM sg2010 g2
+                LEFT JOIN sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, ' ') = ' '
+                WHERE g2.g2_produto = ANY($1)
+                  AND COALESCE(g2.d_e_l_e_t_, ' ') = ' '
+            `, [chunk]);
+
+            sg2Result.rows.forEach(r => {
+                if (!sg2Map[r.cod_produto_op_raw]) sg2Map[r.cod_produto_op_raw] = [];
+                sg2Map[r.cod_produto_op_raw].push(r);
+            });
+        }
+    }
+
+    for (const op of validRows) {
+        const operations = sg2Map[op.cod_produto_op_raw];
+        if (operations && operations.length > 0) {
+            for (const oper of operations) {
+                rowsWithMeta.push({ ...op, ...oper });
+            }
+        } else {
+            rowsWithMeta.push({ ...op, recurso: null, desc_operacao: null, operacao: null });
+        }
+    }
+    return rowsWithMeta;
+}
+
 // ─── GET /api/pcp-setores/visao ───────────────────────────────────────────────
 // Evolução de produção por setor: OPs x Setores
 // - Estrutura (roteiro) vem do Protheus: SC2 + SG2
 // - Apontamentos vem do MySQL: app_production_appointments
 // - NÃO usa SH6 (Protheus) por incompatibilidade de schema
 router.get('/visao', async (req, res) => {
-    let { pedido, cliente, produto, data_inicio, data_fim, status, apenas_pendentes } = req.query;
+    let { pedido, cliente, produto, data_inicio, data_fim, status, apenas_pendentes, no_paginate } = req.query;
     if (Array.isArray(pedido)) pedido = pedido[0];
     if (Array.isArray(cliente)) cliente = cliente[0];
     if (Array.isArray(produto)) produto = produto[0];
+
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 30);
+    const offset = (page - 1) * limit;
+
     try {
         // 1. Setores ativos e seus recursos (MySQL)
         const [setoresRows] = await mysql.query(`
@@ -382,21 +469,56 @@ router.get('/visao', async (req, res) => {
         const params = [];
 
         if (pedido) {
-            params.push(`%${pedido}%`);
-            conditions.push(`(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) LIKE $${params.length} OR pl.c2_num LIKE $${params.length})`);
+            const pedidosArr = pedido.split(',').map(p => p.trim()).filter(Boolean);
+            if (pedidosArr.length > 0) {
+                const orConditions = pedidosArr.map(p => {
+                    params.push(`%${p}%`);
+                    const paramIdx = params.length;
+                    return `(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) LIKE $${paramIdx} OR pl.c2_num LIKE $${paramIdx})`;
+                });
+                conditions.push(`(${orConditions.join(' OR ')})`);
+            }
         }
-        let joinSb1 = false;
-        let joinSa1Sc5 = false;
 
+        // Performance: Pre-query matching clients to avoid slow unindexed joins
+        let matchingPedidos = null;
         if (cliente) {
-            params.push(`%${cliente.toUpperCase()}%`);
-            conditions.push(`UPPER(sa1.a1_nome) LIKE $${params.length}`);
-            joinSa1Sc5 = true;
+            const clientRes = await db.query(`
+                SELECT DISTINCT TRIM(c5.c5_num) AS c5_num
+                FROM sc5010 c5
+                JOIN sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '
+                WHERE UPPER(sa1.a1_nome) LIKE $1
+                  AND COALESCE(c5.d_e_l_e_t_, ' ') = ' '
+            `, [`%${cliente.toUpperCase()}%`]);
+            matchingPedidos = clientRes.rows.map(r => r.c5_num).filter(Boolean);
+            if (matchingPedidos.length === 0) {
+                return res.json(no_paginate === 'true' ? [] : { data: [], meta: { total: 0, page, limit, totalPages: 0 } });
+            }
         }
+
+        if (matchingPedidos) {
+            params.push(matchingPedidos);
+            conditions.push(`(pl.c2_pedido = ANY($${params.length}) OR root_op.c2_pedido = ANY($${params.length}))`);
+        }
+
+        // Performance: Pre-query matching products to avoid slow unindexed joins
+        let matchingProdutos = null;
         if (produto) {
-            params.push(`%${produto.toUpperCase()}%`);
-            conditions.push(`(UPPER(pl.c2_produto) LIKE $${params.length} OR UPPER(sb1.b1_desc) LIKE $${params.length})`);
-            joinSb1 = true;
+            const prodRes = await db.query(`
+                SELECT TRIM(b1_cod) AS b1_cod
+                FROM sb1010
+                WHERE (UPPER(b1_cod) LIKE $1 OR UPPER(b1_desc) LIKE $1)
+                  AND COALESCE(d_e_l_e_t_, ' ') = ' '
+            `, [`%${produto.toUpperCase()}%`]);
+            matchingProdutos = prodRes.rows.map(r => r.b1_cod).filter(Boolean);
+            if (matchingProdutos.length === 0) {
+                return res.json(no_paginate === 'true' ? [] : { data: [], meta: { total: 0, page, limit, totalPages: 0 } });
+            }
+        }
+
+        if (matchingProdutos) {
+            params.push(matchingProdutos);
+            conditions.push(`pl.c2_produto = ANY($${params.length})`);
         }
 
         if (data_inicio) {
@@ -418,115 +540,82 @@ router.get('/visao', async (req, res) => {
         // Desconsiderar OPs sem pedido (sem cliente associado)
         conditions.push(`TRIM(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))) <> ''`);
 
-        const opsQuery = `
-            SELECT
-                RTRIM(pl.c2_num)       AS op,
-                RTRIM(pl.c2_item)      AS item_op,
-                RTRIM(pl.c2_sequen)    AS sequen,
-                COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS pedido_venda,
-                COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
-                TRIM(pl.c2_produto)    AS cod_produto_op_raw,
-                RTRIM(pl.c2_produto)   AS cod_produto_op,
-                COALESCE(pl.c2_quant, 0) AS qtd_total,
-                COALESCE(pl.c2_quje, 0)  AS qtd_realizada_header
-                ${joinSb1 ? ', RTRIM(sb1.b1_desc) AS desc_produto' : ''}
-                ${joinSa1Sc5 ? ', RTRIM(sa1.a1_nome) AS nome_cliente' : ''}
-            FROM sc2010 pl
-            LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
-            ${joinSb1 ? `LEFT JOIN sb1010 sb1 ON sb1.b1_cod = pl.c2_produto AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '` : ''}
-            ${joinSa1Sc5 ? `LEFT JOIN sc5010 sc5 ON sc5.c5_num = COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AND COALESCE(sc5.d_e_l_e_t_, ' ') = ' ' LEFT JOIN sa1010 sa1 ON sa1.a1_cod = sc5.c5_cliente AND sa1.a1_loja = sc5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '` : ''}
-            WHERE ${conditions.join(' AND ')}
-            ORDER BY pl.c2_datpri DESC
-            LIMIT 4000
-        `;
-
         let opsRows = [];
-        try {
+        let totalCount = 0;
+
+        if (no_paginate === 'true') {
+            const opsQuery = `
+                SELECT
+                    RTRIM(pl.c2_num)       AS op,
+                    RTRIM(pl.c2_item)      AS item_op,
+                    RTRIM(pl.c2_sequen)    AS sequen,
+                    COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS pedido_venda,
+                    COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
+                    TRIM(pl.c2_produto)    AS cod_produto_op_raw,
+                    RTRIM(pl.c2_produto)   AS cod_produto_op,
+                    COALESCE(pl.c2_quant, 0) AS qtd_total,
+                    COALESCE(pl.c2_quje, 0)  AS qtd_realizada_header
+                FROM sc2010 pl
+                LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
+                WHERE ${conditions.join(' AND ')}
+                ORDER BY pl.c2_datpri DESC
+                LIMIT 4000
+            `;
             const result = await db.query(opsQuery, params);
-            const initialRows = result.rows;
+            opsRows = await populateMetadata(result.rows);
+            totalCount = [...new Set(opsRows.map(r => r.pedido_venda))].length;
+        } else {
+            // Count total distinct pedidos
+            const countQuery = `
+                SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))) AS total
+                FROM sc2010 pl
+                LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
+                WHERE ${conditions.join(' AND ')}
+            `;
+            const countRes = await db.query(countQuery, params);
+            totalCount = parseInt(countRes.rows[0]?.total) || 0;
 
-            if (initialRows.length > 0) {
-                // Fetch missing descriptions (sb1)
-                if (!joinSb1) {
-                    const productCodes = [...new Set(initialRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
-                    if (productCodes.length > 0) {
-                        const sb1Res = await db.query(`SELECT TRIM(b1_cod) as cod, RTRIM(b1_desc) as desc FROM sb1010 WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, ' ') = ' '`, [productCodes]);
-                        const productMap = {};
-                        sb1Res.rows.forEach(p => productMap[p.cod] = p.desc);
-                        initialRows.forEach(r => r.desc_produto = productMap[r.cod_produto_op_raw] || '');
-                    }
-                }
+            if (totalCount > 0) {
+                // Paginate distinct pedidos
+                const pedsQuery = `
+                    SELECT 
+                        COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS pedido_venda,
+                        MAX(pl.c2_datpri) AS max_datpri
+                    FROM sc2010 pl
+                    LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
+                    WHERE ${conditions.join(' AND ')}
+                    GROUP BY COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))
+                    ORDER BY max_datpri DESC
+                    LIMIT ${limit} OFFSET ${offset}
+                `;
+                const pedsRes = await db.query(pedsQuery, params);
+                const paginatedPeds = pedsRes.rows.map(r => r.pedido_venda).filter(Boolean);
 
-                // Fetch missing customer & delivery info (sc6 + sc5 + sa1)
-                const pedidosRaw = [...new Set(initialRows.map(r => r.pedido_venda).filter(Boolean))];
-                if (pedidosRaw.length > 0) {
-                    const sc6Res = await db.query(`
-                        SELECT TRIM(c6.c6_num) as ped, TRIM(c6.c6_item) as item_pv, RTRIM(c6.c6_pedcli) as ped_cliente, RTRIM(c6.c6_entreg) as prazo_entrega_pedido, RTRIM(sa1.a1_nome) as nome_cliente
-                        FROM sc6010 c6
-                        LEFT JOIN sc5010 sc5 ON sc5.c5_num = c6.c6_num AND COALESCE(sc5.d_e_l_e_t_, ' ') = ' '
-                        LEFT JOIN sa1010 sa1 ON sa1.a1_cod = sc5.c5_cliente AND sa1.a1_loja = sc5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '
-                        WHERE c6.c6_num = ANY($1) AND COALESCE(c6.d_e_l_e_t_, ' ') = ' '
-                    `, [pedidosRaw]);
-                    
-                    const pedInfoMap = {};
-                    sc6Res.rows.forEach(p => pedInfoMap[`${p.ped}|${p.item_pv}`] = p);
-                    
-                    initialRows.forEach(r => {
-                        const info = pedInfoMap[`${r.pedido_venda}|${r.item_pv}`];
-                        if (info) {
-                            r.ped_cliente = info.ped_cliente;
-                            r.prazo_entrega_pedido = info.prazo_entrega_pedido;
-                            if (!joinSa1Sc5) r.nome_cliente = info.nome_cliente;
-                        }
-                    });
-                }
-
-                // Filtrar OPs que, mesmo com pedido, não retornaram cliente válido (ou seja, sem cliente associado)
-                const validRows = initialRows.filter(r => r.nome_cliente && r.nome_cliente.trim() !== '');
-
-                const uniqueProducts = [...new Set(validRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
-                let sg2Map = {};
-                
-                if (uniqueProducts.length > 0) {
-                    // Chunk sg2010 queries
-                    const chunkSize = 1000;
-                    for (let i = 0; i < uniqueProducts.length; i += chunkSize) {
-                        const chunk = uniqueProducts.slice(i, i + chunkSize);
-                        const sg2Result = await db.query(`
-                            SELECT 
-                                TRIM(g2.g2_produto) as cod_produto_op_raw,
-                                RTRIM(g2.g2_recurso) as recurso,
-                                RTRIM(g2.g2_descri)  as desc_operacao,
-                                RTRIM(h1.h1_descri)  as desc_recurso,
-                                RTRIM(g2.g2_operac)  as operacao
-                            FROM sg2010 g2
-                            LEFT JOIN sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, ' ') = ' '
-                            WHERE g2.g2_produto = ANY($1)
-                              AND COALESCE(g2.d_e_l_e_t_, ' ') = ' '
-                        `, [chunk]);
-
-                        sg2Result.rows.forEach(r => {
-                            if (!sg2Map[r.cod_produto_op_raw]) sg2Map[r.cod_produto_op_raw] = [];
-                            sg2Map[r.cod_produto_op_raw].push(r);
-                        });
-                    }
-                }
-
-                for (const op of validRows) {
-                    const operations = sg2Map[op.cod_produto_op_raw];
-                    if (operations && operations.length > 0) {
-                        for (const oper of operations) {
-                            opsRows.push({ ...op, ...oper });
-                        }
-                    } else {
-                        opsRows.push({ ...op, recurso: null, desc_operacao: null, operacao: null });
-                    }
+                if (paginatedPeds.length > 0) {
+                    const detailParams = [...params, paginatedPeds];
+                    const opsQuery = `
+                        SELECT
+                            RTRIM(pl.c2_num)       AS op,
+                            RTRIM(pl.c2_item)      AS item_op,
+                            RTRIM(pl.c2_sequen)    AS sequen,
+                            COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) AS pedido_venda,
+                            COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
+                            TRIM(pl.c2_produto)    AS cod_produto_op_raw,
+                            RTRIM(pl.c2_produto)   AS cod_produto_op,
+                            COALESCE(pl.c2_quant, 0) AS qtd_total,
+                            COALESCE(pl.c2_quje, 0)  AS qtd_realizada_header
+                        FROM sc2010 pl
+                        LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
+                        WHERE ${conditions.join(' AND ')}
+                          AND COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) = ANY($${detailParams.length})
+                        ORDER BY pl.c2_datpri DESC
+                    `;
+                    const result = await db.query(opsQuery, detailParams);
+                    opsRows = await populateMetadata(result.rows);
                 }
             }
-        } catch (protheusErr) {
-            console.error('[setores/visao] Erro Protheus:', protheusErr.message);
-            return res.status(500).json({ error: protheusErr.message });
         }
+
 
         // 5. Apontamentos do MySQL — agrupados por op + item + sequencia + operacao
         const opNumbers = [...new Set(opsRows.map(r => r.op).filter(Boolean))];
@@ -556,6 +645,49 @@ router.get('/visao', async (req, res) => {
             }
         }
 
+        // 5.1. Busca de Romaneios em aberto (itens enviados sem retorno completo)
+        const pvNumbers = [...new Set(opsRows.map(r => r.pedido_venda).filter(Boolean))];
+        const opNumbersOnly = [...new Set(opsRows.map(r => r.op).filter(Boolean))];
+        const romaneiosMap = {};
+
+        const allSearchNumbers = [...new Set([...pvNumbers, ...opNumbersOnly])];
+        if (allSearchNumbers.length > 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < allSearchNumbers.length; i += chunkSize) {
+                const chunk = allSearchNumbers.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const [romRows] = await mysql.query(`
+                    SELECT 
+                        TRIM(i.pedido) AS pedido,
+                        TRIM(i.item_pedido) AS item_pedido,
+                        i.quantidade AS qtd_enviada,
+                        (SELECT COALESCE(SUM(quantidade), 0) FROM app_romaneio_recebimentos WHERE romaneio_item_id = i.id) AS qtd_recebida,
+                        r.id AS romaneio_id,
+                        r.status AS romaneio_status
+                    FROM app_romaneio_items i
+                    JOIN app_romaneios r ON i.romaneio_id = r.id
+                    WHERE r.status != 'Cancelado'
+                      AND TRIM(i.pedido) IN (${placeholders})
+                `, chunk);
+
+                for (const r of romRows) {
+                    const enviada = Number(r.qtd_enviada) || 0;
+                    const recebida = Number(r.qtd_recebida) || 0;
+                    if (recebida < enviada) {
+                        const key = `${r.pedido}|${r.item_pedido}`;
+                        if (!romaneiosMap[key]) {
+                            romaneiosMap[key] = [];
+                        }
+                        romaneiosMap[key].push({
+                            romaneio_id: r.romaneio_id,
+                            status: r.romaneio_status,
+                            saldo: enviada - recebida
+                        });
+                    }
+                }
+            }
+        }
+
         // 6. Agrupa linhas do Protheus por recurso
         // Chave inclui sequen para garantir granularidade idêntica ao production.js
         // (cada sequência pode ter qtd diferente e apontamentos próprios)
@@ -568,9 +700,13 @@ router.get('/visao', async (req, res) => {
             const apptKey = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
             const qtd_apontada = apptsMap[apptKey] || 0;
 
+            const pvKey = `${(row.pedido_venda || '').trim()}|${(row.item_pv || '').trim()}`;
+            const opKey = `${(row.op || '').trim()}|${(row.item_op || '').trim()}`;
+            const romaneios = romaneiosMap[pvKey] || romaneiosMap[opKey] || null;
+
             if (!opsPorRecurso[recurso]) opsPorRecurso[recurso] = {};
             if (!opsPorRecurso[recurso][key]) {
-                opsPorRecurso[recurso][key] = { ...row, operacoes: [] };
+                opsPorRecurso[recurso][key] = { ...row, operacoes: [], romaneios };
             }
             opsPorRecurso[recurso][key].operacoes.push({
                 apptKey,                          // chave única para deduplicar depois
@@ -697,7 +833,19 @@ router.get('/visao', async (req, res) => {
             });
         }
 
-        res.json(resultado);
+        if (no_paginate === 'true') {
+            res.json(resultado);
+        } else {
+            res.json({
+                data: resultado,
+                meta: {
+                    total: totalCount,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(totalCount / limit)
+                }
+            });
+        }
     } catch (err) {
         console.error('[setores/visao] Erro geral:', err.message, err.stack);
         res.status(500).json({ error: err.message });
@@ -729,7 +877,7 @@ router.post('/visao/notify', async (req, res) => {
         const url = `http://127.0.0.1:${port}/api/pcp-setores/visao`;
         
         const visaoRes = await axios.get(url, { 
-            params: filters,
+            params: { ...filters, no_paginate: 'true' },
             headers: { Authorization: req.headers.authorization }
         });
         const visaoData = visaoRes.data;

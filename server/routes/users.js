@@ -68,6 +68,11 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
             return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
         }
 
+        // Only SA can create SA users
+        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem criar novos usuários com o perfil SuperAdmin (SA).' });
+        }
+
         // Check availability
         const [existingLogin] = await mysqlPool.query('SELECT idUsuario FROM usuario WHERE Login = ?', [login]);
         if (existingLogin.length > 0) {
@@ -104,6 +109,23 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
 
         if (!nome || !login || !tipo) {
             return res.status(400).json({ error: 'Nome, Login e Tipo são obrigatórios' });
+        }
+
+        // Check target user's current role
+        const [targetUserRows] = await mysqlPool.query('SELECT TipoUsuario FROM usuario WHERE idUsuario = ?', [id]);
+        if (targetUserRows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+        const currentTargetRole = targetUserRows[0].TipoUsuario;
+
+        // Non-SAs cannot modify SA users
+        if (currentTargetRole === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem modificar um usuário com o perfil SuperAdmin (SA).' });
+        }
+
+        // Non-SAs cannot promote someone to SA
+        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem promover outros usuários para o perfil SuperAdmin (SA).' });
         }
 
         // Check if login is taken by ANOTHER user
@@ -160,6 +182,13 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
 router.delete('/:id', requirePermission('config', 'delete'), async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Check user's role before deletion
+        const [targetUserRows] = await mysqlPool.query('SELECT TipoUsuario FROM usuario WHERE idUsuario = ?', [id]);
+        if (targetUserRows.length > 0 && targetUserRows[0].TipoUsuario === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem remover usuários com o perfil SuperAdmin (SA).' });
+        }
+
         await mysqlPool.query('DELETE FROM usuario WHERE idUsuario = ?', [id]);
         res.json({ message: 'Usuário removido com sucesso' });
     } catch (error) {
@@ -215,6 +244,69 @@ router.put('/preferences/:key', async (req, res) => {
         res.status(500).json({ error: 'Erro ao salvar preferência' });
     }
 });
+
+// PUT /change-password — allow authenticated user to change their password
+router.put('/change-password', async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Usuário não autenticado' });
+        }
+
+        const { newPassword, confirmPassword } = req.body;
+
+        if (!newPassword || !confirmPassword) {
+            return res.status(400).json({ error: 'Nova senha e confirmação são obrigatórias.' });
+        }
+
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ error: 'As senhas não coincidem.' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'A senha deve conter pelo menos 6 caracteres/dígitos.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await mysqlPool.query(
+            'UPDATE usuario SET Senha = ? WHERE idUsuario = ?',
+            [hashedPassword, userId]
+        );
+
+        // Fetch user data for WhatsApp notification
+        const [userRows] = await mysqlPool.query(
+            'SELECT NomeCompleto, Login, whatsapp FROM usuario WHERE idUsuario = ?',
+            [userId]
+        );
+        
+        if (userRows.length > 0) {
+            const dbUser = userRows[0];
+            if (dbUser.whatsapp && dbUser.whatsapp.trim() !== '') {
+                try {
+                    const { sendText } = require('../services/whatsapp');
+                    const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
+                    const textMessage = `*Alteração de Senha Realizada*\n\nOlá, *${dbUser.NomeCompleto}*!\nSua senha de acesso ao *ERP da Metalfisa* foi alterada com sucesso.\n\n👤 *Usuário:* ${dbUser.Login}\n🔑 *Nova Senha:* ${newPassword}\n\n🌐 *Como Acessar*\n${serverUrl}\n\n⚠️ _Se você não solicitou esta alteração, procure o administrador imediatamente._`;
+                    
+                    await sendText(dbUser.whatsapp, textMessage, 'Confirmação de Alteração de Senha');
+                } catch (waErr) {
+                    console.error(`[WhatsApp change-password] Falha ao enviar notificação para ${dbUser.whatsapp}:`, waErr.message);
+                }
+            }
+        }
+
+        // Audit Log
+        await mysqlPool.query(
+            'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [userId, 'CHANGE_PASSWORD_SELF', JSON.stringify({ userId })]
+        );
+
+        res.json({ success: true, message: 'Senha alterada com sucesso! Conecte-se novamente.' });
+    } catch (error) {
+        console.error('Erro ao alterar senha:', error);
+        res.status(500).json({ error: 'Erro interno ao processar alteração de senha.' });
+    }
+});
+
 // ──── User Permissions (RBAC) ──────────────────────────────────────────────────
 
 // GET /my-permissions — load permissions for the currently authenticated user
