@@ -95,8 +95,11 @@ export const getVisaoGerencialFabrica = async (params, config = {}) => {
 };
 
 export const updateSincoProductStructure = async (payload) => {
-    const response = await api.post('/protheus/estrutura-produtos/editar', payload);
-    return response.data;
+    return api.post('/protheus/estrutura-produtos/editar', payload).then(res => res.data);
+};
+
+export const updateSincoProduto = async (payload) => {
+    return api.post('/protheus/produtos/update', payload).then(res => res.data);
 };
 
 export const updateSincoRoteiro = async (payload) => {

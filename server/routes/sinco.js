@@ -469,6 +469,74 @@ router.put('/comentarios/:id/status', async (req, res) => {
     }
 });
 
+// --- MATERIAIS DE APOIO (DENSIDADE) ---
+
+// CREATE TABLE IF NOT EXISTS on first run (lazy init)
+let dbInitialized = false;
+async function initMateriaisApoioDB() {
+    if (dbInitialized) return;
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS sinco_materiais_densidade (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nome VARCHAR(100) NOT NULL UNIQUE,
+                densidade DECIMAL(10,3) NOT NULL,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        // Inserir os padrões caso a tabela esteja vazia
+        const [rows] = await pool.query('SELECT COUNT(*) as count FROM sinco_materiais_densidade');
+        if (rows[0].count === 0) {
+            await pool.query(`
+                INSERT INTO sinco_materiais_densidade (nome, densidade) VALUES
+                ('Aço Carbono', 7.85),
+                ('Aço Inox', 7.93),
+                ('Alumínio', 2.70),
+                ('Latão', 8.50)
+            `);
+        }
+        dbInitialized = true;
+    } catch (error) {
+        console.error('❌ Erro ao inicializar tabela sinco_materiais_densidade:', error.message);
+    }
+}
+
+// GET /api/sinco/materiais-apoio
+router.get('/materiais-apoio', async (req, res) => {
+    try {
+        await initMateriaisApoioDB();
+        const [rows] = await pool.query('SELECT * FROM sinco_materiais_densidade ORDER BY nome ASC');
+        res.json(rows);
+    } catch (error) {
+        console.error('❌ Erro ao buscar materiais de apoio:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar materiais' });
+    }
+});
+
+// POST /api/sinco/materiais-apoio
+router.post('/materiais-apoio', async (req, res) => {
+    try {
+        const { nome, densidade } = req.body;
+        if (!nome || !densidade) {
+            return res.status(400).json({ error: 'Nome e densidade são obrigatórios' });
+        }
+        
+        await initMateriaisApoioDB();
+        
+        // Usar INSERT IGNORE ou ON DUPLICATE KEY UPDATE para evitar erros se já existir
+        await pool.query(`
+            INSERT INTO sinco_materiais_densidade (nome, densidade) 
+            VALUES (?, ?) 
+            ON DUPLICATE KEY UPDATE densidade = VALUES(densidade)
+        `, [nome, parseFloat(densidade)]);
+        
+        res.status(201).json({ success: true, message: 'Material cadastrado/atualizado com sucesso' });
+    } catch (error) {
+        console.error('❌ Erro ao adicionar material:', error);
+        res.status(500).json({ error: 'Erro interno ao adicionar material' });
+    }
+});
+
 /**
  * SOLIDEDGE INTEGRATION (Local Agent Proxy)
  */

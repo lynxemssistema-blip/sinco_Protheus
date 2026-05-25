@@ -8,6 +8,8 @@ const BulkImportModal = ({ onClose, onSuccess }) => {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
+    const [testingPath, setTestingPath] = useState(false);
+    const [pathStatus, setPathStatus] = useState(null); // { type: 'success' | 'error', message: string }
 
     const handleImport = async () => {
         if (!folderPath.trim()) {
@@ -61,15 +63,46 @@ const BulkImportModal = ({ onClose, onSuccess }) => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Caminho da Pasta (Servidor)</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-sm font-medium text-gray-700">Caminho da Pasta (Servidor)</label>
+                                    <button
+                                        onClick={async () => {
+                                            if (!folderPath.trim()) return;
+                                            setTestingPath(true);
+                                            setPathStatus(null);
+                                            try {
+                                                const res = await api.post('/docs/test-path', { folderPath });
+                                                setPathStatus({ type: 'success', message: res.data.message + ` (${res.data.itemsCount} itens encontrados na raiz)` });
+                                            } catch (err) {
+                                                setPathStatus({ type: 'error', message: err.response?.data?.details || err.response?.data?.error || 'Erro ao testar caminho' });
+                                            } finally {
+                                                setTestingPath(false);
+                                            }
+                                        }}
+                                        disabled={testingPath || !folderPath.trim() || loading}
+                                        className="text-[10px] uppercase font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded disabled:opacity-50"
+                                    >
+                                        {testingPath ? 'Testando...' : 'Testar Acesso'}
+                                    </button>
+                                </div>
                                 <input
                                     type="text"
                                     value={folderPath}
-                                    onChange={(e) => setFolderPath(e.target.value)}
+                                    onChange={(e) => {
+                                        setFolderPath(e.target.value);
+                                        setPathStatus(null); // Limpa o status ao digitar
+                                    }}
                                     placeholder="Ex: C:\Arquivos\Engenharia"
                                     className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                 />
                                 <p className="text-xs text-gray-400">Use caminhos absolutos locais do servidor. A barra invertida (\) é suportada.</p>
+                                
+                                {pathStatus && (
+                                    <div className={`text-xs p-2 rounded border ${pathStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                        {pathStatus.type === 'success' ? <CheckCircle className="inline h-3 w-3 mr-1" /> : <AlertCircle className="inline h-3 w-3 mr-1" />}
+                                        {pathStatus.message}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-2">

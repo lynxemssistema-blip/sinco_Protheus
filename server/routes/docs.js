@@ -306,6 +306,37 @@ async function resolveMappedDrive(drivePath) {
     return drivePath;
 }
 
+// POST /api/docs/test-path - Testar acesso a um diretório
+router.post('/test-path', async (req, res) => {
+    let { folderPath } = req.body;
+
+    if (!folderPath) {
+        return res.status(400).json({ error: 'É obrigatório informar o caminho da pasta.' });
+    }
+
+    try {
+        const resolvedPath = normalizeFilePath(folderPath);
+        
+        // Testa a permissão de leitura
+        await fs.access(resolvedPath, require('fs').constants.R_OK);
+
+        // Apenas lê a raiz para validar e contar arquivos básicos (sem recursão profunda para ser rápido)
+        const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
+        
+        res.json({
+            success: true,
+            message: 'Pasta acessível no servidor.',
+            resolvedPath: resolvedPath,
+            itemsCount: dirents.length
+        });
+    } catch (err) {
+        res.status(400).json({
+            error: 'Pasta inacessível ou não encontrada.',
+            details: err.message
+        });
+    }
+});
+
 // POST /api/docs/bulk - Importação em Massa de Documentos
 router.post('/bulk', async (req, res) => {
     let { folderPath, overwrite = false, useAI = true } = req.body;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProductStructure, updateSincoRoteiro, searchSincoProdutos, getProcessList } from '../../services/api';
+import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, searchSincoProdutos, getProcessList } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 const estadoVazio = {
@@ -17,7 +17,8 @@ const estadoVazio = {
     largura: '',
     comprimento: '',
     area: '',
-    acabamento: '' // Mantido da imagem, mas sem Autor/Data
+    acabamento: '', // Mantido da imagem, mas sem Autor/Data
+    densidade: '7.85'
 };
 
 export default function SINCOFormularioPrincipal() {
@@ -38,6 +39,7 @@ export default function SINCOFormularioPrincipal() {
         comprimento: searchParams.get('comprimento') || '',
         area: searchParams.get('area') || '',
         acabamento: searchParams.get('acabamento') || '',
+        densidade: searchParams.get('densidade') || '7.85',
     });
     const [busca, setBusca] = useState('');
     const [arvore, setArvore] = useState([]);
@@ -50,6 +52,7 @@ export default function SINCOFormularioPrincipal() {
     const [loadingRest, setLoadingRest] = useState(false);
     const [loadingOpe, setLoadingOpe] = useState(false);
     const [loadingSz0, setLoadingSz0] = useState(false);
+    const [loadingData, setLoadingData] = useState(false);
 
     // Modal Nova/Editar Restrição SZ0
     const [showModalSz0, setShowModalSz0] = useState(false);
@@ -58,6 +61,28 @@ export default function SINCOFormularioPrincipal() {
     const [novaRestricao, setNovaRestricao] = useState({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
     // Edição de Árvore (BOM)
     const [isEditingArvore, setIsEditingArvore] = useState(false);
+    const [isEditingDadosGerais, setIsEditingDadosGerais] = useState(false);
+    const [materiaisSalvos, setMateriaisSalvos] = useState([]);
+    
+    // Buscar materiais do BD
+    useEffect(() => {
+        const fetchMateriais = async () => {
+            try {
+                const res = await api.get('/sinco/materiais-apoio');
+                setMateriaisSalvos(res.data);
+            } catch (err) {
+                console.error('Erro ao buscar materiais de apoio:', err);
+                // Fallback de segurança se falhar
+                setMateriaisSalvos([
+                    { nome: 'Aço Carbono', densidade: '7.85' },
+                    { nome: 'Aço Inox', densidade: '7.93' },
+                    { nome: 'Alumínio', densidade: '2.70' }
+                ]);
+            }
+        };
+        fetchMateriais();
+    }, []);
+
     const [editedArvore, setEditedArvore] = useState([]);
     const [savingArvore, setSavingArvore] = useState(false);
 
@@ -93,6 +118,30 @@ export default function SINCOFormularioPrincipal() {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3500);
     }, []);
+
+    // Automatic Calculation of Peso and Area Pintura
+    useEffect(() => {
+        const e = parseFloat(String(dados.espessura).replace(',', '.')) || 0;
+        const l = parseFloat(String(dados.largura).replace(',', '.')) || 0;
+        const c = parseFloat(String(dados.comprimento).replace(',', '.')) || 0;
+        const d = parseFloat(String(dados.densidade).replace(',', '.')) || 0;
+
+        if (e > 0 && l > 0 && c > 0) {
+            // Peso = espessura * largura * comprimento * (densidade / 1000000)
+            const novoPeso = (e * l * c * (d / 1000000)).toFixed(3);
+            
+            // Área de pintura em M² (largura * comprimento * 2 lados / 1.000.000)
+            const novaArea = ((l * c * 2) / 1000000).toFixed(3);
+
+            if (dados.peso !== novoPeso || dados.area !== novaArea) {
+                setDados(prev => ({
+                    ...prev,
+                    peso: novoPeso,
+                    area: novaArea
+                }));
+            }
+        }
+    }, [dados.espessura, dados.largura, dados.comprimento, dados.densidade, dados.peso, dados.area]);
 
     const carregarProtheus = useCallback(async (codigo) => {
         if (!codigo || codigo === estadoVazio.arquivo) {
@@ -227,6 +276,44 @@ export default function SINCOFormularioPrincipal() {
         }
 
         carregarProtheus(codigoSemExtensao);
+    };
+
+    const handleSalvarProduto = async () => {
+        const codigoFormatado = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+        
+        if (!codigoFormatado || codigoFormatado === 'NENHUM ARQUIVO CARREGADO') {
+            showToast('Nenhum produto válido selecionado.', 'error');
+            return;
+        }
+
+        try {
+            setLoadingData(true);
+            const payload = {
+                codigo: codigoFormatado,
+                titulo: dados.titulo,
+                grupo: dados.grupo,
+                tipo: dados.tipo,
+                um: dados.unidade,
+                revisao: dados.rev,
+                codigoDesenho: codigoFormatado, // Utilizando o arquivo atual
+
+                peso: dados.peso,
+                comprimento: dados.comprimento,
+                largura: dados.largura,
+                espessura: dados.espessura,
+                area: dados.area // Equivalente ao B5_VOLUME
+            };
+
+            await updateSincoProduto(payload);
+            showToast('Dados do produto atualizados no Protheus com sucesso!', 'success');
+            setIsEditingDadosGerais(false);
+        } catch (error) {
+            console.error('Erro ao salvar dados do produto:', error);
+            setErroProtheus(error.response?.data?.details || error.message);
+            showToast('Erro ao atualizar produto.', 'error');
+        } finally {
+            setLoadingData(false);
+        }
     };
 
     const handleSalvarRestricao = async () => {
@@ -558,16 +645,9 @@ export default function SINCOFormularioPrincipal() {
     };
 
     const applyReindexOperacoes = (arr) => {
-        const sorted = [...arr].sort((a, b) => parseInt(a.operacao || 0, 10) - parseInt(b.operacao || 0, 10));
-        let nextNum = 10;
-        return sorted.map(op => {
-            if (!op.deleted) {
-                const novoOp = { ...op, operacao: String(nextNum).padStart(2, '0') };
-                nextNum += 10;
-                return novoOp;
-            }
-            return op;
-        });
+        // Apenas ordena pelo número da operação, preservando a numeração customizada (ex: 25)
+        // para não sobrescrever nem apagar operações subsequentes indevidamente.
+        return [...arr].sort((a, b) => parseInt(a.operacao || 0, 10) - parseInt(b.operacao || 0, 10));
     };
 
     const materiais = isEditingArvore ? editedArvore : arvore; 
@@ -641,7 +721,7 @@ export default function SINCOFormularioPrincipal() {
                 </div>
             </div>
 
-            {/* Barra de Ferramentas (removido Atualizar Protheus pois agora tem Atualizar Dados no topo) */}
+            {/* Barra de Ferramentas */}
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 flex flex-wrap gap-1.5 items-center">
                 <span className="text-xs font-medium text-slate-400 px-2 flex items-center gap-1.5">
                     Modo Solid Edge / Formulário
@@ -657,61 +737,144 @@ export default function SINCOFormularioPrincipal() {
             )}
 
             {/* Layout do Formulário Principal - Limpo e Compacto */}
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-                <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+            <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden ${isEditingDadosGerais ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
+                <div className={`${boxTitleCls} ${isEditingDadosGerais ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-700 border-slate-200'} flex justify-between items-center`}>
+                    <span>Dados Gerais do Produto</span>
+                    <div className="flex items-center gap-2">
+                        {temArquivo && !isEditingDadosGerais && (
+                            <button
+                                onClick={() => setIsEditingDadosGerais(true)}
+                                className="flex items-center gap-1 px-2 py-1 text-slate-600 hover:text-amber-700 hover:bg-amber-100 rounded text-[10px] uppercase font-bold tracking-wide transition-colors"
+                            >
+                                <Pencil className="h-3 w-3" /> Editar
+                            </button>
+                        )}
+                        {isEditingDadosGerais && (
+                            <>
+                                <button
+                                    onClick={() => setIsEditingDadosGerais(false)}
+                                    disabled={loadingData}
+                                    className="flex items-center gap-1 px-2 py-1 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded text-[10px] uppercase font-bold tracking-wide transition-colors disabled:opacity-50"
+                                >
+                                    <X className="h-3 w-3" /> Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSalvarProduto}
+                                    disabled={loadingData}
+                                    className="flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] uppercase font-bold tracking-wide transition-colors shadow-sm disabled:bg-slate-300 disabled:text-slate-500"
+                                >
+                                    <Save className="h-3 w-3" /> {loadingData ? 'Salvando...' : 'Salvar'}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
 
-                    {/* Linha 1 */}
-                    <div className="col-span-2">
-                        <label className={lblCls}>Tipo</label>
-                        <input type="text" value={dados.tipo} onChange={e => setDados(p => ({ ...p, tipo: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className={lblCls}>Unidade</label>
-                        <input type="text" value={dados.unidade} onChange={e => setDados(p => ({ ...p, unidade: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-3">
-                        <label className={lblCls}>Grupo</label>
-                        <input type="text" value={dados.grupo} onChange={e => setDados(p => ({ ...p, grupo: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-5">
-                        <label className={lblCls}>Título</label>
-                        <input type="text" value={dados.titulo} onChange={e => setDados(p => ({ ...p, titulo: e.target.value }))} placeholder="Ex: PORCA SEXT A6 INOX" className={inputCls} />
-                    </div>
+                <div className="p-4">
+                    <div className="grid grid-cols-12 gap-x-4 gap-y-3">
+                        {/* Linha 1 */}
+                        <div className="col-span-2">
+                            <label className={lblCls}>Tipo</label>
+                            <input type="text" value={dados.tipo} onChange={e => setDados(p => ({ ...p, tipo: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-2">
+                            <label className={lblCls}>Unidade</label>
+                            <input type="text" value={dados.unidade} onChange={e => setDados(p => ({ ...p, unidade: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-3">
+                            <label className={lblCls}>Grupo</label>
+                            <input type="text" value={dados.grupo} onChange={e => setDados(p => ({ ...p, grupo: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-5">
+                            <label className={lblCls}>Título</label>
+                            <input type="text" value={dados.titulo} onChange={e => setDados(p => ({ ...p, titulo: e.target.value }))} placeholder="Ex: PORCA SEXT A6 INOX" readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
 
-                    {/* Linha 2 */}
-                    <div className="col-span-3">
-                        <label className={lblCls}>Num. Documento</label>
-                        <input type="text" value={dados.arquivo} readOnly className={readCls} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className={lblCls}>Rev. Metalfisa</label>
-                        <input type="text" value={dados.rev} onChange={e => setDados(p => ({ ...p, rev: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className={lblCls}>Peso (kg)</label>
-                        <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className={lblCls}>Área Pintura (m²)</label>
-                        <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-1">
-                        <label className={lblCls}>Espess. (mm)</label>
-                        <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({ ...p, espessura: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-1">
-                        <label className={lblCls}>Larg. (mm)</label>
-                        <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({ ...p, largura: e.target.value }))} className={inputCls} />
-                    </div>
-                    <div className="col-span-1">
-                        <label className={lblCls}>Compr. (mm)</label>
-                        <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({ ...p, comprimento: e.target.value }))} className={inputCls} />
-                    </div>
+                        {/* Linha 2 */}
+                        <div className="col-span-3">
+                            <label className={lblCls}>Num. Documento</label>
+                            <input type="text" value={dados.arquivo} readOnly className={readCls} />
+                        </div>
+                        <div className="col-span-1">
+                            <label className={lblCls}>Rev. Metalfisa</label>
+                            <input type="text" value={dados.rev} onChange={e => setDados(p => ({ ...p, rev: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-2">
+                            <label className={lblCls} title="Densidade / Material">Densid. / Material</label>
+                            {isEditingDadosGerais ? (
+                                <select 
+                                    className={inputCls}
+                                    value={dados.densidade || ''}
+                                    onChange={async e => {
+                                        if (e.target.value === 'ADD_NEW') {
+                                            const desc = window.prompt("Nome do novo material (ex: Cobre):");
+                                            if (!desc) return;
+                                            const dens = window.prompt(`Densidade para ${desc} (ex: 8.96):`);
+                                            if (!dens) return;
+                                            const val = dens.replace(',', '.');
+                                            
+                                            // Atualiza no banco
+                                            try {
+                                                await api.post('/sinco/materiais-apoio', { nome: desc, densidade: val });
+                                                // Atualiza local após sucesso
+                                                const newMat = { nome: desc, densidade: val };
+                                                setMateriaisSalvos(prev => [...prev.filter(m => m.nome !== desc), newMat].sort((a,b) => a.nome.localeCompare(b.nome)));
+                                                setDados(p => ({ ...p, densidade: val }));
+                                            } catch (err) {
+                                                console.error(err);
+                                                alert('Erro ao salvar no banco. Verifique sua conexão.');
+                                            }
+                                        } else if (e.target.value === 'MANUAL') {
+                                            const val = window.prompt("Digite o valor da densidade (ex: 7.85):", dados.densidade || '');
+                                            if (val) {
+                                                setDados(p => ({ ...p, densidade: val.replace(',', '.') }));
+                                            }
+                                        } else {
+                                            setDados(p => ({ ...p, densidade: e.target.value }));
+                                        }
+                                    }}
+                                >
+                                    <option value="">-- Selecionar --</option>
+                                    {/* Mostrar valor atual caso seja digitado manualmente e não esteja na lista */}
+                                    {dados.densidade && !materiaisSalvos.some(m => Number(m.densidade) === Number(dados.densidade)) && (
+                                        <option value={dados.densidade}>{dados.densidade} (Manual)</option>
+                                    )}
+                                    {materiaisSalvos.map(m => (
+                                        <option key={m.nome} value={m.densidade}>{m.nome} ({Number(m.densidade).toFixed(2)})</option>
+                                    ))}
+                                    <option value="MANUAL">+ Digitar Manualmente...</option>
+                                    <option value="ADD_NEW">+ Cadastrar Novo Material...</option>
+                                </select>
+                            ) : (
+                                <input type="text" value={dados.densidade} readOnly className={readCls} />
+                            )}
+                        </div>
+                        <div className="col-span-2">
+                            <label className={lblCls}>Peso (kg)</label>
+                            <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-1">
+                            <label className={lblCls}>Área (m²)</label>
+                            <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-1">
+                            <label className={lblCls}>Espess. (mm)</label>
+                            <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({ ...p, espessura: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-1">
+                            <label className={lblCls}>Larg. (mm)</label>
+                            <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({ ...p, largura: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-1">
+                            <label className={lblCls}>Compr. (mm)</label>
+                            <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({ ...p, comprimento: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
 
-                    {/* Linha 3 */}
-                    <div className="col-span-12">
-                        <label className={lblCls}>Comentários - Acabamento</label>
-                        <input type="text" value={dados.acabamento} onChange={e => setDados(p => ({ ...p, acabamento: e.target.value }))} placeholder="Ex: CINZA N6,5 TEXTURIZADO - 80 MICRAS" className={inputCls} />
+                        {/* Linha 3 */}
+                        <div className="col-span-12">
+                            <label className={lblCls}>Comentários - Acabamento</label>
+                            <input type="text" value={dados.acabamento} onChange={e => setDados(p => ({ ...p, acabamento: e.target.value }))} placeholder="Ex: CINZA N6,5 TEXTURIZADO - 80 MICRAS" readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1165,8 +1328,15 @@ export default function SINCOFormularioPrincipal() {
                                         <div className="p-2 border-t border-blue-100 bg-blue-50/30">
                                             <button
                                                 onClick={() => {
+                                                    const maxOp = editedOperacoes.reduce((max, op) => {
+                                                        const num = parseInt(op.operacao || 0, 10);
+                                                        return num > max ? num : max;
+                                                    }, 0);
+                                                    const nextOp = Math.ceil((maxOp + 1) / 10) * 10;
+                                                    const nextOpStr = String(nextOp === 0 ? 10 : nextOp).padStart(2, '0');
+
                                                     const newArr = [...editedOperacoes, {
-                                                        operacao: '999999', // Para cair no final do sort
+                                                        operacao: nextOpStr,
                                                         descricao: '',
                                                         recurso: '',
                                                         setup: 0,

@@ -152,6 +152,106 @@ router.post('/produtos/create', async (req, res) => {
 });
 
 // =========================================================================
+// ROTA: Editar/Atualizar Produto via API POST
+// =========================================================================
+router.post('/produtos/update', async (req, res) => {
+    try {
+        const {
+            codigo,
+            titulo,
+            grupo,
+            tipo,
+            um,
+            revisao,
+            codigoDesenho,
+            peso,
+            comprimento,
+            largura,
+            espessura,
+            area
+        } = req.body;
+
+        if (!codigo || !titulo || !grupo || !tipo || !um) {
+            return res.status(400).json({ error: 'Código, Grupo, Tipo, UM e Título são campos obrigatórios.' });
+        }
+
+        // 1. Requisitar Token (Login)
+        let accessToken = '';
+        try {
+            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
+            accessToken = tokenRes.data.access_token;
+        } catch (authError) {
+            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
+        }
+
+        if (!accessToken) {
+            throw new Error('Token JWT retornado estava em branco.');
+        }
+
+        // 2. Limpeza e Formatação
+        let tituloLimpo = (titulo || '').toUpperCase().trim();
+        tituloLimpo = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
+
+        let codDesHigienizado = (codigoDesenho || 'desenho_metalfisa').trim();
+        codDesHigienizado = codDesHigienizado.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
+
+        const numPeso = parseFloat(peso) || 0;
+        const numComprimento = parseFloat(comprimento) || 0;
+        const numLargura = parseFloat(largura) || 0;
+        const numEspessura = parseFloat(espessura) || 0;
+        const numArea = parseFloat(area) || 0; // Area = B5_VOLUME no desktop app
+
+        // 3. Montagem do Payload Exatamente igual ao Desktop
+        const payload = {
+            data: {
+                produtos: [
+                    {
+                        EMPRESA: "01",
+                        CFILANT: "01",
+                        NOPER: "3", // Desktop usa 3 para Create/Update
+                        B1_COD: codigo.toUpperCase().trim(),
+                        B1_GRUPO: grupo.split(/[\-\s]/)[0],
+                        B1_DESC: tituloLimpo,
+                        B1_XREVM: (revisao || '').trim(),
+                        B1_TIPO: tipo.split(/[\-\s]/)[0],
+                        B1_UM: um.split(/[\-\s]/)[0],
+                        B1_LOCPAD: "03",
+                        B1_POSIPI: "00000000",
+                        B1_FINALID: "1",
+                        B1_ORIGEM: "0",
+                        B1_XCODDES: codDesHigienizado,
+                        B1_PESO: numPeso,
+                        B1_PESBRU: numPeso,
+                        B5_CEME: tituloLimpo,
+                        B5_COMPR: numComprimento,
+                        B5_LARG: numLargura,
+                        B5_ESPESS: numEspessura,
+                        B5_VOLUME: numArea
+                    }
+                ]
+            }
+        };
+
+        // 4. Envio POST
+        const createUrl = 'https://192.168.1.60:47500/produtos/create';
+        const createRes = await axios.post(createUrl, payload, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            httpsAgent,
+            timeout: 15000
+        });
+
+        const responseData = createRes.data;
+        
+        res.json({ success: true, message: 'Produto salvo/atualizado no Protheus.', raw: responseData });
+
+    } catch (error) {
+        console.error('Protheus Integrador Erro [Update Produto]:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Erro ao Atualizar Produto na API.', details: error.response?.data || error.message });
+    }
+});
+
+// =========================================================================
 // ROTA: Gerar Ordem de Producao via API POST (Lote)
 // =========================================================================
 router.post('/ordem-producao/incluir', async (req, res) => {
