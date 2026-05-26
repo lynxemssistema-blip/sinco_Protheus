@@ -1777,7 +1777,7 @@ router.post('/plan', async (req, res) => {
 //               campo de observação, gravação em app_planning_history
 router.post('/plan-batch', async (req, res) => {
     try {
-        const { plans, observacao, modo_calculo } = req.body;
+        const { plans, observacao, modo_calculo, preferencias } = req.body;
 
         if (!Array.isArray(plans) || plans.length === 0) {
             return res.status(400).json({ error: 'Nenhum plano fornecido.' });
@@ -1791,6 +1791,9 @@ router.post('/plan-batch', async (req, res) => {
         const tsHex = Date.now().toString(16).toUpperCase();
         const randPart = Math.random().toString(16).slice(2, 6).toUpperCase();
         const lote_id = `LOTE-${tsHex}-${randPart}`;
+
+        // Pega op_numero da primeira OP do lote (todas pertencem à mesma OP no modal macro)
+        const op_numero_lote = plans[0]?.op_numero || null;
 
         // VALIDAÇÃO: verificar integridade de datas antes de qualquer INSERT
         for (const p of plans) {
@@ -1821,6 +1824,25 @@ router.post('/plan-batch', async (req, res) => {
 
         try {
             await connection.beginTransaction();
+
+            // ── INSERT metadados do lote (preferências + ordem) ────────────────
+            await connection.execute(`
+                INSERT INTO app_planning_lotes
+                    (lote_id, op_numero, usuario, observacao, modo_calculo,
+                     dias_modo, inclui_sabado, inclui_domingo, inclui_st, ordem_recursos)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                lote_id,
+                op_numero_lote,
+                usuario,
+                observacao || null,
+                modo_calculo || null,
+                preferencias?.diasModo || 'calendar',
+                preferencias?.incluiSabado ? 1 : 0,
+                preferencias?.incluiDomingo ? 1 : 0,
+                preferencias?.incluiST ? 1 : 0,
+                preferencias?.ordemRecursos ? JSON.stringify(preferencias.ordemRecursos) : null
+            ]);
 
             // ── INSERT / UPDATE em app_production_planning ───────────────────
             for (let i = 0; i < plans.length; i += CHUNK_SIZE) {
@@ -1858,19 +1880,57 @@ router.post('/plan-batch', async (req, res) => {
                 await connection.execute(sql, values);
             }
 
+            // ── FILTER PLANS FOR HISTORY ───────────────────────────────
+            // Apenas inserir no histórico se houver MUDANÇA real nas datas ou observação
+            const opsToFetch = plans.map(p => p.op_numero);
+            let currentPlansMap = {};
+            
+            if (opsToFetch.length > 0) {
+                const placeholders = opsToFetch.map(() => '?').join(',');
+                const [currentRows] = await connection.query(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim, observacao_lote
+                    FROM app_production_planning 
+                    WHERE op_numero IN (${placeholders})
+                `, opsToFetch);
+                
+                currentRows.forEach(row => {
+                    const key = `${row.op_numero}_${row.op_item}_${row.op_sequencia}_${row.operacao_codigo}`;
+                    currentPlansMap[key] = row;
+                });
+            }
+
+            const plansForHistory = plans.filter(p => {
+                const key = `${p.op_numero}_${p.op_item}_${p.op_sequencia}_${p.operacao_codigo}`;
+                const curr = currentPlansMap[key];
+                if (!curr) return true; // Novo planejamento, deve ir pro histórico
+                
+                // Compare values
+                const currentStart = new Date(curr.data_planejada_inicio).getTime();
+                const currentEnd = new Date(curr.data_planejada_fim).getTime();
+                const newStart = new Date(p.data_inicio).getTime();
+                const newEnd = new Date(p.data_fim).getTime();
+                const currentObs = curr.observacao_lote || '';
+                const newObs = observacao || '';
+
+                if (currentStart !== newStart || currentEnd !== newEnd || currentObs !== newObs) {
+                    return true; // Mudou
+                }
+                return false; // Idêntico, ignorar histórico
+            });
+
             // ── INSERT IMUTÁVEL em app_planning_history ───────────────────────
             // Snapshot permanente para rastreabilidade / histórico de versões
-            for (let i = 0; i < plans.length; i += CHUNK_SIZE) {
-                const chunk = plans.slice(i, i + CHUNK_SIZE);
+            for (let i = 0; i < plansForHistory.length; i += CHUNK_SIZE) {
+                const chunk = plansForHistory.slice(i, i + CHUNK_SIZE);
                 if (chunk.length === 0) continue;
 
-                const histPH = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+                const histPH = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
                 const histSql = `
                     INSERT INTO app_planning_history
                         (lote_id, op_numero, op_item, op_sequencia, operacao_codigo,
                          recurso_code, recurso_desc,
                          data_inicio, data_fim, duracao_dias,
-                         modo_calculo, usuario_planejador, observacao)
+                         modo_calculo, usuario_planejador, observacao, pedido_venda)
                     VALUES ${histPH}
                 `;
 
@@ -1880,7 +1940,7 @@ router.post('/plan-batch', async (req, res) => {
                         lote_id, p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo,
                         p.recurso_code || null, p.recurso_desc || null,
                         p.data_inicio, p.data_fim, p.duracao_dias || null,
-                        modo_calculo || null, usuario, observacao || null
+                        modo_calculo || null, usuario, observacao || null, p.pedido_venda || p.pedido || null
                     );
                 });
                 await connection.execute(histSql, histValues);
@@ -1909,27 +1969,69 @@ router.post('/plan-batch', async (req, res) => {
     }
 });
 
+// GET /api/production/planning-audit - Auditoria global de planejamento
+router.get('/planning-audit', async (req, res) => {
+    try {
+        const { usuario, data_inicio, data_fim, op, pedido } = req.query;
+        let where = '1=1';
+        let params = [];
+        
+        if (usuario) {
+            where += ' AND h.usuario_planejador LIKE ?';
+            params.push(`%${usuario}%`);
+        }
+        if (data_inicio) {
+            where += ' AND h.criado_em >= ?';
+            params.push(`${data_inicio} 00:00:00`);
+        }
+        if (data_fim) {
+            where += ' AND h.criado_em <= ?';
+            params.push(`${data_fim} 23:59:59`);
+        }
+        if (op) {
+            where += ' AND h.op_numero LIKE ?';
+            params.push(`%${op}%`);
+        }
+        if (pedido) {
+            where += ' AND h.pedido_venda LIKE ?';
+            params.push(`%${pedido}%`);
+        }
+        
+        const [rows] = await mysqlPool.query(`
+            SELECT 
+                h.id, h.lote_id, h.op_numero, h.op_item, h.op_sequencia, h.operacao_codigo, 
+                h.recurso_desc, h.recurso_code, h.data_inicio, h.data_fim, h.usuario_planejador, h.observacao, h.criado_em, h.pedido_venda,
+                (SELECT COUNT(*) FROM app_planning_history h2 
+                 WHERE h2.op_numero = h.op_numero 
+                   AND COALESCE(h2.recurso_code, h2.operacao_codigo) = COALESCE(h.recurso_code, h.operacao_codigo)
+                   AND h2.criado_em <= h.criado_em) as revisao
+            FROM app_planning_history h
+            WHERE ${where}
+            ORDER BY h.criado_em DESC
+            LIMIT 500
+        `, params);
+        
+        res.json(rows);
+    } catch (err) {
+        console.error('[PLANNING-AUDIT ERROR]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/production/planning-history/:op - Histórico de versões de planejamento por OP
-// Retorna os últimos 20 lotes salvos para a OP, agrupados por lote_id
+// Retorna lotes agrupados com operações, preferências e usuário
 router.get('/planning-history/:op', async (req, res) => {
     try {
         const op = String(req.params.op).trim();
 
-        // Busca sumário de cada lote (1 linha por lote)
+        // Busca metadados dos lotes para esta OP, do mais recente para o mais antigo
         const [lotes] = await mysqlPool.query(`
             SELECT
-                lote_id,
-                usuario_planejador,
-                observacao          AS observacao_lote,
-                modo_calculo,
-                MIN(data_inicio)    AS inicio_geral,
-                MAX(data_fim)       AS fim_geral,
-                COUNT(*)            AS total_operacoes,
-                MIN(criado_em)      AS criado_em
-            FROM app_planning_history
+                lote_id, op_numero, usuario, observacao, modo_calculo,
+                dias_modo, inclui_sabado, inclui_domingo, inclui_st, ordem_recursos, criado_em
+            FROM app_planning_lotes
             WHERE op_numero = ?
-            GROUP BY lote_id, usuario_planejador, observacao, modo_calculo
-            ORDER BY MIN(criado_em) DESC
+            ORDER BY criado_em DESC
             LIMIT 20
         `, [op]);
 
@@ -1937,28 +2039,40 @@ router.get('/planning-history/:op', async (req, res) => {
             return res.json([]);
         }
 
-        // Para cada lote, busca detalhes das operações (para permitir "Restaurar")
-        const lotesIds = lotes.map(l => l.lote_id);
-        const placeholders = lotesIds.map(() => '?').join(',');
+        // Para cada lote, busca as operações do histórico associadas
+        const loteIds = lotes.map(l => l.lote_id);
+        const placeholders = loteIds.map(() => '?').join(',');
         const [ops] = await mysqlPool.query(`
             SELECT
-                lote_id, operacao_codigo, recurso_code, recurso_desc,
+                lote_id, op_sequencia, operacao_codigo, recurso_code, recurso_desc,
                 data_inicio, data_fim, duracao_dias
             FROM app_planning_history
             WHERE op_numero = ? AND lote_id IN (${placeholders})
-            ORDER BY data_inicio ASC
-        `, [op, ...lotesIds]);
+            ORDER BY criado_em ASC
+        `, [op, ...loteIds]);
 
-        // Agrupa operações por lote_id para resposta aninhada
-        const opsMap = {};
+        // Monta mapa lote_id -> lista de operações
+        const opsByLote = {};
         ops.forEach(o => {
-            if (!opsMap[o.lote_id]) opsMap[o.lote_id] = [];
-            opsMap[o.lote_id].push(o);
+            if (!opsByLote[o.lote_id]) opsByLote[o.lote_id] = [];
+            opsByLote[o.lote_id].push(o);
         });
 
-        const result = lotes.map(l => ({
-            ...l,
-            operacoes: opsMap[l.lote_id] || []
+        // Combina tudo
+        const result = lotes.map((lote, idx) => ({
+            lote_id:       lote.lote_id,
+            op_numero:     lote.op_numero,
+            usuario:       lote.usuario,
+            observacao:    lote.observacao,
+            modo_calculo:  lote.modo_calculo,
+            dias_modo:     lote.dias_modo,
+            inclui_sabado: !!lote.inclui_sabado,
+            inclui_domingo: !!lote.inclui_domingo,
+            inclui_st:     !!lote.inclui_st,
+            ordem_recursos: lote.ordem_recursos ? JSON.parse(lote.ordem_recursos) : null,
+            criado_em:     lote.criado_em,
+            revisao:       lotes.length - idx,
+            operacoes:     opsByLote[lote.lote_id] || []
         }));
 
         res.json(result);
@@ -1969,7 +2083,37 @@ router.get('/planning-history/:op', async (req, res) => {
     }
 });
 
-// Multer para upload de fotos na conferência
+// GET /api/production/planning-prefs/:op - Prefer\u00eancias do \u00faltimo lote de planejamento da OP
+// Usado para restaurar as prefer\u00eancias salvas pelo usu\u00e1rio anterior ao abrir o modal
+router.get('/planning-prefs/:op', async (req, res) => {
+    try {
+        const op = String(req.params.op).trim();
+        const [rows] = await mysqlPool.query(`
+            SELECT dias_modo, inclui_sabado, inclui_domingo, inclui_st, ordem_recursos, usuario, criado_em
+            FROM app_planning_lotes
+            WHERE op_numero = ?
+            ORDER BY criado_em DESC
+            LIMIT 1
+        `, [op]);
+
+        if (rows.length === 0) return res.json(null);
+        const r = rows[0];
+        res.json({
+            diasModo:      r.dias_modo || 'calendar',
+            incluiSabado:  !!r.inclui_sabado,
+            incluiDomingo: !!r.inclui_domingo,
+            incluiST:      !!r.inclui_st,
+            ordemRecursos: r.ordem_recursos ? JSON.parse(r.ordem_recursos) : null,
+            usuario:       r.usuario,
+            criado_em:     r.criado_em
+        });
+    } catch (err) {
+        console.error('[PLANNING-PREFS]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');

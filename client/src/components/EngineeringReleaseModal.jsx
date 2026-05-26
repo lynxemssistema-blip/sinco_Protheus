@@ -295,9 +295,11 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
             const pdfBlob = new Blob([pdfResult.bytes], { type: 'application/pdf' });
             formData.append('attachments', pdfBlob, pdfResult.fileName);
 
-            // 5. Send via existing email route
+            // 5. Send via existing email route (async backend — 202 = accepted)
             await api.post('/email/send', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 90000, // 90s — PDF grande + SMTP lento
+                validateStatus: (s) => s === 200 || s === 202, // aceita 202 Accepted
             });
 
             // 6. Log the action
@@ -313,7 +315,7 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
 
             setResult({
                 type: 'success',
-                message: `E-mail de liberação enviado com sucesso para: ${toList}`
+                message: `✅ Liberação gerada com código ${nextCode}! E-mail sendo enviado para: ${toList}`
             });
         } catch (err) {
             console.error('Erro ao enviar e-mail de liberação:', err);

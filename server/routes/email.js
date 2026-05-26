@@ -25,14 +25,17 @@ const IMAP_CONFIG = {
 const SMTP_CONFIG = {
     host: 'smtp.task.com.br',
     port: 587,
-    secure: false, // 587 geralmente usa STARTTLS
+    secure: false,
     auth: {
         user: 'sincometal@metalfisa.com.br',
         pass: 'Pro1042@sm'
     },
     tls: {
         rejectUnauthorized: false
-    }
+    },
+    connectionTimeout: 30000,   // 30s para conectar ao SMTP
+    greetingTimeout:  15000,   // 15s para o EHLO
+    socketTimeout:    120000,  // 2min para envio (PDFs grandes)
 };
 
 // --- MIGRATION (Auto-run) ---
@@ -73,8 +76,6 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
         const { to, subject, html, text, localAttachments } = req.body;
         const files = req.files || [];
 
-        const transporter = nodemailer.createTransport(SMTP_CONFIG);
-
         const mailAttachments = files.map(f => ({
             filename: f.originalname,
             content: f.buffer
@@ -83,42 +84,26 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
         if (localAttachments) {
             const fs = require('fs').promises;
             const path = require('path');
-            
             let pathsArray = [];
             try {
                 pathsArray = JSON.parse(localAttachments);
-                if (!Array.isArray(pathsArray)) {
-                    pathsArray = [localAttachments];
-                }
+                if (!Array.isArray(pathsArray)) pathsArray = [localAttachments];
             } catch(e) {
                 pathsArray = [localAttachments];
             }
-
             for (const origPath of pathsArray) {
                 if (origPath && typeof origPath === 'string') {
-                    // Normalização do caminho (compatível com a lógica em docs.js)
-                    let filePath = origPath.trim();
-                    filePath = filePath.replace(/^["']+|["']+$/g, '').trim();
-                    
-                    // Q:\ ou Q:/ para caminho UNC padrão
+                    let filePath = origPath.trim().replace(/^["']+|["']+$/g, '').trim();
                     filePath = filePath.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
-                    
                     if (process.platform !== 'win32') {
-                        filePath = filePath.replace(/\\/g, '/');
-                        filePath = filePath.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+                        filePath = filePath.replace(/\\/g, '/').replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
                     } else {
-                        filePath = filePath.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\');
-                        filePath = filePath.replace(/\//g, '\\');
+                        filePath = filePath.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\').replace(/\//g, '\\');
                     }
-                    
-                    const absolutePath = path.resolve(filePath);
+                    const absolutePath = require('path').resolve(filePath);
                     try {
                         const fileBuffer = await fs.readFile(absolutePath);
-                        const fileName = path.basename(absolutePath);
-                        mailAttachments.push({
-                            filename: fileName,
-                            content: fileBuffer
-                        });
+                        mailAttachments.push({ filename: require('path').basename(absolutePath), content: fileBuffer });
                         console.log(`📎 Anexado arquivo local: ${absolutePath}`);
                     } catch(fileErr) {
                         console.error(`⚠️ Falha ao ler anexo local (${absolutePath}):`, fileErr.message);
@@ -136,28 +121,41 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
             attachments: mailAttachments
         };
 
-        const info = await transporter.sendMail(mailOptions);
+        // ── Responde imediatamente (202) e envia em background ───────────────
+        // Isso evita o timeout do Axios no cliente para PDFs/listas grandes.
+        res.status(202).json({ message: 'E-mail em processamento — você será notificado em caso de erro.', async: true });
 
-        // Record outgoing email in MySQL History
-        await mysqlPool.execute(
-            `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_text, body_html, has_attachments, date)
-             VALUES (?, 'SENT', ?, ?, ?, ?, ?, ?, ?, NOW())`,
-            [
-                info.messageId || null,
-                'MetalFisa ERP',
-                'sincometal@metalfisa.com.br',
-                to,
-                subject || 'Sem Assunto',
-                text || '',
-                html || '',
-                mailAttachments.length > 0 ? 1 : 0
-            ]
-        );
+        // ── Envio assíncrono ─────────────────────────────────────────────────
+        setImmediate(async () => {
+            try {
+                const transporter = nodemailer.createTransport(SMTP_CONFIG);
+                const info = await transporter.sendMail(mailOptions);
+                console.log(`[SMTP] ✅ E-mail enviado para ${to} | messageId: ${info.messageId}`);
 
-        res.json({ message: 'E-mail enviado e registrado no Histórico!', messageId: info.messageId });
+                await mysqlPool.execute(
+                    `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_text, body_html, has_attachments, date)
+                     VALUES (?, 'SENT', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                    [
+                        info.messageId || null,
+                        'MetalFisa ERP',
+                        'sincometal@metalfisa.com.br',
+                        to,
+                        subject || 'Sem Assunto',
+                        text || '',
+                        html || '',
+                        mailAttachments.length > 0 ? 1 : 0
+                    ]
+                );
+            } catch (bgErr) {
+                console.error('[SMTP BG] ❌ Falha ao enviar e-mail em background:', bgErr.message);
+            }
+        });
+
     } catch (err) {
-        console.error('[SMTP] Erro ao enviar e-mail:', err);
-        res.status(500).json({ error: 'Erro ao enviar e-mail: ' + err.message });
+        console.error('[SMTP] Erro ao preparar e-mail:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Erro ao preparar e-mail: ' + err.message });
+        }
     }
 });
 

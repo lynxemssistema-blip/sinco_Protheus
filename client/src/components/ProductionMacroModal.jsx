@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer, History, Clock, RotateCcw, AlertTriangle, CheckCircle, MessageSquare, ChevronLeft } from 'lucide-react';
+import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer, History, Clock, RotateCcw, AlertTriangle, CheckCircle, MessageSquare, ChevronLeft, HelpCircle, BookOpen, MousePointer, ArrowRight, Zap, Lock, RefreshCcw } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 import { generateGanttPDF } from '../services/ganttPdfGenerator';
 
@@ -9,7 +9,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const [expandedOps, setExpandedOps] = useState({});
     const [loading, setLoading] = useState(false);
     
-    // Referência para o container visual do Gantt
+    // ReferÃªncia para o container visual do Gantt
     const ganttContainerRef = useRef(null);
     
     // Help Context Injection
@@ -20,8 +20,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return () => setForcedPath(null);
     }, [setForcedPath]);
     
-    // Configurações e Datas Alvo
-    const [calcDirection, setCalcDirection] = useState('backward'); // backward = começa do fim; forward = começa do inicio
+    // ConfiguraÃ§Ãµes e Datas Alvo
+    const [calcDirection, setCalcDirection] = useState('backward'); // backward = comeÃ§a do fim; forward = comeÃ§a do inicio
     const [targetEndDate, setTargetEndDate] = useState('');
     const [targetStartDate, setTargetStartDate] = useState('');
     const [daysMode, setDaysMode] = useState('calendar'); // 'calendar' ou 'business'
@@ -30,28 +30,29 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const [includeSunday, setIncludeSunday] = useState(false); // Consider Sunday as workday
     const [viewMode, setViewMode] = useState('list'); // 'list' | 'gantt'
 
-    // Controle do Dialog de Confirmação de Salvamento
+    // Controle do Dialog de ConfirmaÃ§Ã£o de Salvamento
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [saveObservacao, setSaveObservacao] = useState('');
 
-    // Painel lateral de Histórico de Versões
+    // Painel lateral de HistÃ³rico de VersÃµes
     const [showHistory, setShowHistory] = useState(false);
     const [historyData, setHistoryData] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [expandedLote, setExpandedLote] = useState(null);
 
-    // Rastreamento de alterações não salvas
-    const [savedSnapshot, setSavedSnapshot] = useState(null); // snapshot do último estado salvo
-    const [lastSavedAt, setLastSavedAt] = useState(null);     // timestamp do último save
-    const [draggingBar, setDraggingBar] = useState(null); // { code, startX, offsetDays }
+    // Rastreamento de alteraÃ§Ãµes nÃ£o salvas
+    const [savedSnapshot, setSavedSnapshot] = useState(null); // snapshot do Ãºltimo estado salvo
+    const [lastSavedAt, setLastSavedAt] = useState(null);
+    const [draggingBar, setDraggingBar] = useState(null);
+    const [showHelp, setShowHelp] = useState(false); // painel de ajuda contextual
 
     // Estrutura
     const [orderedGroups, setOrderedGroups] = useState([]);
-    // BUG FIX #2: Armazena codes (strings) em vez de índices numéricos
-    // Índices mudam ao reordenar; codes são estáveis e identificam unicamente a operação
+    // BUG FIX #2: Armazena codes (strings) em vez de Ã­ndices numÃ©ricos
+    // Ãndices mudam ao reordenar; codes sÃ£o estÃ¡veis e identificam unicamente a operaÃ§Ã£o
     const [joinedCodes, setJoinedCodes] = useState(new Set());
     const [draggedIndex, setDraggedIndex] = useState(null);
-    // BUG FIX #1: Estado temporário de pré-visualização de ordem durante o arrastar
+    // BUG FIX #1: Estado temporÃ¡rio de prÃ©-visualizaÃ§Ã£o de ordem durante o arrastar
     // Evita que moveGroup chame triggerRecalculation dezenas de vezes/seg
     const [previewGroups, setPreviewGroups] = useState(null);
 
@@ -77,100 +78,120 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         
         Object.values(groups).forEach(g => {
             const descricoes = Array.from(new Set(g.items.map(i => i.desc_recurso || i.desc_operacao).filter(Boolean)));
-            g.desc = descricoes.join(' + ') || 'Sem descrição';
+            g.desc = descricoes.join(' + ') || 'Sem descriÃ§Ã£o';
         });
 
         return Object.values(groups).sort((a, b) => a.min_sequen - b.min_sequen);
     }, [operations]);
 
-    // 2. Inicialização do Estado (Lê Baseline do Banco + Lê Layout Local)
+    // 2. InicializaÃ§Ã£o do Estado â€” LÃª Baseline do Banco e carrega preferÃªncias do servidor
     useEffect(() => {
-        const initialPlans = {};
-        const initialExpanded = {};
-        let initialEndDate = '';
-        let initialStartDate = '';
+        let isMounted = true;
 
-        // Copia local para não afetar o state ate o final
-        let groupsToUse = [...groupedByRecurso];
-        let savedDirection = 'backward';
+        const initialize = async () => {
+            const initialPlans = {};
+            const initialExpanded = {};
+            let initialEndDate = '';
+            let initialStartDate = '';
+            let groupsToUse = [...groupedByRecurso];
+            let savedDirection = 'backward';
 
-        try {
-            const saved = localStorage.getItem(PREF_KEY);
-            if (saved) {
-                const prefs = JSON.parse(saved);
-                if (prefs.dir) savedDirection = prefs.dir;
-                if (prefs.layout && Array.isArray(prefs.layout)) {
-                    // BUG FIX #5: Filtra apenas codes que ainda existem no grupo atual
-                    // Evita "fantasmas" de operações removidas do Protheus/banco
-                    const validCodes = new Set(groupsToUse.map(g => g.code));
-                    const filteredLayout = prefs.layout.filter(code => validCodes.has(code));
-                    const sorted = [];
-                    filteredLayout.forEach(code => {
-                        const idx = groupsToUse.findIndex(g => g.code === code);
-                        if (idx >= 0) sorted.push(groupsToUse.splice(idx, 1)[0]);
-                    });
-                    groupsToUse = [...sorted, ...groupsToUse];
-                }
-            }
-        } catch (e) {
-            console.warn('Erro ao ler macro prefs', e);
-        }
+            // â”€â”€ Carrega preferÃªncias do SERVIDOR (compartilhado entre usuÃ¡rios) â”€â”€
+            try {
+                const prefsRes = await fetch(`/api/production/planning-prefs/${encodeURIComponent(op.op)}`);
+                if (prefsRes.ok) {
+                    const prefs = await prefsRes.json();
+                    if (prefs && isMounted) {
+                        if (prefs.diasModo)                         setDaysMode(prefs.diasModo);
+                        if (typeof prefs.incluiSabado === 'boolean') setIncludeSaturday(prefs.incluiSabado);
+                        if (typeof prefs.incluiDomingo === 'boolean') setIncludeSunday(prefs.incluiDomingo);
+                        if (typeof prefs.incluiST === 'boolean')     setIncludeST(prefs.incluiST);
 
-        groupsToUse.forEach(group => {
-            let existingStart = '';
-            let existingEnd = '';
-            let dur = 0;
-
-            const plannedItem = group.items.find(i => i.data_planejada_inicio && i.data_planejada_fim);
-            if (plannedItem) {
-                const parseSafeDate = (val) => {
-                    const str = String(val);
-                    if (str.includes('T')) {
-                        const d = new Date(str);
-                        if (!isNaN(d)) {
-                            const pad = n => n.toString().padStart(2, '0');
-                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        // Restaura ordem das operaÃ§Ãµes salva no banco
+                        if (prefs.ordemRecursos && Array.isArray(prefs.ordemRecursos)) {
+                            const validCodes = new Set(groupsToUse.map(g => g.code));
+                            const filtered = prefs.ordemRecursos.filter(c => validCodes.has(c));
+                            const sorted = [];
+                            filtered.forEach(code => {
+                                const idx = groupsToUse.findIndex(g => g.code === code);
+                                if (idx >= 0) sorted.push(groupsToUse.splice(idx, 1)[0]);
+                            });
+                            groupsToUse = [...sorted, ...groupsToUse];
                         }
                     }
-                    return str.substring(0, 10);
-                };
-                
-                existingStart = parseSafeDate(plannedItem.data_planejada_inicio);
-                existingEnd   = parseSafeDate(plannedItem.data_planejada_fim);
-                // Força meio-dia para evitar ambiguidade de DST na contagem de dias úteis
-                const s = new Date(existingStart + 'T12:00:00');
-                const e = new Date(existingEnd   + 'T12:00:00');
-                dur = Math.max(1, countBusinessDays(s, e, false));
-
-                if (!initialEndDate || existingEnd > initialEndDate) initialEndDate = existingEnd;
-                if (!initialStartDate || existingStart < initialStartDate) initialStartDate = existingStart;
+                }
+            } catch (e) {
+                console.warn('[PREFS] Erro ao carregar preferÃªncias do servidor:', e);
             }
 
-            initialPlans[group.code] = {
-                start: existingStart,
-                end: existingEnd,
-                baselineStart: existingStart,
-                baselineEnd: existingEnd,
-                duracao: dur,
-                selected: true,
-                locked: group.items.some(i => Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op)),
-                // FIX #3: Marca se este grupo já tinha planejamento salvo ao abrir o modal
-                isAlreadyPlanned: existingStart !== '',
-            };
-            initialExpanded[group.code] = false;
-        });
+            // â”€â”€ Fallback: tenta localStorage apenas para direÃ§Ã£o (dir) â”€â”€
+            try {
+                const saved = localStorage.getItem(PREF_KEY);
+                if (saved) {
+                    const local = JSON.parse(saved);
+                    if (local.dir) savedDirection = local.dir;
+                }
+            } catch (e) { /* ignora */ }
 
-        setOperationPlans(initialPlans);
-        setExpandedOps(initialExpanded);
-        setOrderedGroups(groupsToUse);
-        setCalcDirection(savedDirection);
-        
-        if (initialEndDate) setTargetEndDate(initialEndDate);
-        if (initialStartDate) setTargetStartDate(initialStartDate);
+            // â”€â”€ Monta os planos iniciais com base nas datas jÃ¡ salvas â”€â”€
+            groupsToUse.forEach(group => {
+                let existingStart = '';
+                let existingEnd = '';
+                let dur = 0;
+
+                const plannedItem = group.items.find(i => i.data_planejada_inicio && i.data_planejada_fim);
+                if (plannedItem) {
+                    const parseSafeDate = (val) => {
+                        const str = String(val);
+                        if (str.includes('T')) {
+                            const d = new Date(str);
+                            if (!isNaN(d)) {
+                                const pad = n => n.toString().padStart(2, '0');
+                                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                            }
+                        }
+                        return str.substring(0, 10);
+                    };
+
+                    existingStart = parseSafeDate(plannedItem.data_planejada_inicio);
+                    existingEnd   = parseSafeDate(plannedItem.data_planejada_fim);
+                    const s = new Date(existingStart + 'T12:00:00');
+                    const e = new Date(existingEnd   + 'T12:00:00');
+                    dur = Math.max(1, countBusinessDays(s, e, false));
+
+                    if (!initialEndDate || existingEnd > initialEndDate) initialEndDate = existingEnd;
+                    if (!initialStartDate || existingStart < initialStartDate) initialStartDate = existingStart;
+                }
+
+                initialPlans[group.code] = {
+                    start: existingStart,
+                    end: existingEnd,
+                    baselineStart: existingStart,
+                    baselineEnd: existingEnd,
+                    duracao: dur,
+                    selected: true,
+                    locked: group.items.some(i => Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op)),
+                    isAlreadyPlanned: existingStart !== '',
+                    manuallySet: existingStart !== '',
+                };
+                initialExpanded[group.code] = false;
+            });
+
+            if (!isMounted) return;
+            setOperationPlans(initialPlans);
+            setExpandedOps(initialExpanded);
+            setOrderedGroups(groupsToUse);
+            setCalcDirection(savedDirection);
+            if (initialEndDate) setTargetEndDate(initialEndDate);
+            if (initialStartDate) setTargetStartDate(initialStartDate);
+        };
+
+        initialize();
+        return () => { isMounted = false; };
     }, [groupedByRecurso, PREF_KEY]);
 
 
-    // 3. Utilitários de Data
+    // 3. UtilitÃ¡rios de Data
     const subtractDays = (date, days, mode, incSat = false, incSun = false) => {
         const result = new Date(date);
         let count = 0;
@@ -211,14 +232,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return new Date(dateVal);
     };
 
-    // Normaliza uma data para o dia útil mais próximo (evita domingo/sábado como âncora)
+    // Normaliza uma data para o dia Ãºtil mais prÃ³ximo (evita domingo/sÃ¡bado como Ã¢ncora)
     const skipToWorkday = (date, forward, incSat, incSun) => {
         const result = new Date(date);
         while (true) {
             const day = result.getDay();
             if (!incSun && day === 0) { // Domingo
                 result.setDate(result.getDate() + (forward ? 1 : -1));
-            } else if (!incSat && day === 6) { // Sábado
+            } else if (!incSat && day === 6) { // SÃ¡bado
                 result.setDate(result.getDate() + (forward ? 1 : -1));
             } else {
                 break;
@@ -227,7 +248,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return result;
     };
 
-    // Conta dias úteis entre duas datas (inclusivo)
+    // Conta dias Ãºteis entre duas datas (inclusivo)
     const countBusinessDays = (startDate, endDate, incSat, incSun) => {
         let count = 0;
         const cur = new Date(startDate);
@@ -242,7 +263,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return count;
     };
 
-    // 4. Lógicas de Cálculo Sequencial
+    // 4. LÃ³gicas de CÃ¡lculo Sequencial
     const calcRoutine = (params) => {
         const { isForward, anchorDate, plansList, targetGroups, joinedSet, incST, incSat, incSun, overrideDaysMode } = params;
         const dMode = overrideDaysMode || daysMode;
@@ -256,7 +277,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             ? [...Array(targetGroups.length).keys()]
             : [...Array(targetGroups.length).keys()].reverse();
 
-        // Normaliza a data âncora — impede que domingo/sábado seja início/fim de operação
+        // Normaliza a data Ã¢ncora â€” impede que domingo/sÃ¡bado seja inÃ­cio/fim de operaÃ§Ã£o
         let currentDate = dMode === 'business'
             ? skipToWorkday(safeDate(anchorDate), isForward, incSat, incSun)
             : safeDate(anchorDate);
@@ -282,11 +303,11 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 }
             }
 
-            // Ignorar fluxo se for bloco de serviço ST
+            // Ignorar fluxo se for bloco de serviÃ§o ST
             const isSTBlock = blockIndices.every(bIdx => targetGroups[bIdx].code.toUpperCase().startsWith('ST'));
             if (!incST && isSTBlock) {
                  i = lookAhead;
-                 continue; // Pula cálculos e avanço de data (gap zero, pulo mecânico)
+                 continue; // Pula cÃ¡lculos e avanÃ§o de data (gap zero, pulo mecÃ¢nico)
             }
 
             let maxDur = 0;
@@ -324,9 +345,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 const p = newPlans[g.code];
                 if (p && p.selected) {
                     if (p.locked) {
-                        // Bloqueado: não altera datas
+                        // Bloqueado: nÃ£o altera datas
                     } else if (p.manuallySet) {
-                        // Ajustado manualmente: atualiza a outra ponta para acompanhar a duração
+                        // Ajustado manualmente: atualiza a outra ponta para acompanhar a duraÃ§Ã£o
                         if (isForward && p.start) {
                             const baseStart = safeDate(p.start);
                             const newEnd = p.duracao > 0 ? addDays(baseStart, p.duracao - 1, dMode, incSat, incSun) : baseStart;
@@ -358,7 +379,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     // FIX #4: Aceita overrideEndDate/overrideStartDate para evitar leitura de closure stale
-    // quando chamado diretamente de onChange (React state ainda não atualizou)
+    // quando chamado diretamente de onChange (React state ainda nÃ£o atualizou)
     const triggerRecalculation = (
         currentPlans = operationPlans,
         customGroups = orderedGroups,
@@ -395,23 +416,28 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         }
     };
 
-    const saveCustomLayout = (layouts, dir) => {
+    // FIX PREFS: Persiste TODAS as preferÃªncias do usuÃ¡rio no localStorage
+    const saveCustomLayout = (layouts, dir, opts = {}) => {
         localStorage.setItem(PREF_KEY, JSON.stringify({
             layout: layouts.map(g => g.code),
-            dir: dir
+            dir: dir,
+            daysMode:        opts.daysMode        ?? daysMode,
+            includeST:       opts.includeST       ?? includeST,
+            includeSaturday: opts.includeSaturday ?? includeSaturday,
+            includeSunday:   opts.includeSunday   ?? includeSunday,
         }));
     };
 
-    // 5. Interações do Usuário
+    // 5. InteraÃ§Ãµes do UsuÃ¡rio
 
     // BUG FIX #1: moveGroup agora APENAS reordena visualmente (sem recalcular)
-    // O recálculo é feito SOMENTE no handleDragEnd para evitar re-renders em cascata
+    // O recÃ¡lculo Ã© feito SOMENTE no handleDragEnd para evitar re-renders em cascata
     const moveGroup = (fromIndex, toIndex) => {
         const source = previewGroups || orderedGroups;
         const newGroups = [...source];
         const [movedItem] = newGroups.splice(fromIndex, 1);
         newGroups.splice(toIndex, 0, movedItem);
-        setPreviewGroups(newGroups); // Atualiza apenas pré-visualização
+        setPreviewGroups(newGroups); // Atualiza apenas prÃ©-visualizaÃ§Ã£o
     };
 
     // Drag and Drop (Nativo HTML5)
@@ -425,13 +451,13 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const handleDragEnter = (e, index) => {
         e.preventDefault();
         if (draggedIndex === null || draggedIndex === index) return;
-        // BUG FIX #1: Apenas reordena visualmente — SEM recálculo aqui
+        // BUG FIX #1: Apenas reordena visualmente â€” SEM recÃ¡lculo aqui
         moveGroup(draggedIndex, index);
         setDraggedIndex(index);
     };
 
     const handleDragEnd = () => {
-        // BUG FIX #1: Recálculo acontece UMA ÚNICA VEZ ao soltar
+        // BUG FIX #1: RecÃ¡lculo acontece UMA ÃšNICA VEZ ao soltar
         const finalGroups = previewGroups || orderedGroups;
         setOrderedGroups(finalGroups);
         setPreviewGroups(null);
@@ -441,18 +467,18 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     // Form Interactions
-    // BUG FIX #2: toggleJoin agora usa o code da operação ANTERIOR como chave do vínculo
-    // Ex: unir op no índice 2 com op no índice 1 = armazenar code da op[1] no Set
-    // Isso é estável mesmo após reordenação
+    // BUG FIX #2: toggleJoin agora usa o code da operaÃ§Ã£o ANTERIOR como chave do vÃ­nculo
+    // Ex: unir op no Ã­ndice 2 com op no Ã­ndice 1 = armazenar code da op[1] no Set
+    // Isso Ã© estÃ¡vel mesmo apÃ³s reordenaÃ§Ã£o
     const toggleJoin = (index) => {
-        if (index === 0) return; // Primeira op não pode ser unida a nada anterior
+        if (index === 0) return; // Primeira op nÃ£o pode ser unida a nada anterior
         const prevCode = orderedGroups[index - 1]?.code;
         if (!prevCode) return;
         const newJoined = new Set(joinedCodes);
         if (newJoined.has(prevCode)) newJoined.delete(prevCode);
         else newJoined.add(prevCode);
         setJoinedCodes(newJoined);
-        // BUG FIX #3: Sem setTimeout — passa parâmetros explicitamente
+        // BUG FIX #3: Sem setTimeout â€” passa parÃ¢metros explicitamente
         triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, newJoined);
     };
 
@@ -460,7 +486,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         const newDir = calcDirection === 'backward' ? 'forward' : 'backward';
         setCalcDirection(newDir);
         saveCustomLayout(orderedGroups, newDir);
-        // BUG FIX #3: Passa newDir explicitamente — sem setTimeout
+        // BUG FIX #3: Passa newDir explicitamente â€” sem setTimeout
         triggerRecalculation(operationPlans, orderedGroups, newDir, includeST, includeSaturday, includeSunday, joinedCodes);
     };
 
@@ -473,8 +499,51 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const toggleDaysMode = (mode) => {
         setDaysMode(mode);
-        // Passa mode explicitamente para evitar closure stale
+        saveCustomLayout(orderedGroups, calcDirection, { daysMode: mode });
         triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes, undefined, undefined, mode);
+    };
+
+    // FIX REPLAN: Ao mudar a data Ã¢ncora, DESLOCA todas as ops proporcionalmente
+    // em vez de fazer tight-packing (cascata que destrÃ³i gaps existentes).
+    const handleAnchorDateChange = (type, newVal) => {
+        if (!newVal) return;
+        const oldVal = type === 'end' ? targetEndDate : targetStartDate;
+        let updatedPlans = operationPlans;
+
+        if (oldVal && newVal && oldVal !== newVal) {
+            const diffMs = new Date(newVal + 'T12:00:00') - new Date(oldVal + 'T12:00:00');
+            const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays !== 0) {
+                const shifted = {};
+                Object.entries(operationPlans).forEach(([code, p]) => {
+                    if (p.selected && p.start && p.end) {
+                        const s = new Date(p.start + 'T12:00:00');
+                        s.setDate(s.getDate() + diffDays);
+                        const e = new Date(p.end + 'T12:00:00');
+                        e.setDate(e.getDate() + diffDays);
+                        shifted[code] = { ...p, start: s.toISOString().split('T')[0], end: e.toISOString().split('T')[0] };
+                    } else {
+                        shifted[code] = { ...p };
+                    }
+                });
+                updatedPlans = shifted;
+                setOperationPlans(shifted);
+            }
+        }
+
+        if (type === 'end') setTargetEndDate(newVal);
+        else setTargetStartDate(newVal);
+    };
+
+    // FIX REPLAN: CompactaÃ§Ã£o intencional â€” remove manuallySet e faz cascata limpa.
+    // O usuÃ¡rio aciona isso explicitamente quando QUER a cascata.
+    const handleRepackCascade = () => {
+        if (!confirm('Isso irÃ¡ compactar todas as operaÃ§Ãµes em cascata a partir da data alvo, removendo espaÃ§os entre elas.\n\nConfirmar?')) return;
+        const updated = {};
+        Object.entries(operationPlans).forEach(([code, p]) => {
+            updated[code] = { ...p, manuallySet: false };
+        });
+        triggerRecalculation(updated, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes);
     };
 
     const updateOperationDuration = (code, value) => {
@@ -492,7 +561,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         updateOperationDuration(code, currentDur + delta);
     };
 
-    // Calcula snapshot simples para detectar alterações não salvas
+    // Calcula snapshot simples para detectar alteraÃ§Ãµes nÃ£o salvas
     const buildSnapshot = useCallback(() => {
         return JSON.stringify(
             Object.entries(operationPlans)
@@ -504,18 +573,18 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const hasUnsavedChanges = savedSnapshot !== null && buildSnapshot() !== savedSnapshot;
 
-    // Abre o dialog de confirmação antes de salvar
+    // Abre o dialog de confirmaÃ§Ã£o antes de salvar
     const handleSave = () => {
         const anySelected = Object.values(operationPlans).some(p => p.selected && p.start && p.end);
         if (!anySelected) {
-            alert('Nenhuma operação válida selecionada com datas definidas.');
+            alert('Nenhuma operaÃ§Ã£o vÃ¡lida selecionada com datas definidas.');
             return;
         }
         setSaveObservacao('');
         setShowSaveDialog(true);
     };
 
-    // Salva de fato após confirmação no dialog
+    // Salva de fato apÃ³s confirmaÃ§Ã£o no dialog
     const handleConfirmSave = async () => {
         setShowSaveDialog(false);
         setLoading(true);
@@ -546,14 +615,23 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             const CHUNK_SIZE = 100;
             const chunks = [];
             for (let i = 0; i < plansToSave.length; i += CHUNK_SIZE) chunks.push(plansToSave.slice(i, i + CHUNK_SIZE));
-            for (const chunk of chunks) {
-                await onSaveBatch(chunk, saveObservacao, calcDirection);
+
+            // Envia preferÃªncias apenas no primeiro chunk (associadas ao lote criado no backend)
+            const preferencias = {
+                diasModo:      daysMode,
+                incluiSabado:  includeSaturday,
+                incluiDomingo: includeSunday,
+                incluiST:      includeST,
+                ordemRecursos: orderedGroups.map(g => g.code)
+            };
+            for (let i = 0; i < chunks.length; i++) {
+                await onSaveBatch(chunks[i], saveObservacao, calcDirection, i === 0 ? preferencias : undefined);
             }
 
             const now = new Date();
             setLastSavedAt(now);
             setSavedSnapshot(buildSnapshot());
-            alert(`✅ ${plansToSave.length} operações salvas com sucesso!`);
+            alert(`âœ… ${plansToSave.length} operaÃ§Ãµes salvas com sucesso!`);
             onClose(true);
         } catch (error) {
             console.error('Erro ao salvar:', error);
@@ -563,12 +641,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         }
     };
 
-    // Carrega histórico de versões da OP
+    // Carrega histÃ³rico de versÃµes da OP
     const loadHistory = async () => {
         setHistoryLoading(true);
         try {
             const res = await fetch(`/api/production/planning-history/${op.op}`);
-            if (!res.ok) throw new Error('Erro ao buscar histórico');
+            if (!res.ok) throw new Error('Erro ao buscar histÃ³rico');
             const data = await res.json();
             setHistoryData(data);
         } catch (e) {
@@ -579,9 +657,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         }
     };
 
-    // Restaura um lote do histórico como plano atual
+    // Restaura um lote do histÃ³rico como plano atual
     const handleRestoreLote = (lote) => {
-        if (!confirm(`Restaurar o planejamento do lote ${lote.lote_id}?\nIsso substituirá o plano atual (não salvo ainda).`)) return;
+        if (!confirm(`Restaurar o planejamento do lote ${lote.lote_id}?\nIsso substituirÃ¡ o plano atual (nÃ£o salvo ainda).`)) return;
         const restored = { ...operationPlans };
         lote.operacoes.forEach(op => {
             const code = op.recurso_code || op.operacao_codigo;
@@ -600,7 +678,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     const handlePrint = () => {
-        generateGanttPDF(op, orderedGroups, operationPlans, ganttContainerRef.current);
+        generateGanttPDF(op, orderedGroups, operationPlans);
     };
 
     // Atalho Ctrl+S para salvar
@@ -615,7 +693,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [operationPlans, calcDirection]); // eslint-disable-line
 
-    // Calcula indicador de folga até data de entrega
+    // Calcula indicador de folga atÃ© data de entrega
     const deliverySlack = useMemo(() => {
         const deliveryDate = op?.data_entrega || op?.dataEntrega || op?.c6_entreg;
         if (!deliveryDate || !targetEndDate) return null;
@@ -633,7 +711,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return diffDays;
     }, [op, targetEndDate]);
 
-    // Percentual de operações planejadas (selecionadas com datas)
+    // Percentual de operaÃ§Ãµes planejadas (selecionadas com datas)
     const planProgress = useMemo(() => {
         const total = orderedGroups.length;
         if (total === 0) return { done: 0, total: 0, pct: 0 };
@@ -644,7 +722,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         return { done, total, pct: Math.round((done / total) * 100) };
     }, [orderedGroups, operationPlans]);
 
-    // --- LÓGICA DE DRAG AND DROP DO GANTT ---
+    // --- LÃ“GICA DE DRAG AND DROP DO GANTT ---
     useEffect(() => {
         const handleMouseMove = (e) => {
             if (!draggingBar) return;
@@ -673,7 +751,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             ...plan,
                             start: newStart.toISOString().split('T')[0],
                             end: newEnd.toISOString().split('T')[0],
-                            // BUG FIX #4: Marca como ajuste manual para proteger de recálculos automáticos
+                            // BUG FIX #4: Marca como ajuste manual para proteger de recÃ¡lculos automÃ¡ticos
                             manuallySet: true
                         }
                     };
@@ -694,12 +772,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const handleGanttBarMouseDown = (e, code) => {
         if (e.target.tagName.toLowerCase() === 'input') return; // ignora se for clique no input de duracao
-        if (operationPlans[code]?.locked) return; // Não permite arrastar operações concluídas
+        if (operationPlans[code]?.locked) return; // NÃ£o permite arrastar operaÃ§Ãµes concluÃ­das
         e.preventDefault();
         setDraggingBar({ code, startX: e.clientX, offsetDays: 0 });
     };
 
-    // --- LÓGICA DO MODO GANTT ---
+    // --- LÃ“GICA DO MODO GANTT ---
     const getGanttDates = () => {
         let minTime = Infinity;
         let maxTime = -Infinity;
@@ -742,7 +820,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     const renderGanttView = () => {
         const { minDate, dateArray } = getGanttDates();
         const CELL_WIDTH = 40;
-        // Dimensões da linha e barra — centralizadas verticalmente
+        // DimensÃµes da linha e barra â€” centralizadas verticalmente
         const ROW_H    = 56;  // altura total da linha (px)
         const BAR_H    = 28;  // altura da barra (px)
         const BAR_TOP  = (ROW_H - BAR_H) / 2; // offset topo para centralizar: 10px
@@ -755,7 +833,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         <div className="flex sticky top-0 bg-slate-100 z-30 border-b border-slate-200 shadow-sm">
                             {/* Label column header */}
                             <div className="sticky left-0 bg-slate-100 w-[240px] min-w-[240px] border-r border-slate-200 px-3 py-2 flex items-center z-40">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Recurso / Operação</span>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Recurso / OperaÃ§Ã£o</span>
                             </div>
                             {/* Day headers */}
                             <div className="flex">
@@ -803,7 +881,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     {/* Sticky Label */}
                                     <div className="sticky left-0 bg-white group-hover/gantt:bg-slate-50/80 w-[240px] min-w-[240px] border-r border-slate-200 px-2 flex items-center z-20 shadow-[2px_0_4px_rgba(0,0,0,0.04)] gap-2">
                                         {/* Estado locked */}
-                                        {plan.locked && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" title="Concluído" />}
+                                        {plan.locked && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" title="ConcluÃ­do" />}
                                         <div className="flex flex-col min-w-0">
                                             <div className="flex flex-wrap items-center gap-1">
                                                 <span className="font-mono text-[9px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 rounded border border-slate-200 leading-none truncate max-w-[72px]" title={group.code}>{group.code}</span>
@@ -835,7 +913,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                     left: `${baselineLeftPx}px`,
                                                     width: `${baselineWidthPx}px`
                                                 }}
-                                                title={`Salvo anteriormente: ${plan.baselineStart.split('-').reverse().join('/')} → ${plan.baselineEnd.split('-').reverse().join('/')}`}
+                                                title={`Salvo anteriormente: ${plan.baselineStart.split('-').reverse().join('/')} â†’ ${plan.baselineEnd.split('-').reverse().join('/')}`}
                                             />
                                         )}
 
@@ -843,7 +921,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                         {isUnplanned && (
                                             <div className="absolute inset-y-0 left-0 flex items-center px-4 gap-2 pointer-events-none">
                                                 <div className="h-[6px] w-28 border-2 border-dashed border-slate-300 rounded-full opacity-50" />
-                                                <span className="text-[9px] text-slate-400 font-medium italic whitespace-nowrap">Não planejado</span>
+                                                <span className="text-[9px] text-slate-400 font-medium italic whitespace-nowrap">NÃ£o planejado</span>
                                             </div>
                                         )}
 
@@ -884,9 +962,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
                                             // Largura total da barra em px (para decidir onde mostrar label)
                                             const totalWidthPx = segments.length * CELL_WIDTH;
-                                            // Mostra o label de dias se a barra tiver ao menos 2 células
+                                            // Mostra o label de dias se a barra tiver ao menos 2 cÃ©lulas
                                             const showDayLabel = segments.length >= 2;
-                                            // Posição do primeiro segmento
+                                            // PosiÃ§Ã£o do primeiro segmento
                                             const firstLeftPx = segments[0]?.leftPx ?? 0;
 
                                             return (
@@ -907,7 +985,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                                 key={idx}
                                                                 className={`absolute border-2 border-dashed ${dashCls} ${roundL} ${roundR}`}
                                                                 style={{ top: `${BAR_TOP}px`, height: `${BAR_H}px`, left: `${seg.leftPx}px`, width: `${CELL_WIDTH}px` }}
-                                                                title="Fim de semana — não contabilizado"
+                                                                title="Fim de semana â€” nÃ£o contabilizado"
                                                             />
                                                         ) : (
                                                             <div
@@ -918,18 +996,18 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                         );
                                                     })}
 
-                                                    {/* Overlay de interação: drag handle + input de dias centralizado na barra */}
+                                                    {/* Overlay de interaÃ§Ã£o: drag handle + input de dias centralizado na barra */}
                                                     {segments.length > 0 && (
                                                         <div
                                                             className="absolute flex items-center gap-1 px-1.5"
                                                             style={{ top: `${BAR_TOP}px`, height: `${BAR_H}px`, left: `${firstLeftPx}px`, width: `${totalWidthPx}px` }}
                                                         >
-                                                            {/* Ícone de arrastar — sempre visível ao hover */}
+                                                            {/* Ãcone de arrastar â€” sempre visÃ­vel ao hover */}
                                                             {!plan.locked && (
                                                                 <GripVertical className={`w-3.5 h-3.5 shrink-0 ${hasDiff ? 'text-amber-100' : 'text-blue-200'} opacity-80`} />
                                                             )}
 
-                                                            {/* Input de dias com label "d" — editável direto na barra */}
+                                                            {/* Input de dias com label "d" â€” editÃ¡vel direto na barra */}
                                                             <div className="flex items-center gap-0.5 flex-1 justify-center" onMouseDown={e => e.stopPropagation()}>
                                                                 <input
                                                                     type="number"
@@ -941,7 +1019,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                                         ${plan.locked ? 'cursor-not-allowed' : 'cursor-text hover:bg-white/20 rounded focus:bg-white/30 focus:ring-1 focus:ring-white/60'}
                                                                         ${hasDiff ? 'text-amber-900' : 'text-white'}`}
                                                                     style={{ MozAppearance: 'textfield' }}
-                                                                    title="Clique para editar duração em dias"
+                                                                    title="Clique para editar duraÃ§Ã£o em dias"
                                                                 />
                                                                 {showDayLabel && (
                                                                     <span className={`text-[10px] font-bold leading-none ${hasDiff ? 'text-amber-800/80' : 'text-white/70'}`}>d</span>
@@ -975,7 +1053,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             <span className="ml-1 px-1.5 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-mono">OP {op.op}</span>
                         </h2>
 
-                        {/* Indicador de Folga até Entrega */}
+                        {/* Indicador de Folga atÃ© Entrega */}
                         {deliverySlack !== null && (
                             <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                                 deliverySlack >= 5  ? 'bg-green-50 text-green-700 border-green-200' :
@@ -988,10 +1066,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             </div>
                         )}
 
-                        {/* Indicador de Alterações Não Salvas */}
+                        {/* Indicador de AlteraÃ§Ãµes NÃ£o Salvas */}
                         {hasUnsavedChanges && (
                             <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full animate-pulse">
-                                <AlertTriangle className="w-3 h-3" /> Não salvo
+                                <AlertTriangle className="w-3 h-3" /> NÃ£o salvo
                             </span>
                         )}
                         {lastSavedAt && !hasUnsavedChanges && (
@@ -1006,19 +1084,28 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* Botão Histórico */}
+                        {/* BotÃ£o HistÃ³rico */}
                         <button
                             onClick={() => { setShowHistory(h => { if (!h) loadHistory(); return !h; }); }}
                             className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all ${
                                 showHistory ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                             }`}
-                            title="Histórico de versões"
+                            title="HistÃ³rico de versÃµes"
                         >
                             <History className="w-3.5 h-3.5" /> Histórico
                         </button>
+                        <button
+                            onClick={() => setShowHelp(h => !h)}
+                            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                showHelp ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                            }`}
+                            title="Ajuda - Como usar o Planejamento Sequencial"
+                        >
+                            <HelpCircle className="w-3.5 h-3.5" /> Ajuda
+                        </button>
                         <button onClick={() => {
                             if (hasUnsavedChanges) {
-                                if (!confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
+                                if (!confirm('HÃ¡ alteraÃ§Ãµes nÃ£o salvas. Deseja fechar mesmo assim?')) return;
                             }
                             onClose();
                         }} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors">
@@ -1033,7 +1120,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     {/* Anchor Date Setup & Mode Toggle */}
                     <div className="flex gap-2 items-center flex-1">
                         {/* Direction Toggle */}
-                        <div className="flex bg-slate-100 p-0.5 rounded border border-slate-200" title="Direção do sequenciamento">
+                        <div className="flex bg-slate-100 p-0.5 rounded border border-slate-200" title="DireÃ§Ã£o do sequenciamento">
                             <button
                                 onClick={toggleDirection}
                                 className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold uppercase transition-all ${
@@ -1056,24 +1143,33 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         {calcDirection === 'backward' ? (
                             <div className="flex items-center gap-1.5 animate-in slide-in-from-right-2 fade-in">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Data Final (Entrega):</label>
-                                <input 
-                                    type="date" 
-                                    // FIX #4: Passa `v` via overrideEndDate — evita closure stale
-                    value={targetEndDate} onChange={e => { const v = e.target.value; setTargetEndDate(v); if (v) triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes, v, targetStartDate); }}
-                                    className="border border-blue-200 bg-blue-50 text-blue-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold" 
+                                <input
+                                    type="date"
+                                    value={targetEndDate}
+                                    onChange={e => handleAnchorDateChange('end', e.target.value)}
+                                    className="border border-blue-200 bg-blue-50 text-blue-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold"
                                 />
                             </div>
                         ) : (
                             <div className="flex items-center gap-1.5 animate-in slide-in-from-left-2 fade-in">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Data Inicial (Fabricar):</label>
-                                <input 
-                                    type="date" 
-                                    // FIX #4: Passa `v` via overrideStartDate — evita closure stale
-                    value={targetStartDate} onChange={e => { const v = e.target.value; setTargetStartDate(v); if (v) triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes, targetEndDate, v); }}
-                                    className="border border-green-200 bg-green-50 text-green-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-green-500 font-bold" 
+                                <input
+                                    type="date"
+                                    value={targetStartDate}
+                                    onChange={e => handleAnchorDateChange('start', e.target.value)}
+                                    className="border border-green-200 bg-green-50 text-green-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-green-500 font-bold"
                                 />
                             </div>
                         )}
+
+                        {/* Compactar Datas button */}
+                        <button
+                            onClick={handleRepackCascade}
+                            title="Compacta todas as operaÃ§Ãµes em cascata a partir da data alvo, removendo gaps/espaÃ§os"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold uppercase border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                            <MoveUp className="w-3 h-3" /> Compactar
+                        </button>
                     </div>
 
                     {/* Work Days Config */}
@@ -1088,7 +1184,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             onClick={() => toggleDaysMode('business')}
                             className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${daysMode === 'business' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <Briefcase className="w-3 h-3" /> Úteis
+                            <Briefcase className="w-3 h-3" /> Ãšteis
                         </button>
                         <label className={`flex items-center gap-1 cursor-pointer text-[9px] font-bold uppercase tracking-tight select-none transition-colors ml-1 pr-1 border-l border-slate-200 pl-1 ${daysMode === 'business' ? 'text-slate-600 hover:text-blue-600' : 'text-slate-300 pointer-events-none'}`}>
                             <input 
@@ -1098,12 +1194,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 onChange={(e) => {
                                     const v = e.target.checked;
                                     setIncludeSaturday(v);
-                                    // BUG FIX #3: Sem setTimeout — passa valor novo explicitamente
+                                    saveCustomLayout(orderedGroups, calcDirection, { includeSaturday: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, v, includeSunday, joinedCodes);
                                 }}
                                 className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
                             />
-                            Incluir Sábado?
+                            Incluir SÃ¡bado?
                         </label>
                         <label className={`flex items-center gap-1 cursor-pointer text-[9px] font-bold uppercase tracking-tight select-none transition-colors pr-1 border-l border-slate-200 pl-1 ${daysMode === 'business' ? 'text-slate-600 hover:text-blue-600' : 'text-slate-300 pointer-events-none'}`}>
                             <input 
@@ -1113,7 +1209,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 onChange={(e) => {
                                     const v = e.target.checked;
                                     setIncludeSunday(v);
-                                    // BUG FIX #3: Sem setTimeout — passa valor novo explicitamente
+                                    saveCustomLayout(orderedGroups, calcDirection, { includeSunday: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, v, joinedCodes);
                                 }}
                                 className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
@@ -1131,12 +1227,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 onChange={(e) => {
                                     const v = e.target.checked;
                                     setIncludeST(v);
-                                    // BUG FIX #3: Sem setTimeout — passa valor novo explicitamente
+                                    saveCustomLayout(orderedGroups, calcDirection, { includeST: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, v, includeSaturday, includeSunday, joinedCodes);
                                 }}
                                 className="w-3 h-3 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
                             />
-                            Incluir "ST" no cálculo?
+                            Incluir "ST" no cÃ¡lculo?
                         </label>
                     </div>
                 </div>
@@ -1147,9 +1243,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         <div className="px-3 py-1 bg-slate-100 border-b border-slate-200 flex text-[9px] font-bold uppercase text-slate-500 tracking-wider items-center shrink-0">
                             <div className="w-6"></div> {/* Grip */}
                             <div className="w-5"></div> {/* Check */}
-                            <div className="flex-1 min-w-[140px] px-2">Recurso / Operação</div>
-                            <div className="w-20 text-center">Duração</div>
-                            <div className="w-[140px] text-center">Início <span className="text-slate-300">|</span> Fim</div>
+                            <div className="flex-1 min-w-[140px] px-2">Recurso / OperaÃ§Ã£o</div>
+                            <div className="w-20 text-center">DuraÃ§Ã£o</div>
+                            <div className="w-[140px] text-center">InÃ­cio <span className="text-slate-300">|</span> Fim</div>
                             <div className="w-6"></div> {/* Exapand */}
                         </div>
 
@@ -1165,13 +1261,13 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     <div className="mx-1 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 shrink-0">
                                         <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                         <span className="text-[10px] text-amber-700 font-medium leading-snug">
-                                            Este lote contém operações <strong>já salvas no banco</strong> (badge azul — serão <em>sobrescritas</em>) e operações <strong>novas sem histórico</strong> (badge âmbar). Verifique antes de salvar.
+                                            Este lote contÃ©m operaÃ§Ãµes <strong>jÃ¡ salvas no banco</strong> (badge azul â€” serÃ£o <em>sobrescritas</em>) e operaÃ§Ãµes <strong>novas sem histÃ³rico</strong> (badge Ã¢mbar). Verifique antes de salvar.
                                         </span>
                                     </div>
                                 );
                             })()}
 
-                            {/* Linha vertical de progressão sequencial */}
+                            {/* Linha vertical de progressÃ£o sequencial */}
                             <div className="absolute left-4 top-2 bottom-2 w-px bg-gradient-to-b from-blue-200 to-indigo-200 z-0"></div>
 
                             {(previewGroups || orderedGroups).map((group, index) => {
@@ -1182,13 +1278,13 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 const isJoined = prevCode ? joinedCodes.has(prevCode) : false;
                                 const isNextJoined = joinedCodes.has(group.code);
                                 const isBeingDragged = draggedIndex === index;
-                                // FIX #3: Detecta transição de seção para separador visual
+                                // FIX #3: Detecta transiÃ§Ã£o de seÃ§Ã£o para separador visual
                                 const prevPlan = prevCode ? operationPlans[prevCode] : null;
                                 const showNewSectionDivider = !plan.isAlreadyPlanned && (index === 0 || prevPlan?.isAlreadyPlanned);
 
                                 return (
                                     <React.Fragment key={group.code}>
-                                        {/* FIX #3: Separador "A Planejar" quando transiciona de salvo → novo */}
+                                        {/* FIX #3: Separador "A Planejar" quando transiciona de salvo â†’ novo */}
                                         {showNewSectionDivider && index > 0 && (
                                             <div className="flex items-center gap-2 my-2 mx-1">
                                                 <div className="flex-1 h-px bg-amber-200" />
@@ -1246,13 +1342,13 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                         </span>
                                                         {/* FIX #3: Badge de estado (salvo vs novo) */}
                                                         {plan.isAlreadyPlanned ? (
-                                                            <span className="text-[7px] font-bold px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 uppercase leading-none" title="Esta operação já tem planejamento salvo no banco — será sobrescrita">Salvo</span>
+                                                            <span className="text-[7px] font-bold px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 uppercase leading-none" title="Esta operaÃ§Ã£o jÃ¡ tem planejamento salvo no banco â€” serÃ¡ sobrescrita">Salvo</span>
                                                         ) : (
-                                                            <span className="text-[7px] font-bold px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 uppercase leading-none" title="Esta operação ainda não tem planejamento no banco">Novo</span>
+                                                            <span className="text-[7px] font-bold px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 uppercase leading-none" title="Esta operaÃ§Ã£o ainda nÃ£o tem planejamento no banco">Novo</span>
                                                         )}
-                                                        {/* FIX #3: Aviso de duração zero — causaria colapso de datas */}
+                                                        {/* FIX #3: Aviso de duraÃ§Ã£o zero â€” causaria colapso de datas */}
                                                         {plan.selected && (parseInt(plan.duracao) || 0) === 0 && (
-                                                            <span title="Duração zero: não consumirá tempo no sequenciamento — todas as ops seguintes colapsarão nesta data" className="text-[7px] text-orange-600 font-bold bg-orange-50 border border-orange-200 px-1 py-0.5 rounded leading-none">⚠ 0d</span>
+                                                            <span title="DuraÃ§Ã£o zero: nÃ£o consumirÃ¡ tempo no sequenciamento â€” todas as ops seguintes colapsarÃ£o nesta data" className="text-[7px] text-orange-600 font-bold bg-orange-50 border border-orange-200 px-1 py-0.5 rounded leading-none">âš  0d</span>
                                                         )}
                                                         <span className="text-[11px] text-slate-800 font-medium truncate" title={group.desc}>
                                                             {group.desc}
@@ -1359,7 +1455,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 {planProgress.total > 0 && (
                     <div className="px-3 py-1 bg-slate-900 border-t border-slate-700 flex items-center gap-3 shrink-0">
                         <span className="text-[9px] text-slate-400 font-medium whitespace-nowrap">
-                            {planProgress.done}/{planProgress.total} operações planejadas
+                            {planProgress.done}/{planProgress.total} operaÃ§Ãµes planejadas
                         </span>
                         <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                             <div
@@ -1378,7 +1474,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 <div className="px-3 py-2 bg-slate-800 flex justify-between items-center rounded-b-lg shrink-0">
                     <div className="text-[9px] text-slate-400 font-medium tracking-wide flex items-center gap-2">
                         <GripVertical className="w-3 h-3 text-slate-500" />
-                        <span>Arraste as operações para reordenar o fluxo</span>
+                        <span>Arraste as operaÃ§Ãµes para reordenar o fluxo</span>
                         <span className="opacity-40 hidden sm:inline">| Ctrl+S para salvar</span>
                     </div>
                     <div className="flex gap-2">
@@ -1387,7 +1483,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         </button>
                         <button onClick={() => {
                             if (hasUnsavedChanges) {
-                                if (!confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
+                                if (!confirm('HÃ¡ alteraÃ§Ãµes nÃ£o salvas. Deseja fechar mesmo assim?')) return;
                             }
                             onClose();
                         }} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] font-bold text-white transition-colors">
@@ -1402,7 +1498,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     : 'bg-blue-600 hover:bg-blue-500 border-blue-500 shadow-blue-900/50'
                             }`}
                         >
-                            {loading ? 'Salvando...' : <><Save className="w-3.5 h-3.5" />{hasUnsavedChanges ? ' Salvar Alterações' : ' Salvar'}</>}
+                            {loading ? 'Salvando...' : <><Save className="w-3.5 h-3.5" />{hasUnsavedChanges ? ' Salvar AlteraÃ§Ãµes' : ' Salvar'}</>}
                         </button>
                     </div>
                 </div>
@@ -1410,7 +1506,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             </div>
         </div>
 
-        {/* ── Dialog de Confirmação de Salvamento ─────────────────────────── */}
+        {/* â”€â”€ Dialog de ConfirmaÃ§Ã£o de Salvamento â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {showSaveDialog && (
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm">
                 <div className="bg-white rounded-xl shadow-2xl w-[440px] border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
@@ -1430,16 +1526,16 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             <div className="flex justify-between text-[11px]">
                                 <span className="text-slate-500 font-medium">Modo</span>
                                 <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${calcDirection === 'backward' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                                    {calcDirection === 'backward' ? '← Regressivo' : '→ Progressivo'}
+                                    {calcDirection === 'backward' ? 'â† Regressivo' : 'â†’ Progressivo'}
                                 </span>
                             </div>
                             <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-500 font-medium">Operações</span>
+                                <span className="text-slate-500 font-medium">OperaÃ§Ãµes</span>
                                 <span className="font-bold text-slate-700">{planProgress.done} planejadas</span>
                             </div>
                             {(targetEndDate || targetStartDate) && (
                                 <div className="flex justify-between text-[11px]">
-                                    <span className="text-slate-500 font-medium">Data âncora</span>
+                                    <span className="text-slate-500 font-medium">Data Ã¢ncora</span>
                                     <span className="font-bold text-slate-700 font-mono">
                                         {(targetEndDate || targetStartDate)?.split('-').reverse().join('/')}
                                     </span>
@@ -1447,24 +1543,24 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             )}
                         </div>
 
-                        {/* Campo de Observação */}
+                        {/* Campo de ObservaÃ§Ã£o */}
                         <div>
                             <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wide flex items-center gap-1">
-                                <MessageSquare className="w-3 h-3" /> Observação <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional)</span>
+                                <MessageSquare className="w-3 h-3" /> ObservaÃ§Ã£o <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional)</span>
                             </label>
                             <textarea
                                 value={saveObservacao}
                                 onChange={e => setSaveObservacao(e.target.value)}
-                                placeholder="Ex: Revisão urgente cliente X — antecipado 3 dias..."
+                                placeholder="Ex: RevisÃ£o urgente cliente X â€” antecipado 3 dias..."
                                 rows={3}
                                 autoFocus
                                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent resize-none placeholder-slate-300"
                             />
-                            <p className="text-[10px] text-slate-400 mt-1">Esta observação será salva no histórico de versões.</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Esta observaÃ§Ã£o serÃ¡ salva no histÃ³rico de versÃµes.</p>
                         </div>
                     </div>
 
-                    {/* Ações */}
+                    {/* AÃ§Ãµes */}
                     <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex gap-2 justify-end">
                         <button
                             onClick={() => setShowSaveDialog(false)}
@@ -1483,87 +1579,66 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             </div>
         )}
 
-        {/* ── Sidebar de Histórico de Versões ─────────────────────────────── */}
+        {/* Sidebar de Historico de Versoes */}
         {showHistory && (
-            <div className="fixed right-0 top-0 bottom-0 w-[340px] bg-white border-l border-slate-200 shadow-2xl z-[55] flex flex-col animate-in slide-in-from-right duration-300">
-                {/* Header */}
+            <div className="fixed right-0 top-0 bottom-0 w-[340px] bg-white border-l border-slate-200 shadow-2xl z-[55] flex flex-col">
                 <div className="px-4 py-3 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2">
                         <History className="w-4 h-4 text-blue-400" />
-                        <span className="text-[12px] font-bold text-white uppercase tracking-wide">Histórico</span>
-                        <span className="text-[10px] text-slate-400 font-mono">OP {op.op}</span>
+                        <span className="text-[12px] font-bold text-white uppercase">Historico OP {op.op}</span>
                     </div>
-                    <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-white transition-colors">
-                        <X className="w-4 h-4" />
-                    </button>
+                    <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
                 </div>
-
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
                     {historyLoading ? (
-                        <div className="flex items-center justify-center h-32 text-slate-400">
-                            <Clock className="w-4 h-4 mr-2 animate-spin" /> Carregando...
-                        </div>
+                        <div className="flex items-center justify-center h-32 text-slate-400"><Clock className="w-4 h-4 mr-2 animate-spin" /> Carregando...</div>
                     ) : historyData.length === 0 ? (
                         <div className="text-center py-10 text-slate-400">
                             <History className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                            <p className="text-[11px]">Nenhum histórico encontrado</p>
-                            <p className="text-[10px] mt-1 opacity-60">Salve um planejamento para criar a primeira versão</p>
+                            <p className="text-[11px]">Nenhum historico encontrado</p>
+                            <p className="text-[10px] mt-1 opacity-60">Salve um planejamento para criar a primeira versao</p>
                         </div>
                     ) : historyData.map((lote, idx) => {
                         const isOpen = expandedLote === lote.lote_id;
                         const criado = lote.criado_em ? new Date(lote.criado_em) : null;
-                        const inicio = lote.inicio_geral?.split('T')[0]?.split('-').reverse().join('/');
-                        const fim = lote.fim_geral?.split('T')[0]?.split('-').reverse().join('/');
+                        const ops = lote.operacoes || [];
+                        const inicioOp = ops.length > 0 ? ops[ops.length-1]?.data_inicio?.split('T')[0]?.split('-').reverse().join('/') : null;
+                        const fimOp = ops.length > 0 ? ops[0]?.data_fim?.split('T')[0]?.split('-').reverse().join('/') : null;
                         return (
-                            <div key={lote.lote_id} className={`bg-white border rounded-lg overflow-hidden transition-all ${isOpen ? 'border-blue-300 shadow-md' : 'border-slate-200'}`}>
-                                {/* Cabeçalho do Lote */}
-                                <button
-                                    onClick={() => setExpandedLote(isOpen ? null : lote.lote_id)}
-                                    className="w-full px-3 py-2.5 flex items-start gap-2 text-left hover:bg-slate-50 transition-colors"
-                                >
-                                    <div className={`mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${idx === 0 ? 'bg-blue-500' : 'bg-slate-400'}`}>
-                                        {historyData.length - idx}
-                                    </div>
+                            <div key={lote.lote_id} className={`bg-white border rounded-lg overflow-hidden ${isOpen ? 'border-blue-300 shadow-md' : 'border-slate-200'}`}>
+                                <button onClick={() => setExpandedLote(isOpen ? null : lote.lote_id)} className="w-full px-3 py-2.5 flex items-start gap-2 text-left hover:bg-slate-50">
+                                    <div className={`mt-0.5 w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${idx === 0 ? 'bg-blue-500' : 'bg-slate-400'}`}>{lote.revisao}</div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between gap-1">
-                                            <span className="text-[10px] font-bold text-slate-700 truncate">
-                                                {lote.usuario_planejador || 'planejador'}
-                                            </span>
-                                            <span className="text-[9px] text-slate-400 whitespace-nowrap shrink-0">
-                                                {criado ? criado.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '–'}
-                                            </span>
+                                            <span className="text-[10px] font-bold text-slate-700 truncate">{lote.usuario || 'planejador'}</span>
+                                            <span className="text-[9px] text-slate-400 whitespace-nowrap shrink-0">{criado ? criado.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '-'}</span>
                                         </div>
-                                        {lote.observacao_lote && (
-                                            <p className="text-[10px] text-blue-600 italic truncate mt-0.5">"{lote.observacao_lote}"</p>
-                                        )}
-                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold ${lote.modo_calculo === 'backward' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
-                                                {lote.modo_calculo === 'backward' ? '← Regressivo' : '→ Progressivo'}
-                                            </span>
-                                            <span className="text-[9px] text-slate-400">{inicio} → {fim}</span>
-                                            <span className="text-[8px] text-slate-400">{lote.total_operacoes} ops</span>
+                                        {lote.observacao && <p className="text-[10px] text-blue-600 italic truncate mt-0.5">"{lote.observacao}"</p>}
+                                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold ${lote.modo_calculo === 'backward' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>{lote.modo_calculo === 'backward' ? '← Regres.' : '→ Progress.'}</span>
+                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold ${lote.dias_modo === 'business' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>{lote.dias_modo === 'business' ? 'Uteis' : 'Corridos'}</span>
+                                            {lote.inclui_sabado && <span className="text-[8px] bg-indigo-50 text-indigo-600 px-1 py-0.5 rounded font-bold">+Sab</span>}
+                                            {lote.inclui_domingo && <span className="text-[8px] bg-indigo-50 text-indigo-600 px-1 py-0.5 rounded font-bold">+Dom</span>}
+                                            {lote.inclui_st && <span className="text-[8px] bg-orange-50 text-orange-600 px-1 py-0.5 rounded font-bold">+ST</span>}
+                                            {inicioOp && fimOp && <span className="text-[9px] text-slate-400">{inicioOp}-{fimOp}</span>}
+                                            <span className="text-[8px] text-slate-400">{ops.length} ops</span>
                                         </div>
                                     </div>
-                                    <ChevronDown className={`w-3 h-3 text-slate-400 shrink-0 transition-transform mt-0.5 ${isOpen ? 'rotate-180' : ''}`} />
+                                    <ChevronDown className={`w-3 h-3 text-slate-400 shrink-0 mt-0.5 ${isOpen ? 'rotate-180' : ''}`} />
                                 </button>
-
-                                {/* Detalhe do Lote (expandido) */}
                                 {isOpen && (
                                     <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 space-y-2">
-                                        <div className="space-y-1 max-h-40 overflow-y-auto">
-                                            {(lote.operacoes || []).map((op, i) => (
+                                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                                            {ops.map((o, i) => (
                                                 <div key={i} className="flex items-center gap-1.5 text-[9px] text-slate-600">
-                                                    <span className="font-mono bg-white border border-slate-200 px-1 rounded text-[8px] text-slate-500">{op.recurso_code || op.operacao_codigo}</span>
-                                                    <span className="text-slate-400">{op.data_inicio?.split('T')[0]?.split('-').reverse().join('/')} → {op.data_fim?.split('T')[0]?.split('-').reverse().join('/')}</span>
-                                                    {op.duracao_dias && <span className="text-slate-400">({op.duracao_dias}d)</span>}
+                                                    <span className="font-mono bg-white border border-slate-200 px-1 rounded text-[8px] text-slate-500 shrink-0">{o.recurso_code || o.operacao_codigo}</span>
+                                                    <span className="text-slate-500 flex-1 truncate">{o.recurso_desc || ''}</span>
+                                                    <span className="text-slate-400 whitespace-nowrap">{o.data_inicio?.split('T')[0]?.split('-').reverse().join('/') } {o.data_fim?.split('T')[0]?.split('-').reverse().join('/' )}</span>
+                                                    {o.duracao_dias && <span className="text-slate-400">({o.duracao_dias}d)</span>}
                                                 </div>
                                             ))}
                                         </div>
-                                        <button
-                                            onClick={() => handleRestoreLote(lote)}
-                                            className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded flex items-center justify-center gap-1.5 transition-colors"
-                                        >
+                                        <button onClick={() => handleRestoreLote(lote)} className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded flex items-center justify-center gap-1.5">
                                             <RotateCcw className="w-3 h-3" /> Restaurar este plano
                                         </button>
                                     </div>
@@ -1572,12 +1647,282 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         );
                     })}
                 </div>
-
                 <div className="px-3 py-2 border-t border-slate-200 shrink-0">
-                    <p className="text-[9px] text-slate-400 text-center">Últimas {historyData.length} versões · Restaurar não salva automaticamente</p>
+                    <p className="text-[9px] text-slate-400 text-center">Ultimas {historyData.length} versoes - Restaurar nao salva automaticamente</p>
                 </div>
             </div>
         )}
+
+        {/* ── Painel de Ajuda Contextual ─────────────────────────────────── */}
+        {showHelp && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{background:'rgba(15,23,42,0.7)', backdropFilter:'blur(4px)'}}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+
+                    {/* Header */}
+                    <div className="px-6 py-4 bg-gradient-to-r from-emerald-700 to-emerald-600 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                                <BookOpen className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-[15px] font-bold text-white">Guia do Planejamento Sequencial</h2>
+                                <p className="text-emerald-100 text-[11px]">Documenta&ccedil;&atilde;o completa de todas as funcionalidades</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowHelp(false)} className="text-white/70 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+
+                        {/* O QUE E */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center"><Zap className="w-4 h-4 text-blue-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">O que &eacute; o Planejamento Sequencial?</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600 leading-relaxed">
+                                O <strong>Planejamento Sequencial</strong> &eacute; a ferramenta central de programa&ccedil;&atilde;o da produ&ccedil;&atilde;o. Ele permite definir, de forma visual e interativa,
+                                <strong> quando cada opera&ccedil;&atilde;o de uma OP ser&aacute; executada</strong>, em qual recurso (m&aacute;quina/centro de trabalho), por quantos dias e em que sequ&ecirc;ncia.
+                                Ao salvar, as datas s&atilde;o gravadas no banco de dados e ficam vis&iacute;veis para todos os usu&aacute;rios do sistema.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {[['Azul','Opera&ccedil;&atilde;o planejada normal','bg-blue-100 text-blue-700'],['Amarelo/laranja','Datas alteradas vs. baseline','bg-amber-100 text-amber-700'],['Verde','Opera&ccedil;&atilde;o conclu&iacute;da (bloqueada)','bg-green-100 text-green-700'],['Cinza','Opera&ccedil;&atilde;o n&atilde;o selecionada','bg-slate-100 text-slate-500']].map(([cor, desc, cls]) => (
+                                    <span key={cor} className={`text-[10px] px-2 py-1 rounded-full font-medium ${cls}`} dangerouslySetInnerHTML={{__html: `<b>${cor}:</b> ${desc}`}} />
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* DIRECAO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-indigo-100 rounded-lg flex items-center justify-center"><ArrowRight className="w-4 h-4 text-indigo-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">1. Dire&ccedil;&atilde;o do Sequenciamento</h3>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-bold text-blue-700 mb-1">&#8592; Regressivo (padr&atilde;o)</p>
+                                    <p className="text-[11px] text-slate-600">O c&aacute;lculo parte da <strong>Data Final (Entrega)</strong> e distribui as opera&ccedil;&otilde;es de tr&aacute;s para frente. Use quando voc&ecirc; sabe a data de entrega e quer descobrir quando come&ccedil;ar.</p>
+                                </div>
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-bold text-green-700 mb-1">&#8594; Progressivo</p>
+                                    <p className="text-[11px] text-slate-600">O c&aacute;lculo parte da <strong>Data Inicial (Fabrica&ccedil;&atilde;o)</strong> e distribui as opera&ccedil;&otilde;es em sequ&ecirc;ncia para frente. Use quando voc&ecirc; j&aacute; sabe quando pode come&ccedil;ar.</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* DATA ANCORA */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center"><Calendar className="w-4 h-4 text-slate-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">2. Data &Acirc;ncora e Compactar Datas</h3>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="flex items-start gap-3 text-[12px] text-slate-600">
+                                    <span className="shrink-0 mt-0.5 w-5 h-5 bg-slate-800 text-white rounded-full flex items-center justify-center text-[9px] font-bold">1</span>
+                                    <p><strong>Data de Entrega / Data de In&iacute;cio:</strong> &Eacute; a data &acirc;ncora do plano. Ao alter&aacute;-la, <strong>todas as opera&ccedil;&otilde;es s&atilde;o deslocadas proporcionalmente</strong> mantendo os intervalos entre elas. Nenhuma opera&ccedil;&atilde;o &eacute; reagrupada automaticamente.</p>
+                                </div>
+                                <div className="flex items-start gap-3 text-[12px] text-slate-600">
+                                    <span className="shrink-0 mt-0.5 w-5 h-5 bg-amber-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold">2</span>
+                                    <p><strong>Bot&atilde;o &ldquo;Compactar&rdquo; (&#9650;):</strong> Remove todos os espa&ccedil;os/folgas entre as opera&ccedil;&otilde;es e as reagrupa em cascata a partir da data &acirc;ncora. &Uacute;til quando h&aacute; lacunas indesejadas entre recursos. <em>Solicita confirma&ccedil;&atilde;o antes de executar.</em></p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* MODO DE DIAS */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-amber-100 rounded-lg flex items-center justify-center"><Briefcase className="w-4 h-4 text-amber-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">3. Modo de Contagem de Dias</h3>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1"><Globe className="w-3 h-3" /> Dias Corridos</p>
+                                    <p className="text-[11px] text-slate-500">Conta todos os dias do calend&aacute;rio, incluindo s&aacute;bados e domingos. Ideal para prazos de entrega.</p>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1"><Briefcase className="w-3 h-3" /> Dias &Uacute;teis</p>
+                                    <p className="text-[11px] text-slate-500">Conta apenas dias de semana (seg-sex). S&aacute;bado e domingo s&atilde;o pulados no c&aacute;lculo de dura&ccedil;&atilde;o.</p>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-bold text-slate-700 mb-1">+S&aacute;b / +Dom</p>
+                                    <p className="text-[11px] text-slate-500">Disponível no modo &ldquo;Dias &Uacute;teis&rdquo;. Adiciona s&aacute;bado e/ou domingo como dias &uacute;teis de trabalho.</p>
+                                </div>
+                            </div>
+                            <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-2.5">
+                                <p className="text-[11px] text-orange-700"><strong>Incluir &ldquo;ST&rdquo; no c&aacute;lculo:</strong> Quando ativo, opera&ccedil;&otilde;es do tipo Servi&ccedil;o de Terceiros (c&oacute;digo &ldquo;ST&rdquo;) s&atilde;o inclu&iacute;das no sequenciamento. Por padr&atilde;o ficam fora pois n&atilde;o dependem da f&aacute;brica.</p>
+                            </div>
+                        </section>
+
+                        {/* VISUALIZACAO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center"><MousePointer className="w-4 h-4 text-purple-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">4. Visualiza&ccedil;&atilde;o: Lista vs. Gantt</h3>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-[11px] font-bold text-slate-700 mb-2">Modo Lista</p>
+                                    <ul className="space-y-1.5">
+                                        {['Exibe cada recurso como uma linha com inputs de data e dura&ccedil;&atilde;o','Clique no recurso para expandir e ver todas as OPs vinculadas','Edite a dura&ccedil;&atilde;o em dias diretamente no campo ou nos bot&otilde;es +/&#8211;','Datas de in&iacute;cio e fim edit&aacute;veis por campos de data','Marque/desmarque opera&ccedil;&otilde;es para incluir ou excluir do planejamento'].map((t,i) => (
+                                            <li key={i} className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                                                <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                                                <span dangerouslySetInnerHTML={{__html:t}} />
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div>
+                                    <p className="text-[11px] font-bold text-slate-700 mb-2">Modo Gantt</p>
+                                    <ul className="space-y-1.5">
+                                        {['Visualiza&ccedil;&atilde;o gr&aacute;fica com barras de tempo por recurso','<strong>Arraste as barras</strong> horizontalmente para mover as datas','Clique e segure na barra para iniciar o arrasto','A barra muda de cor (laranja) quando difere do baseline','Fim de semana destacado em cinza (modo dias &uacute;teis)'].map((t,i) => (
+                                            <li key={i} className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                                                <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                                                <span dangerouslySetInnerHTML={{__html:t}} />
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* VINCULACAO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-teal-100 rounded-lg flex items-center justify-center"><Link className="w-4 h-4 text-teal-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">5. Vincular Opera&ccedil;&otilde;es (Grupos)</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600 mb-3">
+                                O bot&atilde;o <strong>&#128279; Vincular</strong> permite agrupar dois ou mais recursos para que ocupem o mesmo intervalo de datas no planejamento &mdash; &uacute;til quando m&uacute;ltiplas opera&ccedil;&otilde;es ocorrem em paralelo.
+                            </p>
+                            <ol className="space-y-1.5">
+                                {['Clique em &ldquo;Vincular&rdquo; para entrar no modo de sele&ccedil;&atilde;o','Clique em 2 ou mais recursos que devem ter as mesmas datas','Clique novamente em &ldquo;Vincular&rdquo; para confirmar o grupo','Os recursos vinculados ficam marcados com &iacute;cone de corrente','Para desvincular, selecione o grupo e clique em &ldquo;Desvincular&rdquo;'].map((t,i) => (
+                                    <li key={i} className="flex items-start gap-2 text-[11px] text-slate-600">
+                                        <span className="shrink-0 w-4 h-4 bg-teal-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold mt-0.5">{i+1}</span>
+                                        <span dangerouslySetInnerHTML={{__html:t}} />
+                                    </li>
+                                ))}
+                            </ol>
+                        </section>
+
+                        {/* REORDENACAO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center"><GripVertical className="w-4 h-4 text-slate-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">6. Reordenar Opera&ccedil;&otilde;es (Drag &amp; Drop)</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600 mb-2">
+                                A <strong>ordem dos recursos</strong> define a sequ&ecirc;ncia do c&aacute;lculo em cascata. Recursos no topo s&atilde;o executados primeiro (no modo Regressivo, s&atilde;o os &uacute;ltimos a encerrar).
+                            </p>
+                            <ul className="space-y-1.5">
+                                {['Segure o &iacute;cone <b>&#9776;</b> (grip) e arraste a linha para cima ou para baixo','A ordem &eacute; salva automaticamente no banco de dados (compartilhada com outros usu&aacute;rios)','O recalculo da cascata s&oacute; ocorre ao soltar (n&atilde;o durante o arrasto) para evitar lentid&atilde;o','Bot&otilde;es &#9650; &#9660; tamb&eacute;m reordenam na vis&atilde;o lista'].map((t,i) => (
+                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                                        <span dangerouslySetInnerHTML={{__html:t}} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+
+                        {/* OPERACOES BLOQUEADAS */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center"><Lock className="w-4 h-4 text-green-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">7. Opera&ccedil;&otilde;es Bloqueadas (Conclu&iacute;das)</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600">
+                                Recursos onde a <strong>quantidade produzida &ge; quantidade planejada</strong> aparecem bloqueados (c&iacute;clo verde com cadeado). Eles <strong>n&atilde;o participam do recalculo</strong> e suas datas n&atilde;o podem ser alteradas &mdash; garantindo integridade do hist&oacute;rico de produ&ccedil;&atilde;o j&aacute; realizada.
+                            </p>
+                        </section>
+
+                        {/* HISTORICO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center"><History className="w-4 h-4 text-blue-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">8. Hist&oacute;rico de Vers&otilde;es</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600 mb-3">
+                                Clique em <strong>&ldquo;Hist&oacute;rico&rdquo;</strong> para abrir o painel lateral com todas as vers&otilde;es de planejamento salvas para esta OP. Cada vers&atilde;o (&ldquo;lote&rdquo;) mostra:
+                            </p>
+                            <ul className="space-y-1 text-[11px] text-slate-600">
+                                {['Usu&aacute;rio que salvou e data/hora','Modo de c&aacute;lculo e prefer&ecirc;ncias usadas (dias &uacute;teis, s&aacute;bado, ST)','Intervalo total das opera&ccedil;&otilde;es','Detalhe por recurso (expandindo o card)','Bot&atilde;o &ldquo;Restaurar este plano&rdquo; &mdash; carrega as datas antigas na tela (requer salvar para confirmar)'].map((t,i) => (
+                                    <li key={i} className="flex items-start gap-1.5">
+                                        <CheckCircle className="w-3 h-3 text-blue-500 shrink-0 mt-0.5" />
+                                        <span dangerouslySetInnerHTML={{__html:t}} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+
+                        {/* SALVAR */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center"><Save className="w-4 h-4 text-blue-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">9. Salvar o Planejamento</h3>
+                            </div>
+                            <ol className="space-y-2">
+                                {[
+                                    'Clique em <strong>&ldquo;Salvar Planejamento&rdquo;</strong> na barra inferior.',
+                                    'Uma janela de confirma&ccedil;&atilde;o exibe um resumo das opera&ccedil;&otilde;es a serem salvas.',
+                                    'Adicione uma <strong>observa&ccedil;&atilde;o opcional</strong> descrevendo a revis&atilde;o (ex: &ldquo;Ajuste por falta de mat&eacute;ria-prima&rdquo;).',
+                                    'Confirme. Os dados s&atilde;o gravados no banco de dados e <strong>vis&iacute;veis imediatamente para todos os usu&aacute;rios</strong>.',
+                                    'As prefer&ecirc;ncias (modo de dias, ordem dos recursos) tamb&eacute;m s&atilde;o salvas e restauradas na pr&oacute;xima vez que qualquer usu&aacute;rio abrir esta OP.'
+                                ].map((t,i) => (
+                                    <li key={i} className="flex items-start gap-2 text-[11px] text-slate-600">
+                                        <span className="shrink-0 w-4 h-4 bg-blue-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold mt-0.5">{i+1}</span>
+                                        <span dangerouslySetInnerHTML={{__html:t}} />
+                                    </li>
+                                ))}
+                            </ol>
+                        </section>
+
+                        {/* IMPRESSAO */}
+                        <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center"><Printer className="w-4 h-4 text-slate-600" /></div>
+                                <h3 className="text-[13px] font-bold text-slate-800">10. Impress&atilde;o / Exportar PDF</h3>
+                            </div>
+                            <p className="text-[12px] text-slate-600">
+                                O bot&atilde;o <strong>Imprimir</strong> gera um PDF do Gantt com o planejamento atual (mesmo que ainda n&atilde;o salvo), contendo todas as opera&ccedil;&otilde;es, datas e a linha do tempo visual. O arquivo &eacute; baixado automaticamente.
+                            </p>
+                        </section>
+
+                        {/* ALERTAS */}
+                        <section className="bg-amber-50 rounded-xl border border-amber-200 p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                <h3 className="text-[13px] font-bold text-amber-800">Pontos de Aten&ccedil;&atilde;o</h3>
+                            </div>
+                            <ul className="space-y-2">
+                                {[
+                                    '<strong>N&atilde;o feche o modal sem salvar</strong> &mdash; o sistema alerta sobre altera&ccedil;&otilde;es n&atilde;o salvas, mas as datas n&atilde;o s&atilde;o enviadas automaticamente.',
+                                    '<strong>Restaurar um plano hist&oacute;rico</strong> apenas carrega as datas na tela. &Eacute; necess&aacute;rio salvar novamente para que a restaura&ccedil;&atilde;o seja efetivada no banco.',
+                                    '<strong>Compactar Datas</strong> &eacute; irrevers&iacute;vel na sess&atilde;o atual &mdash; use com cuidado em planos com espa&ccedil;amentos intencionais entre opera&ccedil;&otilde;es.',
+                                    'O indicador <span class="bg-amber-100 text-amber-700 px-1 rounded text-[10px] font-bold">N&atilde;o salvo</span> pisca sempre que h&aacute; altera&ccedil;&otilde;es pendentes.'
+                                ].map((t,i) => (
+                                    <li key={i} className="flex items-start gap-2 text-[11px] text-amber-800">
+                                        <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                                        <span dangerouslySetInnerHTML={{__html:t}} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+                        <p className="text-[10px] text-slate-400">Planejamento Sequencial &mdash; MetalFisa PCP System</p>
+                        <button onClick={() => setShowHelp(false)} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-colors">
+                            Entendido, fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         </>
     );
 }
