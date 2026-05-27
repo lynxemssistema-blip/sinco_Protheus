@@ -894,7 +894,6 @@ router.get('/vertical/:operacao', async (req, res) => {
                MAX(data_fim) as ultima_data,
                GROUP_CONCAT(DISTINCT usuario SEPARATOR ', ') as usuarios
         FROM app_production_appointments
-        WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
         GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
       `, [...opCodes, ...opCodOperacoes]);
       appointments = aRows;
@@ -907,12 +906,15 @@ router.get('/vertical/:operacao', async (req, res) => {
       try {
         const prodPlaceholders = codigosProdutos.map(() => '?').join(',');
         const [docsResult] = await mysqlPool.query(
-          `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${prodPlaceholders})`,
+          `SELECT produto_codigo, url_arquivo, tipo, titulo FROM produtos_docs WHERE produto_codigo IN (${prodPlaceholders})`,
           codigosProdutos
         );
         docsResult.forEach(d => {
-          if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
-          docsMap[d.produto_codigo].push(d);
+          // Filtrar apenas arquivos válidos (com URL preenchida)
+          if (d.url_arquivo && String(d.url_arquivo).trim() !== '') {
+            if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
+            docsMap[d.produto_codigo].push(d);
+          }
         });
       } catch (err) {
         console.error('⚠️ [VERTICAL] Erro ao buscar arquivos PDF:', err.message);
@@ -962,7 +964,8 @@ router.get('/vertical/:operacao', async (req, res) => {
         usuarios_apontamento: a ? a.usuarios : null,
         ultima_data_apontamento: a ? a.ultima_data : null,
         tem_arquivos,
-        primeiro_arquivo
+        primeiro_arquivo,
+        arquivos: docs
       };
     });
 

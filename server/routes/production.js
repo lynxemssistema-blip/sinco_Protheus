@@ -890,7 +890,19 @@ router.get('/', async (req, res) => {
             params.push(paddedPedido); 
             pn++; 
         }
-        if (item)     { s1Conds.push(`TRIM(c2.c2_item) ILIKE $${pn++}`);  params.push(`%${item.trim()}%`); }
+        if (item) {
+            const itemArr = item.split(',').map(s => s.trim()).filter(Boolean);
+            if (itemArr.length === 1) {
+                s1Conds.push(`TRIM(c2.c2_item) ILIKE $${pn++}`);
+                params.push(`%${itemArr[0]}%`);
+            } else if (itemArr.length > 1) {
+                // Exact match for each value (items are usually '01', '02', etc.)
+                const placeholders = itemArr.map((_, i) => `TRIM(c2.c2_item) ILIKE $${pn + i}`).join(' OR ');
+                s1Conds.push(`(${placeholders})`);
+                for (const it of itemArr) { params.push(`%${it}%`); }
+                pn += itemArr.length;
+            }
+        }
         if (sequencia){ s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`);params.push(`%${sequencia.trim()}%`); }
         if (produto) {
             s1Conds.push(`TRIM(c2.c2_produto) = $${pn}`);

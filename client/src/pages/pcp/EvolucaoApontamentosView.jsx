@@ -520,9 +520,9 @@ export default function EvolucaoApontamentosView({
                             </span>
                         </div>
 
-                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
+                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden overflow-x-auto max-h-56 overflow-y-auto">
                             <table className="w-full text-left text-xs">
-                                <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                                <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200 sticky top-0 z-10">
                                     <tr>
                                         <th className="p-2.5 pl-4">Operador</th>
                                         <th className="p-2.5">Setor de Atuação</th>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Plus, Search, Edit2, Trash2, X, Save, AlertCircle, Upload, Wrench, Copy, Check, Camera, FileText, Download, Star, Bell, Mail, MessageSquare, Calendar, CheckCircle2 } from 'lucide-react';
+import { Plus, Minus, Search, Edit2, Trash2, X, Save, AlertCircle, Upload, Wrench, Copy, Check, Camera, FileText, Download, Star, Bell, Mail, MessageSquare, Calendar, CheckCircle2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 export default function GestaoAtivos() {
     const [ativos, setAtivos] = useState([]);
@@ -30,7 +31,9 @@ export default function GestaoAtivos() {
         model: '',
         serial_number: '',
         status: 'available',
-        calibration_validity: ''
+        calibration_validity: '',
+        requires_calibration: true,
+        stock_quantity: 1
     });
 
     // Alerts and Users state
@@ -46,6 +49,10 @@ export default function GestaoAtivos() {
     const [existingAttachments, setExistingAttachments] = useState([]);
     const [loadingAttachments, setLoadingAttachments] = useState(false);
     const [mainPhotoName, setMainPhotoName] = useState(null);
+
+    // Transaction state
+    const [assetTransactions, setAssetTransactions] = useState([]);
+    const [loadingTransactions, setLoadingTransactions] = useState(false);
 
     const loadData = async () => {
         try {
@@ -90,7 +97,9 @@ export default function GestaoAtivos() {
                 model: ativo.model || '',
                 serial_number: ativo.serial_number || '',
                 status: ativo.status || 'available',
-                calibration_validity: ativo.calibration_validity ? ativo.calibration_validity.split('T')[0] : ''
+                calibration_validity: ativo.calibration_validity ? ativo.calibration_validity.split('T')[0] : '',
+                requires_calibration: ativo.requires_calibration !== 0 && ativo.requires_calibration !== false,
+                stock_quantity: ativo.stock_quantity || 1
             });
             setIsBulk(false);
             setQuantity(1);
@@ -117,6 +126,21 @@ export default function GestaoAtivos() {
             } catch (err) {
                 console.error('Erro ao carregar alertas:', err);
             }
+
+            // Carregar histórico de transações se for ferramenta geral
+            if (ativo.requires_calibration === 0 || ativo.requires_calibration === false) {
+                try {
+                    setLoadingTransactions(true);
+                    const resTransactions = await api.get(`/sgq/assets/${ativo.id}/transactions`);
+                    setAssetTransactions(resTransactions.data);
+                } catch (err) {
+                    console.error('Erro ao carregar transações:', err);
+                } finally {
+                    setLoadingTransactions(false);
+                }
+            } else {
+                setAssetTransactions([]);
+            }
         } else {
             setFormData({
                 id: null,
@@ -125,12 +149,29 @@ export default function GestaoAtivos() {
                 model: '',
                 serial_number: '',
                 status: 'available',
-                calibration_validity: ''
+                calibration_validity: '',
+                requires_calibration: true,
+                stock_quantity: 1
             });
             setIsBulk(false);
             setQuantity(1);
             setAlerts([]);
+            setAssetTransactions([]);
             setIsModalOpen(true);
+        }
+    };
+
+    const handleApplyAlertsToAll = async () => {
+        if (!window.confirm('Tem certeza que deseja aplicar essas regras de alerta a TODOS os ativos do sistema? Isso substituirá as regras atuais deles.')) return;
+        
+        try {
+            const loadingToast = toast.loading('Aplicando alertas em lote...');
+            await api.post('/sgq/assets/alerts/apply-all', { alerts });
+            toast.dismiss(loadingToast);
+            toast.success('Regras aplicadas a todos os ativos com sucesso!');
+        } catch (error) {
+            console.error('Erro ao aplicar alertas:', error);
+            toast.error(error.response?.data?.error || 'Erro ao aplicar regras de alerta.');
         }
     };
 
@@ -145,7 +186,9 @@ export default function GestaoAtivos() {
                 serial_number: formData.serial_number,
                 status: formData.status,
                 calibration_validity: formData.calibration_validity || null,
-                alerts: formData.calibration_validity ? alerts : [] // Só salva alertas se houver validade
+                requires_calibration: formData.requires_calibration,
+                stock_quantity: formData.stock_quantity,
+                alerts: formData.calibration_validity ? alerts : [] 
             };
 
             let savedAssetId = formData.id;
@@ -228,6 +271,16 @@ export default function GestaoAtivos() {
                 console.error(err);
                 alert("Erro ao excluir ativo.");
             }
+        }
+    };
+
+    const handleTransaction = async (id, type, amount = 1) => {
+        try {
+            await api.post(`/sgq/assets/${id}/transaction`, { type, quantity: amount });
+            loadData();
+        } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.error || "Erro ao atualizar estoque.");
         }
     };
 
@@ -432,12 +485,22 @@ export default function GestaoAtivos() {
                                             <div className="text-xs text-slate-500 font-mono mt-0.5">{a.serial_number ? `S/N: ${a.serial_number}` : ''}</div>
                                         </td>
                                         <td className="p-4 text-center">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center ${getStatusStyle(a.status)}`}>
-                                                {getStatusLabel(a.status)}
-                                            </span>
+                                            {a.requires_calibration === 0 || a.requires_calibration === false ? (
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <span className="px-2.5 py-1 bg-slate-100 text-slate-800 font-bold rounded">Estoque: {a.stock_quantity}</span>
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <button onClick={() => handleTransaction(a.id, 'entrada', 1)} className="bg-green-100 hover:bg-green-200 text-green-700 p-0.5 rounded" title="Entrada (+1)"><Plus size={12} /></button>
+                                                        <button onClick={() => handleTransaction(a.id, 'baixa', 1)} className="bg-red-100 hover:bg-red-200 text-red-700 p-0.5 rounded" title="Baixa (-1)"><Minus size={12} /></button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center ${getStatusStyle(a.status)}`}>
+                                                    {getStatusLabel(a.status)}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="p-4 text-center">
-                                            {a.calibration_validity ? (
+                                            {a.calibration_validity && a.requires_calibration ? (
                                                 <span className={`text-sm font-medium ${new Date(a.calibration_validity) < new Date() ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
                                                     {new Date(a.calibration_validity).toLocaleDateString('pt-BR')}
                                                     {new Date(a.calibration_validity) < new Date() && ' (Vencida)'}
@@ -641,7 +704,7 @@ export default function GestaoAtivos() {
             {/* Modal CRUD */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                 <Wrench className="w-5 h-5 text-indigo-600" />
@@ -685,6 +748,23 @@ export default function GestaoAtivos() {
                                     </div>
                                 )}
 
+                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between mb-4">
+                                    <div>
+                                        <h4 className="text-sm font-bold text-slate-800">Rastreabilidade e Calibração</h4>
+                                        <p className="text-xs text-slate-500">Desative para ferramentas gerais controladas apenas por saldo de estoque.</p>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            className="sr-only peer" 
+                                            checked={formData.requires_calibration} 
+                                            onChange={(e) => setFormData({...formData, requires_calibration: e.target.checked})} 
+                                            disabled={!!formData.id}
+                                        />
+                                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </label>
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-1">Nome / Descrição *</label>
                                     <input 
@@ -698,16 +778,32 @@ export default function GestaoAtivos() {
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-bold text-slate-700 mb-1">Patrimônio</label>
-                                        <input 
-                                            type="text" 
-                                            value={formData.patrimonio}
-                                            onChange={e => setFormData({...formData, patrimonio: e.target.value.toUpperCase()})}
-                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
-                                            placeholder="Ex: MTL-1029"
-                                        />
-                                    </div>
+                                    {formData.requires_calibration ? (
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Patrimônio</label>
+                                            <input 
+                                                type="text" 
+                                                value={formData.patrimonio}
+                                                onChange={e => setFormData({...formData, patrimonio: e.target.value.toUpperCase()})}
+                                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                                placeholder="Ex: MTL-1029"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Quantidade em Estoque</label>
+                                            <input 
+                                                type="number" 
+                                                min="0"
+                                                value={formData.stock_quantity}
+                                                onChange={e => setFormData({...formData, stock_quantity: parseInt(e.target.value, 10) || 0})}
+                                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                                                disabled={!!formData.id}
+                                                title={formData.id ? "Ajuste o saldo pelos botões + e - na tela principal" : ""}
+                                            />
+                                            {formData.id && <p className="text-xs text-slate-500 mt-1">O saldo deve ser ajustado pelos botões de + e - na tabela principal para gerar histórico.</p>}
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="block text-sm font-bold text-slate-700 mb-1">Status</label>
                                         <select 
@@ -733,33 +829,37 @@ export default function GestaoAtivos() {
                                             value={formData.model}
                                             onChange={e => setFormData({...formData, model: e.target.value})}
                                             className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                            placeholder="Ex: Bosch GLM 50"
+                                            placeholder="Ex: Bosch GLM 50 / Stanley"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-slate-700 mb-1">Número de Série</label>
-                                        <input 
-                                            type="text" 
-                                            value={formData.serial_number}
-                                            onChange={e => setFormData({...formData, serial_number: e.target.value})}
-                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
-                                        />
-                                    </div>
+                                    {formData.requires_calibration && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Número de Série</label>
+                                            <input 
+                                                type="text" 
+                                                value={formData.serial_number}
+                                                onChange={e => setFormData({...formData, serial_number: e.target.value})}
+                                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-1">Validade da Calibração (Opcional)</label>
-                                    <input 
-                                        type="date" 
-                                        value={formData.calibration_validity}
-                                        onChange={e => setFormData({...formData, calibration_validity: e.target.value})}
-                                        className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Preencha apenas para instrumentos de medição que requerem calibração.</p>
-                                </div>
+                                {formData.requires_calibration && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Validade da Calibração (Opcional)</label>
+                                        <input 
+                                            type="date" 
+                                            value={formData.calibration_validity}
+                                            onChange={e => setFormData({...formData, calibration_validity: e.target.value})}
+                                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">Preencha apenas para instrumentos de medição que requerem calibração.</p>
+                                    </div>
+                                )}
 
                                 {/* Sessão de Alertas Inteligentes (só mostra se houver validade) */}
-                                {formData.calibration_validity && (
+                                {formData.requires_calibration && formData.calibration_validity && (
                                     <div className="border-t border-slate-200 pt-4 mt-4 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
                                         <div className="flex items-center justify-between mb-3">
                                             <h3 className="text-md font-bold text-indigo-900 flex items-center gap-2">
@@ -767,13 +867,25 @@ export default function GestaoAtivos() {
                                                 Alertas Automáticos de Vencimento
                                             </h3>
                                             {alerts.length < 3 && (
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => setAlerts([...alerts, { days_before: 30, notify_email: true, notify_whatsapp: false, target_users: [] }])}
-                                                    className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 transition-colors flex items-center gap-1"
-                                                >
-                                                    <Plus size={14} /> Novo Alerta
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    {alerts.length > 0 && (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={handleApplyAlertsToAll}
+                                                            className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 transition-colors flex items-center gap-1"
+                                                            title="Aplica exatamente estas regras a todos os equipamentos do sistema."
+                                                        >
+                                                            Aplicar a Todos
+                                                        </button>
+                                                    )}
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setAlerts([...alerts, { days_before: 30, notify_email: true, notify_whatsapp: false, target_users: [] }])}
+                                                        className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 transition-colors flex items-center gap-1"
+                                                    >
+                                                        <Plus size={14} /> Novo Alerta
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                         
@@ -1016,6 +1128,63 @@ export default function GestaoAtivos() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Mostrar Histórico de Movimentações para itens não calibráveis */}
+                                {formData.id && !formData.requires_calibration && (
+                                    <div className="border-t border-slate-200 pt-4 mt-4">
+                                        <h3 className="text-md font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                            Histórico de Movimentações (Estoque)
+                                        </h3>
+                                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                            <table className="w-full text-left text-sm text-slate-600">
+                                                <thead className="bg-slate-50 border-b border-slate-200">
+                                                    <tr>
+                                                        <th className="p-2 font-semibold">Data</th>
+                                                        <th className="p-2 font-semibold">Tipo</th>
+                                                        <th className="p-2 font-semibold text-center">Quantidade</th>
+                                                        <th className="p-2 font-semibold">Usuário</th>
+                                                        <th className="p-2 font-semibold">Detalhes</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {loadingTransactions ? (
+                                                        <tr>
+                                                            <td colSpan="5" className="p-4 text-center text-slate-500">Carregando...</td>
+                                                        </tr>
+                                                    ) : assetTransactions.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan="5" className="p-4 text-center text-slate-500">Nenhuma movimentação registrada.</td>
+                                                        </tr>
+                                                    ) : (
+                                                        assetTransactions.map(tx => (
+                                                            <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-2">{new Date(tx.created_at).toLocaleString('pt-BR')}</td>
+                                                                <td className="p-2">
+                                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                                                        tx.type === 'entrada' ? 'bg-green-100 text-green-700' :
+                                                                        tx.type === 'baixa' ? 'bg-red-100 text-red-700' :
+                                                                        tx.type === 'caixa_adicionar' ? 'bg-blue-100 text-blue-700' :
+                                                                        'bg-orange-100 text-orange-700'
+                                                                    }`}>
+                                                                        {tx.type === 'entrada' ? 'Entrada (+)' :
+                                                                         tx.type === 'baixa' ? 'Baixa (-)' :
+                                                                         tx.type === 'caixa_adicionar' ? 'Atribuição (Caixa)' :
+                                                                         'Devolução (Caixa)'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-2 text-center font-bold">
+                                                                    {['baixa', 'caixa_adicionar'].includes(tx.type) ? '-' : '+'}{tx.quantity}
+                                                                </td>
+                                                                <td className="p-2">{tx.user_name || 'Sistema'}</td>
+                                                                <td className="p-2 text-xs text-slate-500">{tx.notes || '-'}</td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
 
                             </form>
                         </div>

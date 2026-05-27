@@ -572,21 +572,74 @@ export default function VerticalAppointmentPage() {
                                                         <div className="text-xs text-slate-500 truncate mt-0.5" title={row.desc_produto}>{row.desc_produto}</div>
                                                     </div>
                                                     {row.tem_arquivos ? (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (row.primeiro_arquivo) {
-                                                                    const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`);
-                                                                    window.open(viewUrl, '_blank');
-                                                                }
-                                                            }}
-                                                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg flex-shrink-0 transition-colors"
-                                                            title="Ver Desenho / PDF"
-                                                        >
-                                                            <FileText className="w-4 h-4" />
-                                                        </button>
+                                                        <div className="relative group">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (row.arquivos && row.arquivos.length === 1) {
+                                                                        const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.arquivos[0].url_arquivo)}`);
+                                                                        window.open(viewUrl, '_blank');
+                                                                    } else if (row.primeiro_arquivo && (!row.arquivos || row.arquivos.length === 0)) {
+                                                                        const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`);
+                                                                        window.open(viewUrl, '_blank');
+                                                                    }
+                                                                }}
+                                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg flex-shrink-0 transition-colors"
+                                                                title={row.arquivos && row.arquivos.length > 1 ? "Ver Arquivos" : "Ver Desenho / PDF"}
+                                                            >
+                                                                <FileText className="w-4 h-4" />
+                                                                {row.arquivos && row.arquivos.length > 1 && (
+                                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full shadow-sm ring-1 ring-white">
+                                                                        {row.arquivos.length}
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                            {row.arquivos && row.arquivos.length > 1 && (
+                                                                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 flex flex-col p-1.5 gap-0.5">
+                                                                    <div className="px-2 py-1.5 border-b border-slate-100 mb-1">
+                                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Arquivos do Produto</span>
+                                                                    </div>
+                                                                    {row.arquivos.filter(arq => arq.url_arquivo && arq.url_arquivo.trim() !== '').map((arq, idx) => {
+                                                                        const docType = arq.tipo || 'Desenho'; // e.g., Desenho, Gabarito
+                                                                        const fileName = arq.titulo || `Arquivo ${idx + 1}`;
+                                                                        
+                                                                        // Extract extension from url_arquivo or titulo
+                                                                        const extMatch = (arq.url_arquivo || fileName).match(/\.([a-zA-Z0-9]+)$/);
+                                                                        const ext = extMatch ? extMatch[1].toUpperCase() : 'DOC';
+
+                                                                        // Definir cores pela extensão ou tipo
+                                                                        let typeColor = 'bg-slate-100 text-slate-500';
+                                                                        if (ext === 'PDF') typeColor = 'bg-red-100 text-red-600 border-red-200';
+                                                                        else if (ext === 'DXF') typeColor = 'bg-blue-100 text-blue-600 border-blue-200';
+                                                                        else if (ext === 'DWG') typeColor = 'bg-emerald-100 text-emerald-600 border-emerald-200';
+                                                                        else if (ext === 'STEP' || ext === 'STP') typeColor = 'bg-indigo-100 text-indigo-600 border-indigo-200';
+
+                                                                        return (
+                                                                            <button
+                                                                                key={idx}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(arq.url_arquivo)}`);
+                                                                                    window.open(viewUrl, '_blank');
+                                                                                }}
+                                                                                className="text-left px-2 py-1.5 hover:bg-slate-50 rounded-md transition-colors flex flex-col group/item border border-transparent hover:border-slate-200"
+                                                                                title={fileName}
+                                                                            >
+                                                                                <div className="flex items-center justify-between w-full">
+                                                                                    <span className="text-xs font-bold text-slate-700 group-hover/item:text-blue-600">{docType}</span>
+                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${typeColor}`}>
+                                                                                        {ext}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <span className="text-[10px] text-slate-400 truncate w-full mt-0.5" title={fileName}>{fileName}</span>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     ) : (
-                                                        <div className="text-slate-300 p-1.5 flex-shrink-0" title="Sem desenho anexado">
+                                                        <div className="text-slate-300 p-1.5 flex-shrink-0" title="Sem arquivos anexados">
                                                             <FileText className="w-4 h-4" />
                                                         </div>
                                                     )}

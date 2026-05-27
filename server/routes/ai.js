@@ -4,12 +4,13 @@ const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const mammoth = require('mammoth');
+const pdf = require('pdf-parse');
 const docx = require('docx');
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
 
 router.post('/document-assist', async (req, res) => {
     try {
-        const { documentContext, selectedText, prompt } = req.body;
+        const { documentContext, selectedText, prompt, modelName, extraContext } = req.body;
 
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey || apiKey === 'sua_api_key_aqui') {
@@ -18,7 +19,7 @@ router.post('/document-assist', async (req, res) => {
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash",
+            model: modelName || "gemini-2.5-flash",
             generationConfig: {
                 temperature: 0.4,
                 topP: 1,
@@ -27,8 +28,11 @@ router.post('/document-assist', async (req, res) => {
             }
         });
 
-        const systemPrompt = `Você é um Assistente especializado em redigir documentos do Sistema de Gestão da Qualidade (SGQ) com base na ISO 9001. 
-O usuário está escrevendo/editando um documento e precisa da sua ajuda.
+        const systemPrompt = `Você é um Assistente especializado em redigir documentos do Sistema de Gestão da Qualidade (SGQ) da MetalFisa.
+O usuário está escrevendo/editando um "Procedimento da Qualidade (PQ)" e precisa da sua ajuda.
+A estrutura padrão deste documento é:
+1. OBJETIVO, 2. ABRANGÊNCIA, 3. SIGLAS, 4. DEFINIÇÕES, 5. RESPONSABILIDADES, 6. PROCEDIMENTOS, 7. INFORMAÇÃO DOCUMENTADA, 8. ABORDAGEM A RISCOS, 9. ANEXOS, 10. HISTÓRICO DE REVISÕES.
+
 Abaixo está o CONTEXTO GERAL (o texto completo do documento atual), o TEXTO SELECIONADO pelo usuário (se houver), e a INSTRUÇÃO do que ele quer.
 
 CONTEXTO DO DOCUMENTO (EM HTML):
@@ -40,19 +44,79 @@ ${selectedText || 'Nenhum texto selecionado.'}
 INSTRUÇÃO DO USUÁRIO:
 ${prompt}
 
+${extraContext && extraContext.type === 'text' ? `CONTEXTO ADICIONAL FORNECIDO EM ANEXO:
+${extraContext.data}` : ''}
+
 Sua tarefa:
-Forneça a melhoria, correção, ou adição solicitada. 
+Forneça a melhoria, correção, ou adição solicitada, respeitando a estrutura do PQ da MetalFisa. 
 Responda APENAS com o texto (ou HTML formatado de forma simples com p, b, i, ul, li) que deve ser inserido ou substituir o texto selecionado. 
 Não inclua explicações extras como "Aqui está sua sugestão:", apenas retorne o conteúdo útil para ser copiado.`;
 
-        const result = await model.generateContent(systemPrompt);
+        let parts = [{ text: systemPrompt }];
+        
+        if (extraContext && extraContext.type === 'image') {
+            parts.unshift({
+                inlineData: {
+                    data: extraContext.data,
+                    mimeType: extraContext.mimeType
+                }
+            });
+        }
+
+        const result = await model.generateContent(parts);
         const responseText = await result.response.text();
 
         res.json({ suggestion: responseText.trim() });
 
     } catch (err) {
         console.error('❌ Erro na rota AI /document-assist:', err);
+        
+        if (err.status === 429) {
+            return res.status(429).json({ error: 'Cota de requisições excedida na API do Gemini. Tente novamente em um minuto.' });
+        }
+        
         res.status(500).json({ error: err.message || 'Erro ao processar instrução com IA' });
+    }
+});
+
+
+// Extract text from PDF or DOCX for AI context
+router.post('/extract-context', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+        }
+
+        const ext = req.file.originalname.split('.').pop().toLowerCase();
+        
+        if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+            return res.json({ 
+                type: 'image', 
+                mimeType: req.file.mimetype, 
+                data: req.file.buffer.toString('base64') 
+            });
+        }
+
+        let text = '';
+        if (ext === 'pdf') {
+            const data = await pdf(req.file.buffer);
+            text = data.text;
+        } else if (ext === 'docx' || ext === 'doc') {
+            const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+            text = result.value;
+        } else {
+            return res.status(400).json({ error: 'Formato não suportado. Use PDF, DOCX, ou Imagens (PNG/JPG).' });
+        }
+
+        // Limit text length
+        if (text.length > 30000) {
+            text = text.substring(0, 30000) + '... (texto truncado)';
+        }
+
+        res.json({ type: 'text', text });
+    } catch (err) {
+        console.error('❌ Erro na extração de contexto:', err);
+        res.status(500).json({ error: 'Falha ao extrair texto do arquivo.' });
     }
 });
 

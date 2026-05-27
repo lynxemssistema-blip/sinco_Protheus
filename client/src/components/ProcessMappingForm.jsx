@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Save, ArrowRight, User, Box, FileText, CheckSquare, Target } from 'lucide-react';
 import './ProcessMappingForm.css'; // We'll create simple styles
+
+import api from '../services/api';
 
 const generateId = () => {
     return (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') 
@@ -9,37 +11,51 @@ const generateId = () => {
 };
 
 const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
+    const [sgqDocuments, setSgqDocuments] = useState([]);
     const [formData, setFormData] = useState({
         sector: '',
         leader: '',
-        inputsList: [{ id: generateId(), supplier: '', input: '' }],
+        inputsList: [{ id: generateId(), supplier: '', input: '', documents: [] }],
         activity: '',
-        outputsList: [{ id: generateId(), output: '', customer: '' }],
+        outputsList: [{ id: generateId(), output: '', customer: '', documents: [] }],
         mission: '',
-        supportActivities: ''
+        supportActivities: '',
+        supportDocuments: []
     });
 
     React.useEffect(() => {
+        // Fetch SGQ Documents
+        const fetchDocs = async () => {
+            try {
+                const res = await api.get('/sgq-documents');
+                setSgqDocuments(res.data);
+            } catch (err) {
+                console.error("Erro ao carregar documentos SGQ:", err);
+            }
+        };
+        fetchDocs();
+
         if (initialData) {
             // Migration logic for legacy data
             let newInputs = initialData.inputsList ? [...initialData.inputsList] : [];
             if (newInputs.length === 0 && (initialData.supplier || initialData.inputs)) {
-                newInputs.push({ id: generateId(), supplier: initialData.supplier || '', input: initialData.inputs || '' });
+                newInputs.push({ id: generateId(), supplier: initialData.supplier || '', input: initialData.inputs || '', documents: [] });
             }
-            if (newInputs.length === 0) newInputs.push({ id: generateId(), supplier: '', input: '' });
-            else newInputs = newInputs.map(item => ({ ...item, id: item.id || generateId() }));
+            if (newInputs.length === 0) newInputs.push({ id: generateId(), supplier: '', input: '', documents: [] });
+            else newInputs = newInputs.map(item => ({ ...item, id: item.id || generateId(), documents: item.documents || [] }));
 
             let newOutputs = initialData.outputsList ? [...initialData.outputsList] : [];
             if (newOutputs.length === 0 && (initialData.outputs || initialData.customer)) {
-                newOutputs.push({ id: generateId(), output: initialData.outputs || '', customer: initialData.customer || '' });
+                newOutputs.push({ id: generateId(), output: initialData.outputs || '', customer: initialData.customer || '', documents: [] });
             }
-            if (newOutputs.length === 0) newOutputs.push({ id: generateId(), output: '', customer: '' });
-            else newOutputs = newOutputs.map(item => ({ ...item, id: item.id || generateId() }));
+            if (newOutputs.length === 0) newOutputs.push({ id: generateId(), output: '', customer: '', documents: [] });
+            else newOutputs = newOutputs.map(item => ({ ...item, id: item.id || generateId(), documents: item.documents || [] }));
 
             setFormData(prev => ({
                 ...prev,
                 ...initialData,
                 mission: initialData.mission || '',
+                supportDocuments: initialData.supportDocuments || [],
                 inputsList: newInputs,
                 outputsList: newOutputs
             }));
@@ -203,6 +219,63 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                                                         className="w-full p-2 border border-gray-300 rounded-md text-sm resize-none focus:ring-1 focus:ring-blue-500 print:border-none print:p-0"
                                                         placeholder="Descrição da entrada..."
                                                     />
+                                                    <div className="mt-2 print:hidden">
+                                                        <label className="text-[10px] font-semibold text-blue-600 uppercase mb-1 block">Documentos Associados</label>
+                                                        
+                                                        {item.documents && item.documents.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mb-2">
+                                                                {item.documents.map(docId => {
+                                                                    const doc = sgqDocuments.find(d => String(d.id) === String(docId));
+                                                                    if (!doc) return null;
+                                                                    return (
+                                                                        <a 
+                                                                            key={docId} 
+                                                                            href={`/sgq/documentos?docId=${docId}`} 
+                                                                            target="_blank" 
+                                                                            rel="noopener noreferrer"
+                                                                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full hover:bg-blue-200 transition-colors"
+                                                                            title={doc.title}
+                                                                        >
+                                                                            📄 {doc.code || 'DOC'}
+                                                                            <button 
+                                                                                type="button" 
+                                                                                onClick={(e) => { 
+                                                                                    e.preventDefault(); 
+                                                                                    handleListChange('inputsList', index, 'documents', item.documents.filter(id => id !== docId));
+                                                                                }} 
+                                                                                className="text-blue-400 hover:text-red-500 ml-1 rounded-full p-0.5 flex items-center justify-center"
+                                                                            >
+                                                                                <X className="h-3 w-3" />
+                                                                            </button>
+                                                                        </a>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
+
+                                                        <select
+                                                            value=""
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (!val) return;
+                                                                const currentDocs = item.documents || [];
+                                                                if (!currentDocs.includes(val)) {
+                                                                    handleListChange('inputsList', index, 'documents', [...currentDocs, val]);
+                                                                }
+                                                            }}
+                                                            className="w-full p-1.5 border border-blue-200 rounded text-xs bg-white focus:ring-1 focus:ring-blue-500 outline-none text-slate-600"
+                                                        >
+                                                            <option value="">+ Associar novo documento...</option>
+                                                            {sgqDocuments.filter(d => !(item.documents||[]).includes(String(d.id))).map(doc => (
+                                                                <option key={doc.id} value={doc.id}>{doc.code || 'DOC'} - {doc.title}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    {item.documents?.length > 0 && (
+                                                        <div className="mt-1 text-[10px] text-blue-800 font-bold hidden print:block">
+                                                            📄 Docs: {item.documents.map(id => sgqDocuments.find(d => String(d.id) === String(id))?.code).filter(Boolean).join(', ')}
+                                                        </div>
+                                                    )}
                                                     <div className="absolute -left-3 top-2 print:block hidden">
                                                         <ArrowRight className="h-3 w-3 text-black" />
                                                     </div>
@@ -274,6 +347,63 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                                                         className="w-full p-2 border border-gray-300 rounded-md text-sm resize-none focus:ring-1 focus:ring-blue-500 print:border-none print:p-0 text-right print:text-left"
                                                         placeholder="Descrição da saída..."
                                                     />
+                                                    <div className="mt-2 print:hidden">
+                                                        <label className="text-[10px] font-semibold text-blue-600 uppercase mb-1 block text-right">Documentos Associados</label>
+                                                        
+                                                        {item.documents && item.documents.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mb-2 justify-end">
+                                                                {item.documents.map(docId => {
+                                                                    const doc = sgqDocuments.find(d => String(d.id) === String(docId));
+                                                                    if (!doc) return null;
+                                                                    return (
+                                                                        <a 
+                                                                            key={docId} 
+                                                                            href={`/sgq/documentos?docId=${docId}`} 
+                                                                            target="_blank" 
+                                                                            rel="noopener noreferrer"
+                                                                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full hover:bg-blue-200 transition-colors"
+                                                                            title={doc.title}
+                                                                        >
+                                                                            📄 {doc.code || 'DOC'}
+                                                                            <button 
+                                                                                type="button" 
+                                                                                onClick={(e) => { 
+                                                                                    e.preventDefault(); 
+                                                                                    handleListChange('outputsList', index, 'documents', item.documents.filter(id => id !== docId));
+                                                                                }} 
+                                                                                className="text-blue-400 hover:text-red-500 ml-1 rounded-full p-0.5 flex items-center justify-center"
+                                                                            >
+                                                                                <X className="h-3 w-3" />
+                                                                            </button>
+                                                                        </a>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
+
+                                                        <select
+                                                            value=""
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (!val) return;
+                                                                const currentDocs = item.documents || [];
+                                                                if (!currentDocs.includes(val)) {
+                                                                    handleListChange('outputsList', index, 'documents', [...currentDocs, val]);
+                                                                }
+                                                            }}
+                                                            className="w-full p-1.5 border border-blue-200 rounded text-xs bg-white focus:ring-1 focus:ring-blue-500 outline-none text-slate-600 text-right"
+                                                        >
+                                                            <option value="">+ Associar novo documento...</option>
+                                                            {sgqDocuments.filter(d => !(item.documents||[]).includes(String(d.id))).map(doc => (
+                                                                <option key={doc.id} value={doc.id} dir="rtl">{doc.title} - {doc.code || 'DOC'}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    {item.documents?.length > 0 && (
+                                                        <div className="mt-1 text-[10px] text-blue-800 font-bold hidden print:block text-left">
+                                                            📄 Docs: {item.documents.map(id => sgqDocuments.find(d => String(d.id) === String(id))?.code).filter(Boolean).join(', ')}
+                                                        </div>
+                                                    )}
                                                     <div className="absolute -right-3 top-2 print:block hidden">
                                                         <ArrowRight className="h-3 w-3 text-black" />
                                                     </div>
@@ -308,9 +438,68 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                                 value={formData.supportActivities}
                                 onChange={handleChange}
                                 rows={3}
-                                className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none mb-2"
                                 placeholder="Ex: Preenchimento de relatório de produção, Limpeza da máquina, Solicitação de manutenção..."
                             />
+
+                            <div className="print:hidden bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                <label className="text-[11px] font-semibold text-gray-600 uppercase mb-2 block">Documentos Associados (Apoio)</label>
+                                
+                                {formData.supportDocuments && formData.supportDocuments.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mb-2">
+                                        {formData.supportDocuments.map(docId => {
+                                            const doc = sgqDocuments.find(d => String(d.id) === String(docId));
+                                            if (!doc) return null;
+                                            return (
+                                                <a 
+                                                    key={docId} 
+                                                    href={`/sgq/documentos?docId=${docId}`} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full hover:bg-gray-300 transition-colors"
+                                                    title={doc.title}
+                                                >
+                                                    📄 {doc.code || 'DOC'}
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={(e) => { 
+                                                            e.preventDefault(); 
+                                                            setFormData({...formData, supportDocuments: formData.supportDocuments.filter(id => id !== docId)});
+                                                        }} 
+                                                        className="text-gray-500 hover:text-red-500 ml-1 rounded-full p-0.5 flex items-center justify-center"
+                                                    >
+                                                        <X className="h-3 w-3" />
+                                                    </button>
+                                                </a>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+
+                                <select
+                                    value=""
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (!val) return;
+                                        const currentDocs = formData.supportDocuments || [];
+                                        if (!currentDocs.includes(val)) {
+                                            setFormData({...formData, supportDocuments: [...currentDocs, val]});
+                                        }
+                                    }}
+                                    className="w-full p-2 border border-gray-300 rounded text-xs bg-white focus:ring-1 focus:ring-blue-500 outline-none text-slate-600"
+                                >
+                                    <option value="">+ Associar novo documento ao apoio...</option>
+                                    {sgqDocuments.filter(d => !(formData.supportDocuments||[]).includes(String(d.id))).map(doc => (
+                                        <option key={doc.id} value={doc.id}>{doc.code || 'DOC'} - {doc.title}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {formData.supportDocuments?.length > 0 && (
+                                <div className="mt-1 text-xs text-gray-700 hidden print:block border-t border-gray-300 pt-1">
+                                    <span className="font-bold">📄 Documentos de Apoio:</span> {formData.supportDocuments.map(id => sgqDocuments.find(d => String(d.id) === String(id))?.code).filter(Boolean).join(', ')}
+                                </div>
+                            )}
                         </div>
                     </section>
 

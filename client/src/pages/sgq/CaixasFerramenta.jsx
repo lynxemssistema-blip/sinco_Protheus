@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Package, Plus, Search, User, Wrench, Calendar, Link as LinkIcon, Trash2, X, Save, Edit2, LayoutGrid, List, Camera, FileText, Download } from 'lucide-react';
-
+import { Package, Plus, Search, User, Wrench, Calendar, Link as LinkIcon, Trash2, X, Save, Edit2, LayoutGrid, List, Camera, FileText, Download, Printer } from 'lucide-react';
+import { generateToolboxPdf } from '../../services/sgqToolboxPdfGenerator';
 export default function CaixasFerramenta() {
     const [toolboxes, setToolboxes] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
     const [availableAssets, setAvailableAssets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@MetalFisa:sgq_toolbox_search') || '');
+    const [assetSearchTerm, setAssetSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('@MetalFisa:sgq_toolbox_view') || 'card');
 
     useEffect(() => {
@@ -35,6 +36,7 @@ export default function CaixasFerramenta() {
     // Modal states for managing a toolbox's assets
     const [selectedToolbox, setSelectedToolbox] = useState(null);
     const [toolboxAssets, setToolboxAssets] = useState([]);
+    const [toolboxReturnedAssets, setToolboxReturnedAssets] = useState([]);
     const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 
     // Modal states for viewing attachments (PDFs)
@@ -137,8 +139,12 @@ export default function CaixasFerramenta() {
 
     const loadToolboxAssets = async (toolboxId) => {
         try {
-            const res = await api.get(`/sgq/assets/toolboxes/${toolboxId}/assets`);
+            const [res, returnedRes] = await Promise.all([
+                api.get(`/sgq/assets/toolboxes/${toolboxId}/assets`),
+                api.get(`/sgq/assets/toolboxes/${toolboxId}/returned`)
+            ]);
             setToolboxAssets(res.data);
+            setToolboxReturnedAssets(returnedRes.data);
         } catch (err) {
             console.error(err);
         }
@@ -368,8 +374,8 @@ export default function CaixasFerramenta() {
             {/* Modal de Criação/Edição de Caixa */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                 <Package className="w-5 h-5 text-indigo-600" /> {formData.id ? 'Editar Caixa' : 'Nova Caixa'}
                             </h2>
@@ -413,7 +419,7 @@ export default function CaixasFerramenta() {
                                     </div>
 
                                     {isUserDropdownOpen && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 flex flex-col">
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 flex flex-col">
                                             <div className="p-2 border-b border-slate-100">
                                                 <input 
                                                     type="text" 
@@ -450,7 +456,7 @@ export default function CaixasFerramenta() {
                                 </div>
                             </form>
                         </div>
-                        <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                        <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-2xl">
                             <button 
                                 type="button"
                                 onClick={() => setIsCreateModalOpen(false)}
@@ -494,6 +500,13 @@ export default function CaixasFerramenta() {
                             <div className="w-full md:w-1/2 border-r border-slate-200 flex flex-col bg-white">
                                 <div className="p-4 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
                                     <h3 className="font-bold text-slate-700">Ativos na Caixa ({toolboxAssets.length})</h3>
+                                    <button 
+                                        onClick={() => generateToolboxPdf(selectedToolbox, toolboxAssets, toolboxReturnedAssets, getUserName(selectedToolbox.employee_cpf))}
+                                        className="text-sm px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors flex items-center gap-1.5 shadow-sm font-medium"
+                                        title="Imprimir Relatório"
+                                    >
+                                        <Printer size={14} /> Relatório
+                                    </button>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                                     {toolboxAssets.length === 0 ? (
@@ -537,13 +550,33 @@ export default function CaixasFerramenta() {
                             <div className="w-full md:w-1/2 flex flex-col bg-slate-50/30">
                                 <div className="p-4 bg-slate-50 border-b border-slate-200">
                                     <h3 className="font-bold text-slate-700">Adicionar Ativo à Caixa</h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">Mostrando apenas ativos disponíveis ({availableAssets.length})</p>
+                                    <p className="text-xs text-slate-500 mt-0.5 mb-3">Mostrando apenas ativos disponíveis ({availableAssets.length})</p>
+                                    <div className="relative">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Buscar ativo por nome ou patrimônio..."
+                                            value={assetSearchTerm}
+                                            onChange={e => setAssetSearchTerm(e.target.value)}
+                                            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {availableAssets.length === 0 ? (
-                                        <div className="text-center py-8 text-slate-400 text-sm">Nenhum ativo disponível para atribuição.</div>
+                                    {availableAssets.filter(a => 
+                                        a.name.toLowerCase().includes(assetSearchTerm.toLowerCase()) || 
+                                        (a.patrimonio || '').toLowerCase().includes(assetSearchTerm.toLowerCase()) ||
+                                        (a.serial_number || '').toLowerCase().includes(assetSearchTerm.toLowerCase())
+                                    ).length === 0 ? (
+                                        <div className="text-center py-8 text-slate-400 text-sm">
+                                            {availableAssets.length === 0 ? 'Nenhum ativo disponível no sistema.' : 'Nenhum ativo encontrado para esta busca.'}
+                                        </div>
                                     ) : (
-                                        availableAssets.map(a => (
+                                        availableAssets.filter(a => 
+                                            a.name.toLowerCase().includes(assetSearchTerm.toLowerCase()) || 
+                                            (a.patrimonio || '').toLowerCase().includes(assetSearchTerm.toLowerCase()) ||
+                                            (a.serial_number || '').toLowerCase().includes(assetSearchTerm.toLowerCase())
+                                        ).map(a => (
                                             <div key={a.id} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm flex justify-between items-center group hover:border-indigo-300 transition-colors">
                                                 <div className="flex items-center gap-3">
                                                     {renderAssetImage(a)}

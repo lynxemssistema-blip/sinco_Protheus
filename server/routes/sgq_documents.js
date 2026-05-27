@@ -4,7 +4,7 @@ const mysqlPool = require('../services/mysqlService');
 
 // Ensure the table exists on first load
 // Note: We're using MySQL syntax now.
-const createTableQuery = `
+const createDocsTableQuery = `
     CREATE TABLE IF NOT EXISTS sgq_documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -17,9 +17,81 @@ const createTableQuery = `
     )
 `;
 
-// Try to create the table on start
-mysqlPool.query(createTableQuery).catch(err => {
-    console.error('❌ Erro ao criar tabela sgq_documents (MySQL):', err.message);
+const createSectorsTableQuery = `
+    CREATE TABLE IF NOT EXISTS sgq_sectors (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        position INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+`;
+
+const defaultSectors = ['Geral', 'Administrativo', 'Almoxarifado', 'Comercial', 'Engenharia', 'Produção', 'PCP', 'Qualidade', 'RH'];
+
+async function initTables() {
+    try {
+        await mysqlPool.query(createDocsTableQuery);
+        await mysqlPool.query(createSectorsTableQuery);
+        // Seed defaults only if table is empty
+        const [rows] = await mysqlPool.query('SELECT COUNT(*) as cnt FROM sgq_sectors');
+        if (rows[0].cnt === 0) {
+            for (let i = 0; i < defaultSectors.length; i++) {
+                await mysqlPool.query(
+                    'INSERT IGNORE INTO sgq_sectors (name, position) VALUES (?, ?)',
+                    [defaultSectors[i], i]
+                );
+            }
+        }
+    } catch (err) {
+        console.error('❌ Erro ao inicializar tabelas SGQ:', err.message);
+    }
+}
+
+initTables();
+
+// --- SECTORS ROUTES ---
+
+// GET all sectors
+router.get('/sectors', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query('SELECT * FROM sgq_sectors ORDER BY position, id');
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST - create or rename sector
+router.post('/sectors', async (req, res) => {
+    try {
+        const { id, name } = req.body;
+        if (!name || !name.trim()) return res.status(400).json({ error: 'Nome inválido.' });
+        if (id) {
+            await mysqlPool.query('UPDATE sgq_sectors SET name = ? WHERE id = ?', [name.trim(), id]);
+            const [rows] = await mysqlPool.query('SELECT * FROM sgq_sectors WHERE id = ?', [id]);
+            res.json(rows[0]);
+        } else {
+            const [maxPos] = await mysqlPool.query('SELECT COALESCE(MAX(position),0)+1 as pos FROM sgq_sectors');
+            const [result] = await mysqlPool.query(
+                'INSERT INTO sgq_sectors (name, position) VALUES (?, ?)',
+                [name.trim(), maxPos[0].pos]
+            );
+            const [rows] = await mysqlPool.query('SELECT * FROM sgq_sectors WHERE id = ?', [result.insertId]);
+            res.json(rows[0]);
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE a sector
+router.delete('/sectors/:id', async (req, res) => {
+    try {
+        await mysqlPool.query('DELETE FROM sgq_sectors WHERE id = ?', [req.params.id]);
+        res.json({ message: 'Setor excluído.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // CREATE or UPDATE a document

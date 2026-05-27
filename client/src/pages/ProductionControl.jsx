@@ -15,6 +15,7 @@ import ProcessLegendModal from '../components/ProcessLegendModal';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import CurvaSPedido from './pcp/CurvaSPedido';
 import EvolucaoApontamentosView from './pcp/EvolucaoApontamentosView';
+import PlanningAuditPanel from '../components/PlanningAuditPanel';
 import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { generateProductionControlPdf } from '../services/productionControlPdfGenerator';
@@ -39,6 +40,7 @@ export default function ProductionControl() {
     const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
     const [isCargaFullscreen, setIsCargaFullscreen] = useState(false);
     const [isEvolutionFullscreen, setIsEvolutionFullscreen] = useState(false);
+    const [isTabelaFullscreen, setIsTabelaFullscreen] = useState(false);
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -281,9 +283,9 @@ export default function ProductionControl() {
         loadData();
     };
 
-    const handlePlanSave = async (data) => {
+    const handlePlanSave = async (plans, observacao) => {
         try {
-            await saveProductionPlanBatch(data);
+            await saveProductionPlanBatch(plans, observacao);
             setPlanningOp(null);
             setSelectedOps([]); // Clear selection after planning
             loadData();
@@ -450,7 +452,7 @@ export default function ProductionControl() {
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                         <input type="text" placeholder="OP (Exato, Sep. vírgula)" value={filters.op} onChange={(e) => setFilters({ ...filters, op: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato da OP. Para múltiplas, separe com vírgula." />
                         <input type="text" placeholder="Pedido (Exato)" value={filters.pedido} onChange={(e) => setFilters({ ...filters, pedido: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato do Pedido." />
-                        <input type="text" placeholder="Item" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Item (Sep. vírgula)" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o item do pedido. Para múltiplos, separe com vírgula. Ex: 01,02" />
                         <input type="text" placeholder="Seq" value={filters.sequencia} onChange={(e) => setFilters({ ...filters, sequencia: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
                         <input type="text" placeholder="Produto (Exato)" value={filters.produto} onChange={(e) => setFilters({ ...filters, produto: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o código exato do Produto." />
                         <input type="text" placeholder="Cliente" value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
@@ -597,6 +599,10 @@ export default function ProductionControl() {
                             Curva S (Gráfico)
                             {activeTab === 'curva_s' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                         </button>
+                        <button onClick={() => setActiveTab('auditoria')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'auditoria' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Auditoria de Planejamento
+                            {activeTab === 'auditoria' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                        </button>
                     </div>
 
                 </div>
@@ -604,40 +610,59 @@ export default function ProductionControl() {
                 <ErrorStateOverlay error={apiError} onRetry={loadData} />
 
                 {!apiError && (activeTab === 'tabela' ? (
-                    <>
+                    <div className={`flex flex-col transition-all duration-300 ${
+                        isTabelaFullscreen
+                            ? 'fixed inset-0 z-[9999] bg-white p-4 overflow-hidden flex'
+                            : 'flex-1 min-h-0 flex flex-col'
+                    }`}>
                         {/* Barra de contagem + ação de lote — compacta e contextual */}
                         <div className="flex items-center justify-between gap-3 shrink-0 px-1 py-1">
-                            <span className="text-xs text-slate-500 font-medium">
-                                {total > 0
-                                    ? `${total} ${total !== 1 ? 'operações' : 'operação'} encontrada${total !== 1 ? 's' : ''}`
-                                    : 'Nenhum resultado'}
-                            </span>
-                            {selectedOps.length > 0 && (
-                                <div className="flex items-center gap-3">
-                                    <span className="text-xs text-slate-600 font-medium">
-                                        <strong className="text-blue-700">{selectedOps.length}</strong> OP{selectedOps.length !== 1 ? 's' : ''} selecionada{selectedOps.length !== 1 ? 's' : ''}
-                                    </span>
-                                    <button
-                                        onClick={() => setPlanningOp(selectedOps)}
-                                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm"
-                                        title="Abre o planejamento sequencial para as OPs selecionadas"
-                                    >
-                                        <Calendar className="w-3.5 h-3.5" />
-                                        Sequenciar Planejamento
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedOps([])}
-                                        className="px-2 py-1.5 text-slate-500 text-xs font-medium rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
-                                        title="Desmarcar todas"
-                                    >
-                                        Limpar
-                                    </button>
-                                </div>
-                            )}
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs text-slate-500 font-medium">
+                                    {total > 0
+                                        ? `${total} ${total !== 1 ? 'operações' : 'operação'} encontrada${total !== 1 ? 's' : ''}`
+                                        : 'Nenhum resultado'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {selectedOps.length > 0 && (
+                                    <>
+                                        <span className="text-xs text-slate-600 font-medium">
+                                            <strong className="text-blue-700">{selectedOps.length}</strong> OP{selectedOps.length !== 1 ? 's' : ''} selecionada{selectedOps.length !== 1 ? 's' : ''}
+                                        </span>
+                                        <button
+                                            onClick={() => setPlanningOp(selectedOps)}
+                                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm"
+                                            title="Abre o planejamento sequencial para as OPs selecionadas"
+                                        >
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            Sequenciar Planejamento
+                                        </button>
+                                        <button
+                                            onClick={() => setSelectedOps([])}
+                                            className="px-2 py-1.5 text-slate-500 text-xs font-medium rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
+                                            title="Desmarcar todas"
+                                        >
+                                            Limpar
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    onClick={() => setIsTabelaFullscreen(!isTabelaFullscreen)}
+                                    className="p-2 border border-slate-200 hover:bg-slate-100 hover:scale-105 active:scale-95 rounded-lg transition-all text-slate-600 bg-white flex items-center justify-center shadow-sm"
+                                    title={isTabelaFullscreen ? 'Sair da Tela Inteira' : 'Ver em Tela Inteira'}
+                                >
+                                    {isTabelaFullscreen ? (
+                                        <Minimize2 className="w-4 h-4" />
+                                    ) : (
+                                        <Maximize2 className="w-4 h-4" />
+                                    )}
+                                </button>
+                            </div>
                         </div>
 
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
-                            <div ref={tableContainerRef} className="overflow-auto flex-1">
+                            <div ref={tableContainerRef} className={`overflow-auto flex-1 ${isTabelaFullscreen ? 'h-full' : ''}`}>
                         <table className="w-full relative">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                 <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
@@ -793,62 +818,7 @@ export default function ProductionControl() {
                             </table>
                             </div>
                         </div>
-
-
-
-            {/* MODALS */}
-                {
-                    selectedOpHistory && (
-                        <ProductionHistoryModal
-                            opData={selectedOpHistory}
-                            onClose={() => setSelectedOpHistory(null)}
-                        />
-                    )
-                }
-                {
-                    planningOp && (
-                        <ProductionPlanningModal
-                            ops={planningOp}
-                            onClose={() => setPlanningOp(null)}
-                            onSave={handlePlanSave}
-                        />
-                    )
-                }
-                {
-                    appointingOp && (
-                        <ProductionAppointmentModal
-                            op={appointingOp}
-                            onClose={() => setAppointingOp(null)}
-                            onSave={handleAppointmentSave}
-                        />
-                    )
-                }
-                {
-                    macroModalOp && (
-                        <ProductionMacroModal
-                            op={macroModalOp}
-                            operations={macroOperations}
-                            onClose={(shouldRefresh = false) => {
-                                setMacroModalOp(null);
-                                setMacroOperations([]);
-                                if (shouldRefresh) loadData();
-                            }}
-                            onSaveBatch={handleMacroSaveBatch}
-                        />
-                    )
-                }
-                {
-                    showLegend && (
-                        <ProcessLegendModal
-                            onClose={() => setShowLegend(false)}
-                            onSelect={(code) => {
-                                setFilters({ ...filters, operacao: code });
-                                setShowLegend(false);
-                            }}
-                        />
-                    )
-                }
-                </>
+                    </div>
                 ) : activeTab === 'carga_recursos' ? (
                     <CargaRecursosView 
                         ops={ops} 
@@ -867,10 +837,55 @@ export default function ProductionControl() {
                         isEvolutionFullscreen={isEvolutionFullscreen}
                         setIsEvolutionFullscreen={setIsEvolutionFullscreen}
                     />
+                ) : activeTab === 'auditoria' ? (
+                    <PlanningAuditPanel />
                 ) : (
                     <CurvaSPedido filters={filters} />
                 ))}
-                
+
+                {/* MODALS — global, independent of active tab */}
+                {selectedOpHistory && (
+                    <ProductionHistoryModal
+                        opData={selectedOpHistory}
+                        onClose={() => setSelectedOpHistory(null)}
+                    />
+                )}
+                {planningOp && (
+                    <ProductionPlanningModal
+                        ops={planningOp}
+                        onClose={() => setPlanningOp(null)}
+                        onSave={handlePlanSave}
+                    />
+                )}
+                {appointingOp && (
+                    <ProductionAppointmentModal
+                        op={appointingOp}
+                        onClose={() => setAppointingOp(null)}
+                        onSave={handleAppointmentSave}
+                    />
+                )}
+                {macroModalOp && (
+                    <ProductionMacroModal
+                        op={macroModalOp}
+                        operations={macroOperations}
+                        onClose={(shouldRefresh = false) => {
+                            setMacroModalOp(null);
+                            setMacroOperations([]);
+                            if (shouldRefresh) loadData();
+                        }}
+                        onSaveBatch={handleMacroSaveBatch}
+                    />
+                )}
+                {showLegend && (
+                    <ProcessLegendModal
+                        onClose={() => setShowLegend(false)}
+                        onSelect={(code) => {
+                            setFilters({ ...filters, operacao: code });
+                            setShowLegend(false);
+                        }}
+                    />
+                )}
+
                 {/* Full-screen Loading Overlay */}
                 {(loading || loadingMacro) && (
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center pointer-events-auto transition-all">

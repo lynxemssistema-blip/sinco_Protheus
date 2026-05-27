@@ -4,6 +4,7 @@ const db = require('../services/mysqlService');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { generateToolboxReport } = require('../services/pdfToolboxService');
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -50,21 +51,31 @@ router.get('/', async (req, res) => {
 // POST /api/sgq/assets
 router.post('/', async (req, res) => {
     try {
-        const { patrimonio, name, model, serial_number, status, calibration_validity, alerts } = req.body;
+        const { patrimonio, name, model, serial_number, status, calibration_validity, alerts, requires_calibration, stock_quantity, user_name } = req.body;
 
-        if (patrimonio) {
+        if (patrimonio && requires_calibration !== false) {
             const [existing] = await db.query('SELECT id FROM sgq_assets WHERE patrimonio = ?', [patrimonio]);
             if (existing.length > 0) {
                 return res.status(400).json({ error: 'Já existe um ativo cadastrado com este patrimônio.' });
             }
         }
 
+        const rc = requires_calibration === undefined ? true : Boolean(requires_calibration);
+        const sq = rc ? 1 : parseInt(stock_quantity || 0, 10);
+
         const [result] = await db.query(`
-            INSERT INTO sgq_assets (patrimonio, name, model, serial_number, status, calibration_validity)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [patrimonio, name, model, serial_number, status || 'available', calibration_validity]);
+            INSERT INTO sgq_assets (patrimonio, name, model, serial_number, status, calibration_validity, requires_calibration, stock_quantity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [patrimonio, name, model, serial_number, status || 'available', calibration_validity, rc, sq]);
         
         const assetId = result.insertId;
+
+        if (!rc) {
+            await db.query(`
+                INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason)
+                VALUES (?, 'entrada', ?, ?, 'Cadastro Inicial')
+            `, [assetId, sq, user_name || 'Sistema']);
+        }
 
         if (alerts && Array.isArray(alerts) && alerts.length > 0) {
             const values = alerts.map(a => [
@@ -135,20 +146,23 @@ router.post('/bulk', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { patrimonio, name, model, serial_number, status, calibration_validity, alerts } = req.body;
+        const { patrimonio, name, model, serial_number, status, calibration_validity, alerts, requires_calibration, stock_quantity, user_name } = req.body;
 
-        if (patrimonio) {
+        if (patrimonio && requires_calibration !== false) {
             const [existing] = await db.query('SELECT id FROM sgq_assets WHERE patrimonio = ? AND id != ?', [patrimonio, id]);
             if (existing.length > 0) {
                 return res.status(400).json({ error: 'Já existe outro ativo cadastrado com este patrimônio.' });
             }
         }
 
+        // Não atualizamos o stock_quantity via PUT genérico para preservar o histórico. O endpoint de /transaction gerencia isso.
+        const rc = requires_calibration === undefined ? true : Boolean(requires_calibration);
+
         await db.query(`
             UPDATE sgq_assets 
-            SET patrimonio = ?, name = ?, model = ?, serial_number = ?, status = ?, calibration_validity = ?
+            SET patrimonio = ?, name = ?, model = ?, serial_number = ?, status = ?, calibration_validity = ?, requires_calibration = ?
             WHERE id = ?
-        `, [patrimonio, name, model, serial_number, status, calibration_validity, id]);
+        `, [patrimonio, name, model, serial_number, status, calibration_validity, rc, id]);
         
         // Atualizar alertas
         if (alerts && Array.isArray(alerts)) {
@@ -184,6 +198,93 @@ router.delete('/:id', async (req, res) => {
     } catch (error) {
         console.error('Erro ao deletar ativo:', error);
         res.status(500).json({ error: 'Erro interno ao deletar ativo.' });
+    }
+});
+
+// POST /api/sgq/assets/:id/transactions
+router.get('/:id/transactions', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM sgq_asset_transactions WHERE asset_id = ? ORDER BY created_at DESC', [req.params.id]);
+        res.json(rows);
+    } catch(err) { res.status(500).json({error: 'Erro interno.'}) }
+});
+
+// POST /api/sgq/assets/:id/transaction (Quick stock adjustment)
+router.post('/:id/transaction', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { type, quantity, user_name, reason } = req.body;
+        
+        const q = parseInt(quantity, 10);
+        if (isNaN(q) || q <= 0) return res.status(400).json({ error: 'Quantidade inválida.' });
+        if (!['entrada', 'baixa'].includes(type)) return res.status(400).json({ error: 'Tipo de transação inválido.' });
+
+        const [assets] = await db.query('SELECT stock_quantity, requires_calibration FROM sgq_assets WHERE id = ?', [id]);
+        if (assets.length === 0) return res.status(404).json({ error: 'Ativo não encontrado.' });
+        
+        const asset = assets[0];
+        if (asset.requires_calibration) {
+            return res.status(400).json({ error: 'Ativos rastreáveis com calibração não suportam ajuste de estoque.' });
+        }
+
+        let newStock = asset.stock_quantity;
+        if (type === 'entrada') newStock += q;
+        else if (type === 'baixa') newStock -= q;
+
+        if (newStock < 0) return res.status(400).json({ error: 'Saldo de estoque insuficiente para realizar a baixa.' });
+
+        await db.query('UPDATE sgq_assets SET stock_quantity = ? WHERE id = ?', [newStock, id]);
+        await db.query(`
+            INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason)
+            VALUES (?, ?, ?, ?, ?)
+        `, [id, type, q, user_name || 'Sistema', reason || '']);
+
+        res.json({ message: `Transação de ${type} realizada com sucesso. Novo saldo: ${newStock}`, newStock });
+    } catch (error) {
+        console.error('Erro ao registrar transação:', error);
+        res.status(500).json({ error: 'Erro interno ao registrar transação.' });
+    }
+});
+
+// POST /api/sgq/assets/alerts/apply-all
+router.post('/alerts/apply-all', async (req, res) => {
+    try {
+        const { alerts } = req.body;
+        
+        const [assets] = await db.query('SELECT id FROM sgq_assets');
+        
+        if (assets.length === 0) {
+            return res.status(400).json({ error: 'Nenhum ativo cadastrado.' });
+        }
+        
+        await db.query('DELETE FROM sgq_asset_alerts');
+        
+        if (alerts && Array.isArray(alerts) && alerts.length > 0) {
+            const values = [];
+            assets.forEach(asset => {
+                alerts.forEach(a => {
+                    values.push([
+                        asset.id, 
+                        a.days_before, 
+                        a.notify_email ? 1 : 0, 
+                        a.notify_whatsapp ? 1 : 0, 
+                        JSON.stringify(a.target_users || [])
+                    ]);
+                });
+            });
+            
+            if (values.length > 0) {
+                await db.query(`
+                    INSERT INTO sgq_asset_alerts (asset_id, days_before, notify_email, notify_whatsapp, target_users)
+                    VALUES ?
+                `, [values]);
+            }
+        }
+        
+        res.json({ message: 'Regras aplicadas a todos os ativos!' });
+    } catch (error) {
+        console.error('Erro ao aplicar alertas em lote:', error);
+        res.status(500).json({ error: 'Erro interno ao aplicar alertas.' });
     }
 });
 
@@ -395,18 +496,51 @@ router.delete('/toolboxes/:id', async (req, res) => {
 // Relacionamento (Assign Asset to Toolbox)
 router.post('/assign', async (req, res) => {
     try {
-        const { asset_id, toolbox_id } = req.body;
-        await db.query(`
-            INSERT INTO sgq_asset_toolbox (asset_id, toolbox_id)
-            VALUES (?, ?)
-            ON DUPLICATE KEY UPDATE assigned_at = CURRENT_TIMESTAMP
-        `, [asset_id, toolbox_id]);
+        const { asset_id, toolbox_id, quantity, user_name } = req.body;
+        const q = parseInt(quantity || 1, 10);
+
+        const [assets] = await db.query('SELECT requires_calibration, stock_quantity FROM sgq_assets WHERE id = ?', [asset_id]);
+        if (assets.length === 0) return res.status(404).json({ error: 'Ativo não encontrado.' });
         
-        // Update asset status to 'in_use'
-        await db.query(`UPDATE sgq_assets SET status = 'in_use' WHERE id = ?`, [asset_id]);
+        const asset = assets[0];
+
+        if (!asset.requires_calibration) {
+            if (asset.stock_quantity < q) {
+                return res.status(400).json({ error: 'Estoque insuficiente para atribuir a quantidade solicitada.' });
+            }
+
+            // Deduct stock and insert transaction
+            await db.query('UPDATE sgq_assets SET stock_quantity = stock_quantity - ? WHERE id = ?', [q, asset_id]);
+            await db.query(`
+                INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason, toolbox_id)
+                VALUES (?, 'caixa_adicionar', ?, ?, 'Atribuído à Caixa', ?)
+            `, [asset_id, q, user_name || 'Sistema', toolbox_id]);
+            
+            // Insert or update relation
+            await db.query(`
+                INSERT INTO sgq_asset_toolbox (asset_id, toolbox_id, quantity)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), assigned_at = CURRENT_TIMESTAMP
+            `, [asset_id, toolbox_id, q]);
+
+        } else {
+            // Normal unique asset logic
+            await db.query(`
+                INSERT INTO sgq_asset_toolbox (asset_id, toolbox_id, quantity)
+                VALUES (?, ?, 1)
+                ON DUPLICATE KEY UPDATE assigned_at = CURRENT_TIMESTAMP
+            `, [asset_id, toolbox_id]);
+            
+            await db.query(`UPDATE sgq_assets SET status = 'in_use' WHERE id = ?`, [asset_id]);
+            await db.query(`
+                INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason, toolbox_id)
+                VALUES (?, 'caixa_adicionar', 1, ?, 'Atribuído à Caixa', ?)
+            `, [asset_id, user_name || 'Sistema', toolbox_id]);
+        }
         
         res.json({ message: 'Ativo atribuído à caixa com sucesso.' });
     } catch (error) {
+        console.error('Erro ao atribuir ativo:', error);
         res.status(500).json({ error: 'Erro ao atribuir ativo à caixa.' });
     }
 });
@@ -415,13 +549,36 @@ router.post('/assign', async (req, res) => {
 router.delete('/assign/:toolbox_id/:asset_id', async (req, res) => {
     try {
         const { toolbox_id, asset_id } = req.params;
+        const { user_name } = req.query;
+
+        const [relations] = await db.query('SELECT quantity FROM sgq_asset_toolbox WHERE toolbox_id = ? AND asset_id = ?', [toolbox_id, asset_id]);
+        if (relations.length === 0) return res.status(404).json({ error: 'Relação não encontrada.' });
+        const assignedQty = relations[0].quantity || 1;
+
+        const [assets] = await db.query('SELECT requires_calibration FROM sgq_assets WHERE id = ?', [asset_id]);
+        const asset = assets[0];
+
         await db.query('DELETE FROM sgq_asset_toolbox WHERE toolbox_id = ? AND asset_id = ?', [toolbox_id, asset_id]);
         
-        // Return status to available
-        await db.query(`UPDATE sgq_assets SET status = 'available' WHERE id = ?`, [asset_id]);
+        if (asset && !asset.requires_calibration) {
+            // Return stock and log transaction
+            await db.query('UPDATE sgq_assets SET stock_quantity = stock_quantity + ? WHERE id = ?', [assignedQty, asset_id]);
+            await db.query(`
+                INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason, toolbox_id)
+                VALUES (?, 'caixa_remover', ?, ?, 'Removido da Caixa', ?)
+            `, [asset_id, assignedQty, user_name || 'Sistema', toolbox_id]);
+        } else if (asset) {
+            // Return status to available
+            await db.query(`UPDATE sgq_assets SET status = 'available' WHERE id = ?`, [asset_id]);
+            await db.query(`
+                INSERT INTO sgq_asset_transactions (asset_id, type, quantity, user_name, reason, toolbox_id)
+                VALUES (?, 'caixa_remover', 1, ?, 'Removido da Caixa', ?)
+            `, [asset_id, user_name || 'Sistema', toolbox_id]);
+        }
         
         res.json({ message: 'Ativo removido da caixa com sucesso.' });
     } catch (error) {
+        console.error('Erro ao remover da caixa:', error);
         res.status(500).json({ error: 'Erro ao remover ativo da caixa.' });
     }
 });
@@ -431,7 +588,7 @@ router.get('/toolboxes/:id/assets', async (req, res) => {
     try {
         const { id } = req.params;
         const [rows] = await db.query(`
-            SELECT a.*, t.assigned_at,
+            SELECT a.*, t.assigned_at, t.quantity as assigned_quantity,
                    (SELECT id FROM sgq_asset_attachments WHERE asset_id = a.id AND file_type = 'photo' AND is_main = TRUE LIMIT 1) as main_photo_id
             FROM sgq_assets a
             JOIN sgq_asset_toolbox t ON a.id = t.asset_id
@@ -441,6 +598,39 @@ router.get('/toolboxes/:id/assets', async (req, res) => {
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: 'Erro ao buscar ativos da caixa.' });
+    }
+});
+
+// Listar ativos DEVOLVIDOS de uma caixa (histórico de remoção)
+router.get('/toolboxes/:id/returned', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await db.query(`
+            SELECT t.id as transaction_id, t.created_at as returned_at, t.quantity as returned_quantity, t.user_name,
+                   a.id, a.patrimonio, a.name, a.model, a.serial_number, a.requires_calibration
+            FROM sgq_asset_transactions t
+            JOIN sgq_assets a ON t.asset_id = a.id
+            WHERE t.toolbox_id = ? AND t.type = 'caixa_remover'
+            ORDER BY t.created_at DESC
+        `, [id]);
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar ativos devolvidos da caixa.' });
+    }
+});
+
+// Gerar PDF da caixa
+router.get('/toolboxes/:id/pdf', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const pdfBytes = await generateToolboxReport(id, { usuarioGerador: req.query.user_name });
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="caixa_${id}_termo.pdf"`);
+        res.send(pdfBytes);
+    } catch (error) {
+        console.error('Erro ao gerar PDF da caixa:', error);
+        res.status(500).json({ error: 'Erro ao gerar PDF da caixa.' });
     }
 });
 

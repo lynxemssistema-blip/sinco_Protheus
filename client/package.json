@@ -31,6 +31,8 @@
         "react-toastify": "^11.0.5",
         "recharts": "^3.6.0",
         "socket.io-client": "^4.8.3",
+        "suneditor": "^2.47.8",
+        "suneditor-react": "^3.6.1",
         "xlsx": "^0.18.5"
     },
     "devDependencies": {
