@@ -226,15 +226,12 @@ export default function SolidEdeg_Estrutura_Produto() {
             'Nível': item.nivel || 0,
             'Componente': item.componente,
             'Descrição': item.descricao || '',
-            'Tipo': item.tipo || '',
-            'Material': item.material || '',
             'Quantidade': item.quantidade || 0,
-            'Peso (kg)': item.peso || 0,
             'Unidade': item.um || item.unidade || ''
         }));
 
         const ws = XLSX.utils.json_to_sheet(exportData);
-        ws['!cols'] = [{ wch: 10 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 10 }];
+        ws['!cols'] = [{ wch: 10 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, { wch: 10 }];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Estrutura BOM");
