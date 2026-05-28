@@ -60,14 +60,53 @@ export default function SolidEdeg_Estrutura_Produto() {
         }
     }, []);
 
+    const carregarEstruturaSolidEdge = useCallback(async () => {
+        setError(null);
+        setLoading(true);
+        try {
+            const res = await api.get('/sinco/estrutura-completa');
+            if (res.data && res.data.length > 0) {
+                // Mapear os dados recebidos do Solid Edge Desktop para o formato esperado pela tabela
+                const mapeado = res.data.map(item => ({
+                    nivel: item.Nivel || 0,
+                    componente: item.Arquivo || item.CaminhoCompleto || '',
+                    descricao: item.Título || item.Assunto || item.DescDetal || '',
+                    quantidade: item.QtdeTotal || item.Qtde || 0,
+                    um: item.Unidade || 'UN',
+                    _raw: item
+                }));
+                setArvore(mapeado);
+                setArquivo(res.data[0].Arquivo || 'BOM Solid Edge');
+                
+                const initialExpanded = {};
+                mapeado.forEach(i => { if (i.componente) initialExpanded[i.componente] = true; });
+                setExpandedRows(initialExpanded);
+            } else {
+                setArvore([]);
+                setError("Nenhuma estrutura temporária encontrada na memória do servidor.");
+            }
+        } catch (err) {
+            console.error("Erro ao carregar estrutura do Solid Edge:", err);
+            setError(err.response?.data?.error || err.message || 'Erro ao buscar a estrutura do Solid Edge');
+            setArvore([]);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     // Carrega na primeira abertura (via URL)
     useEffect(() => {
-        const cod = searchParams.get('arquivo');
-        if (cod) {
-            setArquivo(cod);
-            carregarEstrutura(cod);
+        const source = searchParams.get('source');
+        if (source === 'solidedge') {
+            carregarEstruturaSolidEdge();
+        } else {
+            const cod = searchParams.get('arquivo');
+            if (cod) {
+                setArquivo(cod);
+                carregarEstrutura(cod);
+            }
         }
-    }, [searchParams, carregarEstrutura]);
+    }, [searchParams, carregarEstrutura, carregarEstruturaSolidEdge]);
 
     // Socket.io — recebe atualização em tempo real do Solid Edge Desktop
     useEffect(() => {
