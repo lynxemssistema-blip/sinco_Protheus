@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter, Printer, Minus, FolderOpen } from 'lucide-react';
+import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter, Printer, Minus, FolderOpen, CheckCircle2, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api, { getSincoArvore } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,28 @@ export default function SolidEdeg_Estrutura_Produto() {
     const [error, setError] = useState(null);
 
     const [expandedRows, setExpandedRows] = useState({});
+    
+    const [validationStatus, setValidationStatus] = useState({});
+    const [validating, setValidating] = useState(false);
+
+    useEffect(() => {
+        if (!arvore || arvore.length === 0) return;
+        
+        const fetchValidation = async () => {
+            setValidating(true);
+            try {
+                const components = [...new Set(arvore.map(item => item.componente || item.codigo))].filter(Boolean);
+                const res = await api.post('/api/sinco/validar-estruturas', { components });
+                setValidationStatus(res.data || {});
+            } catch (err) {
+                console.error("Erro ao validar estruturas:", err);
+            } finally {
+                setValidating(false);
+            }
+        };
+
+        fetchValidation();
+    }, [arvore]);
     
     // Filtros visuais
     const [filters, setFilters] = useState({
@@ -368,12 +390,16 @@ export default function SolidEdeg_Estrutura_Produto() {
                                             <th className="px-3 py-2 min-w-[200px]">Descrição</th>
                                             <th className="px-3 py-2 w-16 text-right">Qtde</th>
                                             <th className="px-3 py-2 w-12 text-center">UN</th>
+                                            <th className="px-3 py-2 w-20 text-center" title="Materiais (SG1)">Mat. (BOM)</th>
+                                            <th className="px-3 py-2 w-20 text-center" title="Produto (SZ1)">Prod. (SZ1)</th>
+                                            <th className="px-3 py-2 w-20 text-center" title="Operações (SG2)">Roteiro</th>
+                                            <th className="px-3 py-2 w-20 text-center" title="Restrições (SZ0)">Restri.</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {rows.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} className="text-center py-12 text-[11px] italic text-slate-400">
+                                                <td colSpan={9} className="text-center py-12 text-[11px] italic text-slate-400">
                                                     Nenhum material carregado para a estrutura
                                                 </td>
                                             </tr>
@@ -381,6 +407,15 @@ export default function SolidEdeg_Estrutura_Produto() {
                                             rows.map(({ item, idx }) => {
                                                 const nivel = item.nivel || 0;
                                                 const indentPx = nivel * 12;
+                                                
+                                                const vStatus = validationStatus[item.componente || item.codigo];
+                                                const renderIcon = (statusKey) => {
+                                                    if (validating) return <Loader2 className="w-4 h-4 animate-spin text-slate-300 mx-auto" />;
+                                                    if (!vStatus) return <AlertCircle className="w-4 h-4 text-slate-300 mx-auto" />;
+                                                    return vStatus[statusKey] 
+                                                        ? <CheckCircle2 className="w-4 h-4 text-green-500 mx-auto" /> 
+                                                        : <XCircle className="w-4 h-4 text-red-500 mx-auto" />;
+                                                };
 
                                                 return (
                                                     <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
@@ -404,6 +439,10 @@ export default function SolidEdeg_Estrutura_Produto() {
                                                         <td className="px-3 py-1.5 text-center text-slate-500 text-[10px] font-semibold">
                                                             {item.um || 'UN'}
                                                         </td>
+                                                        <td className="px-3 py-1.5">{renderIcon('materiais')}</td>
+                                                        <td className="px-3 py-1.5">{renderIcon('sz1')}</td>
+                                                        <td className="px-3 py-1.5">{renderIcon('roteiro')}</td>
+                                                        <td className="px-3 py-1.5">{renderIcon('sz0')}</td>
                                                     </tr>
                                                 );
                                             })

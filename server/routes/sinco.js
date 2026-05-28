@@ -771,6 +771,78 @@ router.get('/estrutura-completa', async (req, res) => {
     res.json(estruturaWebTemp);
 });
 
+// POST /api/sinco/validar-estruturas
+// Valida em lote o status de Materiais (SG1), SZ1, Roteiro (SG2) e SZ0 para uma lista de componentes
+router.post('/validar-estruturas', express.json(), async (req, res) => {
+    try {
+        const { components } = req.body;
+        if (!components || !Array.isArray(components) || components.length === 0) {
+            return res.json({});
+        }
+
+        const codes = [...new Set(components.map(c => String(c).trim().toUpperCase()))].filter(c => c);
+        if (codes.length === 0) return res.json({});
+
+        // Utilizamos pgPool direto para consultas ao Postgres (Protheus)
+        const pgPool = require('../db');
+
+        const sg1Query = `
+            SELECT DISTINCT TRIM(g1_cod) as cod
+            FROM public.sg1010
+            WHERE TRIM(g1_cod) = ANY($1::text[])
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+        `;
+        
+        const sz1Query = `
+            SELECT DISTINCT TRIM(z1_produto) as cod
+            FROM public.sz1010
+            WHERE TRIM(z1_produto) = ANY($1::text[])
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+        `;
+        
+        const sg2Query = `
+            SELECT DISTINCT TRIM(g2_produto) as cod
+            FROM public.sg2010
+            WHERE TRIM(g2_produto) = ANY($1::text[])
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+        `;
+        
+        const sz0Query = `
+            SELECT DISTINCT TRIM(z0_produto) as cod
+            FROM public.sz0010
+            WHERE TRIM(z0_produto) = ANY($1::text[])
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+        `;
+
+        const [resSg1, resSz1, resSg2, resSz0] = await Promise.all([
+            pgPool.query(sg1Query, [codes]),
+            pgPool.query(sz1Query, [codes]),
+            pgPool.query(sg2Query, [codes]),
+            pgPool.query(sz0Query, [codes])
+        ]);
+
+        const sg1Set = new Set(resSg1.rows.map(r => r.cod));
+        const sz1Set = new Set(resSz1.rows.map(r => r.cod));
+        const sg2Set = new Set(resSg2.rows.map(r => r.cod));
+        const sz0Set = new Set(resSz0.rows.map(r => r.cod));
+
+        const result = {};
+        for (const c of codes) {
+            result[c] = {
+                materiais: sg1Set.has(c),
+                sz1: sz1Set.has(c),
+                roteiro: sg2Set.has(c),
+                sz0: sz0Set.has(c)
+            };
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro em /validar-estruturas:', error);
+        res.status(500).json({ error: 'Erro ao validar estruturas no Protheus' });
+    }
+});
+
 const protheusDB = require('../services/protheusDB');
 
 async function queryProtheus(sql, params) {
