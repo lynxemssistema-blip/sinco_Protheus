@@ -65,6 +65,7 @@ const ServiceOrderMaterialsPage = React.lazy(() => import('./pages/sinco/Service
 const SINCOActiveDrawing = React.lazy(() => import('./pages/sinco/SINCOActiveDrawing'));
 const TrackingEvolution = React.lazy(() => import('./pages/production/TrackingEvolution'));
 const SINCOFormularioPrincipal = React.lazy(() => import('./pages/sinco/SINCOFormularioPrincipal'));
+const SolidEdeg_Estrutura_Produto = React.lazy(() => import('./pages/sinco/SolidEdeg_Estrutura_Produto'));
 const DashboardFinanceiro = React.lazy(() => import('./pages/financeiro/DashboardFinanceiro'));
 const ProductionEvolution = React.lazy(() => import('./pages/ProductionEvolution'));
 const InternalRequestsPage = React.lazy(() => import('./pages/InternalRequestsPage'));
@@ -614,6 +615,11 @@ function App() {
                                         <Route path="/engenharia/sinco/formulario" element={
                                             <Layout fullWidth={true}>
                                                 <SINCOFormularioPrincipal />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/sinco/estrutura-completa" element={
+                                            <Layout fullWidth={true}>
+                                                <SolidEdeg_Estrutura_Produto />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/apontamento-por-usuario" element={

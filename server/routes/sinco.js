@@ -740,6 +740,32 @@ router.get('/integrated-product-view', async (req, res) => {
 // SINCO Formulário Web — integração Solid Edge Desktop → Página Web
 // =========================================================================
 
+// POST /api/sinco/estrutura-completa
+// Recebe a BOM completa do Solid Edge Desktop via POST (JSON Array) e disponibiliza temporariamente
+let estruturaWebTemp = null;
+router.post('/estrutura-completa', express.json({limit: '50mb'}), async (req, res) => {
+    try {
+        const bomData = req.body;
+        // Armazena em memória (cache) para a página web ler via GET
+        estruturaWebTemp = bomData;
+        
+        console.log(`✅ [SINCO] Estrutura (BOM) recebida do Solid Edge. Total itens: ${bomData.length}`);
+        res.json({ success: true, message: 'BOM enviada para a Web com sucesso!' });
+    } catch (error) {
+        console.error('❌ Erro ao processar BOM para Web:', error);
+        res.status(500).json({ error: 'Erro interno ao processar BOM' });
+    }
+});
+
+// GET /api/sinco/estrutura-completa
+// Rota para a página frontend (localhost:5173) ler a BOM recebida
+router.get('/estrutura-completa', async (req, res) => {
+    if (!estruturaWebTemp) {
+        return res.json([]);
+    }
+    res.json(estruturaWebTemp);
+});
+
 const protheusDB = require('../services/protheusDB');
 
 async function queryProtheus(sql, params) {

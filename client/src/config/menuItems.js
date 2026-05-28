@@ -37,6 +37,7 @@ export const MENU_GROUPS = [
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
             { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network },
             { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box },
+            { id: 'sinco_estrutura_completa', label: 'SolidEdeg Estrutura', path: '/engenharia/sinco/estrutura-completa', icon: Layers },
             { id: 'controle_engenharia', label: 'Controle de Engenharia', path: '/engenharia/relatorio-controle', icon: FileText },
             { id: 'relatorio_liberacao', label: 'Relatório de Liberação', path: '/engenharia/relatorio-liberacao', icon: ClipboardList }
         ]

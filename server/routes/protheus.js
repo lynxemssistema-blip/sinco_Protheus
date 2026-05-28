@@ -464,6 +464,26 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             }
         }
 
+        // FIX: A API do Protheus falha em propagar o C2_PEDIDO para os itens filhos (c2_sequen > '001') durante a explosão da estrutura
+        // Rodamos um UPDATE rápido direto no Postgres logo após a criação para preencher o C2_PEDIDO nos itens filhos.
+        try {
+            for (const op of ordensProducao) {
+                if (op.C2_PEDIDO && op.C2_NUM) {
+                    const queryUpdate = `
+                        UPDATE public.sc2010 
+                        SET c2_pedido = $1 
+                        WHERE c2_num = $2 AND c2_item = $3 
+                        AND TRIM(COALESCE(c2_pedido, '')) = '' 
+                        AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''
+                    `;
+                    await queryProtheus(queryUpdate, [String(op.C2_PEDIDO).trim(), String(op.C2_NUM).trim(), String(op.C2_ITEMPV).trim()]);
+                    console.log(`[OP BUILDER] Fix aplicado: C2_PEDIDO ${op.C2_PEDIDO} propagado para itens filhos da OP ${op.C2_NUM}.`);
+                }
+            }
+        } catch (dbErr) {
+            console.error('[OP BUILDER] Falha ao propagar C2_PEDIDO para itens filhos:', dbErr.message);
+        }
+
         res.json({ 
             success: true, 
             message: 'O.P.(s) gerada(s) com sucesso.', 

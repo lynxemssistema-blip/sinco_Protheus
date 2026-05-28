@@ -3834,7 +3834,7 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                       AND z0.z0_status = 'P'
                 ) z0 ON z0.z0_restrics_hex IS NOT NULL
                 ORDER BY path_array
-                LIMIT 500;
+                LIMIT 1000;
             `;
 
             const pgRes = await db.query(pgQuery, [codLimpo]);
