@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter } from 'lucide-react';
+import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter, Printer, Minus, FolderOpen } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api, { getSincoArvore } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -121,6 +121,11 @@ export default function SolidEdeg_Estrutura_Produto() {
                     
                     setArvore(mapeado);
                     setArquivo(mapeado.length > 0 ? mapeado[0].componente : 'BOM Solid Edge');
+                    if (parsedData.length > 0 && parsedData[0].CaminhoCompleto) {
+                        setCaminho(parsedData[0].CaminhoCompleto);
+                    } else if (parsedData.length > 0 && parsedData[0].B1_XCODDES) {
+                        setCaminho(parsedData[0].B1_XCODDES);
+                    }
                     
                     const initialExpanded = {};
                     mapeado.forEach(i => { if (i.componente) initialExpanded[i.componente] = true; });
@@ -250,8 +255,25 @@ export default function SolidEdeg_Estrutura_Produto() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold tracking-tight text-slate-900">SolidEdge Estrutura Produto</h1>
-                        <p className="text-sm text-slate-500">
-                            Arquivo: <span className="font-mono text-blue-600">{arquivo}</span>
+                        <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1">
+                            Arquivo: 
+                            {temArquivo && caminho && caminho !== 'Nenhum arquivo carregado' ? (
+                                <button
+                                    title="Abrir arquivo original no Solid Edge"
+                                    onClick={() => {
+                                        fetch('http://localhost:8080/api/solidedge/open-file', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ caminho: caminho })
+                                        }).catch(() => alert('Agente Solid Edge não encontrado.\\nInicie o INICIAR_AGENT.bat na sua máquina.'));
+                                    }}
+                                    className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-sm flex items-center gap-1">
+                                    <FolderOpen className="w-3 h-3" />
+                                    {arquivo}
+                                </button>
+                            ) : (
+                                <span className="font-mono text-blue-600">{arquivo}</span>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -305,10 +327,10 @@ export default function SolidEdeg_Estrutura_Produto() {
             )}
 
             {temArquivo && !loading && (
-                <div className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col flex-1">
+                <div className="flex flex-col gap-4 flex-1">
                     
-                    {/* Toolbar and Filters */}
-                    <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-4 items-center justify-between">
+                    {/* Toolbar Central */}
+                    <div className="bg-white rounded-lg shadow-sm border p-3 flex flex-wrap gap-4 items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Filter className="w-4 h-4 text-slate-500" />
                             <input
@@ -320,78 +342,167 @@ export default function SolidEdeg_Estrutura_Produto() {
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm">
+                            <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm" title="Exportar para Excel">
                                 <Download className="w-4 h-4 mr-2" />
-                                Exportar Excel
+                                Excel
+                            </button>
+                            <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm" title="Imprimir Relatório PDF">
+                                <Printer className="w-4 h-4 mr-2" />
+                                PDF
                             </button>
                         </div>
                     </div>
 
-                    {/* Data Table */}
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-sm">
-                            <thead>
-                                <tr className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
-                                    <th className="px-4 py-3 w-16 text-center">Nível</th>
-                                    <th className="px-4 py-3 min-w-[200px]">Código</th>
-                                    <th className="px-4 py-3 min-w-[300px]">Descrição</th>
-                                    <th className="px-4 py-3 w-24 text-center">Tipo</th>
-                                    <th className="px-4 py-3 min-w-[150px]">Material</th>
-                                    <th className="px-4 py-3 w-24 text-right">Qtde</th>
-                                    <th className="px-4 py-3 w-24 text-right">Peso Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} className="text-center py-8 text-slate-400">
-                                            Nenhum item na estrutura.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    rows.map(({ item, idx }) => {
-                                        // Usa 'nivel' se houver na API, caso contrário 0
-                                        const nivel = item.nivel || 0;
-                                        const indentPx = nivel * 20;
-
-                                        return (
-                                            <tr key={idx} className="border-b transition-colors hover:bg-slate-50">
-                                                <td className="px-4 py-3 text-center">
-                                                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${nivel === 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                        {nivel}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-start gap-1" style={{ paddingLeft: `${indentPx}px` }}>
-                                                        {nivel > 0 && <span className="text-slate-300 font-mono text-xs mt-0.5 shrink-0 select-none">└─</span>}
-                                                        <span className="font-mono font-bold text-xs text-slate-700">{item.componente || item.codigo || '—'}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-700 text-xs">
-                                                    {item.descricao || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-center text-xs text-slate-500">
-                                                    {item.tipo ? (
-                                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-semibold tracking-wide border border-slate-200">
-                                                            {item.tipo}
-                                                        </span>
-                                                    ) : '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600 text-xs truncate max-w-[150px]" title={item.material}>
-                                                    {item.material || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-mono text-xs font-bold text-blue-700">
-                                                    {parseFloat(item.quantidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
-                                                    {parseFloat(item.peso || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {/* Layout de Painéis (Dashboard) */}
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                        
+                        {/* 1. ÁRVORE DO PRODUTO (MATERIAIS) */}
+                        <div className="bg-white rounded-lg shadow-sm border border-green-200 overflow-hidden flex flex-col h-[400px]">
+                            <div className="bg-green-50/50 border-b border-green-200 px-4 py-2 flex justify-between items-center">
+                                <span className="font-bold text-green-700 text-[11px] tracking-wider uppercase">Árvore do Produto (Materiais)</span>
+                                <button className="p-0.5 border border-green-200 rounded text-green-500 bg-white hover:bg-green-50"><Minus className="w-3 h-3" /></button>
+                            </div>
+                            <div className="overflow-auto flex-1">
+                                <table className="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
+                                            <th className="px-3 py-2 w-12 text-center">Nív.</th>
+                                            <th className="px-3 py-2 min-w-[120px]">Código</th>
+                                            <th className="px-3 py-2 min-w-[200px]">Descrição</th>
+                                            <th className="px-3 py-2 w-16 text-right">Qtde</th>
+                                            <th className="px-3 py-2 w-12 text-center">UN</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rows.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="text-center py-12 text-[11px] italic text-slate-400">
+                                                    Nenhum material carregado para a estrutura
                                                 </td>
                                             </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+                                        ) : (
+                                            rows.map(({ item, idx }) => {
+                                                const nivel = item.nivel || 0;
+                                                const indentPx = nivel * 12;
+
+                                                return (
+                                                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
+                                                        <td className="px-3 py-1.5 text-center">
+                                                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${nivel === 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                                {nivel}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5">
+                                                            <div className="flex items-start gap-1" style={{ paddingLeft: `${indentPx}px` }}>
+                                                                {nivel > 0 && <span className="text-slate-300 font-mono text-[10px] mt-0.5 shrink-0 select-none">└─</span>}
+                                                                <span className="font-mono font-bold text-[11px] text-slate-700">{item.componente || item.codigo || '—'}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-slate-600 text-[11px] leading-tight truncate max-w-[200px]" title={item.descricao}>
+                                                            {item.descricao || '—'}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-right font-mono text-[11px] font-bold text-slate-700">
+                                                            {parseFloat(item.quantidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-center text-slate-500 text-[10px] font-semibold">
+                                                            {item.um || 'UN'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* 2. PRODUTO METALFISA/CLIENTE (SZ1) */}
+                        <div className="bg-white rounded-lg shadow-sm border border-amber-200 overflow-hidden flex flex-col h-[400px]">
+                            <div className="bg-amber-50/50 border-b border-amber-200 px-4 py-2 flex justify-between items-center">
+                                <span className="font-bold text-amber-700 text-[11px] tracking-wider uppercase">Produto Metalfisa/Cliente (SZ1)</span>
+                                <button className="p-0.5 border border-amber-200 rounded text-amber-500 bg-white hover:bg-amber-50"><Minus className="w-3 h-3" /></button>
+                            </div>
+                            <div className="overflow-auto flex-1 flex flex-col">
+                                <table className="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
+                                            <th className="px-4 py-2">Cliente</th>
+                                            <th className="px-4 py-2">Nome</th>
+                                            <th className="px-4 py-2">Cód CL.</th>
+                                            <th className="px-4 py-2 text-center">Rev</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colSpan={4} className="text-center py-12 text-[11px] italic text-slate-400">
+                                                Nenhuma restrição encontrada no Protheus
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* 3. OPERAÇÕES (ROTEIRO) */}
+                        <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden flex flex-col h-[400px]">
+                            <div className="bg-blue-50/50 border-b border-blue-200 px-4 py-2 flex justify-between items-center">
+                                <span className="font-bold text-blue-700 text-[11px] tracking-wider uppercase">Operações (Roteiro)</span>
+                                <button className="p-0.5 border border-blue-200 rounded text-blue-500 bg-white hover:bg-blue-50"><Minus className="w-3 h-3" /></button>
+                            </div>
+                            <div className="overflow-auto flex-1 flex flex-col">
+                                <table className="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
+                                            <th className="px-4 py-2">Operação</th>
+                                            <th className="px-4 py-2">Descrição</th>
+                                            <th className="px-4 py-2">Recurso</th>
+                                            <th className="px-4 py-2 text-right">Setup (Min)</th>
+                                            <th className="px-4 py-2 text-right">Tempo Padrão</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colSpan={5} className="text-center py-12 text-[11px] italic text-slate-400">
+                                                Nenhuma operação encontrada no Protheus
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Segunda Linha - Full width */}
+                    <div className="grid grid-cols-1 mt-2">
+                        {/* 4. RESTRIÇÕES DE ENGENHARIA (SZ0) */}
+                        <div className="bg-white rounded-lg shadow-sm border border-red-200 overflow-hidden flex flex-col min-h-[250px]">
+                            <div className="bg-red-50/50 border-b border-red-200 px-4 py-2 flex justify-between items-center">
+                                <span className="font-bold text-red-700 text-[11px] tracking-wider uppercase">Restrições de Engenharia (SZ0)</span>
+                                <button className="p-0.5 border border-red-200 rounded text-red-500 bg-white hover:bg-red-50"><Minus className="w-3 h-3" /></button>
+                            </div>
+                            <div className="overflow-auto flex-1 flex flex-col">
+                                <table className="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
+                                            <th className="px-4 py-2">Item</th>
+                                            <th className="px-4 py-2">Status</th>
+                                            <th className="px-4 py-2">Resumo</th>
+                                            <th className="px-4 py-2 min-w-[300px]">Descrição da Restrição *</th>
+                                            <th className="px-4 py-2 text-center">Revisão</th>
+                                            <th className="px-4 py-2">Responsável</th>
+                                            <th className="px-4 py-2">Últ. Alteração</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colSpan={7} className="text-center py-12 text-[11px] italic text-slate-400">
+                                                Nenhuma restrição SZ0 encontrada para este produto
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
