@@ -171,9 +171,16 @@ export default function SolidEdeg_Estrutura_Produto() {
                     carregarEstrutura(novos.arquivo);
                 }
             });
+
+            socket.on('sinco:bom_solidedge_atualizada', () => {
+                const source = searchParams.get('source');
+                if (source === 'solidedge') {
+                    carregarEstruturaSolidEdge();
+                }
+            });
         });
         return () => { if (socket) socket.disconnect(); };
-    }, [arquivo, carregarEstrutura]);
+    }, [arquivo, carregarEstrutura, carregarEstruturaSolidEdge, searchParams]);
 
     const buscarManual = (codigo) => {
         if (!codigo) return;

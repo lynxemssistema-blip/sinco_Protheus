@@ -749,6 +749,11 @@ router.post('/estrutura-completa', express.json({limit: '50mb'}), async (req, re
         // Armazena em memória (cache) para a página web ler via GET
         estruturaWebTemp = bomData;
         
+        const io = req.app.get('io');
+        if (io) {
+            io.to('sinco_formulario').emit('sinco:bom_solidedge_atualizada', { total: bomData.length });
+        }
+        
         console.log(`✅ [SINCO] Estrutura (BOM) recebida do Solid Edge. Total itens: ${bomData.length}`);
         res.json({ success: true, message: 'BOM enviada para a Web com sucesso!' });
     } catch (error) {
