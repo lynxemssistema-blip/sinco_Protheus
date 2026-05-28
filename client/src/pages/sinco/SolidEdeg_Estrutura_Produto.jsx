@@ -85,34 +85,50 @@ export default function SolidEdeg_Estrutura_Produto() {
         setLoading(true);
         try {
             const res = await api.get('/sinco/estrutura-completa');
-            if (res.data && res.data.length > 0) {
-                // Mapear os dados recebidos do Solid Edge Desktop para o formato esperado pela tabela
-                const mapeado = res.data.map(item => {
-                    let tipoStr = item.TipoArquivo || item['Tipo de Desenho'] || '';
-                    if (!tipoStr && item.B1_XCODDES) {
-                        const parts = item.B1_XCODDES.split('.');
-                        if (parts.length > 1) tipoStr = parts[parts.length - 1].toUpperCase();
+            if (res.data) {
+                let parsedData = [];
+                if (Array.isArray(res.data)) {
+                    parsedData = res.data;
+                } else if (typeof res.data === 'string') {
+                    try {
+                        parsedData = JSON.parse(res.data);
+                    } catch (e) {
+                        console.error('Erro ao fazer parse dos dados do Solid Edge:', e);
                     }
+                }
 
-                    return {
-                        nivel: item.Nivel !== undefined ? item.Nivel : (item.NIVEL !== undefined ? item.NIVEL : 0),
-                        componente: item.B1_COD || item.Arquivo || item.CaminhoCompleto || '',
-                        descricao: item.B1_DESC || item.Título || item.DescDetal || item.Assunto || '',
-                        quantidade: item.QUANTIDADE !== undefined ? item.QUANTIDADE : (item.QtdeTotal !== undefined ? item.QtdeTotal : (item.Qtde || 0)),
-                        material: item.Material || '',
-                        peso: item.B1_PESO !== undefined ? item.B1_PESO : (item.PesoTotal || item.Mass || 0),
-                        tipo: tipoStr,
-                        um: item.B1_UM || item.Unidade || 'UN',
-                        _raw: item
-                    };
-                });
-                
-                setArvore(mapeado);
-                setArquivo(mapeado.length > 0 ? mapeado[0].componente : 'BOM Solid Edge');
-                
-                const initialExpanded = {};
-                mapeado.forEach(i => { if (i.componente) initialExpanded[i.componente] = true; });
-                setExpandedRows(initialExpanded);
+                if (parsedData.length > 0) {
+                    // Mapear os dados recebidos do Solid Edge Desktop para o formato esperado pela tabela
+                    const mapeado = parsedData.map(item => {
+                        let tipoStr = item.TipoArquivo || item['Tipo de Desenho'] || '';
+                        if (!tipoStr && item.B1_XCODDES) {
+                            const parts = item.B1_XCODDES.split('.');
+                            if (parts.length > 1) tipoStr = parts[parts.length - 1].toUpperCase();
+                        }
+
+                        return {
+                            nivel: item.Nivel !== undefined ? item.Nivel : (item.NIVEL !== undefined ? item.NIVEL : 0),
+                            componente: item.B1_COD || item.Arquivo || item.CaminhoCompleto || '',
+                            descricao: item.B1_DESC || item.Título || item.DescDetal || item.Assunto || '',
+                            quantidade: item.QUANTIDADE !== undefined ? item.QUANTIDADE : (item.QtdeTotal !== undefined ? item.QtdeTotal : (item.Qtde || 0)),
+                            material: item.Material || '',
+                            peso: item.B1_PESO !== undefined ? item.B1_PESO : (item.PesoTotal || item.Mass || 0),
+                            tipo: tipoStr,
+                            um: item.B1_UM || item.Unidade || 'UN',
+                            _raw: item
+                        };
+                    });
+                    
+                    setArvore(mapeado);
+                    setArquivo(mapeado.length > 0 ? mapeado[0].componente : 'BOM Solid Edge');
+                    
+                    const initialExpanded = {};
+                    mapeado.forEach(i => { if (i.componente) initialExpanded[i.componente] = true; });
+                    setExpandedRows(initialExpanded);
+                } else {
+                    setArvore([]);
+                    setError("A BOM enviada pelo Solid Edge está vazia ou em formato inválido.");
+                }
             } else {
                 setArvore([]);
                 setError("Nenhuma estrutura temporária encontrada na memória do servidor.");
