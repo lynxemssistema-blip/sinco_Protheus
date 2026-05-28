@@ -460,7 +460,6 @@ export default function SolidEdeg_Estrutura_Produto() {
                                 </table>
                             </div>
                         </div>
-                        </div>
                     </div>
                 </div>
             )}
