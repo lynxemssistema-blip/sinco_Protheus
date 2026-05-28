@@ -385,7 +385,7 @@ export default function SolidEdeg_Estrutura_Produto() {
                     <div className="grid grid-cols-1 gap-4 flex-1">
                         
                         {/* 1. ÁRVORE DO PRODUTO (MATERIAIS) */}
-                        <div className="bg-white rounded-lg shadow-sm border border-green-200 overflow-hidden flex flex-col h-[400px]">
+                        <div className="bg-white rounded-lg shadow-sm border border-green-200 overflow-hidden flex flex-col flex-1">
                             <div className="bg-green-50/50 border-b border-green-200 px-4 py-2 flex justify-between items-center">
                                 <span className="font-bold text-green-700 text-[11px] tracking-wider uppercase">Árvore do Produto (Materiais)</span>
                                 <button className="p-0.5 border border-green-200 rounded text-green-500 bg-white hover:bg-green-50"><Minus className="w-3 h-3" /></button>
