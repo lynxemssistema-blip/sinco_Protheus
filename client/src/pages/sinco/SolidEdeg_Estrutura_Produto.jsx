@@ -128,9 +128,18 @@ export default function SolidEdeg_Estrutura_Produto() {
                             if (parts.length > 1) tipoStr = parts[parts.length - 1].toUpperCase();
                         }
 
+                        let componenteBruto = item.B1_COD || item.Arquivo || item.CaminhoCompleto || '';
+                        let componenteLimpo = componenteBruto;
+                        if (componenteLimpo) {
+                            componenteLimpo = String(componenteLimpo).trim();
+                            const lastDot = componenteLimpo.lastIndexOf('.');
+                            if (lastDot > 0) componenteLimpo = componenteLimpo.substring(0, lastDot);
+                            componenteLimpo = componenteLimpo.toUpperCase();
+                        }
+
                         return {
                             nivel: item.Nivel !== undefined ? item.Nivel : (item.NIVEL !== undefined ? item.NIVEL : 0),
-                            componente: item.B1_COD || item.Arquivo || item.CaminhoCompleto || '',
+                            componente: componenteLimpo,
                             descricao: item.B1_DESC || item.Título || item.DescDetal || item.Assunto || '',
                             quantidade: item.QUANTIDADE !== undefined ? item.QUANTIDADE : (item.QtdeTotal !== undefined ? item.QtdeTotal : (item.Qtde || 0)),
                             material: item.Material || '',
@@ -373,7 +382,7 @@ export default function SolidEdeg_Estrutura_Produto() {
                     </div>
 
                     {/* Layout de Painéis (Dashboard) */}
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 flex-1">
                         
                         {/* 1. ÁRVORE DO PRODUTO (MATERIAIS) */}
                         <div className="bg-white rounded-lg shadow-sm border border-green-200 overflow-hidden flex flex-col h-[400px]">
@@ -451,93 +460,6 @@ export default function SolidEdeg_Estrutura_Produto() {
                                 </table>
                             </div>
                         </div>
-
-                        {/* 2. PRODUTO METALFISA/CLIENTE (SZ1) */}
-                        <div className="bg-white rounded-lg shadow-sm border border-amber-200 overflow-hidden flex flex-col h-[400px]">
-                            <div className="bg-amber-50/50 border-b border-amber-200 px-4 py-2 flex justify-between items-center">
-                                <span className="font-bold text-amber-700 text-[11px] tracking-wider uppercase">Produto Metalfisa/Cliente (SZ1)</span>
-                                <button className="p-0.5 border border-amber-200 rounded text-amber-500 bg-white hover:bg-amber-50"><Minus className="w-3 h-3" /></button>
-                            </div>
-                            <div className="overflow-auto flex-1 flex flex-col">
-                                <table className="w-full text-left border-collapse text-sm">
-                                    <thead>
-                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
-                                            <th className="px-4 py-2">Cliente</th>
-                                            <th className="px-4 py-2">Nome</th>
-                                            <th className="px-4 py-2">Cód CL.</th>
-                                            <th className="px-4 py-2 text-center">Rev</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td colSpan={4} className="text-center py-12 text-[11px] italic text-slate-400">
-                                                Nenhuma restrição encontrada no Protheus
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* 3. OPERAÇÕES (ROTEIRO) */}
-                        <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden flex flex-col h-[400px]">
-                            <div className="bg-blue-50/50 border-b border-blue-200 px-4 py-2 flex justify-between items-center">
-                                <span className="font-bold text-blue-700 text-[11px] tracking-wider uppercase">Operações (Roteiro)</span>
-                                <button className="p-0.5 border border-blue-200 rounded text-blue-500 bg-white hover:bg-blue-50"><Minus className="w-3 h-3" /></button>
-                            </div>
-                            <div className="overflow-auto flex-1 flex flex-col">
-                                <table className="w-full text-left border-collapse text-sm">
-                                    <thead>
-                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
-                                            <th className="px-4 py-2">Operação</th>
-                                            <th className="px-4 py-2">Descrição</th>
-                                            <th className="px-4 py-2">Recurso</th>
-                                            <th className="px-4 py-2 text-right">Setup (Min)</th>
-                                            <th className="px-4 py-2 text-right">Tempo Padrão</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td colSpan={5} className="text-center py-12 text-[11px] italic text-slate-400">
-                                                Nenhuma operação encontrada no Protheus
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Segunda Linha - Full width */}
-                    <div className="grid grid-cols-1 mt-2">
-                        {/* 4. RESTRIÇÕES DE ENGENHARIA (SZ0) */}
-                        <div className="bg-white rounded-lg shadow-sm border border-red-200 overflow-hidden flex flex-col min-h-[250px]">
-                            <div className="bg-red-50/50 border-b border-red-200 px-4 py-2 flex justify-between items-center">
-                                <span className="font-bold text-red-700 text-[11px] tracking-wider uppercase">Restrições de Engenharia (SZ0)</span>
-                                <button className="p-0.5 border border-red-200 rounded text-red-500 bg-white hover:bg-red-50"><Minus className="w-3 h-3" /></button>
-                            </div>
-                            <div className="overflow-auto flex-1 flex flex-col">
-                                <table className="w-full text-left border-collapse text-sm">
-                                    <thead>
-                                        <tr className="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b sticky top-0 z-10">
-                                            <th className="px-4 py-2">Item</th>
-                                            <th className="px-4 py-2">Status</th>
-                                            <th className="px-4 py-2">Resumo</th>
-                                            <th className="px-4 py-2 min-w-[300px]">Descrição da Restrição *</th>
-                                            <th className="px-4 py-2 text-center">Revisão</th>
-                                            <th className="px-4 py-2">Responsável</th>
-                                            <th className="px-4 py-2">Últ. Alteração</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td colSpan={7} className="text-center py-12 text-[11px] italic text-slate-400">
-                                                Nenhuma restrição SZ0 encontrada para este produto
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                     </div>
                 </div>

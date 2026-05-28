@@ -780,7 +780,15 @@ router.post('/validar-estruturas', express.json(), async (req, res) => {
             return res.json({});
         }
 
-        const codes = [...new Set(components.map(c => String(c).trim().toUpperCase()))].filter(c => c);
+        // Remove extensão (ex: .ASM, .PAR) e deixa maiúsculo
+        const stripExt = (name) => {
+            if (!name) return '';
+            const n = String(name).trim();
+            const lastDot = n.lastIndexOf('.');
+            return (lastDot > 0 ? n.substring(0, lastDot) : n).toUpperCase();
+        };
+
+        const codes = [...new Set(components.map(stripExt))].filter(Boolean);
         if (codes.length === 0) return res.json({});
 
         // Utilizamos pgPool direto para consultas ao Postgres (Protheus)
