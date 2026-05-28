@@ -39,8 +39,28 @@ export default function SolidEdeg_Estrutura_Produto() {
         try {
             const result = await getSincoArvore(codigoSemExtensao);
             
-            // Supondo que a API retorne a árvore em formato de lista plana com nível ou aninhada
-            setArvore(Array.isArray(result) ? result : []);
+            // Mapeia os dados do ERP (Protheus) ou do payload padronizado
+            const arvoreFormatada = Array.isArray(result) ? result.map(item => {
+                let tipoStr = item.TipoArquivo || item['Tipo de Desenho'] || '';
+                if (!tipoStr && item.B1_XCODDES) {
+                    const parts = item.B1_XCODDES.split('.');
+                    if (parts.length > 1) tipoStr = parts[parts.length - 1].toUpperCase();
+                }
+
+                return {
+                    nivel: item.Nivel !== undefined ? item.Nivel : (item.NIVEL !== undefined ? item.NIVEL : 0),
+                    componente: item.B1_COD || item.Arquivo || item.CaminhoCompleto || item.componente || '',
+                    descricao: item.B1_DESC || item.Título || item.DescDetal || item.Assunto || item.descricao || '',
+                    quantidade: item.QUANTIDADE !== undefined ? item.QUANTIDADE : (item.QtdeTotal !== undefined ? item.QtdeTotal : (item.Qtde || item.quantidade || 0)),
+                    material: item.Material || item.material || '',
+                    peso: item.B1_PESO !== undefined ? item.B1_PESO : (item.PesoTotal || item.Mass || item.peso || 0),
+                    tipo: tipoStr || item.tipo || '',
+                    um: item.B1_UM || item.Unidade || item.um || 'UN',
+                    _raw: item
+                };
+            }) : [];
+            
+            setArvore(arvoreFormatada);
             
             // Expandir tudo por padrão
             const initialExpanded = {};
@@ -67,16 +87,28 @@ export default function SolidEdeg_Estrutura_Produto() {
             const res = await api.get('/sinco/estrutura-completa');
             if (res.data && res.data.length > 0) {
                 // Mapear os dados recebidos do Solid Edge Desktop para o formato esperado pela tabela
-                const mapeado = res.data.map(item => ({
-                    nivel: item.Nivel || 0,
-                    componente: item.Arquivo || item.CaminhoCompleto || '',
-                    descricao: item.Título || item.Assunto || item.DescDetal || '',
-                    quantidade: item.QtdeTotal || item.Qtde || 0,
-                    um: item.Unidade || 'UN',
-                    _raw: item
-                }));
+                const mapeado = res.data.map(item => {
+                    let tipoStr = item.TipoArquivo || item['Tipo de Desenho'] || '';
+                    if (!tipoStr && item.B1_XCODDES) {
+                        const parts = item.B1_XCODDES.split('.');
+                        if (parts.length > 1) tipoStr = parts[parts.length - 1].toUpperCase();
+                    }
+
+                    return {
+                        nivel: item.Nivel !== undefined ? item.Nivel : (item.NIVEL !== undefined ? item.NIVEL : 0),
+                        componente: item.B1_COD || item.Arquivo || item.CaminhoCompleto || '',
+                        descricao: item.B1_DESC || item.Título || item.DescDetal || item.Assunto || '',
+                        quantidade: item.QUANTIDADE !== undefined ? item.QUANTIDADE : (item.QtdeTotal !== undefined ? item.QtdeTotal : (item.Qtde || 0)),
+                        material: item.Material || '',
+                        peso: item.B1_PESO !== undefined ? item.B1_PESO : (item.PesoTotal || item.Mass || 0),
+                        tipo: tipoStr,
+                        um: item.B1_UM || item.Unidade || 'UN',
+                        _raw: item
+                    };
+                });
+                
                 setArvore(mapeado);
-                setArquivo(res.data[0].Arquivo || 'BOM Solid Edge');
+                setArquivo(mapeado.length > 0 ? mapeado[0].componente : 'BOM Solid Edge');
                 
                 const initialExpanded = {};
                 mapeado.forEach(i => { if (i.componente) initialExpanded[i.componente] = true; });
@@ -166,12 +198,15 @@ export default function SolidEdeg_Estrutura_Produto() {
             'Nível': item.nivel || 0,
             'Componente': item.componente,
             'Descrição': item.descricao || '',
+            'Tipo': item.tipo || '',
+            'Material': item.material || '',
             'Quantidade': item.quantidade || 0,
+            'Peso (kg)': item.peso || 0,
             'Unidade': item.um || item.unidade || ''
         }));
 
         const ws = XLSX.utils.json_to_sheet(exportData);
-        ws['!cols'] = [{ wch: 10 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, { wch: 10 }];
+        ws['!cols'] = [{ wch: 10 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 10 }];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Estrutura BOM");
@@ -277,8 +312,10 @@ export default function SolidEdeg_Estrutura_Produto() {
                                     <th className="px-4 py-3 w-16 text-center">Nível</th>
                                     <th className="px-4 py-3 min-w-[200px]">Código</th>
                                     <th className="px-4 py-3 min-w-[300px]">Descrição</th>
+                                    <th className="px-4 py-3 w-24 text-center">Tipo</th>
+                                    <th className="px-4 py-3 min-w-[150px]">Material</th>
                                     <th className="px-4 py-3 w-24 text-right">Qtde</th>
-                                    <th className="px-4 py-3 w-20 text-center">UM</th>
+                                    <th className="px-4 py-3 w-24 text-right">Peso Total</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -310,11 +347,21 @@ export default function SolidEdeg_Estrutura_Produto() {
                                                 <td className="px-4 py-3 text-slate-700 text-xs">
                                                     {item.descricao || '—'}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-mono text-xs font-bold text-slate-800">
+                                                <td className="px-4 py-3 text-center text-xs text-slate-500">
+                                                    {item.tipo ? (
+                                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-semibold tracking-wide border border-slate-200">
+                                                            {item.tipo}
+                                                        </span>
+                                                    ) : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 text-xs truncate max-w-[150px]" title={item.material}>
+                                                    {item.material || '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono text-xs font-bold text-blue-700">
                                                     {parseFloat(item.quantidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
                                                 </td>
-                                                <td className="px-4 py-3 text-center text-xs text-slate-500 uppercase">
-                                                    {item.um || item.unidade || '—'}
+                                                <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
+                                                    {parseFloat(item.peso || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </td>
                                             </tr>
                                         );
