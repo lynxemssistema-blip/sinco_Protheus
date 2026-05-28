@@ -29,7 +29,7 @@ export default function SolidEdeg_Estrutura_Produto() {
             setValidating(true);
             try {
                 const components = [...new Set(arvore.map(item => item.componente || item.codigo))].filter(Boolean);
-                const res = await api.post('/api/sinco/validar-estruturas', { components });
+                const res = await api.post('/sinco/validar-estruturas', { components });
                 setValidationStatus(res.data || {});
             } catch (err) {
                 console.error("Erro ao validar estruturas:", err);
@@ -102,9 +102,9 @@ export default function SolidEdeg_Estrutura_Produto() {
         }
     }, []);
 
-    const carregarEstruturaSolidEdge = useCallback(async () => {
+    const carregarEstruturaSolidEdge = useCallback(async (isAuto = false) => {
         setError(null);
-        setLoading(true);
+        if (!isAuto) setLoading(true);
         try {
             const res = await api.get('/sinco/estrutura-completa');
             if (res.data) {
@@ -154,32 +154,32 @@ export default function SolidEdeg_Estrutura_Produto() {
                     setExpandedRows(initialExpanded);
                 } else {
                     setArvore([]);
-                    setError("A BOM enviada pelo Solid Edge está vazia ou em formato inválido.");
+                    if (!isAuto) setError("A BOM enviada pelo Solid Edge está vazia ou em formato inválido.");
                 }
             } else {
                 setArvore([]);
-                setError("Nenhuma estrutura temporária encontrada na memória do servidor.");
+                if (!isAuto) setError("Nenhuma estrutura temporária encontrada na memória do servidor.");
             }
         } catch (err) {
             console.error("Erro ao carregar estrutura do Solid Edge:", err);
-            setError(err.response?.data?.error || err.message || 'Erro ao buscar a estrutura do Solid Edge');
+            if (!isAuto) setError(err.response?.data?.error || err.message || 'Erro ao buscar a estrutura do Solid Edge');
             setArvore([]);
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // Carrega na primeira abertura (via URL)
+    // Carrega na primeira abertura ou retorno à página
     useEffect(() => {
         const source = searchParams.get('source');
-        if (source === 'solidedge') {
-            carregarEstruturaSolidEdge();
-        } else {
-            const cod = searchParams.get('arquivo');
-            if (cod) {
-                setArquivo(cod);
-                carregarEstrutura(cod);
-            }
+        const cod = searchParams.get('arquivo');
+        
+        if (cod) {
+            setArquivo(cod);
+            carregarEstrutura(cod);
+        } else if (source === 'solidedge' || (!cod && !source)) {
+            // Tenta resgatar a estrutura em memória caso o usuário navegue e volte
+            carregarEstruturaSolidEdge(true);
         }
     }, [searchParams, carregarEstrutura, carregarEstruturaSolidEdge]);
 
