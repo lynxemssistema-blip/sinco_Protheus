@@ -1,255 +1,305 @@
-import { jsPDF } from 'jspdf';
+import jsPDFLib from 'jspdf';
+const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
+import { logoBase64 } from './metalfisaLogoBase64';
 import api from './api';
 
-const fmtQtd = (v) => parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+const BLUE = [30, 58, 95];
+const ML = 10;
+const MR = 10;
+const HEADER_H = 30; // altura total do cabeçalho (px) para margem das tabelas
 
+const fmtQtd = (v) =>
+    parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+
+// ─────────────────────────────────────────────
+//  CABEÇALHO PADRÃO METALFISA
+// ─────────────────────────────────────────────
+const drawHeader = (doc, pageWidth, rootCode, user, reportTitle) => {
+    const hY = 5;
+    const usableW = pageWidth - ML - MR;
+    const hH = 20;
+
+    const col1 = ML + 42;   // logo | empresa
+    const col2 = ML + 145;  // título | info
+
+    // Borda externa
+    doc.setDrawColor(...BLUE);
+    doc.setLineWidth(0.4);
+    doc.rect(ML, hY, usableW, hH);
+
+    // Divisórias verticais
+    doc.setLineWidth(0.2);
+    [col1, col2].forEach(x => doc.line(x, hY, x, hY + hH));
+
+    // ── Logo ──
+    try {
+        if (logoBase64) {
+            doc.addImage(logoBase64, 'PNG', ML + 1, hY + 1.5, 38, 17);
+        } else {
+            throw new Error('no logo');
+        }
+    } catch {
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...BLUE);
+        doc.text('METALFISA', ML + 3, hY + 12);
+    }
+
+    // ── Título central ──
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(reportTitle, (col1 + col2) / 2, hY + 8, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Produto: ${rootCode || '—'}`, (col1 + col2) / 2, hY + 14, { align: 'center' });
+
+    // ── Info direita ──
+    const now = new Date();
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Data: ${now.toLocaleDateString('pt-BR')}`, col2 + 3, hY + 7);
+    doc.text(`Hora: ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, col2 + 3, hY + 12);
+    doc.text(`Usuário: ${user?.nome || user?.login || 'Sistema'}`, col2 + 3, hY + 17);
+
+    return hY + hH + 4; // retorna Y onde o conteúdo deve começar
+};
+
+// ─────────────────────────────────────────────
+//  FOOTER PADRÃO METALFISA
+// ─────────────────────────────────────────────
+const drawFooters = (doc, pageWidth) => {
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        const pageH = doc.internal.pageSize.getHeight();
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Gerado via MetalFisa App — SINCO Engenharia`, ML, pageH - 5);
+        doc.text(
+            `Página ${i} de ${pageCount}`,
+            pageWidth - MR,
+            pageH - 5,
+            { align: 'right' }
+        );
+    }
+};
+
+// ─────────────────────────────────────────────
+//  GERADOR PRINCIPAL
+// ─────────────────────────────────────────────
 const generateSincoStructurePdf = async (structure, user) => {
     if (!structure || !structure.tree) return;
 
     const doc = new jsPDF('portrait', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
+    const reportTitle = 'Relação de Estrutura do Produto';
 
-    // ── 1. CABEÇALHO PADRÃO PROTHEUS (MATR225Cus/v.12) ──
-    const ML = 10;
-    const MR = 10;
-    const pageWidthMinusMargins = pageWidth - ML - MR;
-    
-    // Header Texts
-    doc.setFont('courier', 'normal'); // Monospaced font typical of legacy reports
-    doc.setFontSize(8);
-    
-    const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const dateStr = new Date().toLocaleDateString('pt-BR');
-    
-    // Left side
-    doc.text('SIGA/MATR225Cus/v.12', ML, 10);
-    doc.text(`Hora...: ${timeStr} - Grupo de empresa: GRUPO METALFISA / Filial: METALFISA MATRIZ`, ML, 14);
-    
-    // Center title
-    doc.setFontSize(10);
-    doc.text('Relação Simplificada das Estruturas', pageWidth / 2, 10, { align: 'center' });
-    
-    // Right side
-    doc.setFontSize(8);
-    doc.text('Folha...: 1', pageWidth - MR, 10, { align: 'right' });
-    doc.text(`DT.Ref.: ${dateStr}`, pageWidth - MR, 14, { align: 'right' });
-    doc.text(`Emissão: ${dateStr}`, pageWidth - MR, 18, { align: 'right' });
+    // ── Cabeçalho da primeira página ──
+    let startY = drawHeader(doc, pageWidth, structure.rootCode, user, reportTitle);
 
-    // ── 2. DADOS DO PRODUTO PAI ──
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    
-    // Logo Metalfisa at the very top (optional per user request, but simple text)
-    doc.text('ENGETRON ENG ELET IN', (pageWidth / 4) * 3, 10, { align: 'center' }); // Just referencing the image style, replacing later with actual client if needed, or static.
-    
-    let yOffset = 25;
-
-    // --- 3. STRUCTURE TREE (MATR225 TABLE STYLE) ---
+    // ── Monta dados da tabela ──
     const tableData = [];
     const rootPData = structure.protheusData || {};
-    
-    // We add the root product first (Level 00) as in the image
-    const rootDesc = structure.tree.find(i => i.CodMatFabricante === structure.rootCode)?.DescResumo || '—';
-    const rootUnidade = structure.tree.find(i => i.CodMatFabricante === structure.rootCode)?.Unidade || 'UN';
-    
+
+    // Linha do produto raiz (Nível 00)
+    const rootDesc =
+        structure.tree.find(i => i.CodMatFabricante === structure.rootCode)?.DescResumo || '—';
+    const rootUnidade =
+        structure.tree.find(i => i.CodMatFabricante === structure.rootCode)?.Unidade || 'UN';
+
     tableData.push([
-        '001',             // ITEM (Sequential)
-        'PA',              // TP (Tipo: PA = Produto Acabado)
-        '00',              // NIVEL
-        structure.rootCode,// CODIGO
-        rootDesc,          // DESCRICAO
-        fmtQtd(1),        // QTDE.NECESSARIA
-        rootUnidade,       // UM
-        rootPData.revisao || '', // Rv Metalfisa
-        rootPData.desenho_cliente || '', // Cod Prod Cliente
-        rootPData.rev_cliente || '',     // Rv Cliente
-        ''                 // Restrição
+        '001',
+        'PA',
+        '00',
+        structure.rootCode,
+        rootDesc,
+        fmtQtd(1),
+        rootUnidade,
+        rootPData.revisao || '',
+        rootPData.desenho_cliente || '',
+        rootPData.rev_cliente || '',
     ]);
 
-    let seqItem = 2; // Start from 002
+    let seqItem = 2;
 
     structure.tree.forEach(item => {
-        // Main Item Row
-        const nivelNum = parseInt(item.nivel);
+        const nivelNum = parseInt(item.nivel || 0);
         const nivelStr = nivelNum < 10 ? `0${nivelNum}` : `${nivelNum}`;
         const isPI = nivelNum > 0 && item.materiais && item.materiais.length > 0;
-        
-        // Indent code and description like in Protheus
-        const indentCode = "  ".repeat(nivelNum) + item.CodMatFabricante;
-        const indentDesc = "  ".repeat(nivelNum) + (item.DescResumo || '');
+        const indent = '  '.repeat(nivelNum);
 
         tableData.push([
             seqItem.toString().padStart(3, '0'),
-            isPI ? 'PI' : 'MP',  // Simplified TP 
+            isPI ? 'PI' : 'MP',
             nivelStr,
-            indentCode,
-            indentDesc,
+            indent + item.CodMatFabricante,
+            indent + (item.DescResumo || ''),
             item.QtdeTotal ? fmtQtd(item.QtdeTotal) : '0',
             item.Unidade || 'UN',
-            '', // Rv Metalfisa (sub-items might need fetching if required, left blank as in image)
-            '', // Cod Prod Cliente
-            '', // Rv Cliente
-            ''  // Restrição
+            '',
+            '',
+            '',
         ]);
         seqItem++;
 
-        // Processos are usually not in this specific Protheus report, but we'll include them as PR 
-        if (item.processos && item.processos.length > 0) {
-            item.processos.forEach(proc => {
-                tableData.push([
-                    seqItem.toString().padStart(3, '0'),
-                    'PR',
-                    nivelStr + '+',
-                    "  ".repeat(nivelNum + 1) + (proc.processName || proc.processCode || 'OP'),
-                    "  ".repeat(nivelNum + 1) + 'PROCESSO DE FABRICAÇÃO',
-                    proc.timeMin ? `${parseFloat(proc.timeMin)}` : '0',
-                    'MIN',
-                    '', '', '', ''
-                ]);
-                seqItem++;
-            });
-        }
+        // Processos de fabricação
+        (item.processos || []).forEach(proc => {
+            tableData.push([
+                seqItem.toString().padStart(3, '0'),
+                'PR',
+                nivelStr + '+',
+                '  '.repeat(nivelNum + 1) + (proc.processName || proc.processCode || 'OP'),
+                '  '.repeat(nivelNum + 1) + 'PROCESSO DE FABRICAÇÃO',
+                proc.timeMin ? `${parseFloat(proc.timeMin)}` : '0',
+                'MIN',
+                '', '', '',
+            ]);
+            seqItem++;
+        });
 
         // Materiais
-        if (item.materiais && item.materiais.length > 0) {
-            item.materiais.forEach(mat => {
-                tableData.push([
-                    seqItem.toString().padStart(3, '0'),
-                    'MP',
-                    (nivelNum + 1) < 10 ? `0${nivelNum + 1}` : `${nivelNum + 1}`,
-                    "  ".repeat(nivelNum + 1) + (mat.materialCode || 'S/COD'),
-                    "  ".repeat(nivelNum + 1) + (mat.materialDescDetal || mat.materialDesc || '—'),
-                    fmtQtd(mat.quantity),
-                    mat.unidade || 'UN',
-                    '', '', '', '' // Usually blank for raw materials
-                ]);
-                seqItem++;
-            });
-        }
+        (item.materiais || []).forEach(mat => {
+            const nivelMat = nivelNum + 1;
+            tableData.push([
+                seqItem.toString().padStart(3, '0'),
+                'MP',
+                nivelMat < 10 ? `0${nivelMat}` : `${nivelMat}`,
+                '  '.repeat(nivelMat) + (mat.materialCode || 'S/COD'),
+                '  '.repeat(nivelMat) + (mat.materialDescDetal || mat.materialDesc || '—'),
+                fmtQtd(mat.quantity),
+                mat.unidade || 'UN',
+                '', '', '',
+            ]);
+            seqItem++;
+        });
     });
 
+    // ── Tabela principal ──
     autoTable(doc, {
-        startY: yOffset,
-        head: [['ITEM', 'TP', 'NIVEL', 'CODIGO', 'DESCRICAO', 'QTDE.NECESSARIA', 'UM', 'Rv Metalfisa', 'Cod Prod Cliente', 'Rv Cliente', 'Restrição']],
+        startY,
+        head: [['ITEM', 'TP', 'NÍV', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE', 'UM', 'Rev MF', 'Cód. Cliente', 'Rev. Cli.']],
         body: tableData,
-        theme: 'plain', // Very important to match the image: no grid lines, just plain text
-        styles: { 
-            fontSize: 7, 
-            cellPadding: 1, 
-            font: 'courier', // Monospaced for that legacy look
-            textColor: [0, 0, 0] 
+        theme: 'grid',
+        styles: {
+            fontSize: 7,
+            cellPadding: 1.5,
+            font: 'helvetica',
+            textColor: [0, 0, 0],
+            valign: 'middle',
         },
-        headStyles: { 
-            fontStyle: 'bold', 
-            textColor: [0, 0, 0] 
+        headStyles: {
+            fillColor: BLUE,
+            textColor: 255,
+            fontStyle: 'bold',
+            fontSize: 7.5,
         },
-        margin: { top: 10, left: ML, right: MR, bottom: 20 },
-        // Draw a top line and bottom line for the header just like Protheus usually does
-        didDrawPage: function (data) {
-            // Re-apply the page number logic to match Protheus "Folha...: X" at the top instead of bottom
-            doc.setFontSize(8);
-            doc.setFont('courier', 'normal');
-            doc.text(`Folha...: ${doc.internal.getCurrentPageInfo().pageNumber}`, pageWidth - MR, 10, { align: 'right' });
-            
-            // Header lines
-            doc.setLineWidth(0.1);
-            doc.line(ML, data.cursor.y, pageWidth - MR, data.cursor.y);
-        }
+        columnStyles: {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 8,  halign: 'center' },
+            2: { cellWidth: 8,  halign: 'center' },
+            3: { cellWidth: 28 },
+            4: { cellWidth: 'auto' },
+            5: { cellWidth: 16, halign: 'right' },
+            6: { cellWidth: 10, halign: 'center' },
+            7: { cellWidth: 12, halign: 'center' },
+            8: { cellWidth: 22 },
+            9: { cellWidth: 12, halign: 'center' },
+        },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        margin: { top: HEADER_H, left: ML, right: MR, bottom: 15 },
+        didDrawPage: (data) => {
+            // Redesenha cabeçalho em páginas subsequentes
+            if (data.pageNumber > 1) {
+                drawHeader(doc, pageWidth, structure.rootCode, user, reportTitle);
+            }
+        },
     });
 
-    // --- 4. REVISIONS SUMMARY ---
+    // ── Página de Revisões/Restrições (se houver) ──
     if (structure.revisionsSummary && structure.revisionsSummary.length > 0) {
         doc.addPage();
-        
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.text("Resumo de Revisões e Restrições", pageWidth / 2, 20, { align: 'center' });
-        
+        const revStartY = drawHeader(doc, pageWidth, structure.rootCode, user, 'Resumo de Revisões e Restrições');
+
         const revTableData = structure.revisionsSummary.map(r => [
             r.codigo,
             r.descricao,
             r.revisao_mf,
             r.revisao_cli,
             r.desenho_cli,
-            r.status
+            r.status,
         ]);
-        
+
         autoTable(doc, {
-            startY: 30,
+            startY: revStartY,
             head: [['Código', 'Descrição', 'Rev MF', 'Rev Cli', 'Des. Cliente', 'Status']],
             body: revTableData,
             theme: 'grid',
-            styles: { fontSize: 8, cellPadding: 2 },
-            headStyles: { fillColor: [30, 58, 95], textColor: 255, fontStyle: 'bold' },
-            didParseCell: function(data) {
-                if (data.section === 'body' && data.column.index === 5) {
-                    if (data.cell.raw !== 'Normal') {
-                        data.cell.styles.textColor = [200, 0, 0];
-                        data.cell.styles.fontStyle = 'bold';
-                    }
+            styles: { fontSize: 8, cellPadding: 2, valign: 'middle' },
+            headStyles: { fillColor: BLUE, textColor: 255, fontStyle: 'bold' },
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.column.index === 5 && data.cell.raw !== 'Normal') {
+                    data.cell.styles.textColor = [180, 0, 0];
+                    data.cell.styles.fontStyle = 'bold';
                 }
             },
-            margin: { top: 10, left: 10, right: 10, bottom: 20 }
+            alternateRowStyles: { fillColor: [245, 247, 250] },
+            margin: { top: HEADER_H, left: ML, right: MR, bottom: 15 },
+            didDrawPage: (data) => {
+                if (data.pageNumber > 1) {
+                    drawHeader(doc, pageWidth, structure.rootCode, user, 'Resumo de Revisões e Restrições');
+                }
+            },
         });
     }
 
-    // Add page numbers at the bottom right
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.text(`Página ${i} de ${pageCount}`, pageWidth - 20, doc.internal.pageSize.getHeight() - 10);
-        doc.text(`MetalFisa - Emitido por: ${user?.nome || user?.login || 'Usuário'}`, 10, doc.internal.pageSize.getHeight() - 10);
-    }
+    // ── Footer em todas as páginas ──
+    drawFooters(doc, pageWidth);
 
-    // Convert Ficha to bytes for merging
+    // ── Gera bytes da ficha ──
     const fichaPdfBytes = doc.output('arraybuffer');
-    
-    // --- 5. FETCH ROOT DRAWING & MERGE ---
+
+    // ── Mescla com o desenho raiz (se houver PDF vinculado) ──
     let finalPdfBytes = fichaPdfBytes;
-    
+
     const rootItem = structure.tree.find(i => i.CodMatFabricante === structure.rootCode);
-    if (rootItem && rootItem.hasPdfFile && rootItem.pdfPath) {
+    if (rootItem?.hasPdfFile && rootItem?.pdfPath) {
         try {
-            // Fetch root drawing from backend
             const response = await api.get('/sinco/docs/view', {
                 params: { path: rootItem.pdfPath },
-                responseType: 'arraybuffer'
+                responseType: 'arraybuffer',
             });
-            const rootPdfBytes = response.data;
-            
-            // Merge using pdf-lib
-            const mergedPdf = await PDFDocument.create();
-            
-            // Prepend Root Drawing
-            const rootDoc = await PDFDocument.load(rootPdfBytes);
-            const copiedRootPages = await mergedPdf.copyPages(rootDoc, rootDoc.getPageIndices());
-            copiedRootPages.forEach(page => mergedPdf.addPage(page));
 
-            // Append Generated Ficha
+            const mergedPdf = await PDFDocument.create();
+
+            // Desenho raiz primeiro
+            const rootDoc = await PDFDocument.load(response.data);
+            const rootPages = await mergedPdf.copyPages(rootDoc, rootDoc.getPageIndices());
+            rootPages.forEach(p => mergedPdf.addPage(p));
+
+            // Ficha técnica após
             const fichaDoc = await PDFDocument.load(fichaPdfBytes);
-            const copiedFichaPages = await mergedPdf.copyPages(fichaDoc, fichaDoc.getPageIndices());
-            copiedFichaPages.forEach(page => mergedPdf.addPage(page));
+            const fichaPages = await mergedPdf.copyPages(fichaDoc, fichaDoc.getPageIndices());
+            fichaPages.forEach(p => mergedPdf.addPage(p));
 
             finalPdfBytes = await mergedPdf.save();
         } catch (err) {
             console.error('⚠️ Falha ao mesclar desenho com a Ficha Técnica:', err);
-            // Fallback to Ficha only
         }
     }
 
-    // Download routine
+    // ── Download ──
     const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.download = `Ficha_Tecnica_${structure.rootCode}.pdf`;
+    link.download = `Estrutura_${structure.rootCode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 };
 
 export { generateSincoStructurePdf };
-
 export default generateSincoStructurePdf;
