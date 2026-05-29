@@ -697,6 +697,7 @@ const OrdersTable = () => {
                                 className="bg-transparent text-[11px] font-bold text-blue-600 outline-none cursor-pointer p-0"
                             >
                                 <option value="pedido">Emissão Pedido</option>
+                                <option value="entrega">Data de Entrega</option>
                                 <option value="nf">Emissão NF</option>
                             </select>
                         </div>
@@ -707,9 +708,9 @@ const OrdersTable = () => {
                                 name="dataInicial"
                                 value={filters.dataInicial}
                                 onChange={handleFilterChange}
-                                aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                title={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                             />
                         </div>
                     </div>
@@ -717,7 +718,9 @@ const OrdersTable = () => {
                     <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-center mb-1">
                             <label className="text-[11px] font-medium text-gray-600">Fim:</label>
-                            <span className="text-[11px] font-bold text-blue-600">{filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'}</span>
+                            <span className="text-[11px] font-bold text-blue-600">
+                                {filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'}
+                            </span>
                         </div>
                         <div className="relative">
                             <Calendar className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -726,11 +729,35 @@ const OrdersTable = () => {
                                 name="dataFinal"
                                 value={filters.dataFinal}
                                 onChange={handleFilterChange}
-                                aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                title={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                             />
                         </div>
+                        {filters.dateType === 'entrega' && (
+                            <div className="flex justify-between mt-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const today = new Date().toISOString().split('T')[0];
+                                        setFilters(f => ({ ...f, dataInicial: '', dataFinal: today }));
+                                    }}
+                                    className="text-[10px] text-red-600 hover:underline font-semibold"
+                                >
+                                    Atrasados/Hoje
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const today = new Date().toISOString().split('T')[0];
+                                        setFilters(f => ({ ...f, dataInicial: today, dataFinal: '' }));
+                                    }}
+                                    className="text-[10px] text-green-600 hover:underline font-semibold"
+                                >
+                                    Hoje/Futuro
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Filtro Tipo de Item (Multi-select Pills) */}
@@ -1633,35 +1660,44 @@ const OrdersTable = () => {
                 pcpForecastTarget && (
                     <PCPForecastModal
                         isOpen={true}
-                        onClose={async () => {
-                            const target = pcpForecastTarget;
+                        onClose={() => {
                             setPcpForecastTarget(null);
-                            if (!target) return;
-                            if (Array.isArray(target)) {
-                                fetchData();
-                            } else {
-                                await pollOrderItems(
-                                    target,
-                                    expandedRow,
-                                    viewMode === 'flat' ? updateFlatOrdersFromItems : null
-                                );
-                                if (viewMode === 'tree' && expandedRow === target.pedido) {
-                                    // pollOrderItems already called updateOrderItemsForPedido internally
-                                }
-                            }
                         }}
                         item={pcpForecastTarget}
-                        onSaveSuccess={async () => {
+                        onSaveSuccess={(newProgs) => {
                             const target = pcpForecastTarget;
                             if (!target) return;
-                            if (Array.isArray(target)) {
+                            if (Array.isArray(target) || !newProgs) {
                                 fetchData();
                             } else {
-                                await pollOrderItems(
-                                    target,
-                                    expandedRow,
-                                    viewMode === 'flat' ? updateFlatOrdersFromItems : null
-                                );
+                                let pcpDate = null;
+                                let pcpQtd = 0;
+                                if (newProgs && newProgs.length > 0) {
+                                    pcpQtd = newProgs.reduce((sum, p) => sum + parseFloat(p.quantidade_pcp || 0), 0);
+                                    const sorted = [...newProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
+                                    pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
+                                }
+                                
+                                const newData = {
+                                    pcp_delivery_forecast_date: pcpDate,
+                                    pcp_delivery_forecast_qtd: pcpQtd
+                                };
+                                
+                                setOrderItems(prev => ({
+                                    ...prev,
+                                    [target.pedido]: prev[target.pedido]?.map(i =>
+                                        i.item === target.item ? { ...i, ...newData } : i
+                                    )
+                                }));
+                                
+                                if (viewMode === 'flat') {
+                                    setOrders(prev => prev.map(o => {
+                                        if (o.pedido === target.pedido && o.item === target.item) {
+                                            return { ...o, ...newData };
+                                        }
+                                        return o;
+                                    }));
+                                }
                             }
                         }}
                     />

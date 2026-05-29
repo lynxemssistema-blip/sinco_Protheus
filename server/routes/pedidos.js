@@ -13,7 +13,7 @@ const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, page = 1, limit = 50, only_active = 'false', op_status = '' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '' } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
@@ -94,19 +94,61 @@ router.get('/', async (req, res) => {
             )`;
         }
 
-        // Filtro por data de emissão
-        if (dataInicial) {
-            const dataInicialProtheus = dataInicial.replace(/-/g, '');
-            whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
-            params.push(dataInicialProtheus);
-            paramCount++;
-        }
-
-        if (dataFinal) {
-            const dataFinalProtheus = dataFinal.replace(/-/g, '');
-            whereClause += ` AND c5.c5_emissao <= $${paramCount}`;
-            params.push(dataFinalProtheus);
-            paramCount++;
+        // Filtro por data
+        if (dataInicial || dataFinal) {
+            if (dateType === 'nf') {
+                let nfFilter = `EXISTS (
+                    SELECT 1 FROM public.sd2010 d2_ex
+                    JOIN public.sf2010 f2_ex 
+                        ON f2_ex.f2_doc = d2_ex.d2_doc 
+                        AND f2_ex.f2_serie = d2_ex.d2_serie 
+                        AND COALESCE(f2_ex.d_e_l_e_t_, '') = ''
+                    WHERE d2_ex.d2_pedido = c5.c5_num 
+                      AND COALESCE(d2_ex.d_e_l_e_t_, '') = ''
+                `;
+                if (dataInicial) {
+                    nfFilter += ` AND f2_ex.f2_emissao >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    nfFilter += ` AND f2_ex.f2_emissao <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
+                nfFilter += `)`;
+                whereClause += ` AND ${nfFilter}`;
+            } else if (dateType === 'entrega') {
+                let entregaFilter = `EXISTS (
+                    SELECT 1 FROM public.sc6010 c6_ent 
+                    WHERE c6_ent.c6_num = c5.c5_num 
+                    AND c6_ent.c6_filial = c5.c5_filial 
+                    AND COALESCE(c6_ent.d_e_l_e_t_, '') = ''
+                `;
+                if (dataInicial) {
+                    entregaFilter += ` AND c6_ent.c6_entreg >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    entregaFilter += ` AND c6_ent.c6_entreg <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
+                entregaFilter += `)`;
+                whereClause += ` AND ${entregaFilter}`;
+            } else {
+                if (dataInicial) {
+                    whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereClause += ` AND c5.c5_emissao <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
+            }
         }
 
         const query = `
@@ -166,7 +208,9 @@ router.get('/', async (req, res) => {
           GROUP BY c2_pedido
       ) c2_agg ON c2_agg.c2_pedido = c5.c5_num
       ${whereClause}
-      ORDER BY c5.c5_emissao DESC, c5.c5_num DESC
+      ${dateType === 'entrega' 
+          ? "ORDER BY NULLIF(TRIM(c6_agg.entrega_raw), '') ASC NULLS LAST, c5.c5_num DESC" 
+          : "ORDER BY c5.c5_emissao DESC, c5.c5_num DESC"}
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
@@ -368,6 +412,17 @@ router.get('/flat', async (req, res) => {
                 nfFilter += `)`;
                 whereClause += ` AND ${nfFilter}`;
 
+            } else if (dateType === 'entrega') {
+                if (dataInicial) {
+                    whereClause += ` AND c6.c6_entreg >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereClause += ` AND c6.c6_entreg <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
             } else {
                 if (dataInicial) {
                     whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
@@ -431,7 +486,9 @@ router.get('/flat', async (req, res) => {
                     ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
                 ${whereClause}
-                ORDER BY c5.c5_num DESC, c6.c6_item ASC
+                ${dateType === 'entrega' 
+                    ? "ORDER BY NULLIF(TRIM(COALESCE(c6.c6_entreg, '')), '') ASC NULLS LAST, c5.c5_num DESC, c6.c6_item ASC" 
+                    : "ORDER BY c5.c5_num DESC, c6.c6_item ASC"}
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
             )
             SELECT
@@ -473,7 +530,9 @@ router.get('/flat', async (req, res) => {
                 WHERE TRIM(g2_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
                 LIMIT 1
             ) sg2_agg ON true
-            ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC
+            ${dateType === 'entrega'
+                ? "ORDER BY NULLIF(TRIM(pi.entrega), '') ASC NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC"
+                : "ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC"}
         `;
 
         params.push(limitParsed, offset);

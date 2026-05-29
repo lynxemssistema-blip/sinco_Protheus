@@ -129,6 +129,7 @@ const OrderFiltersBar = ({
                             className="bg-transparent text-[11px] font-bold text-blue-600 outline-none cursor-pointer p-0"
                         >
                             <option value="pedido">Emissão Pedido</option>
+                            <option value="entrega">Data de Entrega</option>
                             <option value="nf">Emissão NF</option>
                         </select>
                     </div>
@@ -139,7 +140,7 @@ const OrderFiltersBar = ({
                             name="dataInicial"
                             value={filters.dataInicial}
                             onChange={onFilterChange}
-                            aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                            aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                             className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
                         />
                     </div>
@@ -149,7 +150,9 @@ const OrderFiltersBar = ({
                 <div className="flex flex-col gap-1">
                     <div className="flex justify-between items-center mb-1">
                         <label className="text-[11px] font-medium text-gray-600">Fim:</label>
-                        <span className="text-[11px] font-bold text-blue-600">{filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'}</span>
+                        <span className="text-[11px] font-bold text-blue-600">
+                            {filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'}
+                        </span>
                     </div>
                     <div className="relative">
                         <Calendar className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -158,7 +161,7 @@ const OrderFiltersBar = ({
                             name="dataFinal"
                             value={filters.dataFinal}
                             onChange={onFilterChange}
-                            aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                            aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
                             className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
                         />
                     </div>

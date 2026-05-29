@@ -71,3 +71,13 @@ truncate_page.ps1
 # Uploads & Temp
 server/uploads/
 tmp/
+
+# Engineering / CAD files
+*.stl
+*.pdf
+*.par
+*.asm
+*.psm
+*.cfg
+SIMPLIFICADO/
+preparação SGQ - EMS/

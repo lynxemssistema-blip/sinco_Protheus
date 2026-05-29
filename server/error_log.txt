@@ -1,5 +1,5 @@
 error: canceling statement due to statement timeout
     at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\pg-pool\index.js:45:11
     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-    at async C:\Users\adm\Desktop\MetalFisa Anty\server\routes\pedidos.js:484:24
+    at async C:\Users\adm\Desktop\MetalFisa Anty\server\routes\pedidos.js:543:24
 pg_main_query

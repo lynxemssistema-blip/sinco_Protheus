@@ -201,7 +201,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     }, [isOpen, item, isBatch]);
 
     const loadProgramacoes = async (isInitialLoad = false) => {
-        if (isBatch) return;
+        if (isBatch) return [];
         
         setLoading(true);
         try {
@@ -223,8 +223,10 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     return prev;
                 });
             }
+            return progs;
         } catch (err) {
             console.error('Erro ao carregar programações:', err);
+            return [];
         } finally {
             setLoading(false);
         }
@@ -358,7 +360,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 toast.success('Programação Lote adicionada!');
                 // onClose(); // Removido para que o usuário veja as OPs geradas na tela!
                 setFormData(EMPTY_FORM);
-                if (onSaveSuccess) onSaveSuccess();
+                if (onSaveSuccess) onSaveSuccess(); // Lote não passa progs pois é batch
             } catch (err) {
                 console.error("❌ [ERRO API PROTHEUS/LOTE] Detalhes:", err.response?.data || err);
                 const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao processar lote.';
@@ -423,8 +425,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
             toast.success('Programação adicionada!');
             setFormData(EMPTY_FORM);
-            await loadProgramacoes();
-            if (onSaveSuccess) onSaveSuccess();
+            const newProgs = await loadProgramacoes();
+            if (onSaveSuccess) onSaveSuccess(newProgs);
         } catch (err) {
             console.error("❌ [ERRO API PROTHEUS/SINGLE] Detalhes:", JSON.stringify(err.response?.data || err));
             const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao salvar.';
@@ -514,8 +516,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
             }
 
             cancelEdit();
-            await loadProgramacoes();
-            if (onSaveSuccess) onSaveSuccess();
+            const newProgs = await loadProgramacoes();
+            if (onSaveSuccess) onSaveSuccess(newProgs);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Erro ao atualizar.');
         } finally {
@@ -532,8 +534,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
             if (res.data?.success) {
                 toast.success('Programação removida com sucesso!');
                 if (editingId === id) cancelEdit();
-                await loadProgramacoes();
-                if (onSaveSuccess) onSaveSuccess();
+                const newProgs = await loadProgramacoes();
+                if (onSaveSuccess) onSaveSuccess(newProgs);
             } else {
                 toast.error(res.data?.error || 'Erro desconhecido ao remover.');
             }

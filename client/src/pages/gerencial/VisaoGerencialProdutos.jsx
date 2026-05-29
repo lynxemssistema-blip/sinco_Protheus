@@ -1272,6 +1272,7 @@ const VisaoGerencialProdutos = () => {
                                         <th className="p-3 font-semibold bg-slate-50">Agrupamento (Quinzena / Produto / Pedido)</th>
                                         <th className="p-3 font-semibold text-center bg-slate-50">Data Entrada</th>
                                         <th className="p-3 font-semibold text-center bg-slate-50">Data Entrega</th>
+                                        <th className="p-3 font-semibold text-center text-emerald-600 bg-slate-50">Data PCP</th>
                                         <th className="p-3 font-semibold text-right bg-slate-50">Qtd</th>
                                         {isShowingFinance && <th className="p-3 font-semibold text-right text-indigo-600 bg-slate-50">Valor (R$)</th>}
                                     </tr>
@@ -1292,7 +1293,7 @@ const VisaoGerencialProdutos = () => {
                                                         className="bg-white border-b border-slate-100 hover:bg-slate-50 cursor-pointer group transition-colors"
                                                     >
                                                         <td className="p-3 pl-4 text-slate-400">{isGrpOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
-                                                        <td className="p-3 font-bold text-slate-800" colSpan={3}>
+                                                        <td className="p-3 font-bold text-slate-800" colSpan={4}>
                                                             <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs mr-2 border border-slate-200">Período</span>
                                                             {grp.groupKey}
                                                         </td>
@@ -1315,7 +1316,7 @@ const VisaoGerencialProdutos = () => {
                                                                     <td className="p-3 pl-8 text-indigo-500 border-l-[3px] border-l-indigo-500">
                                                                         {isPrdOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                                                     </td>
-                                                                    <td className="p-2 font-semibold text-indigo-900 text-sm" colSpan={3}>
+                                                                    <td className="p-2 font-semibold text-indigo-900 text-sm" colSpan={4}>
                                                                         <div className="flex items-center gap-2">
                                                                             <Package size={14} className="text-indigo-500" />
                                                                             {prd.prodKey}
@@ -1357,6 +1358,13 @@ const VisaoGerencialProdutos = () => {
                                                                             </td>
                                                                             <td className="p-2 text-sm text-center text-slate-700 font-semibold">
                                                                                 {item.entrega_formatada}
+                                                                            </td>
+                                                                            <td className="p-2 text-sm text-center font-bold">
+                                                                                {item.data_entrega_pcp ? (
+                                                                                    <span className="text-emerald-600">{new Date(item.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                                                                                ) : (
+                                                                                    <span className="text-slate-300 font-normal">--</span>
+                                                                                )}
                                                                             </td>
                                                                             <td className="p-2 text-sm text-right text-slate-600">
                                                                                 {parseFloat(item.qtd_faturar).toLocaleString()} pçs
