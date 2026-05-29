@@ -338,6 +338,12 @@ export default function Analise3DPage() {
   // ── Câmera (WebRTC) ───────────────────────────────────
   const startCamera = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setIsCameraActive(false);
+        alert("🔒 Bloqueio de Segurança do Navegador!\n\nNavegadores de Tablet/Celular bloqueiam a Câmera em sites 'http://' (sem HTTPS) por segurança.\n\nSOLUÇÃO PARA A METALFISA:\nNo navegador do Tablet, digite na barra de endereços:\nchrome://flags/#unsafely-treat-insecure-origin-as-secure\n\nLá, adicione 'http://192.168.1.77:3001', ative a opção (Enable) e reinicie o Chrome do Tablet.");
+        return;
+      }
+
       setIsCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
@@ -355,7 +361,7 @@ export default function Analise3DPage() {
       streamRef.current = stream;
     } catch (err) {
         setIsCameraActive(false);
-        alert('Erro ao acessar a camera: ' + err.message);
+        alert('Erro ao acessar a câmera: ' + err.message);
     }
   };
 
@@ -646,16 +652,31 @@ export default function Analise3DPage() {
     }
   };
 
+  const analyzeTimeoutRef = useRef(null);
+
   useEffect(() => {
     if (isAnalyzing) {
       analyzeLoopRef.current = requestAnimationFrame(processFrame);
+      
+      // Auto-turn off para economizar bateria do tablet (Máximo de 2 minutos = 120000ms)
+      const maxProcessingTime = 120000;
+      analyzeTimeoutRef.current = setTimeout(() => {
+        setIsAnalyzing(false);
+        console.warn("Processamento em tempo real finalizado automaticamente por limite de tempo (Economia de Bateria).");
+      }, maxProcessingTime);
+
     } else {
       cancelAnimationFrame(analyzeLoopRef.current);
+      if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
       // Limpa overlay ao parar
       const overlay = overlayCanvasRef.current;
       if (overlay) overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
     }
-    return () => cancelAnimationFrame(analyzeLoopRef.current);
+    
+    return () => {
+      cancelAnimationFrame(analyzeLoopRef.current);
+      if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
+    };
   }, [isAnalyzing, processFrame]);
 
   return (
