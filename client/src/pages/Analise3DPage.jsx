@@ -340,7 +340,11 @@ export default function Analise3DPage() {
     try {
       setIsCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 },
+          facingMode: "environment" 
+        }
       });
       setTimeout(() => {
         if (videoRef.current) {
