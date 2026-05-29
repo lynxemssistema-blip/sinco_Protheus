@@ -195,6 +195,18 @@ export default function SINCOFormularioPrincipal() {
         if (cod) carregarProtheus(cod);
     }, [searchParams, carregarProtheus]);
 
+    // Se o app VB enviou ?codigo= (código gerado pelo Protheus), preenche o campo de busca e consulta automaticamente
+    useEffect(() => {
+        const codigoProtheus = searchParams.get('codigo');
+        if (codigoProtheus && codigoProtheus.trim()) {
+            const codigoLimpo = codigoProtheus.trim().toUpperCase();
+            setBusca(codigoLimpo);
+            buscarProdutoManual(codigoLimpo);
+        }
+    // Só executa uma vez ao montar (quando a URL chega do VB)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Socket.io — recebe atualização em tempo real do Solid Edge Desktop
     useEffect(() => {
         let socket = null;
