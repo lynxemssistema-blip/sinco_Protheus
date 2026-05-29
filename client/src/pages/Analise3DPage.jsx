@@ -201,6 +201,7 @@ export default function Analise3DPage() {
   const [modelOpacity, setModelOpacity] = useState(0.55);
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState(null);
+  const [discrepanciesList, setDiscrepanciesList] = useState([]);
   const [snapshots, setSnapshots] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
   const [viewPdfMode, setViewPdfMode] = useState(false);
@@ -455,31 +456,48 @@ export default function Analise3DPage() {
     const imgCam = canvasCam.toDataURL('image/jpeg', 0.8);
 
     try {
-      // Simulação do tempo de resposta da API de Visão (ex: Gemini/Claude)
-      await new Promise(r => setTimeout(r, 3500));
-      
-      const diagnosticMock = pdfFile 
-        ? "🤖 **Agente Especialista em Qualidade e Metrologia**\n" +
-          "📄 *Análise Paramétrica baseada em: " + pdfFile.name + "*\n\n" +
-          "⚠️ **DESVIOS DE POSICIONAMENTO:**\n" +
-          "• Furação Base: Identificado desvio de ~2mm no eixo Y em relação à cota do PDF. Potencial problema de montagem mecânica.\n" +
-          "• Soldagem: Falta de acesso para solda no vértice T-12 (interferência geométrica não prevista no 3D).\n\n" +
-          "❌ **CONFORMIDADE DE ELEMENTOS:**\n" +
-          "• Ausência de 2 fusos (M8) na flange de fixação lateral.\n" +
-          "• Ausência de chanfro de alívio na aresta de corte a laser.\n\n" +
-          "✅ **ESTRUTURA GERAL:** Perfil externo (Bounding Box) condizente com a tolerância de ±0.5mm."
-        : "🤖 **Agente Especialista em Qualidade e Metrologia**\n" +
-          "⚠️ *Atenção: Análise heurística (Sem folha técnica/PDF de tolerâncias)*\n\n" +
-          "❌ **DIVERGÊNCIAS DETECTADAS (Real vs 3D):**\n" +
-          "• **Furos e Fixação:** Ausência do furo passante central no quadrante superior direito.\n" +
-          "• **Posicionamento:** Desalinhamento (tilt) detectado na chapa de reforço lateral (possível desvio de gabarito de solda).\n" +
-          "• **Acessibilidade:** Posição do tubo restringe o acesso ao fuso de aperto interno.\n\n" +
-          "✅ **ESTRUTURA BASE:** Geometria primária do bloco apresenta simetria compatível com o CAD 3D.";
+      let pdfDataStr = null;
+      if (pdfFile) {
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        const base64String = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        pdfDataStr = 'data:application/pdf;base64,' + base64String;
+      }
 
-      setDiagnosticResult(diagnosticMock);
+      const response = await fetch('/api/ai/analyze-3d', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          img3D,
+          imgCam,
+          pdfData: pdfDataStr
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha na API de Visão: ' + response.statusText);
+      }
+
+      const data = await response.json();
+      
+      let finalReport = "🤖 **Agente Especialista (Gemini 1.5 Pro)**\n\n";
+      finalReport += "✅ **STATUS GERAL:**\n" + data.general_status + "\n\n";
+      
+      if (data.discrepancies && data.discrepancies.length > 0) {
+        finalReport += "❌ **DIVERGÊNCIAS DETECTADAS:**\n";
+        data.discrepancies.forEach(d => {
+           finalReport += "• " + d.description + "\n";
+        });
+      } else {
+        finalReport += "✅ **DIVERGÊNCIAS:** Nenhuma não conformidade grave observada.\n";
+      }
+
+      setDiagnosticResult(finalReport);
+      setDiscrepanciesList(data.discrepancies || []);
       setSnapshots({ img3D, imgCam });
     } catch (err) {
-      setDiagnosticResult("❌ Erro na comunicação com a API de Visão.");
+      setDiagnosticResult("❌ Erro na comunicação com a API de Visão: " + err.message);
     } finally {
       setDiagnosticLoading(false);
     }
@@ -551,9 +569,30 @@ export default function Analise3DPage() {
         page.drawText('Modelo 3D (Referência):', { x: 50, y: height - 80, size: 10, font: boldFont });
         page.drawImage(img3D, { x: 50, y: height - 280, width: 220, height: 180 });
 
-        // Render Camera
-        page.drawText('Câmera (Física):', { x: 300, y: height - 80, size: 10, font: boldFont });
+        // Render Camera with Discrepancies
+        page.drawText('Câmera (Física) c/ Marcações da IA:', { x: 300, y: height - 80, size: 10, font: boldFont });
         page.drawImage(imgCam, { x: 300, y: height - 280, width: 220, height: 180 });
+        
+        // Desenhar marcações (Bounding Boxes) sobre a imagem da câmera
+        if (discrepanciesList.length > 0) {
+           discrepanciesList.forEach((disc, idx) => {
+             if (disc.coordinates) {
+               // A Imagem tem tamanho 220x180 e é desenhada em x: 300, y: height - 280
+               const bx = 300 + (disc.coordinates.x * 220);
+               // 'y' na API é top-down. No pdf-lib 'y' é bottom-up
+               const by = (height - 280) + 180 - (disc.coordinates.y * 180) - (disc.coordinates.h * 180);
+               const bw = disc.coordinates.w * 220;
+               const bh = disc.coordinates.h * 180;
+               
+               page.drawRectangle({
+                 x: bx, y: by, width: bw, height: bh,
+                 borderColor: rgb(1, 0, 0),
+                 borderWidth: 2,
+               });
+               page.drawText((idx + 1).toString(), { x: bx, y: by + bh + 2, size: 12, color: rgb(1, 0, 0), font: boldFont });
+             }
+           });
+        }
       }
 
       // Append Original PDF Se existir
@@ -561,6 +600,29 @@ export default function Analise3DPage() {
         try {
            const arrayBuffer = await pdfFile.arrayBuffer();
            const attachedPdf = await PDFDocument.load(arrayBuffer);
+           
+           // Se a IA gerou pontos, anotar na PRIMEIRA PÁGINA do Desenho Técnico também!
+           const attachedPages = attachedPdf.getPages();
+           if (attachedPages.length > 0 && discrepanciesList.length > 0) {
+              const p1 = attachedPages[0];
+              const { width: p1w, height: p1h } = p1.getSize();
+              
+              discrepanciesList.forEach((disc, idx) => {
+                 if (disc.coordinates) {
+                    const bx = disc.coordinates.x * p1w;
+                    const by = p1h - (disc.coordinates.y * p1h);
+                    
+                    p1.drawCircle({
+                       x: bx, y: by, size: 15,
+                       borderColor: rgb(1, 0, 0),
+                       borderWidth: 3,
+                       color: rgb(1, 0, 0, 0.2) // Vermelho transparente
+                    });
+                    p1.drawText("Erro " + (idx + 1), { x: bx + 20, y: by, size: 14, color: rgb(1, 0, 0) });
+                 }
+              });
+           }
+
            const copiedPages = await pdfDoc.copyPages(attachedPdf, attachedPdf.getPageIndices());
            copiedPages.forEach((p) => pdfDoc.addPage(p));
         } catch(e) {
