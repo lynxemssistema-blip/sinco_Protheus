@@ -43,6 +43,13 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'analise_3d',
+        label: 'Análise 3D',
+        items: [
+            { id: 'visualizador_3d', label: 'Visualizador de Modelos', path: '/analise-3d', icon: Box }
+        ]
+    },
+    {
         id: 'sinco',
         label: 'SINCO',
         items: [

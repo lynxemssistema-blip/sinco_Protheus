@@ -1246,6 +1246,47 @@ export default function Settings() {
                                 </div>
                             </div>
                             
+                            {/* Módulo Análise 3D */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Análise 3D</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Visualizador de modelos 3D (.stl) com suporte a manipulação, zoom e inspeção visual de componentes de engenharia.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={loadingCompany}
+                                        onClick={async () => {
+                                            const newValue = !companyForm.general_config?.module_analise3d_active;
+                                            const newGeneralConfig = { ...companyForm.general_config, module_analise3d_active: newValue };
+                                            try {
+                                                setLoadingCompany(true);
+                                                await updateGeneralSettings({ general_config: newGeneralConfig });
+                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
+                                                    window.location.reload();
+                                                }
+                                            } catch (err) {
+                                                alert('Erro ao alterar status do módulo: ' + err.message);
+                                            } finally {
+                                                setLoadingCompany(false);
+                                            }
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_analise3d_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        title={companyForm.general_config?.module_analise3d_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_analise3d_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-4 flex gap-2">
+                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_analise3d_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+                                        Status: {companyForm.general_config?.module_analise3d_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
+                                    </span>
+                                </div>
+                            </div>
+                            
                             {/* Pode adicionar novos módulos aqui no futuro */}
                         </div>
                     </div>

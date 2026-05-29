@@ -33,6 +33,7 @@
         "socket.io-client": "^4.8.3",
         "suneditor": "^2.47.8",
         "suneditor-react": "^3.6.1",
+        "three": "^0.184.0",
         "xlsx": "^0.18.5"
     },
     "devDependencies": {

@@ -107,6 +107,7 @@ const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto')
 const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
 const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
 const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
+const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -695,6 +696,13 @@ function App() {
                                         <Route path="/wabtec/estrutura" element={
                                             <Layout fullWidth={true}>
                                                 <WabtecEstruturaContainer />
+                                            </Layout>
+                                        } />
+
+                                        {/* Analise 3D Route */}
+                                        <Route path="/analise-3d" element={
+                                            <Layout fullWidth={true}>
+                                                <Analise3DPage />
                                             </Layout>
                                         } />
 
