@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter, Printer, Minus, FolderOpen, CheckCircle2, XCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Layers, Search, RefreshCw, FileText, Download, Network, Package, ChevronRight, ChevronDown, Filter, Printer, Minus, FolderOpen, CheckCircle2, XCircle, AlertCircle, Loader2, Mail } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api, { getSincoArvore } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
