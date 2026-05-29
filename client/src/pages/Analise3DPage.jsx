@@ -196,6 +196,9 @@ export default function Analise3DPage() {
   const [modelName, setModelName] = useState('');
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [cameraBlocked, setCameraBlocked] = useState(false);
+  const [fallbackImgSrc, setFallbackImgSrc] = useState(null);
+  const fallbackImgRef = useRef(null);
   const [cvLoaded, setCvLoaded] = useState(false);
   const [threshold, setThreshold] = useState({ lower: 50, upper: 150 });
   const [modelOpacity, setModelOpacity] = useState(0.55);
@@ -339,12 +342,13 @@ export default function Analise3DPage() {
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setIsCameraActive(false);
-        alert("🔒 Bloqueio de Segurança do Navegador!\n\nNavegadores de Tablet/Celular bloqueiam a Câmera em sites 'http://' (sem HTTPS) por segurança.\n\nSOLUÇÃO PARA A METALFISA:\nNo navegador do Tablet, digite na barra de endereços:\nchrome://flags/#unsafely-treat-insecure-origin-as-secure\n\nLá, adicione 'http://192.168.1.77:3001', ative a opção (Enable) e reinicie o Chrome do Tablet.");
+        setCameraBlocked(true);
         return;
       }
 
       setIsCameraActive(true);
+      setCameraBlocked(false);
+      setFallbackImgSrc(null);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           width: { ideal: 1280 }, 
@@ -361,13 +365,27 @@ export default function Analise3DPage() {
       streamRef.current = stream;
     } catch (err) {
         setIsCameraActive(false);
-        alert('Erro ao acessar a câmera: ' + err.message);
+        if (err.name === 'NotAllowedError' || err.message.includes('reading getUserMedia')) {
+           setCameraBlocked(true);
+        } else {
+           alert('Erro ao acessar a câmera: ' + err.message);
+        }
     }
+  };
+
+  const handleFallbackImage = (e) => {
+     const file = e.target.files[0];
+     if (file) {
+        const url = URL.createObjectURL(file);
+        setFallbackImgSrc(url);
+        setCameraBlocked(true);
+     }
   };
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach(t => t.stop());
     setIsCameraActive(false);
+    setCameraBlocked(false);
     setIsAnalyzing(false);
   };
 
@@ -448,7 +466,9 @@ export default function Analise3DPage() {
 
   // ── Inteligência Artificial (Diagnóstico Visual) ────────
   const handleDiagnostic = async () => {
-    if (!threeCanvasRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    const fallbackImg = fallbackImgRef.current;
+    if (!threeCanvasRef.current || (!video && !fallbackImgSrc)) return;
     
     setDiagnosticLoading(true);
     setDiagnosticResult(null);
@@ -457,12 +477,17 @@ export default function Analise3DPage() {
     const canvas3D = threeCanvasRef.current;
     const img3D = canvas3D.toDataURL('image/jpeg', 0.8);
 
-    // 2. Extrair a foto do vídeo real (Peça física)
-    const video = videoRef.current;
+    // 2. Extrair a foto da câmera real OU da foto de fallback
     const canvasCam = document.createElement('canvas');
-    canvasCam.width = video.videoWidth;
-    canvasCam.height = video.videoHeight;
-    canvasCam.getContext('2d').drawImage(video, 0, 0);
+    if (fallbackImgSrc && fallbackImg) {
+       canvasCam.width = fallbackImg.naturalWidth || 1280;
+       canvasCam.height = fallbackImg.naturalHeight || 720;
+       canvasCam.getContext('2d').drawImage(fallbackImg, 0, 0);
+    } else if (video) {
+       canvasCam.width = video.videoWidth;
+       canvasCam.height = video.videoHeight;
+       canvasCam.getContext('2d').drawImage(video, 0, 0);
+    }
     const imgCam = canvasCam.toDataURL('image/jpeg', 0.8);
 
     try {
@@ -851,25 +876,54 @@ export default function Analise3DPage() {
           )}
         </div>
 
-        {/* PAINEL CÂMERA — só aparece quando câmera ativa */}
-        {isCameraActive && (
+        {/* PAINEL CÂMERA — só aparece quando câmera ativa ou câmera bloqueada */}
+        {(isCameraActive || cameraBlocked) && (
           <div className={`relative rounded-xl overflow-hidden border border-slate-700 shadow-2xl bg-black ${geometry ? 'flex-1 min-h-[200px]' : 'flex-1'}`}>
             {geometry && (
               <div className="absolute top-2 left-2 z-30 bg-slate-900/80 backdrop-blur-sm text-[10px] font-bold text-red-400 px-2 py-1 rounded border border-slate-700 pointer-events-none">
-                CÂMERA REAL
+                {cameraBlocked ? 'FOTO REAL (FALLBACK)' : 'CÂMERA REAL'}
               </div>
             )}
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+            
+            {!cameraBlocked ? (
+               <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+            ) : (
+               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-20">
+                  {!fallbackImgSrc ? (
+                     <>
+                        <Camera size={48} className="text-slate-500 mb-4" />
+                        <h3 className="text-xl font-bold text-white mb-2">Câmera Bloqueada</h3>
+                        <p className="text-xs text-slate-400 mb-6 max-w-sm">Tire uma foto manual da peça (Modo de Compatibilidade Segura).</p>
+                        <label className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl cursor-pointer shadow-lg flex items-center gap-2">
+                           <Camera size={20} />
+                           <span>Tirar Foto da Peça</span>
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFallbackImage} />
+                        </label>
+                     </>
+                  ) : (
+                     <>
+                        <img ref={fallbackImgRef} src={fallbackImgSrc} alt="Fallback" className="absolute inset-0 w-full h-full object-cover" />
+                        <label className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/80 text-white font-bold py-2 px-4 rounded-full cursor-pointer border border-slate-600 backdrop-blur-sm flex items-center gap-2 text-xs shadow-xl z-50">
+                           <Camera size={14} />
+                           <span>Refazer Foto</span>
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFallbackImage} />
+                        </label>
+                     </>
+                  )}
+               </div>
+            )}
+
             <canvas ref={overlayCanvasRef} className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10" style={{ mixBlendMode: 'screen', opacity: 0.85 }} />
             <canvas ref={processingCanvasRef} className="hidden" />
-            {isAnalyzing && (
+            
+            {isAnalyzing && !cameraBlocked && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-500/20 border border-red-500/50 text-red-400 text-xs px-3 py-1.5 rounded-full z-40 backdrop-blur-sm whitespace-nowrap">
                 <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
                 DETECTANDO BORDAS
               </div>
             )}
             {!geometry && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/80 text-slate-400 text-xs px-4 py-2 rounded-full border border-slate-700 z-40 whitespace-nowrap">
+              <div className="absolute bottom-4 right-4 bg-slate-900/80 text-slate-400 text-xs px-4 py-2 rounded-full border border-slate-700 z-40 whitespace-nowrap pointer-events-none">
                 Carregue um STL para comparar
               </div>
             )}
