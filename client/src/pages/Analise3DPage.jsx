@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { UploadCloud, Camera, Box, Activity, Sliders, AlertCircle, Eye, FileText, X, Download } from 'lucide-react';
+import { UploadCloud, Camera, Box, Activity, Sliders, AlertCircle, Eye, FileText, X, Download, HelpCircle } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 // ─────────────────────────────────────────────────────────
@@ -208,6 +208,7 @@ export default function Analise3DPage() {
   const [snapshots, setSnapshots] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
   const [viewPdfMode, setViewPdfMode] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   const videoRef = useRef(null);
   const processingCanvasRef = useRef(null); // canvas oculto para CV
@@ -718,6 +719,13 @@ export default function Analise3DPage() {
               {modelName && <span className="ml-3 text-blue-400">📦 {modelName}</span>}
             </p>
           </div>
+          <button 
+            onClick={() => setShowHelpModal(true)}
+            className="ml-2 p-1.5 bg-slate-700 border border-slate-600 hover:bg-slate-600 hover:text-white rounded-full text-slate-300 transition-colors"
+            title="Ajuda e Dicas de Uso"
+          >
+            <HelpCircle size={18} />
+          </button>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -1113,6 +1121,66 @@ export default function Analise3DPage() {
           </div>
         </div>
       </div>
+
+      {/* MODAL DE AJUDA */}
+      {showHelpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-800 border border-slate-600 rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/50">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <HelpCircle size={20} className="text-blue-400" /> 
+                Guia Rápido: Inspeção 3D e IA
+              </h2>
+              <button onClick={() => setShowHelpModal(false)} className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-700 transition">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300">
+              {/* Seção 1: Configuração Câmera Tablets */}
+              <section className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-lg">
+                <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+                  <Camera size={16} className="text-blue-400" />
+                  Ativar Câmera nos Tablets Industriais (HTTP)
+                </h3>
+                <p className="mb-2">Por questões de segurança global, os navegadores de tablets (Android/iPad) bloqueiam o acesso direto à câmera em sites rodando na rede local (IP sem certificado válido).</p>
+                <div className="bg-slate-900 p-3 rounded font-mono text-[11px] text-emerald-400 mb-2 border border-slate-700 shadow-inner">
+                  1. Abra o Chrome no Tablet.<br/>
+                  2. Digite na URL: <span className="text-white">chrome://flags/#unsafely-treat-insecure-origin-as-secure</span><br/>
+                  3. No campo "Insecure origins...", digite: <span className="text-white">http://192.168.1.77:3001</span> (ou :3002)<br/>
+                  4. Mude para <span className="text-amber-400">Enabled</span> e clique no botão azul <span className="text-amber-400">Relaunch</span> no final da tela.
+                </div>
+                <p className="text-xs text-blue-200">Isso só precisa ser feito uma vez por Tablet. Caso não seja feito, o sistema forçará o "Modo de Foto Segura" em vez do vídeo contínuo.</p>
+              </section>
+
+              {/* Seção 2: Como usar */}
+              <section>
+                <h3 className="text-white font-bold mb-2 border-b border-slate-700 pb-1">Passo a Passo da Inspeção</h3>
+                <ol className="list-decimal pl-5 space-y-2">
+                  <li><strong>Posicione a Peça:</strong> Coloque a peça física em uma mesa com fundo de cor diferente para dar contraste.</li>
+                  <li><strong>Ligue a Câmera:</strong> Ative a câmera ou tire uma foto via Modo Alternativo.</li>
+                  <li><strong>Carregue o Projeto:</strong> Anexe o arquivo <strong>.STL</strong> da peça. Use o mouse/dedo para arrastar, girar (1 dedo) e dar zoom (2 dedos) para encaixar o modelo 3D digital exatamente em cima do vídeo da peça física.</li>
+                  <li><strong>Ferramenta de Medição 3D:</strong> Ative a régua, clique em dois pontos do modelo 3D para obter a distância exata em MM (Escala 1:1).</li>
+                  <li><strong>Comparação OpenCV (Real-time):</strong> Liga um rastreador de bordas (linhas vermelhas). Se as bordas vermelhas vazarem para fora do modelo 3D, a peça está fora de medida. <em>(Desliga automaticamente em 2 minutos para poupar bateria).</em></li>
+                </ol>
+              </section>
+
+              {/* Seção 3: IA e Relatório Oficial */}
+              <section>
+                <h3 className="text-white font-bold mb-2 border-b border-slate-700 pb-1 flex items-center gap-2">
+                  <Activity size={16} className="text-purple-400" />
+                  Gerando o Laudo da Inteligência Artificial
+                </h3>
+                <ul className="list-disc pl-5 space-y-2">
+                  <li><strong>Base da IA:</strong> Você pode anexar opcionalmente o Desenho Técnico em <strong>.PDF</strong>. O Gemini usará o PDF e a Foto da peça para procurar furos ausentes, medidas tortas e falta de solda.</li>
+                  <li><strong>Marcadores:</strong> Ao clicar em <strong>Baixar PDF Oficial</strong>, a IA vai desenhar <span className="text-red-400 font-bold">caixas vermelhas</span> em cima da foto tirada apontando onde está o defeito, e vai anotar o PDF Técnico automaticamente.</li>
+                  <li><strong>Tempo:</strong> A IA do Gemini 1.5 Pro leva cerca de 10 a 20 segundos para processar as 3 camadas de arquivos complexos. Tenha paciência!</li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

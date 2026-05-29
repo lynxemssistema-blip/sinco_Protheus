@@ -19,7 +19,25 @@ const { sendText: waSend, logEmailSent, msgMeuCanal } = require('./services/what
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const server = http.createServer(app);
+const fs = require('fs');
+const https = require('https');
+
+let server;
+const certPath = path.join(__dirname, 'certs', 'cert.pem');
+const keyPath = path.join(__dirname, 'certs', 'key.pem');
+
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    const options = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+    };
+    server = https.createServer(options, app);
+    console.log('🔒 [SECURITY] Servidor iniciando com HTTPS ativado (SSL/TLS)');
+} else {
+    server = http.createServer(app);
+    console.log('⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.');
+}
+
 const io = new Server(server, {
     cors: {
         origin: '*',
