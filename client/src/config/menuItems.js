@@ -74,6 +74,7 @@ export const MENU_GROUPS = [
             { id: 'apontamento_usuario_op', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario-op', icon: Users },
             { id: 'planejamento_estrutura_routing', label: 'Explosão BOM + Roteiro (Pull)', path: '/pcp/planejamento-estrutura-routing', icon: GitMerge },
             { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
+            { id: 'planejador_avancado', label: 'Planejamento Estratégico', path: '/pcp/planejador-avancado', icon: GitMerge },
             { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
             { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText },
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
