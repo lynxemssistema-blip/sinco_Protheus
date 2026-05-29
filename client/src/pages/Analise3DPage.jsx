@@ -503,7 +503,10 @@ export default function Analise3DPage() {
 
       const response = await fetch('/api/ai/analyze-3d', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({
           img3D,
           imgCam,
