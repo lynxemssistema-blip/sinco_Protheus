@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import api, { getSincoArvore } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import * as XLSX from 'xlsx';
+import SincoEmailModal from '../../components/SincoEmailModal';
 
 export default function SolidEdeg_Estrutura_Produto() {
     const [searchParams] = useSearchParams();
@@ -21,6 +22,8 @@ export default function SolidEdeg_Estrutura_Produto() {
     
     const [validationStatus, setValidationStatus] = useState({});
     const [validating, setValidating] = useState(false);
+    
+    const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
     useEffect(() => {
         if (!arvore || arvore.length === 0) return;
@@ -269,6 +272,33 @@ export default function SolidEdeg_Estrutura_Produto() {
         XLSX.writeFile(wb, `Estrutura_BOM_${arquivo}.xlsx`);
     };
 
+    const handleExportPdf = async () => {
+        if (!arvore || arvore.length === 0) return;
+        try {
+            const { default: generateSincoStructurePdf } = await import('../../services/sincoStructurePdfGenerator');
+            
+            // Map the data to the format expected by the generator
+            const structureObj = {
+                rootCode: arquivo,
+                tree: arvore.map(item => ({
+                    nivel: item.nivel || 0,
+                    CodMatFabricante: item.componente || item.codigo || 'S/COD',
+                    DescResumo: item.descricao || '',
+                    QtdeTotal: item.quantidade || 0,
+                    Unidade: item.um || 'UN',
+                    materiais: [],
+                    processos: []
+                })),
+                protheusData: {}
+            };
+            
+            await generateSincoStructurePdf(structureObj, user);
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            alert('Erro ao gerar o PDF. Verifique o console para mais detalhes.');
+        }
+    };
+
     const rows = buildVisibleRows();
     const temArquivo = arquivo !== 'Nenhum arquivo carregado';
 
@@ -374,9 +404,13 @@ export default function SolidEdeg_Estrutura_Produto() {
                                 <Download className="w-4 h-4 mr-2" />
                                 Excel
                             </button>
-                            <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm" title="Imprimir Relatório PDF">
+                            <button onClick={handleExportPdf} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm" title="Imprimir Relatório PDF">
                                 <Printer className="w-4 h-4 mr-2" />
                                 PDF
+                            </button>
+                            <button onClick={() => setIsEmailModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm" title="Enviar PDF por E-mail">
+                                <Mail className="w-4 h-4 mr-2" />
+                                E-mail
                             </button>
                         </div>
                     </div>
@@ -463,6 +497,13 @@ export default function SolidEdeg_Estrutura_Produto() {
                     </div>
                 </div>
             )}
+            {/* Modal de E-mail */}
+            <SincoEmailModal 
+                isOpen={isEmailModalOpen} 
+                onClose={() => setIsEmailModalOpen(false)} 
+                arvore={arvore} 
+                arquivo={arquivo} 
+            />
         </div>
     );
 }

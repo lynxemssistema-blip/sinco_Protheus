@@ -91,7 +91,7 @@ const drawFooters = (doc, pageWidth) => {
 // ─────────────────────────────────────────────
 //  GERADOR PRINCIPAL
 // ─────────────────────────────────────────────
-const generateSincoStructurePdf = async (structure, user) => {
+const generateSincoStructurePdf = async (structure, user, returnBytes = false) => {
     if (!structure || !structure.tree) return;
 
     const doc = new jsPDF('portrait', 'mm', 'a4');
@@ -291,11 +291,20 @@ const generateSincoStructurePdf = async (structure, user) => {
         }
     }
 
-    // ── Download ──
+    // ── Download ou Retorno ──
+    const fileName = `Estrutura_${structure.rootCode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+    
+    if (returnBytes) {
+        return {
+            bytes: finalPdfBytes,
+            fileName: fileName
+        };
+    }
+
     const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.download = `Estrutura_${structure.rootCode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
