@@ -775,9 +775,9 @@ export default function Analise3DPage() {
 
           <button
             onClick={handleDiagnostic}
-            disabled={!isCameraActive || diagnosticLoading}
+            disabled={!(isCameraActive || fallbackImgSrc) || diagnosticLoading}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border ${
-              !isCameraActive
+              !(isCameraActive || fallbackImgSrc)
                 ? 'bg-slate-700 text-slate-500 cursor-not-allowed border-slate-600'
                 : 'bg-purple-600 hover:bg-purple-500 text-white border-purple-500 shadow-lg shadow-purple-500/20'
             }`}
