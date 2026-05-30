@@ -1808,7 +1808,11 @@ router.post('/plan-batch', async (req, res) => {
         const op_numero_lote = plans[0]?.op_numero || null;
 
         // VALIDAÇÃO: verificar integridade de datas antes de qualquer INSERT
+        // Normaliza nomes de campo: aceita data_inicio ou data_planejada_inicio
         for (const p of plans) {
+            p.data_inicio = p.data_inicio || p.data_planejada_inicio || null;
+            p.data_fim    = p.data_fim    || p.data_planejada_fim    || null;
+
             if (!p.data_inicio || !p.data_fim) {
                 return res.status(400).json({
                     error: `Datas ausentes na operação ${p.operacao_codigo || p.op_sequencia}`
