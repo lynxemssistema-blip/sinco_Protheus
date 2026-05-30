@@ -1971,7 +1971,12 @@ router.post('/plan-batch', async (req, res) => {
                 chunk.forEach(p => {
                     const key = `${p.op_numero}_${p.op_item}_${p.op_sequencia}_${p.operacao_codigo}`;
                     const curr = currentPlansMap[key];
-                    const mudouDe = curr ? `Início: ${curr.data_planejada_inicio ? curr.data_planejada_inicio.split('T')[0] : 'N/A'} - Fim: ${curr.data_planejada_fim ? curr.data_planejada_fim.split('T')[0] : 'N/A'}` : 'N/A';
+                    const formatDbDate = (d) => {
+                        if (!d) return 'N/A';
+                        if (d instanceof Date) return d.toISOString().split('T')[0];
+                        return String(d).split('T')[0];
+                    };
+                    const mudouDe = curr ? `Início: ${formatDbDate(curr.data_planejada_inicio)} - Fim: ${formatDbDate(curr.data_planejada_fim)}` : 'N/A';
                     const mudouPara = `Início: ${p.data_inicio.split('T')[0]} - Fim: ${p.data_fim.split('T')[0]}`;
                     
                     pcpHistValues.push([

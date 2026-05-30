@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Activity, Calendar, Server, AlertTriangle, Edit2, Save, X, LayoutGrid, AlignLeft, BarChart2 } from 'lucide-react';
+import { Search, Activity, Calendar, Server, AlertTriangle, Edit2, Save, X, LayoutGrid, AlignLeft, BarChart2, ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import api from '../../services/api';
+import logoMetalfisa from '../../assets/metalfisa-logo.png';
 
 const TaxaOcupacao = () => {
     const [data, setData] = useState([]);
@@ -13,6 +14,7 @@ const TaxaOcupacao = () => {
     const [editingOp, setEditingOp] = useState(null); // Agora armazena a rowKey única
     const [editDates, setEditDates] = useState({ inicio: '', fim: '' });
     const [viewMode, setViewMode] = useState('table'); // 'table' | 'heatmap' | 'gantt'
+    const [expandedResources, setExpandedResources] = useState({});
     
     const getRowKey = (opObj) => {
         return `${opObj.pedido}_${opObj.item_pedido}_${opObj.op}_${opObj.item_op}_${opObj.sequen}_${opObj.produto}_${opObj.operacao}`;
@@ -234,8 +236,10 @@ const TaxaOcupacao = () => {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="max-w-7xl mx-auto relative h-full flex flex-col">
+            {/* HEADER FIXO */}
+            <div className="sticky top-0 z-30 bg-slate-50 p-6 pb-4 space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Activity className="text-blue-600" />
@@ -331,15 +335,31 @@ const TaxaOcupacao = () => {
                 >
                     <BarChart2 className="w-4 h-4" /> Gráfico
                 </button>
+                <div className="w-px h-6 bg-slate-200 mx-2"></div>
+                <button
+                    onClick={() => {
+                        import('../../services/taxaOcupacaoPdfGenerator').then(m => {
+                            m.generateTaxaOcupacaoPdf(viewMode, data);
+                        });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 transition-colors shadow-sm"
+                    title="Imprimir relatório da aba atual (A4 Deitado)"
+                >
+                    <Printer className="w-4 h-4" /> Imprimir
+                </button>
             </div>
 
-            {loading ? (
-                <div className="flex flex-col items-center justify-center h-64 space-y-4">
-                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-slate-500 font-medium animate-pulse">Calculando demanda global...</p>
-                </div>
-            ) : (
-                <div className="space-y-8">
+            </div>
+
+            {/* CONTEÚDO */}
+            <div className="px-6 pb-6 space-y-8">
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-slate-500 font-medium animate-pulse">Calculando demanda global...</p>
+                    </div>
+                ) : (
+                    <div className="space-y-8">
                     {sortedDates.length === 0 ? (
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200">
                             <div className="flex flex-col items-center justify-center h-48 text-slate-500 p-6">
@@ -452,7 +472,28 @@ const TaxaOcupacao = () => {
                             ))}
 
                             {viewMode === 'heatmap' && (() => {
-                                const allDates = sortedDates;
+                                // For Heatmap, ensure we have a continuous range of dates
+                                let allDates = [];
+                                if (sortedDates.length > 0) {
+                                    const minStr = sortedDates[0];
+                                    const maxStr = sortedDates[sortedDates.length - 1];
+                                    const start = new Date(`${minStr.substring(0,4)}-${minStr.substring(4,6)}-${minStr.substring(6,8)}T00:00:00Z`);
+                                    const end = new Date(`${maxStr.substring(0,4)}-${maxStr.substring(4,6)}-${maxStr.substring(6,8)}T00:00:00Z`);
+                                    
+                                    if (start <= end && (end - start) / (1000 * 60 * 60 * 24) <= 365) {
+                                        let current = new Date(start);
+                                        while (current <= end) {
+                                            const y = current.getUTCFullYear();
+                                            const m = String(current.getUTCMonth() + 1).padStart(2, '0');
+                                            const d = String(current.getUTCDate()).padStart(2, '0');
+                                            allDates.push(`${y}${m}${d}`);
+                                            current.setUTCDate(current.getUTCDate() + 1);
+                                        }
+                                    } else {
+                                        allDates = [...sortedDates];
+                                    }
+                                }
+
                                 const allResourcesMap = {};
                                 Object.values(groupedByDate).forEach(arr => {
                                     arr.forEach(item => {
@@ -464,15 +505,22 @@ const TaxaOcupacao = () => {
                                 });
                                 const allResources = Object.keys(allResourcesMap).sort((a,b) => allResourcesMap[a].descri.localeCompare(allResourcesMap[b].descri));
 
+                                const isWeekend = (dateStr) => {
+                                    const dt = new Date(`${dateStr}T00:00:00Z`);
+                                    const day = dt.getUTCDay();
+                                    return day === 0 || day === 6; // Sunday or Saturday
+                                };
+
                                 return (
-                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden overflow-x-auto">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-slate-50 border-b">
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-auto max-h-[70vh]">
+                                        <table className="w-full text-sm text-left relative">
+                                            <thead className="bg-slate-50 border-b sticky top-0 z-20 shadow-sm">
                                                 <tr>
-                                                    <th className="p-3 font-bold text-slate-700 min-w-[200px] sticky left-0 bg-slate-50 z-10 border-r shadow-[1px_0_0_0_rgba(226,232,240,1)]">Recurso / Máquina</th>
+                                                    <th className="p-3 font-bold text-slate-700 min-w-[200px] sticky left-0 top-0 bg-slate-50 z-30 border-r shadow-[1px_0_0_0_rgba(226,232,240,1)]">Recurso / Máquina</th>
                                                     {allDates.map(d => (
-                                                        <th key={d} className="p-3 font-semibold text-slate-600 text-center min-w-[100px]">
+                                                        <th key={d} className={`p-3 font-semibold text-center min-w-[100px] ${isWeekend(d) ? 'bg-orange-50 text-orange-700' : 'text-slate-600'}`}>
                                                             {formatDateBR(d).substring(0, 5)}
+                                                            {isWeekend(d) && <div className="text-[10px] opacity-75 font-normal">Fim de Semana</div>}
                                                         </th>
                                                     ))}
                                                 </tr>
@@ -534,42 +582,59 @@ const TaxaOcupacao = () => {
                                             const res = allResourcesMap[resCode];
                                             res.items.sort((a,b) => a.data.localeCompare(b.data));
                                             
+                                            const isExpanded = expandedResources[resCode];
+                                            const toggleExpand = () => {
+                                                setExpandedResources(prev => ({
+                                                    ...prev,
+                                                    [resCode]: !prev[resCode]
+                                                }));
+                                            };
+
                                             return (
                                                 <div key={resCode} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                                                    <div className="font-bold text-slate-800 mb-4">{res.descri} <span className="text-slate-400 text-sm font-normal">({resCode})</span></div>
-                                                    <div className="space-y-3">
-                                                        {res.items.map(item => {
-                                                            const percent = Math.min(item.taxa_ocupacao, 100);
-                                                            const isOverloaded = item.taxa_ocupacao > 100;
-                                                            return (
-                                                                <div key={item.data} className="flex items-center gap-4 text-sm">
-                                                                    <div className="w-24 font-medium text-slate-600 shrink-0">
-                                                                        {formatDateBR(item.data)}
-                                                                    </div>
-                                                                    <div className="flex-1 flex items-center gap-3">
-                                                                        <div 
-                                                                            className="relative h-6 bg-slate-100 rounded-md overflow-hidden flex-1 cursor-pointer group flex items-center" 
-                                                                            onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
-                                                                        >
-                                                                            <div 
-                                                                                className={`absolute left-0 top-0 bottom-0 ${isOverloaded ? 'bg-red-500' : (percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500')} transition-all group-hover:brightness-110`}
-                                                                                style={{ width: `${percent}%` }}
-                                                                            />
-                                                                            {isOverloaded && (
-                                                                                <div 
-                                                                                    className="absolute top-0 bottom-0 bg-red-700/50"
-                                                                                    style={{ left: '100%', width: `${Math.min(item.taxa_ocupacao - 100, 100)}%` }}
-                                                                                />
-                                                                            )}
-                                                                        </div>
-                                                                        <span className="text-xs font-bold text-slate-700 w-40 shrink-0">
-                                                                            {item.taxa_ocupacao.toFixed(1)}% <span className="text-slate-400 font-normal">({item.minutos_consumidos}m / {item.capacidade_diaria}m)</span>
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
+                                                    <div 
+                                                        className="font-bold text-slate-800 mb-2 cursor-pointer flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                        onClick={toggleExpand}
+                                                    >
+                                                        {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+                                                        <span>{res.descri} <span className="text-slate-400 text-sm font-normal">({resCode})</span></span>
                                                     </div>
+                                                    
+                                                    {isExpanded && (
+                                                        <div className="space-y-3 mt-4 ml-7">
+                                                            {res.items.map(item => {
+                                                                const percent = Math.min(item.taxa_ocupacao, 100);
+                                                                const isOverloaded = item.taxa_ocupacao > 100;
+                                                                return (
+                                                                    <div key={item.data} className="flex items-center gap-4 text-sm">
+                                                                        <div className="w-24 font-medium text-slate-600 shrink-0">
+                                                                            {formatDateBR(item.data)}
+                                                                        </div>
+                                                                        <div className="flex-1 flex items-center gap-3">
+                                                                            <div 
+                                                                                className="relative h-6 bg-slate-100 rounded-md overflow-hidden flex-1 cursor-pointer group flex items-center" 
+                                                                                onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
+                                                                            >
+                                                                                <div 
+                                                                                    className={`absolute left-0 top-0 bottom-0 ${isOverloaded ? 'bg-red-500' : (percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500')} transition-all group-hover:brightness-110`}
+                                                                                    style={{ width: `${percent}%` }}
+                                                                                />
+                                                                                {isOverloaded && (
+                                                                                    <div 
+                                                                                        className="absolute top-0 bottom-0 bg-red-700/50"
+                                                                                        style={{ left: '100%', width: `${Math.min(item.taxa_ocupacao - 100, 100)}%` }}
+                                                                                    />
+                                                                                )}
+                                                                            </div>
+                                                                            <span className="text-xs font-bold text-slate-700 w-40 shrink-0">
+                                                                                {item.taxa_ocupacao.toFixed(1)}% <span className="text-slate-400 font-normal">({item.minutos_consumidos}m / {item.capacidade_diaria}m)</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -580,6 +645,7 @@ const TaxaOcupacao = () => {
                     )}
                 </div>
             )}
+            </div>
 
             {/* MODAL DETALHAMENTO */}
             {selectedDetail && (() => {
@@ -677,7 +743,7 @@ const TaxaOcupacao = () => {
                                         onChange={e => {
                                             const newInicio = e.target.value;
                                             const updates = { inicio: newInicio };
-                                            if (bulkDates.fim && bulkDates.fim < newInicio) {
+                                            if (bulkDates.fim !== '' && bulkDates.fim < newInicio) {
                                                 updates.fim = newInicio;
                                             }
                                             setBulkDates(prev => ({ ...prev, ...updates }));
@@ -770,7 +836,7 @@ const TaxaOcupacao = () => {
                                                             onChange={e => {
                                                                 const newInicio = e.target.value;
                                                                 const updates = { inicio: newInicio };
-                                                                if (editDates.fim && editDates.fim < newInicio) {
+                                                                if (editDates.fim !== '' && editDates.fim < newInicio) {
                                                                     updates.fim = newInicio;
                                                                 }
                                                                 setEditDates(prev => ({ ...prev, ...updates }));

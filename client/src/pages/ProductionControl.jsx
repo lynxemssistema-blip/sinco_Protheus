@@ -374,9 +374,9 @@ export default function ProductionControl() {
             }
         }
     };
-    const handleMacroSaveBatch = async (plans, observacao, modo_calculo) => {
+    const handleMacroSaveBatch = async (plans, observacao, modo_calculo, preferencias) => {
         try {
-            await saveProductionPlanBatch(plans, observacao, modo_calculo);
+            await saveProductionPlanBatch(plans, observacao, modo_calculo, preferencias);
         } catch (err) {
             console.error(err);
             throw err;

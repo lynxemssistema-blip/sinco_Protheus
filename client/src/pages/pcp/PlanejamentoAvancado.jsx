@@ -236,14 +236,16 @@ export default function PlanejamentoAvancado() {
             opNode.operacoes.forEach((groupedOp) => {
                 const dias = parseInt(diasPorOp[groupedOp.id], 10) || 1;
                 const startStr = formatDate(currentDate);
-                const endStr = formatDate(addBusinessDays(currentDate, Math.max(1, dias)));
+                // For a 1-day task, it should end on the same day it starts.
+                const endStr = formatDate(addBusinessDays(currentDate, Math.max(0, dias - 1)));
                 
                 groupedOp.items.forEach(oper => {
                     const key = `${oper.op}_${oper.item_op}_${oper.sequen}_${oper.operacao}`;
                     newDrafts[key] = { inicio: startStr, fim: endStr };
                 });
                 
-                currentDate = new Date(`${endStr}T12:00:00`);
+                // Next operation starts on the next business day after the end of this operation
+                currentDate = addBusinessDays(new Date(`${endStr}T12:00:00`), 1);
             });
         } else {
             // Regressão (A partir da Data de Entrega/Fim)
@@ -251,14 +253,16 @@ export default function PlanejamentoAvancado() {
             opsReversed.forEach((groupedOp) => {
                 const dias = parseInt(diasPorOp[groupedOp.id], 10) || 1;
                 const endStr = formatDate(currentDate);
-                const startStr = formatDate(subtractBusinessDays(currentDate, Math.max(1, dias)));
+                // For a 1-day task, it starts on the same day it ends.
+                const startStr = formatDate(subtractBusinessDays(currentDate, Math.max(0, dias - 1)));
                 
                 groupedOp.items.forEach(oper => {
                     const key = `${oper.op}_${oper.item_op}_${oper.sequen}_${oper.operacao}`;
                     newDrafts[key] = { inicio: startStr, fim: endStr };
                 });
                 
-                currentDate = new Date(`${startStr}T12:00:00`);
+                // Next (previous in flow) operation ends on the business day before this one starts
+                currentDate = subtractBusinessDays(new Date(`${startStr}T12:00:00`), 1);
             });
         }
 
