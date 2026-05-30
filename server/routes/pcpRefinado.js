@@ -215,8 +215,6 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 }
             }
         }
-            }
-        }
 
         // === INÍCIO: Buscar Apontamentos de Produção (app_production_appointments) ===
         const apptsMap = {};
