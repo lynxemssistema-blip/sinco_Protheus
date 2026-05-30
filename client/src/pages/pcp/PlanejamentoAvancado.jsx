@@ -3,6 +3,28 @@ import { Calendar, Search, GitMerge, ChevronRight, ChevronDown, Save, FastForwar
 import { getProductionDashboard, saveProductionPlanBatch, getPlanningPrefs } from '../../services/api';
 import { toast } from 'react-toastify';
 
+const formatDate = (d) => d.toISOString().substring(0, 10);
+
+const addBusinessDays = (date, days) => {
+    let result = new Date(date);
+    let added = 0;
+    while (added < days) {
+        result.setDate(result.getDate() + 1);
+        if (result.getDay() !== 0 && result.getDay() !== 6) added++;
+    }
+    return result;
+};
+
+const subtractBusinessDays = (date, days) => {
+    let result = new Date(date);
+    let subtracted = 0;
+    while (subtracted < days) {
+        result.setDate(result.getDate() - 1);
+        if (result.getDay() !== 0 && result.getDay() !== 6) subtracted++;
+    }
+    return result;
+};
+
 export default function PlanejamentoAvancado() {
     const [searchType, setSearchType] = useState('pedido');
     const [searchValue, setSearchValue] = useState('');
@@ -239,28 +261,6 @@ export default function PlanejamentoAvancado() {
         const newDrafts = { ...draftPlans };
         let currentDate = new Date(`${baseDate}T12:00:00`);
 
-        const formatDate = (d) => d.toISOString().substring(0, 10);
-        
-        const addBusinessDays = (date, days) => {
-            let result = new Date(date);
-            let added = 0;
-            while (added < days) {
-                result.setDate(result.getDate() + 1);
-                if (result.getDay() !== 0 && result.getDay() !== 6) added++;
-            }
-            return result;
-        };
-
-        const subtractBusinessDays = (date, days) => {
-            let result = new Date(date);
-            let subtracted = 0;
-            while (subtracted < days) {
-                result.setDate(result.getDate() - 1);
-                if (result.getDay() !== 0 && result.getDay() !== 6) subtracted++;
-            }
-            return result;
-        };
-
         if (direction === 'inicio') {
             opNode.operacoes.forEach((groupedOp) => {
                 const dias = parseInt(diasPorOp[groupedOp.id], 10) || 1;
@@ -300,8 +300,28 @@ export default function PlanejamentoAvancado() {
         toast.success(`Cascata calculada para ${opNode.op}!`);
     };
 
-    const handleDiasChange = (groupedOpId, value) => {
-        setDiasPorOp(prev => ({ ...prev, [groupedOpId]: value }));
+    const handleDiasChange = (groupedOp, value) => {
+        const dias = parseInt(value, 10) || 1;
+        setDiasPorOp(prev => ({ ...prev, [groupedOp.id]: dias }));
+
+        // Atualiza a data de fim automaticamente se a data de início já estiver preenchida
+        setDraftPlans(prev => {
+            const newDrafts = { ...prev };
+            groupedOp.items.forEach(oper => {
+                const key = `${oper.op}_${oper.item_op}_${oper.sequen}_${oper.operacao}`;
+                const currentDraft = newDrafts[key] || { 
+                    inicio: oper.data_planejada_inicio?.substring(0,10) || '', 
+                    fim: oper.data_planejada_fim?.substring(0,10) || '' 
+                };
+
+                if (currentDraft.inicio) {
+                    const startDate = new Date(`${currentDraft.inicio}T12:00:00`);
+                    const endStr = formatDate(addBusinessDays(startDate, Math.max(0, dias - 1)));
+                    newDrafts[key] = { ...currentDraft, fim: endStr };
+                }
+            });
+            return newDrafts;
+        });
     };
 
     const handleSaveBatch = async () => {
@@ -603,7 +623,7 @@ export default function PlanejamentoAvancado() {
                                                                                     min="1"
                                                                                     placeholder="1"
                                                                                     value={valDias}
-                                                                                    onChange={e => handleDiasChange(groupedOp.id, e.target.value)}
+                                                                                    onChange={e => handleDiasChange(groupedOp, e.target.value)}
                                                                                     className={`w-full px-2 py-1 text-center text-sm rounded border border-slate-200 bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-colors`}
                                                                                     disabled={isConcluido}
                                                                                 />
