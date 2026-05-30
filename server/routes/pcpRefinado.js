@@ -215,8 +215,39 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 }
             }
         }
-        // === FIM: Buscar datas ===
+            }
+        }
 
+        // === INÍCIO: Buscar Apontamentos de Produção (app_production_appointments) ===
+        const apptsMap = {};
+        if (opNums.length > 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < opNums.length; i += chunkSize) {
+                const chunk = opNums.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const [mysqlRows] = await mysqlPool.query(`
+                    SELECT
+                        op_numero,
+                        op_item,
+                        op_sequencia,
+                        operacao_codigo,
+                        SUM(quantidade) AS total_produzido
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${placeholders})
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                `, chunk);
+
+                for (const a of mysqlRows) {
+                    const opn = a.op_numero ? a.op_numero.trim() : '';
+                    const itn = a.op_item ? a.op_item.trim() : '01';
+                    const sqn = a.op_sequencia ? a.op_sequencia.trim() : '001';
+                    const opcn = a.operacao_codigo ? a.operacao_codigo.trim() : '';
+                    const k = `${opn}_${itn}_${sqn}_${opcn}`;
+                    apptsMap[k] = Number(a.total_produzido) || 0;
+                }
+            }
+        }
+        // === FIM: Buscar Apontamentos ===
         // 2. Fetch local capacity configurations
         const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
         const configMap = {};
@@ -249,14 +280,19 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 ? parseFloat(op.tempo_operacao_g2) 
                 : (conf.tempo_padrao_minutos || 0);
             
-            // Protheus stores g2_tempo in hours normally? Usually it's in hours. 
-            // Wait, he said "se o tempo tiver definido, usa ele (em minutos), senão usa a taxa média".
-            // I'll assume g2_tempo is in the same unit or needs to be treated as minutes. 
-            // Actually let's assume it's directly usable as minutes per piece based on his audio.
-            const pendingQty = op.qtde - op.qtde_feita;
+            const opn = op.op_num ? op.op_num.trim() : '';
+            const itn = op.item_op ? op.item_op.trim() : '01';
+            const sqn = op.sequen ? op.sequen.trim() : '001';
+            const opcn = op.operacao ? op.operacao.trim() : '';
+            const apptKey = `${opn}_${itn}_${sqn}_${opcn}`;
+            const operacao_feita = apptsMap[apptKey] || 0;
+
+            // Usa o maior entre apontamento da operação e a qtde_feita geral da OP (Protheus)
+            const qtde_feita_real = Math.max(op.qtde_feita || 0, operacao_feita);
+            const pendingQty = Math.max(0, op.qtde - qtde_feita_real);
             
             const minutos_totais = op.qtde * unitTime;
-            const minutos_executados = op.qtde_feita * unitTime;
+            const minutos_executados = qtde_feita_real * unitTime;
             const minutos_pendentes = pendingQty * unitTime;
             
             const capacity = conf.capacidade_diaria_minutos || 0;

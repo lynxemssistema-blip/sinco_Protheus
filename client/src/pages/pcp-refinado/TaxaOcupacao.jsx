@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Activity, Calendar, Server, AlertTriangle, Edit2, Save, X } from 'lucide-react';
+import { Search, Activity, Calendar, Server, AlertTriangle, Edit2, Save, X, LayoutGrid, AlignLeft, BarChart2 } from 'lucide-react';
 import api from '../../services/api';
 
 const TaxaOcupacao = () => {
@@ -12,6 +12,7 @@ const TaxaOcupacao = () => {
     const [selectedDetail, setSelectedDetail] = useState(null);
     const [editingOp, setEditingOp] = useState(null); // Agora armazena a rowKey única
     const [editDates, setEditDates] = useState({ inicio: '', fim: '' });
+    const [viewMode, setViewMode] = useState('table'); // 'table' | 'heatmap' | 'gantt'
     
     const getRowKey = (opObj) => {
         return `${opObj.pedido}_${opObj.item_pedido}_${opObj.op}_${opObj.item_op}_${opObj.sequen}_${opObj.produto}_${opObj.operacao}`;
@@ -311,6 +312,28 @@ const TaxaOcupacao = () => {
                 </div>
             )}
 
+            {/* View Mode Tabs */}
+            <div className="flex bg-white rounded-lg shadow-sm border border-slate-200 p-1 w-fit">
+                <button
+                    onClick={() => setViewMode('table')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'table' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                    <AlignLeft className="w-4 h-4" /> Tabela (Detalhado)
+                </button>
+                <button
+                    onClick={() => setViewMode('heatmap')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'heatmap' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                    <LayoutGrid className="w-4 h-4" /> Mapa de Calor
+                </button>
+                <button
+                    onClick={() => setViewMode('gantt')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'gantt' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                    <BarChart2 className="w-4 h-4" /> Gráfico
+                </button>
+            </div>
+
             {loading ? (
                 <div className="flex flex-col items-center justify-center h-64 space-y-4">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -326,7 +349,8 @@ const TaxaOcupacao = () => {
                             </div>
                         </div>
                     ) : (
-                        sortedDates.map(dateStr => (
+                        <>
+                            {viewMode === 'table' && sortedDates.map(dateStr => (
                             <div key={dateStr} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="bg-slate-50 border-b border-slate-100 py-3 px-6">
                                     <h3 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
@@ -425,8 +449,135 @@ const TaxaOcupacao = () => {
                                         </table>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                                </div>
+                            ))}
+
+                            {viewMode === 'heatmap' && (() => {
+                                const allDates = sortedDates;
+                                const allResourcesMap = {};
+                                Object.values(groupedByDate).forEach(arr => {
+                                    arr.forEach(item => {
+                                        if (!allResourcesMap[item.recurso_codigo]) {
+                                            allResourcesMap[item.recurso_codigo] = { descri: item.recurso_descri, loadByDate: {} };
+                                        }
+                                        allResourcesMap[item.recurso_codigo].loadByDate[item.data] = item;
+                                    });
+                                });
+                                const allResources = Object.keys(allResourcesMap).sort((a,b) => allResourcesMap[a].descri.localeCompare(allResourcesMap[b].descri));
+
+                                return (
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 border-b">
+                                                <tr>
+                                                    <th className="p-3 font-bold text-slate-700 min-w-[200px] sticky left-0 bg-slate-50 z-10 border-r shadow-[1px_0_0_0_rgba(226,232,240,1)]">Recurso / Máquina</th>
+                                                    {allDates.map(d => (
+                                                        <th key={d} className="p-3 font-semibold text-slate-600 text-center min-w-[100px]">
+                                                            {formatDateBR(d).substring(0, 5)}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {allResources.map(resCode => {
+                                                    const res = allResourcesMap[resCode];
+                                                    return (
+                                                        <tr key={resCode} className="hover:bg-slate-50">
+                                                            <td className="p-3 font-medium text-slate-800 sticky left-0 bg-white border-r shadow-[1px_0_0_0_rgba(226,232,240,1)]">
+                                                                <div className="truncate w-48" title={res.descri}>{res.descri}</div>
+                                                                <div className="text-[10px] text-slate-400">{resCode}</div>
+                                                            </td>
+                                                            {allDates.map(d => {
+                                                                const item = res.loadByDate[d];
+                                                                if (!item) return <td key={d} className="p-3 text-center text-slate-300">-</td>;
+                                                                
+                                                                const percent = item.taxa_ocupacao;
+                                                                let colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200';
+                                                                if (percent >= 100) colorClass = 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200 font-bold';
+                                                                else if (percent >= 80) colorClass = 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200';
+
+                                                                return (
+                                                                    <td key={d} className="p-1.5 text-center align-middle">
+                                                                        <button 
+                                                                            onClick={() => setSelectedDetail({ data: d, recurso: item })}
+                                                                            className={`w-full py-2 px-1 rounded border shadow-sm transition-all text-xs flex flex-col items-center justify-center gap-0.5 ${colorClass}`}
+                                                                            title={`Capacidade: ${item.capacidade_diaria}m | Consumo: ${item.minutos_consumidos}m`}
+                                                                        >
+                                                                            <span>{percent.toFixed(0)}%</span>
+                                                                            {item.minutos_consumidos > 0 && <span className="text-[9px] opacity-70">{item.minutos_consumidos}m</span>}
+                                                                        </button>
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })()}
+
+                            {viewMode === 'gantt' && (() => {
+                                const allResourcesMap = {};
+                                data.forEach(item => {
+                                    if (!allResourcesMap[item.recurso_codigo]) {
+                                        allResourcesMap[item.recurso_codigo] = { descri: item.recurso_descri, items: [] };
+                                    }
+                                    allResourcesMap[item.recurso_codigo].items.push(item);
+                                });
+                            
+                                const resources = Object.keys(allResourcesMap).sort((a,b) => allResourcesMap[a].descri.localeCompare(allResourcesMap[b].descri));
+                            
+                                return (
+                                    <div className="space-y-4">
+                                        {resources.map(resCode => {
+                                            const res = allResourcesMap[resCode];
+                                            res.items.sort((a,b) => a.data.localeCompare(b.data));
+                                            
+                                            return (
+                                                <div key={resCode} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                                                    <div className="font-bold text-slate-800 mb-4">{res.descri} <span className="text-slate-400 text-sm font-normal">({resCode})</span></div>
+                                                    <div className="space-y-3">
+                                                        {res.items.map(item => {
+                                                            const percent = Math.min(item.taxa_ocupacao, 100);
+                                                            const isOverloaded = item.taxa_ocupacao > 100;
+                                                            return (
+                                                                <div key={item.data} className="flex items-center gap-4 text-sm">
+                                                                    <div className="w-24 font-medium text-slate-600 shrink-0">
+                                                                        {formatDateBR(item.data)}
+                                                                    </div>
+                                                                    <div className="flex-1 flex items-center gap-3">
+                                                                        <div 
+                                                                            className="relative h-6 bg-slate-100 rounded-md overflow-hidden flex-1 cursor-pointer group flex items-center" 
+                                                                            onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
+                                                                        >
+                                                                            <div 
+                                                                                className={`absolute left-0 top-0 bottom-0 ${isOverloaded ? 'bg-red-500' : (percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500')} transition-all group-hover:brightness-110`}
+                                                                                style={{ width: `${percent}%` }}
+                                                                            />
+                                                                            {isOverloaded && (
+                                                                                <div 
+                                                                                    className="absolute top-0 bottom-0 bg-red-700/50"
+                                                                                    style={{ left: '100%', width: `${Math.min(item.taxa_ocupacao - 100, 100)}%` }}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                        <span className="text-xs font-bold text-slate-700 w-40 shrink-0">
+                                                                            {item.taxa_ocupacao.toFixed(1)}% <span className="text-slate-400 font-normal">({item.minutos_consumidos}m / {item.capacidade_diaria}m)</span>
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })()}
+                        </>
                     )}
                 </div>
             )}

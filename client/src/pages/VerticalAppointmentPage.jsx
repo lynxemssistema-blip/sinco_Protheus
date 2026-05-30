@@ -512,13 +512,12 @@ export default function VerticalAppointmentPage() {
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 text-slate-600 border-b sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="px-4 py-3 font-semibold">Status</th>
                                     <th className="px-4 py-3 font-semibold">OP</th>
                                     <th className="px-4 py-3 font-semibold">Pedido</th>
-                                    <th className="px-4 py-3 font-semibold">Entrega</th>
                                     <th className="px-4 py-3 font-semibold">Produto</th>
                                     <th className="px-4 py-3 font-semibold text-center">Progresso</th>
                                     <th className="px-4 py-3 font-semibold">Planejamento</th>
+                                    <th className="px-4 py-3 font-semibold">Status</th>
                                     <th className="px-4 py-3 font-semibold text-right">Ações</th>
                                 </tr>
                             </thead>
@@ -530,18 +529,7 @@ export default function VerticalAppointmentPage() {
 
                                     return (
                                         <tr key={opKey} className={`transition-colors ${row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50/80'}`}>
-                                            <td className="px-4 py-3 align-top">
-                                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(row.status)}`}>
-                                                    {getStatusIcon(row.status)}
-                                                    <span>{row.status}</span>
-                                                </div>
-                                                {row.tem_pendencia_conferencia && (
-                                                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-                                                        <Clock className="w-3 h-3" />
-                                                        Conf. Pendente
-                                                    </div>
-                                                )}
-                                            </td>
+
                                             <td className="px-4 py-3 align-top">
                                                 <div className="font-mono font-bold text-slate-800">{row.op}-{row.item_op} <span className="text-slate-400 font-normal">({row.sequen_op})</span></div>
                                             </td>
@@ -555,16 +543,7 @@ export default function VerticalAppointmentPage() {
                                                     <span className="text-slate-400 text-xs">-</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                {row.data_entrega ? (
-                                                    <span className="text-slate-700 font-medium flex items-center gap-1.5">
-                                                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                                        {row.data_entrega.split('-').reverse().join('/')}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-slate-400 text-xs text-center w-full block">-</span>
-                                                )}
-                                            </td>
+
                                             <td className="px-4 py-3 max-w-[250px]">
                                                 <div className="flex items-start justify-between gap-2">
                                                     <div className="min-w-0">
@@ -689,6 +668,18 @@ export default function VerticalAppointmentPage() {
                                                     </div>
                                                 )}
                                             </td>
+                                            <td className="px-4 py-3 align-top">
+                                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(row.status)}`}>
+                                                    {getStatusIcon(row.status)}
+                                                    <span>{row.status}</span>
+                                                </div>
+                                                {row.tem_pendencia_conferencia && (
+                                                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                                        <Clock className="w-3 h-3" />
+                                                        Conf. Pendente
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">
                                                     {/* Histórico sempre visível */}
@@ -727,7 +718,7 @@ export default function VerticalAppointmentPage() {
                             </tbody>
                             <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                                 <tr>
-                                    <td colSpan="5" className="px-4 py-3 text-right font-bold text-slate-700">
+                                    <td colSpan="4" className="px-4 py-3 text-right font-bold text-slate-700">
                                         TOTAL GERAL (Exibidos na Tela):
                                     </td>
                                     <td className="px-4 py-3 font-bold text-slate-800">
