@@ -306,7 +306,7 @@ const ItensAFaturar = () => {
     }, [selectedItems, cartQuantities]);
 
     return (
-        <div className="p-2 md:p-4 lg:p-6 w-full animate-fadeIn relative">
+        <div className="p-2 md:p-4 lg:p-6 w-full h-[calc(100vh-64px)] flex flex-col animate-fadeIn relative">
             
             {/* INVOICE MODAL */}
             {selectedInvoice && (
@@ -478,8 +478,8 @@ const ItensAFaturar = () => {
                 </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
-                <div className="p-4 border-b border-gray-100 bg-white flex flex-col justify-between md:flex-row gap-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden relative">
+                <div className="p-4 border-b border-gray-100 bg-white shrink-0 flex flex-col justify-between md:flex-row gap-4">
                     <div>
                         <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                             <LayoutList className="h-6 w-6 text-blue-600" />    
@@ -501,7 +501,7 @@ const ItensAFaturar = () => {
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-gray-100 bg-white">
+                <div className="p-4 border-b border-gray-100 bg-white shrink-0">
                     <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
                         <div className="flex flex-col gap-1 md:col-span-2">
                             <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
@@ -613,9 +613,9 @@ const ItensAFaturar = () => {
                     </form>
                 </div>
 
-                <div className="overflow-x-auto min-h-[400px]">
-                    <table className="w-full text-sm text-left text-gray-500 whitespace-nowrap">
-                        <thead className="text-[11px] text-gray-700 uppercase bg-slate-50 border-b border-gray-200">
+                <div className="overflow-auto flex-1">
+                    <table className="w-full text-sm text-left text-gray-500 whitespace-nowrap relative">
+                        <thead className="text-[11px] text-gray-700 uppercase bg-slate-50 border-b border-gray-200 sticky top-0 z-10">
                             <tr>
                                 <th className="px-3 py-3 w-10 text-center">
                                     <div className="flex items-center justify-center">

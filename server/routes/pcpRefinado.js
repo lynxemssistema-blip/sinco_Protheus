@@ -83,7 +83,7 @@ router.get('/taxa-ocupacao', async (req, res) => {
         
         // 1. Fetch active OPs and their operations
         // Considering an OP active if C2_QUJE < C2_QUANT (has pending balance)
-        const { data_inicio, data_fim, recurso } = req.query;
+        const { data_inicio, data_fim, recurso, only_active = 'false' } = req.query;
 
         let whereClause = `
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
@@ -107,6 +107,19 @@ router.get('/taxa-ocupacao', async (req, res) => {
         if (recurso) {
             queryParams.push(`%${recurso.toUpperCase().trim()}%`);
             whereClause += ` AND (TRIM(g2.g2_recurso) LIKE $${queryParams.length} OR UPPER(TRIM(h1.h1_descri)) LIKE $${queryParams.length})`;
+        }
+
+        if (only_active === 'true') {
+            whereClause += ` AND (
+                COALESCE(c5.c5_nota, '') = '' 
+                OR EXISTS (
+                    SELECT 1 FROM public.sc6010 c6 
+                    WHERE c6.c6_num = c5.c5_num 
+                    AND c6.c6_filial = c5.c5_filial 
+                    AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                    AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
+                )
+            )`;
         }
 
         const pgQuery = `
@@ -310,7 +323,7 @@ router.get('/taxa-ocupacao', async (req, res) => {
 // Atualizar Datas Planejadas da OP
 router.put('/op/:op/dates', async (req, res) => {
     const { op } = req.params;
-    const { data_inicio, data_fim, operacao_codigo, item_op, sequen } = req.body; // YYYYMMDD
+    const { data_inicio, data_fim, operacao_codigo, item_op, sequen, pedido, item_pedido, produto } = req.body; // YYYYMMDD
     let pgClient = null;
 
     try {
@@ -349,6 +362,18 @@ router.put('/op/:op/dates', async (req, res) => {
         if (operacao_codigo) {
             queryParams.push(operacao_codigo.trim());
             pgQuery += ` AND TRIM(g2.g2_operac) = $${queryParams.length}`;
+        }
+        if (pedido) {
+            queryParams.push(pedido.trim());
+            pgQuery += ` AND TRIM(c2.c2_pedido) = $${queryParams.length}`;
+        }
+        if (item_pedido) {
+            queryParams.push(item_pedido.trim());
+            pgQuery += ` AND TRIM(c2.c2_itempv) = $${queryParams.length}`;
+        }
+        if (produto) {
+            queryParams.push(produto.trim());
+            pgQuery += ` AND TRIM(c2.c2_produto) = $${queryParams.length}`;
         }
 
         const pgResult = await pgClient.query(pgQuery, queryParams);

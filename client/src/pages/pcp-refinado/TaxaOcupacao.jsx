@@ -10,8 +10,22 @@ const TaxaOcupacao = () => {
     const [recursoBusca, setRecursoBusca] = useState('');
     const [error, setError] = useState('');
     const [selectedDetail, setSelectedDetail] = useState(null);
-    const [editingOp, setEditingOp] = useState(null);
+    const [editingOp, setEditingOp] = useState(null); // Agora armazena a rowKey única
     const [editDates, setEditDates] = useState({ inicio: '', fim: '' });
+    
+    const getRowKey = (opObj) => {
+        return `${opObj.pedido}_${opObj.item_pedido}_${opObj.op}_${opObj.item_op}_${opObj.sequen}_${opObj.produto}_${opObj.operacao}`;
+    };
+    
+    // Filtro Pesado
+    const [onlyActive, setOnlyActive] = useState(() => {
+        const stored = localStorage.getItem('pcpRefinadoOnlyActive');
+        return stored !== 'false';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('pcpRefinadoOnlyActive', onlyActive);
+    }, [onlyActive]);
     
     // Novos estados do modal (Filtro e Seleção em Massa)
     const [modalSearchTerm, setModalSearchTerm] = useState('');
@@ -34,6 +48,7 @@ const TaxaOcupacao = () => {
             if (dataInicio) params.data_inicio = dataInicio;
             if (dataFim) params.data_fim = dataFim;
             if (recursoBusca) params.recurso = recursoBusca;
+            params.only_active = onlyActive ? 'true' : 'false';
             
             const response = await api.get('/pcp-refinado/taxa-ocupacao', { params });
             setData(response.data);
@@ -83,7 +98,10 @@ const TaxaOcupacao = () => {
                 data_fim: editDates.fim.replace(/-/g, ''),
                 operacao_codigo: opObj.operacao,
                 item_op: opObj.item_op,
-                sequen: opObj.sequen
+                sequen: opObj.sequen,
+                pedido: opObj.pedido,
+                item_pedido: opObj.item_pedido,
+                produto: opObj.produto
             });
             setEditingOp(null);
             fetchData();
@@ -107,10 +125,9 @@ const TaxaOcupacao = () => {
             // Para simplificar, faremos requisições em paralelo.
             
             // Localiza as operacoes completas para enviar o codigo correto
-            const opsToUpdate = selectedOps.map(opStr => {
-                // Apenas busca no detalhamento atual
-                return selectedDetail?.recurso?.ops?.find(o => o.op === opStr) || { op: opStr };
-            });
+            const opsToUpdate = selectedOps.map(rowKey => {
+                return selectedDetail?.recurso?.ops?.find(o => getRowKey(o) === rowKey) || null;
+            }).filter(Boolean);
 
             await Promise.all(opsToUpdate.map(opObj => 
                 api.put(`/pcp-refinado/op/${opObj.op}/dates`, {
@@ -118,7 +135,10 @@ const TaxaOcupacao = () => {
                     data_fim: bulkDates.fim.replace(/-/g, ''),
                     operacao_codigo: opObj.operacao,
                     item_op: opObj.item_op,
-                    sequen: opObj.sequen
+                    sequen: opObj.sequen,
+                    pedido: opObj.pedido,
+                    item_pedido: opObj.item_pedido,
+                    produto: opObj.produto
                 })
             ));
             
@@ -235,6 +255,27 @@ const TaxaOcupacao = () => {
                             onKeyDown={(e) => e.key === 'Enter' && fetchData()}
                         />
                     </div>
+                    
+                    <div className="flex items-center border border-slate-200 rounded-lg px-3 bg-slate-50" title="Desative para incluir pedidos já entregues / faturados.">
+                        <label className="relative inline-flex items-center cursor-pointer py-2">
+                            <input
+                                type="checkbox"
+                                checked={onlyActive}
+                                onChange={(e) => {
+                                    setOnlyActive(e.target.checked);
+                                }}
+                                className="sr-only peer"
+                            />
+                            <div className="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-600" />
+                            <span className="ml-2 text-xs font-medium text-slate-700 whitespace-nowrap hidden sm:block">
+                                Apenas Pendentes (Filtro Pesado)
+                            </span>
+                            <span className="ml-2 text-xs font-medium text-slate-700 whitespace-nowrap sm:hidden">
+                                Pendentes
+                            </span>
+                        </label>
+                    </div>
+
                     <button 
                         onClick={fetchData}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
@@ -387,15 +428,15 @@ const TaxaOcupacao = () => {
                     if (isAllSelected) {
                         setSelectedOps([]);
                     } else {
-                        setSelectedOps(filteredOps.map(o => o.op));
+                        setSelectedOps(filteredOps.map(o => getRowKey(o)));
                     }
                 };
 
-                const toggleSelectOp = (op) => {
-                    if (selectedOps.includes(op)) {
-                        setSelectedOps(selectedOps.filter(id => id !== op));
+                const toggleSelectOp = (rowKey) => {
+                    if (selectedOps.includes(rowKey)) {
+                        setSelectedOps(selectedOps.filter(id => id !== rowKey));
                     } else {
-                        setSelectedOps([...selectedOps, op]);
+                        setSelectedOps([...selectedOps, rowKey]);
                     }
                 };
 
@@ -518,8 +559,9 @@ const TaxaOcupacao = () => {
                                 <tbody className="divide-y divide-slate-100">
                                     {filteredOps.length > 0 ? (
                                         filteredOps.map((opItem, idx) => {
-                                            const isEditing = editingOp === opItem.op;
-                                            const isChecked = selectedOps.includes(opItem.op);
+                                            const rowKey = getRowKey(opItem);
+                                            const isEditing = editingOp === rowKey;
+                                            const isChecked = selectedOps.includes(rowKey);
                                             
                                             // Converte YYYYMMDD para YYYY-MM-DD para o input type="date"
                                             const formatForInput = (yyyymmdd) => {
@@ -534,7 +576,7 @@ const TaxaOcupacao = () => {
                                                         type="checkbox" 
                                                         className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
                                                         checked={isChecked}
-                                                        onChange={() => toggleSelectOp(opItem.op)}
+                                                        onChange={() => toggleSelectOp(rowKey)}
                                                     />
                                                 </td>
                                                 <td className="px-4 py-3 font-medium text-slate-800">{opItem.op}</td>
@@ -607,7 +649,7 @@ const TaxaOcupacao = () => {
                                                     ) : (
                                                         <button 
                                                             onClick={() => {
-                                                                setEditingOp(opItem.op);
+                                                                setEditingOp(rowKey);
                                                                 setEditDates({
                                                                     inicio: formatForInput(opItem.data_planejada),
                                                                     fim: formatForInput(opItem.data_planejada_final)
