@@ -22,7 +22,7 @@ router.get('/recursos', async (req, res) => {
         const protheusRecursos = pgResult.rows;
 
         // 2. Fetch from MySQL (Local Capacities)
-        const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
+        const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao FROM app_recursos_capacidade');
         
         const configMap = {};
         mysqlResult.forEach(row => {
@@ -36,7 +36,8 @@ router.get('/recursos', async (req, res) => {
                 cod_recurso: r.cod_recurso,
                 desc_recurso: r.desc_recurso,
                 tempo_padrao_minutos: conf.tempo_padrao_minutos || 0,
-                capacidade_diaria_minutos: conf.capacidade_diaria_minutos || 0
+                capacidade_diaria_minutos: conf.capacidade_diaria_minutos || 0,
+                ordem_exibicao: conf.ordem_exibicao || 0
             };
         });
 
@@ -52,21 +53,22 @@ router.get('/recursos', async (req, res) => {
 // POST /api/pcp-refinado/recursos - Upsert capacity for a resource
 router.post('/recursos', async (req, res) => {
     try {
-        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos } = req.body;
+        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao } = req.body;
         
         if (!recurso_codigo) {
             return res.status(400).json({ error: 'O código do recurso é obrigatório' });
         }
 
         const query = `
-            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos)
-            VALUES (?, ?, ?)
+            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao)
+            VALUES (?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE 
                 tempo_padrao_minutos = VALUES(tempo_padrao_minutos),
-                capacidade_diaria_minutos = VALUES(capacidade_diaria_minutos)
+                capacidade_diaria_minutos = VALUES(capacidade_diaria_minutos),
+                ordem_exibicao = VALUES(ordem_exibicao)
         `;
 
-        await mysqlPool.query(query, [recurso_codigo, tempo_padrao_minutos || 0, capacidade_diaria_minutos || 0]);
+        await mysqlPool.query(query, [recurso_codigo, tempo_padrao_minutos || 0, capacidade_diaria_minutos || 0, ordem_exibicao || 0]);
         
         res.json({ message: 'Capacidade atualizada com sucesso' });
     } catch (error) {
@@ -283,13 +285,14 @@ router.get('/taxa-ocupacao', async (req, res) => {
             const sqn = op.sequen ? op.sequen.trim() : '001';
             const opcn = op.operacao ? op.operacao.trim() : '';
             const apptKey = `${opn}_${itn}_${sqn}_${opcn}`;
-            const operacao_feita = apptsMap[apptKey] || 0;
+            const operacao_feita = Number(apptsMap[apptKey]) || 0;
 
             // Usa o maior entre apontamento da operação e a qtde_feita geral da OP (Protheus)
-            const qtde_feita_real = Math.max(op.qtde_feita || 0, operacao_feita);
-            const pendingQty = Math.max(0, op.qtde - qtde_feita_real);
+            const qtde_feita_real = Math.max(Number(op.qtde_feita) || 0, operacao_feita);
+            const qtde_total = Number(op.qtde) || 0;
+            const pendingQty = Math.max(0, qtde_total - qtde_feita_real);
             
-            const minutos_totais = op.qtde * unitTime;
+            const minutos_totais = qtde_total * unitTime;
             const minutos_executados = qtde_feita_real * unitTime;
             const minutos_pendentes = pendingQty * unitTime;
             

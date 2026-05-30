@@ -98,7 +98,30 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
             // â”€â”€ Carrega preferÃªncias do SERVIDOR (compartilhado entre usuÃ¡rios) â”€â”€
             try {
-                const prefsRes = await fetch(`/api/production/planning-prefs/${encodeURIComponent(op.op)}`);
+                const [prefsRes, recursosRes] = await Promise.all([
+                    fetch(`/api/production/planning-prefs/${encodeURIComponent(op.op)}`),
+                    fetch('/api/pcp-refinado/recursos')
+                ]);
+
+                if (recursosRes.ok && isMounted) {
+                    const recData = await recursosRes.json();
+                    const recMap = {};
+                    recData.forEach(r => {
+                        recMap[r.cod_recurso] = r.ordem_exibicao || 0;
+                    });
+                    
+                    groupsToUse.forEach(g => {
+                        g.ordem_exibicao = recMap[g.code] || 0;
+                    });
+                    
+                    groupsToUse.sort((a, b) => {
+                        if (a.ordem_exibicao !== b.ordem_exibicao) {
+                            return a.ordem_exibicao - b.ordem_exibicao;
+                        }
+                        return a.min_sequen - b.min_sequen;
+                    });
+                }
+
                 if (prefsRes.ok) {
                     const prefs = await prefsRes.json();
                     if (prefs && isMounted) {

@@ -57,10 +57,9 @@ const TaxaOcupacao = () => {
             
             // Se o modal estiver aberto, atualiza os dados dele também
             if (selectedDetail) {
-                const currentResource = response.data.find(d => d.data === selectedDetail.data);
+                const currentResource = response.data.find(d => d.data === selectedDetail.data && d.recurso_codigo === selectedDetail.recurso.recurso_codigo);
                 if (currentResource) {
-                    const resData = currentResource[selectedDetail.recurso.recurso_codigo];
-                    if (resData) setSelectedDetail({ data: selectedDetail.data, recurso: resData });
+                    setSelectedDetail({ data: selectedDetail.data, recurso: currentResource });
                 }
             }
         } catch (err) {

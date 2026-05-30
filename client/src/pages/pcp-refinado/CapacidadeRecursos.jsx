@@ -42,7 +42,8 @@ export default function CapacidadeRecursos() {
             await api.post('/pcp-refinado/recursos', {
                 recurso_codigo: recurso.cod_recurso,
                 tempo_padrao_minutos: parseFloat(recurso.tempo_padrao_minutos) || 0,
-                capacidade_diaria_minutos: parseInt(recurso.capacidade_diaria_minutos) || 0
+                capacidade_diaria_minutos: parseInt(recurso.capacidade_diaria_minutos) || 0,
+                ordem_exibicao: parseInt(recurso.ordem_exibicao) || 0
             });
             
             // Remove from dirty state
@@ -69,7 +70,8 @@ export default function CapacidadeRecursos() {
                 api.post('/pcp-refinado/recursos', {
                     recurso_codigo: r.cod_recurso,
                     tempo_padrao_minutos: parseFloat(r.tempo_padrao_minutos) || 0,
-                    capacidade_diaria_minutos: parseInt(r.capacidade_diaria_minutos) || 0
+                    capacidade_diaria_minutos: parseInt(r.capacidade_diaria_minutos) || 0,
+                    ordem_exibicao: parseInt(r.ordem_exibicao) || 0
                 })
             ));
             
@@ -154,6 +156,7 @@ export default function CapacidadeRecursos() {
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Cód. Recurso</th>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Descrição (Protheus)</th>
+                                <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Sequência lógica padrão para exibição/planejamento">Ordem de Exibição</th>
                                 <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Tempo consumido por peça/batida nesta operação">Tempo Padrão (Minutos/Peça)</th>
                                 <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Tempo total disponível deste recurso por dia (ex: 8h = 480min)">Capacidade Diária (Minutos)</th>
                                 <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -185,6 +188,17 @@ export default function CapacidadeRecursos() {
                                             </td>
                                             <td className="px-6 py-3 whitespace-nowrap text-sm text-slate-600 font-medium">
                                                 {r.desc_recurso}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-center">
+                                                <input 
+                                                    type="number"
+                                                    step="1"
+                                                    min="0"
+                                                    className={`w-20 text-center p-1.5 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors ${isDirty ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                                    value={r.ordem_exibicao || 0}
+                                                    onChange={(e) => handleInputChange(r.cod_recurso, 'ordem_exibicao', e.target.value)}
+                                                    onBlur={() => handleSave(r)}
+                                                />
                                             </td>
                                             <td className="px-6 py-3 whitespace-nowrap text-center">
                                                 <input 
