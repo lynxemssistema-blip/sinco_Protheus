@@ -103,7 +103,26 @@ const TaxaOcupacao = () => {
                 item_pedido: opObj.item_pedido,
                 produto: opObj.produto
             });
+
+            // Otimistic UI Update: atualiza a data visualmente na hora!
+            setSelectedDetail(prev => {
+                if (!prev) return prev;
+                const updatedOps = prev.recurso.ops.map(o => {
+                    if (o.op === opObj.op && o.operacao === opObj.operacao && o.item_op === opObj.item_op && o.sequen === opObj.sequen) {
+                        return {
+                            ...o,
+                            data_planejada: editDates.inicio.replace(/-/g, ''),
+                            data_planejada_final: editDates.fim.replace(/-/g, '')
+                        };
+                    }
+                    return o;
+                });
+                return { ...prev, recurso: { ...prev.recurso, ops: updatedOps } };
+            });
+
             setEditingOp(null);
+            
+            // Recarrega em background sem piscar a tela agressivamente
             fetchData();
             if (modalTab === 'historico') fetchHistorico();
         } catch (err) {
