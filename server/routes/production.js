@@ -1958,6 +1958,39 @@ router.post('/plan-batch', async (req, res) => {
                 await connection.execute(histSql, histValues);
             }
 
+            // ── INSERT into app_pcp_historico_revisao (For PCP Refined Dashboard) ───
+            for (let i = 0; i < plansForHistory.length; i += CHUNK_SIZE) {
+                const chunk = plansForHistory.slice(i, i + CHUNK_SIZE);
+                if (chunk.length === 0) continue;
+
+                const pcpHistValues = [];
+                chunk.forEach(p => {
+                    const key = `${p.op_numero}_${p.op_item}_${p.op_sequencia}_${p.operacao_codigo}`;
+                    const curr = currentPlansMap[key];
+                    const mudouDe = curr ? `Início: ${curr.data_planejada_inicio ? curr.data_planejada_inicio.split('T')[0] : 'N/A'} - Fim: ${curr.data_planejada_fim ? curr.data_planejada_fim.split('T')[0] : 'N/A'}` : 'N/A';
+                    const mudouPara = `Início: ${p.data_inicio.split('T')[0]} - Fim: ${p.data_fim.split('T')[0]}`;
+                    
+                    pcpHistValues.push([
+                        p.op_numero,
+                        p.operacao_codigo,
+                        usuario,
+                        new Date(),
+                        mudouDe,
+                        mudouPara,
+                        'Smart Planner / Lote'
+                    ]);
+                });
+
+                if (pcpHistValues.length > 0) {
+                    const pcpHistSql = `
+                        INSERT INTO app_pcp_historico_revisao
+                            (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem)
+                        VALUES ?
+                    `;
+                    await connection.query(pcpHistSql, [pcpHistValues]);
+                }
+            }
+
             await connection.commit();
             console.log(`✅ [BATCH PLAN v2] Sucesso — lote ${lote_id}`);
             res.json({

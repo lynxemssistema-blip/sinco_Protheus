@@ -270,8 +270,11 @@ app.use('/api/ppaps', require('./routes/ppaps'));
 // Manutenção de Equipamentos
 app.use('/api/manutencao', require('./routes/manutencao'));
 
-// Monitoramento de Sistema (Métricas)
+// Monitoramento route
 app.use('/api/monitoramento', require('./routes/monitoramento'));
+
+// PCP Refinado route
+app.use('/api/pcp-refinado', require('./routes/pcpRefinado'));
 const systemMonitor = require('./services/systemMonitor');
 systemMonitor.startMonitoring(app);
 

@@ -247,6 +247,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         if (group.id === 'manutencao' && !generalConfig?.module_maintenance_active) return null;
                         if (group.id === 'qualidade' && !generalConfig?.module_sgq_active) return null;
                         if (group.id === 'analise_3d' && !generalConfig?.module_analise3d_active) return null;
+                        if (group.id === 'pcp_refinado' && !generalConfig?.module_pcp_refinado_active) return null;
 
                         // Filter items based on visibility config and search term
                         const visibleGroupItems = group.items.filter(item => {

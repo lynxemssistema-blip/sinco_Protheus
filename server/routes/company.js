@@ -69,8 +69,12 @@ router.put('/general', async (req, res) => {
             const newMaintenance = !!general_config?.module_maintenance_active;
             const currentSgq = !!currentConfig?.module_sgq_active;
             const newSgq = !!general_config?.module_sgq_active;
+            const currentAnalise3d = !!currentConfig?.module_analise3d_active;
+            const newAnalise3d = !!general_config?.module_analise3d_active;
+            const currentPcpRefinado = !!currentConfig?.module_pcp_refinado_active;
+            const newPcpRefinado = !!general_config?.module_pcp_refinado_active;
 
-            if (currentMaintenance !== newMaintenance || currentSgq !== newSgq) {
+            if (currentMaintenance !== newMaintenance || currentSgq !== newSgq || currentAnalise3d !== newAnalise3d || currentPcpRefinado !== newPcpRefinado) {
                 return res.status(403).json({ error: 'Acesso negado: Apenas SuperAdmins podem alterar o status de ativação de módulos do sistema.' });
             }
         }

@@ -108,6 +108,8 @@ const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
 const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
 const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
+const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
+const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -753,6 +755,17 @@ function App() {
                                         <Route path="/pcp/fila-dependencias" element={
                                             <Layout fullWidth={true}>
                                                 <PcpFilaDependencias />
+                                            </Layout>
+                                        } />
+                                        {/* PCP Refinado Routes */}
+                                        <Route path="/pcp-refinado/capacidade" element={
+                                            <Layout fullWidth={true}>
+                                                <CapacidadeRecursos />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp-refinado/ocupacao" element={
+                                            <Layout fullWidth={true}>
+                                                <TaxaOcupacao />
                                             </Layout>
                                         } />
                                         {/* PPAPs Routes */}

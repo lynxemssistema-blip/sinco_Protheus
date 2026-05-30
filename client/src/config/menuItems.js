@@ -91,6 +91,14 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'pcp_refinado',
+        label: 'PCP Refinado',
+        items: [
+            { id: 'pcp_cadastro_capacidade', label: 'Cadastro de Capacidade', path: '/pcp-refinado/capacidade', icon: Layers },
+            { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 }
+        ]
+    },
+    {
         id: 'op_fracionada',
         label: 'OP Fracionada',
         items: [

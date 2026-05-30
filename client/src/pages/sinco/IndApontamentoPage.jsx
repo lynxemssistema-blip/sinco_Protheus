@@ -213,9 +213,9 @@ export default function IndApontamentoPage({ embedded = false }) {
         loadData();
     };
 
-    const handlePlanSave = async (data) => {
+    const handlePlanSave = async (plans, observacao) => {
         try {
-            await saveProductionPlan(data);
+            await saveProductionPlanBatch(plans, observacao);
             setPlanningOp(null);
             loadData();
         } catch (err) {
