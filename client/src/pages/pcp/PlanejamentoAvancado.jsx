@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, Search, GitMerge, ChevronRight, ChevronDown, Save, FastForward, Info, Play, AlertTriangle, PlayCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Calendar, Search, GitMerge, ChevronRight, ChevronDown, Save, FastForward, Info, Play, AlertTriangle, PlayCircle, ArrowUp, ArrowDown, Copy } from 'lucide-react';
 import { getProductionDashboard, saveProductionPlanBatch, getPlanningPrefs } from '../../services/api';
 import { toast } from 'react-toastify';
 
@@ -197,6 +197,35 @@ export default function PlanejamentoAvancado() {
             });
             return newDrafts;
         });
+    };
+
+    const applyDatesToAllIdentical = (groupedOp, valInicio, valFim) => {
+        if (!valInicio || !valFim) {
+            toast.warning('Preencha a data de in\u00EDcio e fim primeiro.');
+            return;
+        }
+        
+        let count = 0;
+        setDraftPlans(prev => {
+            const newDrafts = { ...prev };
+            treeData.forEach(opNode => {
+                opNode.operacoes.forEach(op => {
+                    if (op.recurso === groupedOp.recurso) {
+                        op.items.forEach(item => {
+                            const key = `${item.op}_${item.item_op}_${item.sequen}_${item.operacao}`;
+                            const current = newDrafts[key] || {
+                                inicio: item.data_planejada_inicio?.substring(0,10) || '',
+                                fim: item.data_planejada_fim?.substring(0,10) || ''
+                            };
+                            newDrafts[key] = { ...current, inicio: valInicio, fim: valFim };
+                        });
+                        count++;
+                    }
+                });
+            });
+            return newDrafts;
+        });
+        toast.success(`Datas aplicadas para todas as ${count} opera\u00E7\u00F5es com o recurso ${groupedOp.recurso}.`);
     };
 
     // Aplica planejamento em cascata a partir de uma OP específica
@@ -522,6 +551,7 @@ export default function PlanejamentoAvancado() {
                                                                     <th className="px-4 py-2 font-semibold text-center w-24" title="Dias para a Cascata Auto">Dias Prev.</th>
                                                                     <th className="px-4 py-2 font-semibold w-40">Início Previsto</th>
                                                                     <th className="px-4 py-2 font-semibold w-40">Fim Previsto</th>
+                                                                    <th className="px-2 py-2 font-semibold w-12 text-center" title="Ações Rápidas">Ações</th>
                                                                     <th className="px-4 py-2 font-semibold w-32">Status</th>
                                                                 </tr>
                                                             </thead>
@@ -595,6 +625,16 @@ export default function PlanejamentoAvancado() {
                                                                                     className={`w-full px-2 py-1 text-sm rounded border ${isModified ? 'border-indigo-300 bg-indigo-50 text-indigo-900 font-bold' : 'border-slate-200 bg-white text-slate-700'} focus:ring-2 focus:ring-indigo-500 outline-none transition-colors`}
                                                                                     disabled={isConcluido}
                                                                                 />
+                                                                            </td>
+                                                                            <td className="px-2 py-2 text-center">
+                                                                                <button 
+                                                                                    onClick={() => applyDatesToAllIdentical(groupedOp, valInicio, valFim)}
+                                                                                    disabled={isConcluido || !valInicio || !valFim}
+                                                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-30 transition-colors"
+                                                                                    title="Aplicar estas datas a TODAS as operações idênticas nesta página"
+                                                                                >
+                                                                                    <Copy className="w-4 h-4" />
+                                                                                </button>
                                                                             </td>
                                                                             <td className="px-4 py-2">
                                                                                 {isConcluido ? (

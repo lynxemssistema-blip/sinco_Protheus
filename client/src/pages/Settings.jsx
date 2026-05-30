@@ -18,7 +18,7 @@ export default function Settings() {
     const tabs = [
         { id: 'general', label: 'Geral', icon: Building2 },
         { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
-        { id: 'menu', label: 'Menu & Navegação', icon: Menu },
+        ...(user?.tipo === 'SA' ? [{ id: 'menu', label: 'Menu & Navegação', icon: Menu }] : []),
         { id: 'modules', label: 'Módulos', icon: Package },
         { id: 'profiles', label: 'Perfis de Acesso', icon: Users },
         { id: 'users', label: 'Usuários', icon: UserPlus },
