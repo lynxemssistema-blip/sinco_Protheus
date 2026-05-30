@@ -161,6 +161,7 @@ router.get('/taxa-ocupacao', async (req, res) => {
             `, [opNums]);
             
             const planMap = {};
+            const planMapLegacy = {}; // Mapa para fallback O(1)
             for (const row of planRows) {
                 const op = row.op_numero ? row.op_numero.trim() : '';
                 const it = row.op_item ? row.op_item.trim() : '';
@@ -168,6 +169,8 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 const opc = row.operacao_codigo ? row.operacao_codigo.trim() : '';
                 const key = `${op}_${it}_${sq}_${opc}`;
                 planMap[key] = row;
+                // Guarda uma referência legada (op_opc)
+                planMapLegacy[`${op}_${opc}`] = row;
             }
 
             const formatMySqlDateToYYYYMMDD = (val) => {
@@ -188,13 +191,13 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 const sqn = op.sequen ? op.sequen.trim() : '001';
                 const opcn = op.operacao ? op.operacao.trim() : '';
                 const key = `${opn}_${itn}_${sqn}_${opcn}`;
+                const legacyKey = `${opn}_${opcn}`;
                 
                 let planData = planMap[key];
                 
-                // Fallback para mapeamento antigo (caso os campos op_item e op_sequencia estejam vazios na base)
-                if (!planData) {
-                    const fallbackKey = Object.keys(planMap).find(k => k.startsWith(`${opn}_`) && k.endsWith(`_${opcn}`));
-                    if (fallbackKey) planData = planMap[fallbackKey];
+                // Fallback para mapeamento antigo em O(1)
+                if (!planData && planMapLegacy[legacyKey]) {
+                    planData = planMapLegacy[legacyKey];
                 }
 
                 if (planData) {
