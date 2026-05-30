@@ -125,6 +125,8 @@ router.get('/taxa-ocupacao', async (req, res) => {
         const pgQuery = `
             SELECT 
                 TRIM(c2.c2_num) AS op_num,
+                TRIM(c2.c2_item) AS item_op,
+                TRIM(c2.c2_sequen) AS sequen,
                 TRIM(c2.c2_produto) AS produto,
                 TRIM(c2.c2_pedido) AS pedido,
                 TRIM(c2.c2_itempv) AS item_pedido,

@@ -678,9 +678,19 @@ const TaxaOcupacao = () => {
                             <div className="space-y-4">
                                 {loadingHistorico ? (
                                     <div className="text-center py-8 text-slate-500">Carregando histórico...</div>
-                                ) : historicoData.length === 0 ? (
-                                    <div className="text-center py-8 text-slate-500">Nenhum histórico de alteração encontrado.</div>
-                                ) : (
+                                ) : (() => {
+                                    const filteredHistorico = historicoData.filter(hist => 
+                                        selectedDetail?.recurso?.ops?.some(op => 
+                                            op.op === hist.op_numero && 
+                                            op.operacao === hist.operacao_codigo
+                                        )
+                                    );
+
+                                    if (filteredHistorico.length === 0) {
+                                        return <div className="text-center py-8 text-slate-500">Nenhum histórico de alteração encontrado para as OPs desta carga.</div>;
+                                    }
+
+                                    return (
                                     <table className="w-full text-sm text-left text-slate-600">
                                         <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                                             <tr>
@@ -692,7 +702,7 @@ const TaxaOcupacao = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {historicoData.map(hist => (
+                                            {filteredHistorico.map(hist => (
                                                 <tr key={hist.id} className="hover:bg-slate-50">
                                                     <td className="px-4 py-3 whitespace-nowrap">{new Date(hist.data_alteracao).toLocaleString('pt-BR')}</td>
                                                     <td className="px-4 py-3 font-medium text-slate-800">{hist.usuario}</td>
@@ -707,7 +717,8 @@ const TaxaOcupacao = () => {
                                             ))}
                                         </tbody>
                                     </table>
-                                )}
+                                    );
+                                })()}
                             </div>
                             )}
                         </div>
