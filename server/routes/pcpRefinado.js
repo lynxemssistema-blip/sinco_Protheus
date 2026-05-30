@@ -155,14 +155,18 @@ router.get('/taxa-ocupacao', async (req, res) => {
         const opNums = [...new Set(ops.map(o => o.op_num))];
         if (opNums.length > 0) {
             const [planRows] = await mysqlPool.query(`
-                SELECT op_numero, operacao_codigo, data_planejada_inicio, data_planejada_fim 
+                SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim 
                 FROM app_production_planning 
                 WHERE op_numero IN (?)
             `, [opNums]);
             
             const planMap = {};
             for (const row of planRows) {
-                const key = `${row.op_numero.trim()}_${row.operacao_codigo.trim()}`;
+                const op = row.op_numero ? row.op_numero.trim() : '';
+                const it = row.op_item ? row.op_item.trim() : '';
+                const sq = row.op_sequencia ? row.op_sequencia.trim() : '';
+                const opc = row.operacao_codigo ? row.operacao_codigo.trim() : '';
+                const key = `${op}_${it}_${sq}_${opc}`;
                 planMap[key] = row;
             }
 
@@ -179,10 +183,23 @@ router.get('/taxa-ocupacao', async (req, res) => {
             };
             
             for (const op of ops) {
-                const key = `${op.op_num}_${op.operacao}`;
-                if (planMap[key]) {
-                    const pInicio = planMap[key].data_planejada_inicio;
-                    const pFim = planMap[key].data_planejada_fim;
+                const opn = op.op_num ? op.op_num.trim() : '';
+                const itn = op.item_op ? op.item_op.trim() : '01';
+                const sqn = op.sequen ? op.sequen.trim() : '001';
+                const opcn = op.operacao ? op.operacao.trim() : '';
+                const key = `${opn}_${itn}_${sqn}_${opcn}`;
+                
+                let planData = planMap[key];
+                
+                // Fallback para mapeamento antigo (caso os campos op_item e op_sequencia estejam vazios na base)
+                if (!planData) {
+                    const fallbackKey = Object.keys(planMap).find(k => k.startsWith(`${opn}_`) && k.endsWith(`_${opcn}`));
+                    if (fallbackKey) planData = planMap[fallbackKey];
+                }
+
+                if (planData) {
+                    const pInicio = planData.data_planejada_inicio;
+                    const pFim = planData.data_planejada_fim;
                     
                     if (pInicio) {
                         op.data_planejada = formatMySqlDateToYYYYMMDD(pInicio);
@@ -389,14 +406,18 @@ router.put('/op/:op/dates', async (req, res) => {
 
         // 1. Fetch existing data for history
         const [existingPlanRows] = await mysqlPool.query(`
-            SELECT op_numero, operacao_codigo, data_planejada_inicio, data_planejada_fim
+            SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
             FROM app_production_planning
             WHERE op_numero = ?
         `, [op]);
 
         const existingMap = {};
         for (const row of existingPlanRows) {
-            existingMap[`${row.op_numero.trim()}_${row.operacao_codigo.trim()}`] = row;
+            const o = row.op_numero ? row.op_numero.trim() : '';
+            const i = row.op_item ? row.op_item.trim() : '';
+            const s = row.op_sequencia ? row.op_sequencia.trim() : '';
+            const c = row.operacao_codigo ? row.operacao_codigo.trim() : '';
+            existingMap[`${o}_${i}_${s}_${c}`] = row;
         }
 
         const mysqlValues = [];
@@ -405,12 +426,14 @@ router.put('/op/:op/dates', async (req, res) => {
 
         pgResult.rows.forEach(row => {
             const mysqlOp = row.op_num;
+            const mysqlItemOp = row.item_op || '01';
+            const mysqlSequen = row.sequen || '001';
             const mysqlOpCodigo = row.operacao || '01';
 
             mysqlValues.push([
                 mysqlOp, 
-                row.item_op || '01', 
-                row.sequen || '001', 
+                mysqlItemOp, 
+                mysqlSequen, 
                 mysqlOpCodigo,
                 formattedStart,
                 formattedEnd,
@@ -418,7 +441,7 @@ router.put('/op/:op/dates', async (req, res) => {
                 'Atualização via Painel Taxa de Ocupação'
             ]);
 
-            const key = `${mysqlOp}_${mysqlOpCodigo}`;
+            const key = `${mysqlOp}_${mysqlItemOp}_${mysqlSequen}_${mysqlOpCodigo}`;
             const existing = existingMap[key];
             const oldStart = existing?.data_planejada_inicio || null;
             const oldEnd = existing?.data_planejada_fim || null;
