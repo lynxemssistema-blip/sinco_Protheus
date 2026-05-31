@@ -353,12 +353,18 @@ async function populateMetadata(initialRows) {
     if (initialRows.length === 0) return rowsWithMeta;
 
     // Fetch missing descriptions (sb1)
-    const productCodes = [...new Set(initialRows.map(r => r.cod_produto_op_raw).filter(Boolean))];
+    const productCodes = [...new Set([
+        ...initialRows.map(r => r.cod_produto_op_raw),
+        ...initialRows.map(r => r.produto_pai_raw)
+    ].filter(Boolean))];
     if (productCodes.length > 0) {
         const sb1Res = await db.query(`SELECT TRIM(b1_cod) as cod, RTRIM(b1_desc) as desc FROM sb1010 WHERE b1_cod = ANY($1) AND COALESCE(d_e_l_e_t_, ' ') = ' '`, [productCodes]);
         const productMap = {};
         sb1Res.rows.forEach(p => productMap[p.cod] = p.desc);
-        initialRows.forEach(r => r.desc_produto = productMap[r.cod_produto_op_raw] || '');
+        initialRows.forEach(r => {
+            r.desc_produto = productMap[r.cod_produto_op_raw] || '';
+            if (r.produto_pai_raw) r.desc_produto_pai = productMap[r.produto_pai_raw] || '';
+        });
     }
 
     // Fetch missing customer & delivery info (sc6 + sc5 + sa1)
@@ -553,6 +559,8 @@ router.get('/visao', async (req, res) => {
                     COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
                     TRIM(pl.c2_produto)    AS cod_produto_op_raw,
                     RTRIM(pl.c2_produto)   AS cod_produto_op,
+                    TRIM(COALESCE(root_op.c2_produto, pl.c2_produto)) AS produto_pai_raw,
+                    RTRIM(COALESCE(root_op.c2_produto, pl.c2_produto)) AS produto_pai,
                     COALESCE(pl.c2_quant, 0) AS qtd_total,
                     COALESCE(pl.c2_quje, 0)  AS qtd_realizada_header
                 FROM sc2010 pl
@@ -602,6 +610,8 @@ router.get('/visao', async (req, res) => {
                             COALESCE(NULLIF(TRIM(pl.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS item_pv,
                             TRIM(pl.c2_produto)    AS cod_produto_op_raw,
                             RTRIM(pl.c2_produto)   AS cod_produto_op,
+                            TRIM(COALESCE(root_op.c2_produto, pl.c2_produto)) AS produto_pai_raw,
+                            RTRIM(COALESCE(root_op.c2_produto, pl.c2_produto)) AS produto_pai,
                             COALESCE(pl.c2_quant, 0) AS qtd_total,
                             COALESCE(pl.c2_quje, 0)  AS qtd_realizada_header
                         FROM sc2010 pl
@@ -712,6 +722,8 @@ router.get('/visao', async (req, res) => {
                 apptKey,                          // chave única para deduplicar depois
                 operacao: row.operacao,
                 desc_operacao: row.desc_operacao,
+                produto_pai: row.produto_pai,
+                desc_produto_pai: row.desc_produto_pai,
                 qtd_op: Number(row.qtd_total) || 0,   // qtd desta sequência específica
                 qtd_apontada
             });

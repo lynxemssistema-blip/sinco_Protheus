@@ -54,7 +54,8 @@ export default function VisaoSetores() {
     const [filters, setFilters] = useStickyState({
         pedido: '', cliente: '', produto: '',
         data_inicio: '', data_fim: '',
-        status: '', apenas_pendentes: true
+        status: '', apenas_pendentes: true,
+        agrupamento: 'pedido'
     }, '@metalfisa:visao_setores_filters');
 
     const load = useCallback(async (targetPage = page) => {
@@ -101,11 +102,33 @@ export default function VisaoSetores() {
         const map = {};
         data.forEach(setor => {
             setor.ops.forEach(op => {
-                const pedKey = op.pedido_venda || `OP-${op.op}`;
-                if (!map[pedKey]) {
-                    map[pedKey] = {
-                        pedido: op.pedido_venda || `OP ${op.op}`,
-                        cliente: op.nome_cliente,
+                let groupKey;
+                let displayTitle;
+                let displaySubtitle;
+                
+                if (filters.agrupamento === 'item') {
+                    groupKey = `OP${op.op}_IT${op.item_op}_${op.cod_produto_op}`;
+                    displayTitle = op.cod_produto_op || `Produto Desconhecido`;
+                    displaySubtitle = `OP: ${op.op} | Item: ${op.item_op} | ${op.desc_produto || ''}`;
+                } else if (filters.agrupamento === 'pai') {
+                    groupKey = `OP${op.op}_PAI_${op.produto_pai}`;
+                    displayTitle = op.produto_pai || `Pai Desconhecido`;
+                    displaySubtitle = `OP: ${op.op} | ${op.desc_produto_pai || ''}`;
+                } else if (filters.agrupamento === 'op') {
+                    groupKey = `OP_${op.op}`;
+                    displayTitle = `OP ${op.op}`;
+                    displaySubtitle = `Ped: ${op.pedido_venda || 'N/A'} | ${op.nome_cliente || 'Sem cliente'}`;
+                } else {
+                    groupKey = op.pedido_venda || `OP-${op.op}`;
+                    displayTitle = op.pedido_venda || `OP ${op.op}`;
+                    displaySubtitle = op.nome_cliente || 'Sem cliente associado';
+                }
+
+                if (!map[groupKey]) {
+                    map[groupKey] = {
+                        groupKey: groupKey,
+                        title: displayTitle,
+                        subtitle: displaySubtitle,
                         prazo: op.prazo_entrega_pedido,
                         setoresData: {},
                         romaneios: []
@@ -114,25 +137,25 @@ export default function VisaoSetores() {
                 
                 if (op.romaneios && op.romaneios.length > 0) {
                     op.romaneios.forEach(r => {
-                        if (!map[pedKey].romaneios.some(x => x.romaneio_id === r.romaneio_id)) {
-                            map[pedKey].romaneios.push(r);
+                        if (!map[groupKey].romaneios.some(x => x.romaneio_id === r.romaneio_id)) {
+                            map[groupKey].romaneios.push(r);
                         }
                     });
                 }
                 
-                if (!map[pedKey].setoresData[setor.id]) {
-                    map[pedKey].setoresData[setor.id] = { esperada: 0, apontada: 0 };
+                if (!map[groupKey].setoresData[setor.id]) {
+                    map[groupKey].setoresData[setor.id] = { esperada: 0, apontada: 0 };
                 }
                 
-                map[pedKey].setoresData[setor.id].esperada += (Number(op.qtd_esperada_setor) || 0);
-                map[pedKey].setoresData[setor.id].apontada += (Number(op.qtd_apontada_setor) || 0);
+                map[groupKey].setoresData[setor.id].esperada += (Number(op.qtd_esperada_setor) || 0);
+                map[groupKey].setoresData[setor.id].apontada += (Number(op.qtd_apontada_setor) || 0);
             });
         });
 
-        const rows = Object.values(map).sort((a, b) => a.pedido.localeCompare(b.pedido));
+        const rows = Object.values(map).sort((a, b) => String(a.title).localeCompare(String(b.title)));
         
         return { setoresHeaders: headers, pedidosRows: rows };
-    }, [data]);
+    }, [data, filters.agrupamento]);
 
     // ─── Notificações (WhatsApp e Email) ─────────────────────────────────────────────
     const [modalNotify, setModalNotify] = useState(false);
@@ -296,6 +319,16 @@ export default function VisaoSetores() {
                             <option value="planejada,aguardando">Não Iniciadas</option>
                             <option value="concluida">Concluídas</option>
                         </select>
+                        <select
+                            value={filters.agrupamento || 'pedido'}
+                            onChange={e => setFilters(p => ({ ...p, agrupamento: e.target.value }))}
+                            className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-blue-800"
+                        >
+                            <option value="pedido">Agrupar por Pedido</option>
+                            <option value="op">Agrupar por OP</option>
+                            <option value="pai">Agrupar por Produto Pai</option>
+                            <option value="item">Agrupar por Produto/Item</option>
+                        </select>
                     </div>
                     <div className="mt-3 flex items-center justify-between flex-wrap gap-3">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -338,7 +371,11 @@ export default function VisaoSetores() {
                                 <thead className="bg-slate-50 text-slate-700 font-bold border-b sticky top-0 z-20 shadow-sm">
                                     <tr>
                                         <th className="p-4 sticky left-0 top-0 bg-slate-50 border-r z-30 shadow-[1px_0_0_0_#e2e8f0] align-middle w-72">
-                                            <div className="text-sm">Pedido / Cliente</div>
+                                            <div className="text-sm">
+                                                {filters.agrupamento === 'item' ? 'Produto / OP' : 
+                                                 filters.agrupamento === 'pai' ? 'Produto Pai / OP' : 
+                                                 filters.agrupamento === 'op' ? 'OP / Pedido' : 'Pedido / Cliente'}
+                                            </div>
                                         </th>
                                         {setoresHeaders.map(setor => (
                                             <th key={setor.id} className="p-4 text-center border-r min-w-[140px]">
@@ -368,10 +405,10 @@ export default function VisaoSetores() {
                                         const progGeral = totalEsp > 0 ? Math.round((totalApt / totalEsp) * 100) : 0;
 
                                         return (
-                                            <tr key={ped.pedido} className="hover:bg-slate-50 group">
+                                            <tr key={ped.groupKey} className="hover:bg-slate-50 group">
                                                 <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 border-r z-10 shadow-[1px_0_0_0_#e2e8f0]">
                                                     <div className="font-black text-blue-700 flex items-center gap-2">
-                                                        {ped.pedido}
+                                                        {ped.title}
                                                         {ped.romaneios && ped.romaneios.length > 0 && (
                                                             <span 
                                                                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
@@ -382,7 +419,7 @@ export default function VisaoSetores() {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="text-xs text-slate-500 truncate w-64 mt-0.5" title={ped.cliente}>{ped.cliente || 'Sem cliente associado'}</div>
+                                                    <div className="text-xs text-slate-500 truncate w-64 mt-0.5" title={ped.subtitle}>{ped.subtitle}</div>
                                                     <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                                                         <span className="font-semibold text-slate-500">Entrega:</span> 
                                                         {fmtFull(ped.prazo)}
