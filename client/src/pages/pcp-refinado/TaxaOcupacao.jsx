@@ -207,8 +207,9 @@ const TaxaOcupacao = () => {
                     const y = current.getUTCFullYear();
                     const m = String(current.getUTCMonth() + 1).padStart(2, '0');
                     const d = String(current.getUTCDate()).padStart(2, '0');
-                    const dateStr = `${y}${m}${d}`;
-                    
+                    // Formato YYYY-MM-DD para bater com o que o backend retorna em curr.data
+                    const dateStr = `${y}-${m}-${d}`;
+
                     if (!groupedByDate[dateStr]) {
                         groupedByDate[dateStr] = [];
                     }
@@ -384,7 +385,8 @@ const TaxaOcupacao = () => {
                                                 <tr>
                                                     <th className="px-6 py-4 font-semibold w-1/3">Recurso / C.T.</th>
                                                     <th className="px-6 py-4 font-semibold text-center w-32">Capacidade (Min)</th>
-                                                    <th className="px-6 py-4 font-semibold text-center w-32">Demanda (Min)</th>
+                                                    <th className="px-6 py-4 font-semibold text-center w-32" title="Total planejado para o dia">Demanda Total</th>
+                                                    <th className="px-6 py-4 font-semibold text-center w-32" title="Ainda não produzido">Pendente (Min)</th>
                                                     <th className="px-6 py-4 font-semibold w-1/3">Ocupação</th>
                                                     <th className="px-6 py-4 font-semibold text-right">Ação</th>
                                                 </tr>
@@ -392,7 +394,7 @@ const TaxaOcupacao = () => {
                                             <tbody className="divide-y divide-slate-50">
                                                 {groupedByDate[dateStr].length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="5" className="px-6 py-8 text-center text-slate-400">
+                                                        <td colSpan="6" className="px-6 py-8 text-center text-slate-400">
                                                             Nenhuma carga programada para iniciar neste dia.
                                                         </td>
                                                     </tr>
@@ -418,7 +420,12 @@ const TaxaOcupacao = () => {
                                                                 )}
                                                             </td>
                                                             <td className="px-6 py-4 text-center font-medium">
-                                                                {item.minutos_consumidos.toLocaleString('pt-BR')}
+                                                                {(item.minutos_consumidos || 0).toLocaleString('pt-BR')}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-medium">
+                                                                <span className={(item.minutos_pendentes || 0) > 0 ? 'text-amber-700' : 'text-emerald-600'}>
+                                                                    {(item.minutos_pendentes || 0).toLocaleString('pt-BR')}
+                                                                </span>
                                                             </td>
                                                             <td className="px-6 py-4">
                                                                 <div className="flex flex-col gap-2">
@@ -475,18 +482,19 @@ const TaxaOcupacao = () => {
                                 // For Heatmap, ensure we have a continuous range of dates
                                 let allDates = [];
                                 if (sortedDates.length > 0) {
+                                    // sortedDates já estão em YYYY-MM-DD (mesmo formato do backend)
                                     const minStr = sortedDates[0];
                                     const maxStr = sortedDates[sortedDates.length - 1];
-                                    const start = new Date(`${minStr.substring(0,4)}-${minStr.substring(4,6)}-${minStr.substring(6,8)}T00:00:00Z`);
-                                    const end = new Date(`${maxStr.substring(0,4)}-${maxStr.substring(4,6)}-${maxStr.substring(6,8)}T00:00:00Z`);
-                                    
+                                    const start = new Date(`${minStr}T00:00:00Z`);
+                                    const end   = new Date(`${maxStr}T00:00:00Z`);
+
                                     if (start <= end && (end - start) / (1000 * 60 * 60 * 24) <= 365) {
                                         let current = new Date(start);
                                         while (current <= end) {
                                             const y = current.getUTCFullYear();
                                             const m = String(current.getUTCMonth() + 1).padStart(2, '0');
                                             const d = String(current.getUTCDate()).padStart(2, '0');
-                                            allDates.push(`${y}${m}${d}`);
+                                            allDates.push(`${y}-${m}-${d}`); // YYYY-MM-DD — bate com item.data
                                             current.setUTCDate(current.getUTCDate() + 1);
                                         }
                                     } else {
@@ -649,12 +657,13 @@ const TaxaOcupacao = () => {
 
             {/* MODAL DETALHAMENTO */}
             {selectedDetail && (() => {
-                // Filtra as OPs localmente pelo termo de busca
                 const filteredOps = (selectedDetail.recurso.ops || []).filter(o => 
-                    o.op.toLowerCase().includes(modalSearchTerm.toLowerCase()) || 
+                    o.qtde_pendente > 0 &&
+                    o.pedido && o.pedido.trim() !== '' &&
+                    (o.op.toLowerCase().includes(modalSearchTerm.toLowerCase()) || 
                     (o.pedido || '').toLowerCase().includes(modalSearchTerm.toLowerCase()) ||
                     (o.cliente || '').toLowerCase().includes(modalSearchTerm.toLowerCase()) ||
-                    (o.produto || '').toLowerCase().includes(modalSearchTerm.toLowerCase())
+                    (o.produto || '').toLowerCase().includes(modalSearchTerm.toLowerCase()))
                 );
 
                 const isAllSelected = filteredOps.length > 0 && selectedOps.length === filteredOps.length;
@@ -785,8 +794,8 @@ const TaxaOcupacao = () => {
                                         <th className="px-4 py-3 font-semibold">Cliente</th>
                                         <th className="px-4 py-3 font-semibold">Produto</th>
                                         <th className="px-4 py-3 font-semibold text-center">Início Planejado</th>
-                                        <th className="px-4 py-3 font-semibold text-center">Fim Planejado</th>
                                         <th className="px-4 py-3 font-semibold text-right">Qtd. Pendente</th>
+                                        <th className="px-4 py-3 font-semibold text-right">Tempo Unitário</th>
                                         <th className="px-4 py-3 font-semibold text-right">Carga Estimada</th>
                                         <th className="px-4 py-3 font-semibold text-center">Ações</th>
                                     </tr>
@@ -835,10 +844,7 @@ const TaxaOcupacao = () => {
                                                             value={editDates.inicio}
                                                             onChange={e => {
                                                                 const newInicio = e.target.value;
-                                                                const updates = { inicio: newInicio };
-                                                                if (editDates.fim !== '' && editDates.fim < newInicio) {
-                                                                    updates.fim = newInicio;
-                                                                }
+                                                                const updates = { inicio: newInicio, fim: newInicio };
                                                                 setEditDates(prev => ({ ...prev, ...updates }));
                                                             }}
                                                         />
@@ -846,20 +852,11 @@ const TaxaOcupacao = () => {
                                                         formatDateBR(opItem.data_planejada)
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    {isEditing ? (
-                                                        <input 
-                                                            type="date" 
-                                                            className="px-2 py-1 border border-blue-300 rounded text-sm w-32 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                            value={editDates.fim}
-                                                            onChange={e => setEditDates({...editDates, fim: e.target.value})}
-                                                        />
-                                                    ) : (
-                                                        formatDateBR(opItem.data_planejada_final)
-                                                    )}
-                                                </td>
 
                                                 <td className="px-4 py-3 text-right font-medium text-blue-600">{opItem.qtde_pendente}</td>
+                                                <td className="px-4 py-3 text-right text-slate-500 text-xs">
+                                                    {(opItem.minutos_estimados / (opItem.qtde_pendente || 1)).toFixed(2)} min
+                                                </td>
                                                 <td className="px-4 py-3 text-right">
                                                     {opItem.minutos_estimados.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min
                                                 </td>

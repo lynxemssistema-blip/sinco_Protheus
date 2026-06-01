@@ -92,19 +92,13 @@ router.get('/taxa-ocupacao', async (req, res) => {
               AND c2.c2_quje < c2.c2_quant
               AND TRIM(c2.c2_datpri) <> ''
               AND TRIM(c2.c2_num) <> ''
+              AND COALESCE(TRIM(c2.c2_pedido), '') <> ''
         `;
 
         const queryParams = [];
 
-        if (data_inicio) {
-            queryParams.push(data_inicio.replace(/-/g, ''));
-            whereClause += ` AND c2.c2_datpri >= $${queryParams.length}`;
-        }
-        
-        if (data_fim) {
-            queryParams.push(data_fim.replace(/-/g, ''));
-            whereClause += ` AND c2.c2_datpri <= $${queryParams.length}`;
-        }
+        // Removemos o filtro de datas do Postgres porque as datas verdadeiras (planejadas)
+        // podem estar no MySQL. Filtraremos via Javascript depois do merge.
 
         if (recurso) {
             queryParams.push(`%${recurso.toUpperCase().trim()}%`);
@@ -142,7 +136,10 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 TRIM(h1.h1_descri) AS recurso_descri,
                 TRIM(a1.a1_nome) AS cliente_nome
             FROM public.sc2010 c2
-            JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto) 
+            -- No Protheus, c2_sequen é o código da operação que mapeia diretamente a g2_operac em SG2010.
+            -- Cada linha de SC2010 representa UMA operação da OP. Este JOIN é 1:1 por operação.
+            JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto)
+                                 AND TRIM(g2.g2_operac)  = TRIM(c2.c2_sequen)
                                  AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
             LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
                                       AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
@@ -263,22 +260,37 @@ router.get('/taxa-ocupacao', async (req, res) => {
         const aggregated = {}; // Format: { date: { resource_code: { resource_desc, consumed_minutes, capacity, occupation_percent } } }
 
         for (const op of ops) {
-            // Ignore OPs without a sales order or tied to an inactive sales order
-            if (!op.pedido || inativosSet.has(op.pedido)) {
+            // Ignore OPs tied to an inactive sales order
+            // OPs sem pedido (intermediárias) devem entrar no cálculo de ocupação
+            if (op.pedido && inativosSet.has(op.pedido)) {
                 continue;
             }
 
             const resCode = op.recurso_codigo;
             if (!resCode) continue;
 
-            const dateKey = op.data_planejada; // YYYYMMDD
+            const dateKey = op.data_planejada; // YYYYMMDD (pode ter sido sobrescrito pelo MySQL acima)
+            
+            // FIX: Descartar OPs sem data planejada válida após o merge com MySQL.
+            if (!dateKey || dateKey.trim() === '') continue;
+            
+            // Filtro de data via JavaScript (para respeitar o override do MySQL)
+            if (data_inicio && dateKey < data_inicio.replace(/-/g, '')) continue;
+            if (data_fim && dateKey > data_fim.replace(/-/g, '')) continue;
+
             const conf = configMap[resCode] || {};
             
-            // Use Protheus time (g2_tempad) if > 0.01, otherwise use our defined default time
-            // Protheus default for empty time is usually 0.01, so we ignore values <= 0.01
-            let unitTime = (op.tempo_operacao_g2 && parseFloat(op.tempo_operacao_g2) > 0.01) 
-                ? parseFloat(op.tempo_operacao_g2) 
-                : (conf.tempo_padrao_minutos || 0);
+            // FIX: g2_tempad no Protheus é em HORAS/peça. Converter para MINUTOS.
+            // Ignorar valor padrão/nulo do Protheus (0.01 horas ≈ 0.6min — considerado placeholder).
+            let unitTimeMinutes;
+            const g2_tempo_horas = parseFloat(op.tempo_operacao_g2);
+            if (g2_tempo_horas && g2_tempo_horas > 0.01) {
+                // Converte horas → minutos
+                unitTimeMinutes = g2_tempo_horas * 60;
+            } else {
+                // Fallback: tempo padrão cadastrado no MySQL (já em minutos)
+                unitTimeMinutes = parseFloat(conf.tempo_padrao_minutos) || 0;
+            }
             
             const opn = op.op_num ? op.op_num.trim() : '';
             const itn = op.item_op ? op.item_op.trim() : '01';
@@ -287,14 +299,17 @@ router.get('/taxa-ocupacao', async (req, res) => {
             const apptKey = `${opn}_${itn}_${sqn}_${opcn}`;
             const operacao_feita = Number(apptsMap[apptKey]) || 0;
 
-            // Usa o maior entre apontamento da operação e a qtde_feita geral da OP (Protheus)
-            const qtde_feita_real = Math.max(Number(op.qtde_feita) || 0, operacao_feita);
+            // Prioriza apontamento específico da operação (MySQL) por ser mais preciso.
+            // Usa qtde_feita do Protheus (c2_quje) apenas como fallback quando não há apontamento no MySQL.
+            // Math.max() foi removido: poderia inflar a execução (ex: c2_quje=100 peças da OP inteira
+            // vs 30 peças da operação específica → usava 100, tornando qtde_pendente negativa).
+            const qtde_feita_real = operacao_feita > 0 ? operacao_feita : (Number(op.qtde_feita) || 0);
             const qtde_total = Number(op.qtde) || 0;
             const pendingQty = Math.max(0, qtde_total - qtde_feita_real);
-            
-            const minutos_totais = qtde_total * unitTime;
-            const minutos_executados = qtde_feita_real * unitTime;
-            const minutos_pendentes = pendingQty * unitTime;
+
+            const minutos_totais = qtde_total * unitTimeMinutes;
+            const minutos_executados = Math.min(qtde_feita_real, qtde_total) * unitTimeMinutes;
+            const minutos_pendentes = pendingQty * unitTimeMinutes;
             
             const capacity = conf.capacidade_diaria_minutos || 0;
 
@@ -306,9 +321,12 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 aggregated[dateKey][resCode] = {
                     recurso_codigo: resCode,
                     recurso_descri: op.recurso_descri || 'Desconhecido',
-                    minutos_consumidos: 0, // this is pending load
+                    // minutos_consumidos = carga TOTAL planejada (pendente + executado)
+                    // É a base correta para taxa_ocupacao: mede quanto o recurso foi/será carregado
+                    minutos_consumidos: 0,
                     minutos_totais: 0,
                     minutos_executados: 0,
+                    minutos_pendentes: 0,
                     capacidade_diaria: capacity,
                     taxa_ocupacao: 0,
                     percentual_executado: 0,
@@ -316,9 +334,11 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 };
             }
 
-            aggregated[dateKey][resCode].minutos_consumidos += minutos_pendentes;
-            aggregated[dateKey][resCode].minutos_totais += minutos_totais;
+            // Carga total planejada = base da taxa de ocupação (reflete o quanto o recurso foi comprometido)
+            aggregated[dateKey][resCode].minutos_consumidos += minutos_totais;
+            aggregated[dateKey][resCode].minutos_totais    += minutos_totais;
             aggregated[dateKey][resCode].minutos_executados += minutos_executados;
+            aggregated[dateKey][resCode].minutos_pendentes  += minutos_pendentes;
             
             aggregated[dateKey][resCode].ops.push({
                 op: op.op_num,
@@ -333,7 +353,11 @@ router.get('/taxa-ocupacao', async (req, res) => {
                 data_planejada: op.data_planejada || '',
                 data_planejada_final: op.data_planejada_final || '',
                 qtde_total: op.qtde,
+                qtde_feita: qtde_feita_real,
                 qtde_pendente: pendingQty,
+                minutos_totais_op: minutos_totais,
+                minutos_executados_op: minutos_executados,
+                minutos_pendentes_op: minutos_pendentes,
                 minutos_estimados: minutos_pendentes
             });
         }
@@ -343,18 +367,26 @@ router.get('/taxa-ocupacao', async (req, res) => {
         Object.keys(aggregated).forEach(dateStr => {
             Object.keys(aggregated[dateStr]).forEach(resCode => {
                 const data = aggregated[dateStr][resCode];
+                // taxa_ocupacao = carga total planejada / capacidade
+                // Representa o quanto o recurso está comprometido no dia (independente do que foi executado)
                 if (data.capacidade_diaria > 0) {
                     data.taxa_ocupacao = (data.minutos_consumidos / data.capacidade_diaria) * 100;
                 } else {
-                    data.taxa_ocupacao = data.minutos_consumidos > 0 ? 999 : 0; // Infinite/Overload if no capacity
+                    data.taxa_ocupacao = data.minutos_consumidos > 0 ? 999 : 0;
                 }
 
+                // percentual_executado = quanto do planejado foi concluído
                 if (data.minutos_totais > 0) {
                     data.percentual_executado = (data.minutos_executados / data.minutos_totais) * 100;
                 }
-                
-                // Format date from YYYYMMDD to YYYY-MM-DD for easier reading
-                const formattedDate = dateStr.length === 8 ? `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}` : dateStr;
+
+                // Normaliza dateStr para YYYY-MM-DD (aceita tanto YYYYMMDD quanto YYYY-MM-DD)
+                let formattedDate = dateStr;
+                if (dateStr.length === 8 && !dateStr.includes('-')) {
+                    formattedDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+                } else if (dateStr.length > 10) {
+                    formattedDate = dateStr.substring(0, 10); // trunca timestamp se vier com hora
+                }
 
                 reportList.push({
                     data: formattedDate,

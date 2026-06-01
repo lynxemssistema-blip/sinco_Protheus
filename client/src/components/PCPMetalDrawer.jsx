@@ -105,7 +105,8 @@ const QUICK_PROMPTS = [
 ];
 
 // ── Main Drawer ───────────────────────────────────────────────────────────────
-const PCPMetalDrawer = ({ isOpen, onClose, context = {} }) => {
+// pageData = { ops: [...], selectedOps: [...], filters: {...}, total } — dados da página controle-producao
+const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
     const { user } = useAuth();
     const userId = user?.idUsuario || user?.id;
 
@@ -146,9 +147,16 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {} }) => {
             if (context.cliente) parts.push(`Cliente **${context.cliente.trim()}**`);
             if (context.produto) parts.push(`Produto **${context.produto}**`);
 
+            // Indica quantas OPs estão disponíveis no contexto da página
+            const opsCount = pageData?.ops?.length || 0;
+            const selCount = pageData?.selectedOps?.length || 0;
+            const dataInfo = opsCount > 0
+                ? `\n\n📊 **${opsCount} OPs carregadas** na tela${selCount > 0 ? ` | **${selCount} selecionadas**` : ''} — minha análise usa esses dados direto.\nPara consultar o banco de dados, mencione palavras como _"consultar"_, _"histórico de apontamentos"_, _"buscar no banco"_.`
+                : '';
+
             const greeting = parts.length > 0
-                ? `📋 Contexto carregado: ${parts.join(' | ')}\n\nFaça sua pergunta sobre este pedido ou qualquer análise de produção.`
-                : '👋 Olá! Sou o **PCPMetal**, seu assistente de PCP.\n\nPosso analisar pedidos, verificar produção, calcular saldos e sugerir estratégias. Como posso ajudar?';
+                ? `📋 Contexto: ${parts.join(' | ')}${dataInfo}\n\nFaça sua pergunta sobre este pedido ou qualquer análise de produção.`
+                : `👋 Olá! Sou o **PCPMetal**, seu assistente de PCP.${dataInfo}\n\nPosso analisar as OPs da tela, calcular saldos e sugerir estratégias. Como posso ajudar?`;
 
             setMessages([{ role: 'system', text: greeting }]);
             setHistorico([]);
@@ -187,7 +195,7 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {} }) => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
                 },
                 body: JSON.stringify({
                     pergunta: question,
@@ -198,6 +206,13 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {} }) => {
                     userId,
                     // send last 6 turns as context (text only to save tokens)
                     historico: newHistorico.slice(-6).map(h => ({ role: h.role, text: h.text.slice(0, 800) })),
+                    // Envia dados da página (OPs visíveis + selecionadas + filtros) como contexto primário
+                    pageData: pageData ? {
+                        ops: (pageData.ops || []).slice(0, 200),           // limita a 200 OPs para não explodir o payload
+                        selectedOps: (pageData.selectedOps || []).slice(0, 50),
+                        filters: pageData.filters || null,
+                        total: pageData.total || 0
+                    } : null,
                 }),
                 signal: controller.signal,
             });
