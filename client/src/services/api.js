@@ -102,6 +102,14 @@ export const updateSincoProduto = async (payload) => {
     return api.post('/protheus/produtos/update', payload).then(res => res.data);
 };
 
+export const updateSincoProdutoCliente = async (payload) => {
+    return api.post('/protheus/produto-cliente/editar', payload).then(res => res.data);
+};
+
+export const getSincoProdutoCliente = async (codigo) => {
+    return api.get(`/protheus/produto-cliente/${encodeURIComponent(codigo)}`).then(res => res.data);
+};
+
 export const updateSincoRoteiro = async (payload) => {
     const response = await api.post('/protheus/roteiro-produtivo/editar', payload);
     return response.data;

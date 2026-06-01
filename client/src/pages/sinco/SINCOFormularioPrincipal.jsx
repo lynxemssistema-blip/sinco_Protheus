@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, searchSincoProdutos, getProcessList } from '../../services/api';
+import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 const estadoVazio = {
@@ -91,6 +91,18 @@ export default function SINCOFormularioPrincipal() {
     const [editedOperacoes, setEditedOperacoes] = useState([]);
     const [savingOperacoes, setSavingOperacoes] = useState(false);
     const [processList, setProcessList] = useState([]);
+
+    // Edição SZ1 (Produtos x Cliente)
+    const [isEditingRestricoes, setIsEditingRestricoes] = useState(false);
+    const [editedRestricoes, setEditedRestricoes] = useState([]);
+    const [savingRestricoes, setSavingRestricoes] = useState(false);
+    
+    // Busca de Clientes para SZ1
+    const [showSearchClienteModal, setShowSearchClienteModal] = useState(false);
+    const [searchClienteQuery, setSearchClienteQuery] = useState('');
+    const [searchClienteResults, setSearchClienteResults] = useState([]);
+    const [searchingCliente, setSearchingCliente] = useState(false);
+    const [activeClienteRowIndex, setActiveClienteRowIndex] = useState(null);
 
     useEffect(() => {
         getProcessList().then(res => {
@@ -662,8 +674,54 @@ export default function SINCOFormularioPrincipal() {
         return [...arr].sort((a, b) => parseInt(a.operacao || 0, 10) - parseInt(b.operacao || 0, 10));
     };
 
+    const handleSalvarRestricoesSz1 = async () => {
+        if (!temArquivo) return;
+        const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+        const noper = restricoes.length === 0 ? 3 : 4;
+        
+        // Filtramos os deletados e os que não tem cliente válido
+        const validos = editedRestricoes.filter(r => !r.deleted && r.cliente && String(r.cliente).trim() !== '');
+
+        if (validos.length === 0 && restricoes.length === 0) {
+            showToast('Nenhuma mudança para salvar na tabela SZ1.', 'warning');
+            setIsEditingRestricoes(false);
+            return;
+        }
+
+        const payload = {
+            data: {
+                CFILANT: "0101",
+                EMPRESA: "01",
+                NOPER: noper,
+                produtos_clientes: validos.map(r => ({
+                    Z1_CLIENTE: String(r.cliente || '').trim(),
+                    Z1_LOJA: String(r.loja || '0001').trim(),
+                    Z1_PRODUTO: produto,
+                    Z1_CODCLI: String(r.cod_cliente || '').trim(),
+                    Z1_DESCCLI: String(r.desc_cliente || '').trim(),
+                    Z1_REVISAO: String(r.revisao || '').trim()
+                }))
+            }
+        };
+
+        setSavingRestricoes(true);
+        try {
+            await updateSincoProdutoCliente(payload);
+            showToast('Produtos x Cliente atualizados com sucesso no Protheus!', 'success');
+            const res = await getSincoRestricoes(produto);
+            setRestricoes(Array.isArray(res) ? res : []);
+            setIsEditingRestricoes(false);
+        } catch (err) {
+            showToast('Erro ao salvar Produtos x Cliente: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
+        } finally {
+            setSavingRestricoes(false);
+        }
+    };
+
     const materiais = isEditingArvore ? editedArvore : arvore; 
     const listOperacoes = isEditingOperacoes ? editedOperacoes : operacoes;
+    const listRestricoes = isEditingRestricoes ? editedRestricoes : restricoes;
 
     const inputCls = "w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder-slate-400";
     const readCls = "w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-sm font-mono text-slate-600";
@@ -1086,16 +1144,50 @@ export default function SINCOFormularioPrincipal() {
                 </div>
 
                 {/* 2. Restrições */}
-                <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden h-full">
-                    <div className={`${boxTitleCls} bg-amber-50 text-amber-700 border-amber-100 flex justify-between items-center`}>
+                <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden h-full ${isEditingRestricoes ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
+                    <div className={`${boxTitleCls} ${isEditingRestricoes ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-amber-50 text-amber-700 border-amber-100'} flex justify-between items-center`}>
                         <span>Produto Metalfisa/Cliente (SZ1)</span>
-                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                        <div className="flex items-center gap-2">
+                            {temArquivo && !isEditingRestricoes && (
+                                <button
+                                    onClick={() => {
+                                        setEditedRestricoes(JSON.parse(JSON.stringify(restricoes)));
+                                        setIsEditingRestricoes(true);
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                >
+                                    <Pencil className="h-3 w-3" /> Editar
+                                </button>
+                            )}
+                            {isEditingRestricoes && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            setEditedRestricoes(JSON.parse(JSON.stringify(restricoes)));
+                                            setIsEditingRestricoes(false);
+                                        }}
+                                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleSalvarRestricoesSz1}
+                                        disabled={savingRestricoes}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                    >
+                                        <Save className="h-3 w-3" /> {savingRestricoes ? 'Salvando...' : 'Salvar'}
+                                    </button>
+                                </>
+                            )}
+                            <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingRestricoes ? 'border-amber-300 text-amber-700' : 'border-amber-200 text-amber-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto bg-slate-50/50">
                         {loadingRest ? (
                             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando restrições...</div>
                         ) : (
-                            <table className="w-full text-left text-xs bg-white">
+                            <div className="flex flex-col h-full">
+                                <table className="w-full text-left text-xs bg-white">
                                 <thead>
                                     <tr>
                                         <th className={thCls}>Cliente</th>
@@ -1105,22 +1197,156 @@ export default function SINCOFormularioPrincipal() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {restricoes.length === 0 ? (
+                                    {listRestricoes.length === 0 ? (
                                         <tr>
-                                            <td colSpan="4" className="text-center py-12 text-slate-400 italic">
+                                            <td colSpan={isEditingRestricoes ? 5 : 4} className="text-center py-12 text-slate-400 italic">
                                                 Nenhuma restrição encontrada no Protheus
                                             </td>
                                         </tr>
-                                    ) : restricoes.map((r, i) => (
-                                        <tr key={i} className="hover:bg-amber-50/30 transition-colors">
-                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.cliente}</td>
-                                            <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.nome_cliente}>{r.nome_cliente}</td>
-                                            <td className="px-3 py-2 font-mono text-slate-500">{r.cod_cliente || '—'}</td>
-                                            <td className="px-3 py-2 font-semibold text-amber-700 bg-amber-50/50 text-center">{r.revisao}</td>
+                                    ) : listRestricoes.map((r, i) => (
+                                        <tr key={i} className={`transition-colors ${r.deleted ? 'bg-red-50/50 opacity-50' : 'hover:bg-amber-50/30'}`}>
+                                            <td className="px-3 py-2 font-mono font-medium text-slate-700 w-24">
+                                                {isEditingRestricoes ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <input 
+                                                            type="text" 
+                                                            value={r.cliente || ''} 
+                                                            onChange={async (e) => {
+                                                                const val = e.target.value.replace(/\D/g, '').padStart(6, '0');
+                                                                const newArr = [...editedRestricoes];
+                                                                newArr[i].cliente = val;
+                                                                setEditedRestricoes(newArr);
+                                                            }}
+                                                            disabled={r.deleted}
+                                                            className="w-full px-1 py-0.5 border border-amber-200 rounded text-xs font-mono disabled:opacity-50"
+                                                            placeholder="Cód Clie"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={() => {
+                                                                setActiveClienteRowIndex(i);
+                                                                setSearchClienteQuery('');
+                                                                setSearchClienteResults([]);
+                                                                setShowSearchClienteModal(true);
+                                                                
+                                                                setSearchingCliente(true);
+                                                                getClientes('')
+                                                                    .then(res => setSearchClienteResults(res || []))
+                                                                    .catch(err => console.error(err))
+                                                                    .finally(() => setSearchingCliente(false));
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                            title="Buscar Cliente no Protheus"
+                                                        >
+                                                            <Search className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.cliente}</span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.desc_cliente || r.nome_cliente}>
+                                                {isEditingRestricoes ? (
+                                                    <input 
+                                                        type="text" 
+                                                        value={r.desc_cliente || r.nome_cliente || ''} 
+                                                        onChange={(e) => {
+                                                            const newArr = [...editedRestricoes];
+                                                            newArr[i].desc_cliente = e.target.value.toUpperCase();
+                                                            setEditedRestricoes(newArr);
+                                                        }}
+                                                        disabled={r.deleted}
+                                                        className="w-full px-1 py-0.5 border border-amber-200 rounded text-xs uppercase disabled:opacity-50"
+                                                        placeholder="Descrição do Cliente"
+                                                    />
+                                                ) : (
+                                                    <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.desc_cliente || r.nome_cliente}</span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 font-mono text-slate-500">
+                                                {isEditingRestricoes ? (
+                                                    <input 
+                                                        type="text" 
+                                                        value={r.cod_cliente || ''} 
+                                                        onChange={(e) => {
+                                                            const newArr = [...editedRestricoes];
+                                                            newArr[i].cod_cliente = e.target.value.toUpperCase();
+                                                            setEditedRestricoes(newArr);
+                                                        }}
+                                                        disabled={r.deleted}
+                                                        className="w-full px-1 py-0.5 border border-amber-200 rounded text-xs uppercase disabled:opacity-50"
+                                                        placeholder="Ref. Cód Cliente"
+                                                    />
+                                                ) : (
+                                                    <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.cod_cliente || '—'}</span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 font-semibold text-amber-700 bg-amber-50/50 text-center w-16">
+                                                {isEditingRestricoes ? (
+                                                    <input 
+                                                        type="text" 
+                                                        maxLength={2}
+                                                        value={r.revisao || ''} 
+                                                        onChange={(e) => {
+                                                            const newArr = [...editedRestricoes];
+                                                            newArr[i].revisao = e.target.value.toUpperCase();
+                                                            setEditedRestricoes(newArr);
+                                                        }}
+                                                        disabled={r.deleted}
+                                                        className="w-full px-1 py-0.5 border border-amber-200 rounded text-center text-xs font-mono disabled:opacity-50"
+                                                        placeholder="Rev"
+                                                    />
+                                                ) : (
+                                                    <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.revisao}</span>
+                                                )}
+                                            </td>
+                                            {isEditingRestricoes && (
+                                                <td className="px-3 py-2 text-right">
+                                                    <button
+                                                        onClick={() => {
+                                                            let newArr = [...editedRestricoes];
+                                                            if (r.isNew) {
+                                                                newArr.splice(i, 1);
+                                                            } else {
+                                                                newArr[i] = { ...newArr[i], deleted: !newArr[i].deleted };
+                                                            }
+                                                            setEditedRestricoes(newArr);
+                                                        }}
+                                                        className={`p-1 transition-colors rounded ${r.deleted ? 'bg-slate-200 text-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                                                        title={r.deleted ? "Restaurar" : "Excluir SZ1"}
+                                                    >
+                                                        {r.deleted ? <RefreshCw className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
+                            {isEditingRestricoes && (
+                                <div className="p-2 border-t border-amber-100 bg-amber-50/30">
+                                    <button
+                                        onClick={() => {
+                                            const newArr = [...editedRestricoes, {
+                                                cliente: '',
+                                                loja: '0001',
+                                                nome_cliente: '',
+                                                desc_cliente: '',
+                                                cod_cliente: '',
+                                                revisao: '',
+                                                isNew: true,
+                                                deleted: false
+                                            }];
+                                            setEditedRestricoes(newArr);
+                                        }}
+                                        className="w-full py-1.5 flex items-center justify-center gap-1 text-xs font-medium text-amber-600 hover:bg-amber-100/50 border border-amber-200 border-dashed rounded-md transition-colors"
+                                    >
+                                        <Plus className="h-3.5 w-3.5" /> Adicionar Cliente
+                                    </button>
+                                </div>
+                            )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1703,6 +1929,95 @@ export default function SINCOFormularioPrincipal() {
                     </div>
                 </div>
             )}
+
+            {/* Modal Busca Cliente (Protheus) */}
+            {showSearchClienteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[80vh] max-h-[600px] animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-sm font-semibold text-slate-800">Buscar Cliente/Fornecedor (Protheus)</h3>
+                                <p className="text-[11px] text-slate-500 mt-0.5">Pesquise por código ou parte do nome.</p>
+                            </div>
+                            <button onClick={() => setShowSearchClienteModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="p-4 border-b border-slate-100 bg-slate-50">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={searchClienteQuery}
+                                    onChange={(e) => setSearchClienteQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && searchClienteQuery.length >= 3) {
+                                            setSearchingCliente(true);
+                                            getClientes(searchClienteQuery)
+                                                .then(res => setSearchClienteResults(res || []))
+                                                .catch(err => showToast("Erro ao buscar clientes", 'error'))
+                                                .finally(() => setSearchingCliente(false));
+                                        }
+                                    }}
+                                    placeholder="Digite ao menos 3 letras e pressione Enter..."
+                                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-shadow"
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-0">
+                            {searchingCliente ? (
+                                <div className="flex justify-center items-center h-full text-sm text-slate-400">Buscando no Protheus...</div>
+                            ) : searchClienteResults.length === 0 ? (
+                                <div className="flex justify-center items-center h-full text-sm text-slate-400 italic">
+                                    {searchClienteQuery.length >= 3 ? "Nenhum cliente/fornecedor encontrado." : "Aguardando busca."}
+                                </div>
+                            ) : (
+                                <table className="w-full text-left text-[11px]">
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-100 shadow-sm">
+                                        <tr>
+                                            <th className="px-4 py-2 font-medium text-slate-500">CÓDIGO</th>
+                                            <th className="px-4 py-2 font-medium text-slate-500">LOJA</th>
+                                            <th className="px-4 py-2 font-medium text-slate-500">NOME</th>
+                                            <th className="px-4 py-2 font-medium text-slate-500">TIPO</th>
+                                            <th className="px-4 py-2 font-medium text-slate-500 text-center">AÇÃO</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {searchClienteResults.map((r, i) => (
+                                            <tr key={i} className="hover:bg-amber-50/50 transition-colors">
+                                                <td className="px-4 py-2 font-mono font-medium text-slate-700">{r.codigo}</td>
+                                                <td className="px-4 py-2 font-mono text-slate-600">{r.loja}</td>
+                                                <td className="px-4 py-2 text-slate-600 font-medium truncate max-w-[200px]" title={r.nome}>{r.nome}</td>
+                                                <td className="px-4 py-2 text-slate-500">{r.tipo}</td>
+                                                <td className="px-4 py-2 text-center">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (activeClienteRowIndex !== null) {
+                                                                const newArr = [...editedRestricoes];
+                                                                newArr[activeClienteRowIndex].cliente = r.codigo;
+                                                                newArr[activeClienteRowIndex].loja = r.loja;
+                                                                newArr[activeClienteRowIndex].desc_cliente = r.nome;
+                                                                newArr[activeClienteRowIndex].nome_cliente = r.nome;
+                                                                setEditedRestricoes(newArr);
+                                                            }
+                                                            setShowSearchClienteModal(false);
+                                                        }}
+                                                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-medium rounded shadow-sm transition-colors"
+                                                    >
+                                                        Selecionar
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

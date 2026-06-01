@@ -242,7 +242,7 @@ router.post('/produtos/update', async (req, res) => {
         });
 
         const responseData = createRes.data;
-        
+
         res.json({ success: true, message: 'Produto salvo/atualizado no Protheus.', raw: responseData });
 
     } catch (error) {
@@ -360,7 +360,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             }
 
             let quantFinal = Number(it.quant) || 0;
-            
+
             // SE A QUANTIDADE DO PEDIDO FOR MAIOR QUE ZERO, LIMITAMOS A QUANTIDADE A SER GERADA
             if (qtd_venda > 0) {
                 const saldoDisponivel = qtd_venda - qtd_op_gerada;
@@ -402,16 +402,16 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             console.log(`[OP BUILDER] Produto: ${produto} | Roteiro encontrado: ${roteiro}`);
 
             ordensProducao.push({
-                EMPRESA:   "01",
-                CFILANT:   filial,
-                NOPER:     3,
-                C2_NUM:    nextOpStr,
-                C2_ITEM:   itemPvStr,
+                EMPRESA: "01",
+                CFILANT: filial,
+                NOPER: 3,
+                C2_NUM: nextOpStr,
+                C2_ITEM: itemPvStr,
                 C2_PRODUTO: produto.padEnd(15, ' '),
-                C2_QUANT:  quantFinal,
+                C2_QUANT: quantFinal,
                 C2_DATPRI: it.datpri || "",
                 C2_DATPRF: it.datprf || "",
-                C2_OBS:    (it.obs || "").trim(),
+                C2_OBS: (it.obs || "").trim(),
                 C2_ROTEIRO: roteiro,
                 C2_PEDIDO: pedidoStr,
                 C2_ITEMPV: itemPvStr
@@ -437,7 +437,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
 
         const protheusResp = protheusRes.data;
         console.log('📬 [OP] Resposta Protheus →', protheusResp);
-        
+
         require('fs').appendFileSync('protheus_log.txt', new Date().toISOString() + ' RESP: ' + JSON.stringify(protheusResp) + '\n');
 
         // Protheus retorna HTTP 200 mesmo em falha; checar messages[]
@@ -484,16 +484,16 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             console.error('[OP BUILDER] Falha ao propagar C2_PEDIDO para itens filhos:', dbErr.message);
         }
 
-        res.json({ 
-            success: true, 
-            message: 'O.P.(s) gerada(s) com sucesso.', 
-            op_number: opNumber, 
+        res.json({
+            success: true,
+            message: 'O.P.(s) gerada(s) com sucesso.',
+            op_number: opNumber,
             generated_ops: ordensProducao.map(op => ({
                 pedido: String(op.C2_PEDIDO).trim(),
                 item: String(op.C2_ITEMPV).trim(),
                 op_num: String(op.C2_NUM).trim()
             })),
-            details: protheusResp 
+            details: protheusResp
         });
 
     } catch (error) {
@@ -629,6 +629,84 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
     } catch (error) {
         console.error('❌ Protheus Integrador Erro [Roteiro]:', error.response?.data || error.message);
         res.status(500).json({ error: 'Erro ao Submeter Roteiro à API.', details: error.response?.data || error.message });
+    }
+});
+
+// =========================================================================
+// ROTA: Buscar Produto x Cliente (SZ1) via DB
+// =========================================================================
+router.get('/produto-cliente/:codigo', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const sql = `
+            SELECT 
+                TRIM(z1_cliente) as z1_cliente,
+                TRIM(z1_loja) as z1_loja,
+                TRIM(z1_produto) as z1_produto,
+                TRIM(z1_codcli) as z1_codcli,
+                TRIM(z1_desccli) as z1_desccli,
+                TRIM(z1_revisao) as z1_revisao
+            FROM public.sz1010
+            WHERE TRIM(z1_produto) = $1
+            AND d_e_l_e_t_ = ' '
+            ORDER BY z1_cliente
+        `;
+        const rows = await queryProtheus(sql, [codigo.toUpperCase().trim()]);
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao buscar SZ1:', error.message);
+        res.status(500).json({ error: 'Falha na busca de Produto x Cliente.' });
+    }
+});
+
+// =========================================================================
+// ROTA: Editar Restrição Produto x Cliente (SZ1) via API POST
+// =========================================================================
+router.post('/produto-cliente/editar', async (req, res) => {
+    try {
+        const { data } = req.body;
+
+        if (!data || !data.produtos_clientes || !Array.isArray(data.produtos_clientes)) {
+            return res.status(400).json({ error: 'Os dados do cliente e produtos_clientes são obrigatórios.' });
+        }
+
+        // 1. Requisitar Token (Login)
+        let accessToken = '';
+        try {
+            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
+            accessToken = tokenRes.data.access_token;
+        } catch (authError) {
+            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
+        }
+
+        if (!accessToken) {
+            throw new Error('Token JWT retornado estava em branco.');
+        }
+
+        console.log('🚀 [SZ1 PRODUTO-CLIENTE] Payload enviado para o Protheus:', JSON.stringify(req.body, null, 2));
+
+        // 2. Envio POST
+        const createUrl = 'https://192.168.1.60:47500/produto-cliente/editar';
+        const createRes = await axios.post(createUrl, req.body, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            httpsAgent,
+            timeout: 30000
+        });
+
+        const responseData = createRes.data;
+        console.log('📬 [SZ1 PRODUTO-CLIENTE] Resposta Protheus:', responseData);
+
+        // Se o status da API for OK, mas o conteúdo for um erro
+        if (responseData.status === "error") {
+            return res.status(400).json({ error: 'Erro ao processar produto-cliente no Protheus', details: responseData.message || responseData });
+        }
+
+        res.json({ success: true, message: 'Produto-cliente (SZ1) atualizado com sucesso', raw: responseData });
+
+    } catch (error) {
+        console.error('❌ Protheus Integrador Erro [Produto-Cliente SZ1]:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Erro ao Submeter Produto-Cliente à API.', details: error.response?.data || error.message });
     }
 });
 

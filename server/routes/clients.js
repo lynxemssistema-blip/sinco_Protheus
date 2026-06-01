@@ -8,7 +8,28 @@ router.get('/search', async (req, res) => {
         const { q } = req.query;
 
         if (!q || q.length < 2) {
-            return res.json([]);
+            const queryTop = `
+                WITH TopClientes AS (
+                    SELECT TRIM(z1_cliente) AS z1_cliente
+                    FROM public.sz1010
+                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                    GROUP BY TRIM(z1_cliente)
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 20
+                )
+                SELECT 
+                    TRIM(a1_cod) AS codigo,
+                    TRIM(a1_loja) AS loja,
+                    TRIM(a1_nome) AS nome,
+                    TRIM(a1_nreduz) AS nreduz,
+                    'Cliente' AS tipo
+                FROM public.sa1010
+                INNER JOIN TopClientes ON TRIM(a1_cod) = TopClientes.z1_cliente
+                WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                ORDER BY a1_nome
+            `;
+            const resultTop = await db.query(queryTop);
+            return res.json(resultTop.rows);
         }
 
         const searchTerm = `%${q}%`;
@@ -29,7 +50,7 @@ router.get('/search', async (req, res) => {
                     'Cliente' AS tipo
                 FROM public.sa1010
                 WHERE 
-                    COALESCE(d_e_l_e_t_, '') = ''
+                    COALESCE(d_e_l_e_t_, '') <> '*'
                     AND (
                         a1_cod ILIKE $1 
                         OR a1_nome ILIKE $1 
@@ -50,7 +71,7 @@ router.get('/search', async (req, res) => {
                     'Fornecedor' AS tipo
                 FROM public.sa2010
                 WHERE 
-                    COALESCE(d_e_l_e_t_, '') = ''
+                    COALESCE(d_e_l_e_t_, '') <> '*'
                     AND (
                         a2_cod ILIKE $1 
                         OR a2_nome ILIKE $1 

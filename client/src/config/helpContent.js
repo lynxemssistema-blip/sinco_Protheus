@@ -189,8 +189,49 @@ export const HELP_CONTENT = {
       'Esta tela oferece uma visÃ£o mais "limpa" focada estritamente no financeiro e no comercial, diferente da GestÃ£o de OPs que foca na produÃ§Ã£o.'
     ],
     links: [
-      { path: '/comercial/gestao-ops', label: 'GestÃ£o de OPs' },
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
       { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+    ],
+  },
+
+  '/pcp-refinado/capacidade': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Cadastro de Capacidade e Tempos (PCP Refinado)',
+    icon: 'Layers',
+    description: 'Definição do tempo padrão de operação e a capacidade diária por recurso (máquina ou centro de trabalho). Estes valores são a base matemática para o cálculo de carga do CRP.',
+    steps: [
+      '1. Visão Geral: A tabela lista todos os recursos disponíveis carregados do ERP Protheus.',
+      '2. Tempo Padrão: Define quantos minutos (ou fração) a máquina gasta para processar 1 peça/batida.',
+      '3. Capacidade Diária: Quantos minutos por dia a máquina está disponível (Ex: 8 horas = 480 minutos).',
+    ],
+    tips: [
+      'Lembre-se de salvar suas alterações: a linha ficará com borda amarela enquanto não for salva.',
+      'Recursos com Capacidade = 0 ou Tempo = 0 não vão constar adequadamente nos cálculos de ocupação!',
+    ],
+    links: [
+      { path: '/pcp-refinado/ocupacao', label: 'Ver Taxa de Ocupação' }
+    ],
+  },
+
+  '/pcp-refinado/ocupacao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Taxa de Ocupação Diária (CRP)',
+    icon: 'Activity',
+    description: 'Painel visual de análise de carga versus capacidade dos recursos de fábrica (CRP). Ele permite visualizar gargalos de produção dia a dia baseados nas OPs planejadas.',
+    steps: [
+      '1. Modos de Visualização: Alterne entre Tabela (Detalhado), Mapa de Calor (Visão estendida) ou Gráfico (Gantt) usando os botões superiores.',
+      '2. Filtro Pesado: Desative a chave "Apenas Pendentes" para incluir ordens já executadas e faturadas nos dias anteriores.',
+      '3. Detalhamento e Ajustes: Clique em "Detalhar OPs" na tabela ou na barra do gráfico para abrir as ordens que compõem a carga do dia. Você pode re-planejar datas individualmente ou em lote.',
+      '4. Relatório em PDF: É possível imprimir qualquer uma das visões formatadas para A4.',
+    ],
+    tips: [
+      'Dias em vermelho escuro no Mapa de Calor ou barras que passam de 100% indicam que o recurso está sendo planejado acima da sua capacidade configurada.',
+      'Qualquer alteração de data dentro do Detalhamento da OP afeta o planejamento global de imediato.',
+    ],
+    links: [
+      { path: '/pcp-refinado/capacidade', label: 'Ajustar Capacidade (Recursos)' }
     ],
   },
 
@@ -506,8 +547,31 @@ export const HELP_CONTENT = {
       'Para apontar horas do passado ou reverter um esquecimento, clique no modal de detalhes engrenagem => aba "Apontamentos â±ï¸" e inclua carga manual fracionÃ¡ria.',
     ],
     links: [
-      { path: '/engenharia/relatorio-controle', label: 'RelatÃ³rios NÃ­vel 1' },
+      { path: '/engenharia/relatorio-controle', label: 'Relatórios Nível 1' },
       { path: '/estrutura/:codigo', label: 'Verificar Escopo (Estrutura)' },
+    ],
+  },
+
+  // ── Formulário SINCO (Integração Totvs) ──────────────────────────────────
+  '/engenharia/sinco/formulario': {
+    category: 'Engenharia',
+    categoryColor: '#14b8a6',
+    title: 'Formulário SINCO',
+    icon: 'FileCode',
+    description: 'Interface unificada para construção e manipulação da engenharia do produto diretamente conectada ao ERP Protheus. A partir desta tela, você edita a Estrutura (BOM), o Roteiro de Fabricação e as amarrações de Produto x Cliente (SZ1).',
+    steps: [
+      '1. Consulta Mestra: No cabeçalho, digite o código do produto (Ex: MT2-1234) e clique em "Buscar" para carregar as informações em tempo real do banco.',
+      '2. Árvore do Produto (SG1): Lista de materiais/componentes (BOM). Em modo de Edição, é possível modificar a estrutura, o tipo e a quantidade dos itens, impactando os consumos e empenhos da fábrica.',
+      '3. Operações (Roteiro - SG2): Roteirização fabril. Ao editar, ajuste a descrição, mude o tempo de Setup/Padrão (importante para o PCP) e direcione para um novo Recurso (setor/máquina).',
+      '4. Produto Metalfisa/Cliente (SZ1): Relaciona o código e nome comercial usados pelo Cliente com o nosso código interno, com controle de Revisão. A busca inteligente de cliente (botão lupa) garante exatidão de cadastro e exibe os principais parceiros por padrão.',
+    ],
+    tips: [
+      'Atenção ao Salvar: Suas modificações nos grids (como incluir linhas ou apagar) só serão validadas e enviadas ao Protheus após o clique no botão "Salvar" referente a cada bloco.',
+      'Lupa de Consultas: Os ícones de lupa nas células de Componente, Recurso e Cliente são atalhos super eficientes para pesquisar e carregar dados do banco diretamente na sua célula ativa.',
+    ],
+    links: [
+      { path: '/engenharia/pedidos', label: 'Ata Viva' },
+      { path: '/produtos', label: 'Catálogo de Produtos' },
     ],
   },
 
