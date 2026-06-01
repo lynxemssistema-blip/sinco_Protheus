@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     Calendar, Clock, CheckSquare, Search, Filter, AlertTriangle,
     ChevronDown, ChevronRight, MoreHorizontal, AlertOctagon, CheckCircle, List, Printer, FileText, HelpCircle,
-    Maximize2, Minimize2
+    Maximize2, Minimize2, Zap
 } from 'lucide-react';
 
 
@@ -12,11 +12,12 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
+import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import CurvaSPedido from './pcp/CurvaSPedido';
 import EvolucaoApontamentosView from './pcp/EvolucaoApontamentosView';
 import PlanningAuditPanel from '../components/PlanningAuditPanel';
-import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
+import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError, getResourceCapacities } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { generateProductionControlPdf } from '../services/productionControlPdfGenerator';
 import { toast } from 'react-toastify';
@@ -41,6 +42,10 @@ export default function ProductionControl() {
     const [isCargaFullscreen, setIsCargaFullscreen] = useState(false);
     const [isEvolutionFullscreen, setIsEvolutionFullscreen] = useState(false);
     const [isTabelaFullscreen, setIsTabelaFullscreen] = useState(false);
+
+    // PCPMetal AI Drawer State
+    const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
+    const [pcpmetalContext, setPcpmetalContext] = useState({});
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -223,11 +228,17 @@ export default function ProductionControl() {
         }
     };
 
+    const [capacities, setCapacities] = useState({});
+
     useEffect(() => {
         // loadData(); // Lazy load: busca apenas quando o usuário utilizar os filtros
         getCompanySettings()
             .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
             .catch(() => setAppointmentMode('free'));
+            
+        getResourceCapacities()
+            .then(d => setCapacities(d || {}))
+            .catch(err => console.error('Erro ao buscar capacidades:', err));
     }, []);
 
     // Fetch PDF docs for all visible products (background, cached)
@@ -434,6 +445,17 @@ export default function ProductionControl() {
                         <p className="text-slate-500">Planejamento e Apontamento de OPs</p>
                     </div>
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => {
+                                setPcpmetalContext({ page: 'controle-producao', modulo: 'Controle de Produção', action: 'Geral' });
+                                setPcpmetalOpen(true);
+                            }}
+                            className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-200 transition-colors"
+                            title="Conversar com Agente PCPMetal"
+                        >
+                            <Zap className="w-5 h-5" />
+                            PCPMetal AI
+                        </button>
                         {appointmentMode && (
                             <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                                 appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
@@ -673,20 +695,22 @@ export default function ProductionControl() {
                                     <th className="p-3">Pedido</th>
                                     <th className="p-3">Cliente</th>
                                     <th className="p-3">Produto</th>
+                                    <th className="p-3 text-center">Entrega PCP</th>
                                     <th className="p-3 text-center w-10">PDF</th>
                                     <th className="p-3">Recurso</th>
                                     <th className="p-3 text-center">Planejamento</th>
                                     <th className="p-3 text-center">Produção</th>
+                                    <th className="p-3 text-center">Tempos</th>
                                     <th className="p-3 text-center">Status</th>
                                     <th className="p-3 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
                             {loading ? (
-                                <tr><td colSpan="10" className="p-8 text-center text-slate-500">Carregando...</td></tr>
+                                <tr><td colSpan="13" className="p-8 text-center text-slate-500">Carregando...</td></tr>
                             ) : ops.length === 0 ? (
                                 <tr>
-                                    <td colSpan="10" className="p-8 text-center text-slate-500">
+                                    <td colSpan="13" className="p-8 text-center text-slate-500">
                                         <div className="font-medium text-slate-700">Nenhuma operação encontrada</div>
                                         <div className="text-sm mt-1 text-slate-400">Ajuste os filtros ou clique em Buscar para carregar todas as OPs abertas.</div>
                                     </td>
@@ -730,6 +754,16 @@ export default function ProductionControl() {
                                                 </div>
                                                 <div className="text-xs text-slate-500 truncate max-w-[250px]" title={op.desc_produto}>{op.desc_produto}</div>
                                             </td>
+                                            {/* Entrega PCP */}
+                                            <td className="p-3 text-center">
+                                                {op.data_entrega_pcp ? (
+                                                    <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded whitespace-nowrap">
+                                                        {new Date(op.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-300 text-xs">—</span>
+                                                )}
+                                            </td>
                                             {/* PDF Column */}
                                             <td className="p-3 text-center">
                                                 {(() => {
@@ -760,7 +794,6 @@ export default function ProductionControl() {
                                                 {op.data_planejada_inicio ? (
                                                     <div className="text-xs">
                                                         <div className="text-green-700 font-medium">I: {new Date(op.data_planejada_inicio).toLocaleDateString()}</div>
-                                                        <div className="text-red-700 font-medium">F: {new Date(op.data_planejada_fim).toLocaleDateString()}</div>
                                                     </div>
                                                 ) : (
                                                     <span className="text-slate-400 italic text-xs">Não planejado</span>
@@ -787,6 +820,16 @@ export default function ProductionControl() {
                                                 </div>
                                             </td>
                                             <td className="p-3 text-center">
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                    <div className="text-[10px] text-slate-500 font-bold uppercase" title="Tempo Padrão Unitário">
+                                                        Unid: {op.tempad > 0 ? `${op.tempad.toFixed(2)} min` : '-'}
+                                                    </div>
+                                                    <div className="text-xs text-indigo-700 font-bold" title="Tempo Total (Unitário x Qtd + Setup)">
+                                                        Total: {op.tempad > 0 ? `${((op.tempad * Number(op.qtd_planejada_op)) + (op.setup || 0)).toFixed(0)} min` : '-'}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-center">
                                                 <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${status.color}`}>
                                                     {status.icon} {status.text}
                                                 </div>
@@ -794,10 +837,9 @@ export default function ProductionControl() {
                                             <td className="p-3 text-right">
                                                 <div className="flex justify-end gap-1">
                                                     <button onClick={() => {
-                                                        const isSelected = selectedOps.some(s => s.op === op.op && s.item_op === op.item_op && s.sequen === op.sequen && s.operacao === op.operacao);
-                                                        setPlanningOp(isSelected && selectedOps.length > 0 ? selectedOps : [op]);
+                                                        setPlanningOp([op]);
                                                     }}
-                                                        className="p-1.5 hover:bg-white border border-transparent hover:border-slate-200 hover:shadow-sm rounded text-slate-600 transition-all" title="Planejar Operação">
+                                                        className="p-1.5 hover:bg-white border border-transparent hover:border-slate-200 hover:shadow-sm rounded text-slate-600 transition-all" title="Planejar Operação (Cascata)">
                                                         <Calendar className="w-4 h-4" />
                                                     </button>
                                                     <button onClick={() => handleOpenMacro(op)}
@@ -822,6 +864,7 @@ export default function ProductionControl() {
                 ) : activeTab === 'carga_recursos' ? (
                     <CargaRecursosView 
                         ops={ops} 
+                        capacities={capacities}
                         isCargaFullscreen={isCargaFullscreen}
                         setIsCargaFullscreen={setIsCargaFullscreen}
                         onOpenHistory={(opData) => setSelectedOpHistory(opData)}
@@ -901,6 +944,20 @@ export default function ProductionControl() {
 
             </div>
 
+            {pcpmetalOpen && (
+                <PCPMetalDrawer
+                    isOpen={pcpmetalOpen}
+                    onClose={() => setPcpmetalOpen(false)}
+                    context={pcpmetalContext}
+                    pageData={{
+                        ops,
+                        selectedOps,
+                        filters,
+                        total
+                    }}
+                />
+            )}
+
             {/* PRINT COMPONENT - Visible only when printing */}
             <div className="hidden print:block print:absolute print:top-0 print:left-0 print:w-full print:bg-white print:z-[9999]">
                 <ProductionPrint ops={ops} filters={filters} />
@@ -911,6 +968,7 @@ export default function ProductionControl() {
 
 function CargaRecursosView({
     ops,
+    capacities,
     isCargaFullscreen,
     setIsCargaFullscreen,
     onOpenHistory,
@@ -940,6 +998,7 @@ function CargaRecursosView({
                 qtdPlanejada: 0,
                 qtdProduzida: 0,
                 qtdPendente: 0,
+                horasPendente: 0,
                 operacoes: []
             };
         }
@@ -950,14 +1009,35 @@ function CargaRecursosView({
         // Regra de saldo pendente individual: para cada OP, o saldo é planejado - produzido (min 0)
         // Isso evita que a superprodução de uma OP mascare a pendência de outra no mesmo recurso
         const pending = Math.max(0, planned - produced);
+        
+        // Cálculo de horas pendentes
+        const tempad = parseFloat(op.tempad) || 0;
+        const setup = parseFloat(op.setup) || 0;
+        
+        // Se a OP está 100% nova, consideramos o setup. Se já produziu algo, o setup já foi pago (heurística simples)
+        const activeSetup = produced === 0 ? setup : 0;
+        
+        let horasNecessariasOp = 0;
+        if (tempad > 0) {
+            horasNecessariasOp = activeSetup + (pending * tempad);
+        } else {
+            // Fallback se não tiver tempad do Protheus
+            const fallbackCap = capacities?.[resourceCode];
+            if (fallbackCap && fallbackCap.default_tempo_peca) {
+                horasNecessariasOp = pending * fallbackCap.default_tempo_peca;
+            }
+        }
 
         resourceMap[key].totalOps += 1;
         resourceMap[key].qtdPlanejada += planned;
         resourceMap[key].qtdProduzida += produced;
         resourceMap[key].qtdPendente += pending;
+        resourceMap[key].horasPendente += horasNecessariasOp;
+        
         resourceMap[key].operacoes.push({
             ...op,
-            qtdPendente: pending
+            qtdPendente: pending,
+            horasNecessarias: horasNecessariasOp
         });
     });
 
@@ -1105,6 +1185,19 @@ function CargaRecursosView({
                                         <div className={`text-center px-3.5 py-1.5 rounded-lg border min-w-[110px] ${badgeClass}`}>
                                             <div className="text-[9px] font-bold uppercase tracking-wider opacity-90">Saldo Pendente</div>
                                             <div className="text-sm font-extrabold">{res.qtdPendente.toLocaleString()}</div>
+                                        </div>
+                                        
+                                        {/* Nova métrica: Ocupação e Carga (Gargalo real em tempo) */}
+                                        <div className="text-center px-3.5 py-1.5 rounded-lg border bg-indigo-50 border-indigo-200 text-indigo-700 min-w-[110px]">
+                                            <div className="text-[9px] font-bold uppercase tracking-wider opacity-90">Dias Estimados</div>
+                                            <div className="text-sm font-extrabold">
+                                                {capacities?.[res.recurso]?.horas_dia > 0 
+                                                    ? (res.horasPendente / capacities[res.recurso].horas_dia).toFixed(1)
+                                                    : '-'} d
+                                            </div>
+                                            <div className="text-[9px] font-medium opacity-80 mt-0.5">
+                                                {res.horasPendente.toFixed(1)}h ttl / {capacities?.[res.recurso]?.horas_dia?.toFixed(1) || '?'}h dia
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

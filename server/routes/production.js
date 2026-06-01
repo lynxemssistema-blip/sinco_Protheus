@@ -966,10 +966,10 @@ router.get('/', async (req, res) => {
             params.push(`%${cliente.trim().toUpperCase()}%`); pn++;
         }
 
-        // Stage 2 filter: pending_delivery (applied after SC6010 join)
-        const pendingClause = req.query.pending_delivery === 'true'
-            ? `AND (COALESCE(NULLIF(TRIM(c6.c6_qtdven::text), '')::numeric, 0) - COALESCE(NULLIF(TRIM(c6.c6_qtdent::text), '')::numeric, 0)) > 0`
-            : '';
+        // Stage 2 filter: Default behavior is to ALWAYS hide orders with no balance to bill (c6_qtdven - c6_qtdent <= 0),
+        // unless they specifically check "pending_delivery = false" which we'll ignore for now since they want it always off.
+        // We also keep stock OPs (pedido_raw IS NULL) unless explicitly requested to hide.
+        const pendingClause = `AND (ob.pedido_raw IS NULL OR TRIM(ob.pedido_raw) = '' OR (COALESCE(NULLIF(TRIM(c6.c6_qtdven::text), '')::numeric, 0) - COALESCE(NULLIF(TRIM(c6.c6_qtdent::text), '')::numeric, 0)) > 0)`;
 
 
         const s1Where = `WHERE ${s1Conds.join(' AND ')} ${fracExclude}`;
@@ -1011,7 +1011,8 @@ op_enrich AS (
         TRIM(c5.c5_cliente)  AS cod_cliente,
         TRIM(a1.a1_nome)     AS nome_cliente,
         TRIM(a1.a1_nreduz)   AS nome_fantasia,
-        TRIM(c6.c6_pedcli)   AS ped_cliente
+        TRIM(c6.c6_pedcli)   AS ped_cliente,
+        TRIM(c6.c6_entreg)   AS data_entrega_comercial
     FROM op_base ob
     LEFT JOIN public.sb1010 sb1
         ON  sb1.b1_cod = ob.produto_raw
@@ -1040,7 +1041,7 @@ SELECT
     oe.produto_raw AS cod_produto_op_raw, oe.produto AS cod_produto_op, oe.pedido_resolved AS pedido_venda,
     oe.desc_produto, oe.tipo_produto, oe.um_op,
     oe.qtd_planejada_op, oe.qtd_apontada_erp,
-    oe.cod_cliente, oe.nome_cliente, oe.nome_fantasia, oe.ped_cliente
+    oe.cod_cliente, oe.nome_cliente, oe.nome_fantasia, oe.ped_cliente, oe.data_entrega_comercial
 FROM op_enrich oe
 ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         `;
@@ -1057,7 +1058,8 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                 const r2 = await db.query(`
                     SELECT TRIM(g2.g2_produto) AS produto, g2.g2_codigo AS cod_roteiro,
                            g2.g2_operac AS operacao, g2.g2_descri AS desc_operacao,
-                           g2.g2_recurso AS recurso, TRIM(h1.h1_descri) AS desc_recurso
+                           g2.g2_recurso AS recurso, TRIM(h1.h1_descri) AS desc_recurso,
+                           g2.g2_tempad, g2.g2_setup
                     FROM public.sg2010 g2
                     LEFT JOIN public.sh1010 h1
                         ON h1.h1_codigo = g2.g2_recurso
@@ -1086,6 +1088,8 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                 desc_operacao:       r.desc_operacao,
                 recurso:             r.recurso,
                 desc_recurso:        r.desc_recurso,
+                tempad:              parseFloat(r.g2_tempad) || 0,
+                setup:               parseFloat(r.g2_setup) || 0,
                 prev_operacao:       idx > 0 ? routing[idx - 1].operacao : null,
                 next_operacao:       idx < routing.length - 1 ? routing[idx + 1].operacao : null,
                 prev_desc_operacao:  idx > 0 ? routing[idx - 1].desc_operacao : null,
@@ -1236,9 +1240,41 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
             } catch (docErr) { console.error('Doc Error:', docErr.message); }
         }
 
+        // 8. Enrich with PCP Delivery Forecast (última data_entrega_pcp por pedido+item)
+        let pcpForecastMap = {};
+        try {
+            const pedidoItemPairs = [...new Set(mergedOps
+                .filter(o => o.pedido_venda)
+                .map(o => `${String(o.pedido_venda).trim()}|${String(o.item_op || '').trim()}`)
+            )];
+            if (pedidoItemPairs.length > 0) {
+                const pedidos = [...new Set(mergedOps.map(o => (o.pedido_venda || '').trim()).filter(Boolean))];
+                const ph = pedidos.map(() => '?').join(',');
+                const [fcRows] = await mysqlPool.execute(
+                    `SELECT pedido, item, MAX(data_entrega_pcp) as data_entrega_pcp
+                     FROM app_pcp_delivery_forecasts
+                     WHERE pedido IN (${ph})
+                     GROUP BY pedido, item`,
+                    pedidos
+                );
+                fcRows.forEach(r => {
+                    const k = `${String(r.pedido).trim()}|${String(r.item || '').trim()}`;
+                    pcpForecastMap[k] = r.data_entrega_pcp;
+                });
+            }
+        } catch (fcErr) { /* tabela pode não existir em ambientes sem forecast */ }
+
         const finalOps = mergedOps.map(op => {
             const doc = docsMap[(op.cod_produto_op || '').trim().toUpperCase()];
-            return { ...op, doc_url: doc?.url || null, tem_arquivos: !!doc?.url, area_pintura: doc?.area || null, operacao_doc: doc?.operacao || null };
+            const fcKey = `${String(op.pedido_venda || '').trim()}|${String(op.item_op || '').trim()}`;
+            return {
+                ...op,
+                doc_url:         doc?.url || null,
+                tem_arquivos:    !!doc?.url,
+                area_pintura:    doc?.area || null,
+                operacao_doc:    doc?.operacao || null,
+                data_entrega_pcp: pcpForecastMap[fcKey] || null,
+            };
         });
 
         res.json({ data: finalOps, total });
@@ -1784,10 +1820,79 @@ router.post('/plan', async (req, res) => {
     }
 });
 
+// DELETE /api/production/clear-planning-by-pedido - Remove todas as datas planejadas de um pedido de venda
+// Segurança: requer { pedido_venda, confirmar: true } no body. Nunca altera o Protheus.
+router.delete('/clear-planning-by-pedido', async (req, res) => {
+    try {
+        const { pedido_venda, confirmar } = req.body;
+
+        if (!pedido_venda || !pedido_venda.trim()) {
+            return res.status(400).json({ error: 'Informe o número do pedido de venda.' });
+        }
+        if (!confirmar) {
+            return res.status(400).json({ error: 'Confirmação obrigatória. Envie { confirmar: true } para executar.' });
+        }
+
+        const pedido = pedido_venda.trim().padStart(6, '0');
+
+        // 1. Busca os op_numero do pedido no Protheus (PostgreSQL — somente leitura)
+        const pgRes = await db.query(
+            `SELECT DISTINCT TRIM(c2_num) AS op_numero
+             FROM public.sc2010
+             WHERE TRIM(c2_pedido) = $1
+               AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
+            [pedido]
+        );
+
+        if (pgRes.rows.length === 0) {
+            return res.status(404).json({ error: `Nenhuma OP encontrada para o pedido ${pedido} no Protheus.` });
+        }
+
+        const opNums = pgRes.rows.map(r => r.op_numero);
+        console.log(`🗑️ [CLEAR PLANNING] Pedido ${pedido} → ${opNums.length} OP(s): ${opNums.join(', ')}`);
+
+        // 2. Apaga planejamento do MySQL para essas OPs
+        const placeholders = opNums.map(() => '?').join(',');
+
+        const [delMain] = await mysqlPool.execute(
+            `DELETE FROM app_production_planning WHERE op_numero IN (${placeholders})`,
+            opNums
+        );
+
+        // 3. Também limpa o histórico de planejamento dessas OPs (opcional mas consistente)
+        const [delHist] = await mysqlPool.execute(
+            `DELETE FROM app_planning_history WHERE op_numero IN (${placeholders})`,
+            opNums
+        );
+
+        const [delLotes] = await mysqlPool.execute(
+            `DELETE FROM app_planning_lotes WHERE op_numero IN (${placeholders})`,
+            opNums
+        );
+
+        console.log(`✅ [CLEAR PLANNING] Concluído — planning: ${delMain.affectedRows} | histórico: ${delHist.affectedRows} | lotes: ${delLotes.affectedRows}`);
+
+        res.json({
+            message: `Planejamento do pedido ${pedido} removido com sucesso.`,
+            pedido,
+            ops_afetadas: opNums,
+            linhas_removidas: {
+                planning: delMain.affectedRows,
+                historico: delHist.affectedRows,
+                lotes: delLotes.affectedRows
+            }
+        });
+
+    } catch (err) {
+        console.error('[CLEAR PLANNING ERROR]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // POST /api/production/cascade-preview - Calcula a cascata de programação baseada em capacidade e tempo padrão
 router.post('/cascade-preview', async (req, res) => {
     try {
-        const { ops, start_date } = req.body;
+        const { ops, start_date, incluiSabado } = req.body;
         
         if (!Array.isArray(ops) || ops.length === 0) {
             return res.status(400).json({ error: 'Nenhuma OP fornecida para a cascata.' });
@@ -1828,72 +1933,139 @@ router.post('/cascade-preview', async (req, res) => {
 
         // 3. Ordenar as operações para simular a cascata (Primeiro prioridade/pedido, depois sequencia)
         ops.sort((a, b) => {
-            // Se vier prioridade, usa
+            // Se vier prioridade manual, tem precedência máxima
             if (a.prioridade !== b.prioridade) return (a.prioridade || 99) - (b.prioridade || 99);
-            // Agrupar pela mesma OP
+            
+            // Ordenar por data de entrega comercial (ascendente - mais cedo primeiro)
+            // c6_entreg no protheus vem como YYYYMMDD, ordenação lexicográfica funciona bem.
+            const dA = (a.data_entrega_comercial || '99999999').trim();
+            const dB = (b.data_entrega_comercial || '99999999').trim();
+            if (dA !== dB) return dA.localeCompare(dB);
+
+            // Agrupar pela mesma OP e Item OP para itens que entregam no mesmo dia
             if (a.op !== b.op) return (a.op || '').localeCompare(b.op || '');
             if (a.item_op !== b.item_op) return (a.item_op || '').localeCompare(b.item_op || '');
-            // Por fim, ordenar pela sequencia para garantir N+1 apos N
+            
+            // Por fim, ordenar pela sequencia para garantir N+1 apos N na mesma OP
             return (a.sequen || '').localeCompare(b.sequen || '');
         });
 
         // 4. Lógica de Sequenciamento
-        // resourceAvailability guarda o horário que cada recurso estará livre
-        let resourceAvailability = {};
+        // resourceCalendar guarda quantos minutos já foram usados de cada recurso por dia (YYYY-MM-DD)
+        let resourceCalendar = {};
         // opFinish guarda quando a sequência anterior da mesma OP terminou
         let opFinish = {};
         
         let globalStart = start_date ? new Date(start_date) : new Date();
+        // Zera as horas para a data global (usaremos meio-dia para evitar problemas de fuso)
+        globalStart.setHours(12, 0, 0, 0);
         
         const results = ops.map(op => {
             const produto = (op.cod_produto_op || op.produto || '').trim().toUpperCase();
             const operacao = (op.operacao || '').trim().toUpperCase();
             const recurso = (op.recurso || '').trim().toUpperCase();
-            const qtd = parseFloat(op.qtd_planejada_op) || parseFloat(op.qtd) || 0;
+            
+            const planejado = parseFloat(op.qtd_planejada_op) || parseFloat(op.qtd) || 0;
+            const produzido = parseFloat(op.qtd_produzida_real) || 0;
+            const qtd = Math.max(0, planejado - produzido);
             
             const sgData = sgMap[`${produto}_${operacao}`] || {};
-            const capData = capMap[recurso] || capMap[sgData.recurso] || { horas_dia: 8.8, default_tempo_peca: 0.1 };
+            const capData = capMap[recurso] || capMap[sgData?.recurso] || { horas_dia: 8.8, default_tempo_peca: 0.1 };
             
-            // Usar o fallback se g2_tempad for zero
-            let tempoUnitario = sgData.tempad;
-            if (!tempoUnitario || tempoUnitario <= 0) {
-                tempoUnitario = capData.default_tempo_peca;
+            // FIX: g2_tempad no Protheus é em HORAS/peça → converter para MINUTOS.
+            // (Valor padrão/placeholder do Protheus é 0.01h ≈ 0.6min — ignorar)
+            const g2_tempo_horas = parseFloat(sgData.tempad) || 0;
+            let tempoUnitarioMinutos;
+            if (g2_tempo_horas > 0.01) {
+                tempoUnitarioMinutos = g2_tempo_horas * 60; // horas → minutos
+            } else {
+                // Fallback: tempo padrão cadastrado no MySQL (já em minutos)
+                tempoUnitarioMinutos = capData.default_tempo_peca * 60;
             }
             
-            const setupH = sgData.setup || 0;
-            const tempoTotalHoras = setupH + (qtd * tempoUnitario);
+            // Setup em horas → minutos
+            const setupMinutos = (sgData.setup || 0) * 60;
             
-            // Converter horas totais para dias, com base na capacidade diária do recurso
+            // O tempo total só é consumido se houver quantidade pendente.
+            // Itens com status concluído (ou qtd <= 0) têm tempo requerido ZERO.
+            let tempoTotalMinutos = 0;
+            if (qtd > 0) {
+                tempoTotalMinutos = setupMinutos + (qtd * tempoUnitarioMinutos);
+            }
+            
             const horasPorDia = capData.horas_dia > 0 ? capData.horas_dia : 8.8;
-            const diasNecessarios = tempoTotalHoras / horasPorDia;
-            const msNecessarios = diasNecessarios * 24 * 60 * 60 * 1000; // Aproximação corrida
+            const capacidadeDiariaMinutos = horasPorDia * 60;
+            const diasNecessariosFloat = tempoTotalMinutos / capacidadeDiariaMinutos;
             
+            // FIX: inclui sequen na chave para encadear corretamente operações 010→020→030
+            // A operação N só começa quando a operação N-1 da mesma OP/item terminar.
             const opKey = `${op.op}_${op.item_op}`;
+            const opSeqKey = `${op.op}_${op.item_op}_${op.sequen}`;
             
-            // O início desta sequência deve ser APÓS a sequência anterior da mesma OP,
-            // E APÓS o recurso ficar livre (Finite Capacity).
-            let startDate = globalStart;
-            
+            let startDate = new Date(globalStart);
             if (opFinish[opKey] && opFinish[opKey] > startDate) {
                 startDate = new Date(opFinish[opKey]);
             }
             
-            if (resourceAvailability[recurso] && resourceAvailability[recurso] > startDate) {
-                startDate = new Date(resourceAvailability[recurso]);
+            // Pula domingos, e pula sábados APENAS se incluiSabado for falso
+            while (startDate.getDay() === 0 || (!incluiSabado && startDate.getDay() === 6)) {
+                startDate.setDate(startDate.getDate() + 1);
             }
             
-            const endDate = new Date(startDate.getTime() + msNecessarios);
+            if (!resourceCalendar[recurso]) resourceCalendar[recurso] = {};
             
-            // Atualizar disponibilidades
-            opFinish[opKey] = endDate;
-            resourceAvailability[recurso] = endDate;
+            let currentDate = new Date(startDate);
+            let actualStartDate = null;
+            let tempoRestante = tempoTotalMinutos;
+            
+            if (tempoRestante <= 0) {
+                actualStartDate = new Date(currentDate);
+            }
+            
+            while (tempoRestante > 0) {
+                let dateKey = currentDate.toISOString().split('T')[0];
+                let usedToday = resourceCalendar[recurso][dateKey] || 0;
+                let availableToday = capacidadeDiariaMinutos - usedToday;
+                
+                if (availableToday <= 0) {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    while (currentDate.getDay() === 0 || (!incluiSabado && currentDate.getDay() === 6)) {
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    continue;
+                }
+                
+                if (!actualStartDate) {
+                    actualStartDate = new Date(currentDate);
+                }
+                
+                if (tempoRestante <= availableToday) {
+                    resourceCalendar[recurso][dateKey] = usedToday + tempoRestante;
+                    tempoRestante = 0;
+                } else {
+                    resourceCalendar[recurso][dateKey] = capacidadeDiariaMinutos;
+                    tempoRestante -= availableToday;
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    while (currentDate.getDay() === 0 || (!incluiSabado && currentDate.getDay() === 6)) {
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                }
+            }
+            
+            const endDate = new Date(currentDate);
+            // Atualiza a chave geral da OP (para a próxima sequência saber quando esta terminou)
+            opFinish[opKey] = new Date(endDate);
+            opFinish[opSeqKey] = new Date(endDate);
+            
+            // FIX: garante que actualStartDate nunca seja null (evita crash em TypeError)
+            if (!actualStartDate) actualStartDate = new Date(endDate);
             
             return {
                 ...op,
-                data_inicio_calc: startDate.toISOString(),
-                data_fim_calc: endDate.toISOString(),
-                tempo_total_horas: tempoTotalHoras,
-                dias_necessarios: diasNecessarios
+                data_inicio_calc: actualStartDate.toISOString().split('T')[0] + 'T08:00:00',
+                data_fim_calc: endDate.toISOString().split('T')[0] + 'T17:00:00',
+                tempo_total_horas: tempoTotalMinutos / 60,
+                dias_necessarios: diasNecessariosFloat
             };
         });
 
@@ -4500,6 +4672,22 @@ async function sendCascataErrorEmail(usuario, op_numero, missingDetails, errorMs
         console.error('[CASCATA EMAIL ERROR]', err);
     }
 }
+// GET /api/production/capacities - Obter capacidades (horas_dia e default_tempo)
+router.get('/capacities', async (req, res) => {
+    try {
+        const [mysqlCaps] = await mysqlPool.execute('SELECT recurso_codigo, capacidade_diaria_minutos, tempo_padrao_minutos FROM app_recursos_capacidade');
+        const capMap = {};
+        mysqlCaps.forEach(c => {
+            capMap[c.recurso_codigo.trim().toUpperCase()] = {
+                horas_dia: (parseFloat(c.capacidade_diaria_minutos) || 528) / 60,
+                default_tempo_peca: (parseFloat(c.tempo_padrao_minutos) || 0) / 60
+            };
+        });
+        res.json(capMap);
+    } catch (err) {
+        console.error('[CAPACITIES ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 module.exports = router;
-
