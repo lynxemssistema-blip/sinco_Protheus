@@ -1794,12 +1794,12 @@ router.post('/cascade-preview', async (req, res) => {
         }
 
         // 1. Obter capacidades cadastradas (Fallback do PCP Refinado)
-        const [mysqlCaps] = await mysqlPool.execute('SELECT recurso_codigo, horas_dia, default_tempo_peca FROM app_recursos_capacidade');
+        const [mysqlCaps] = await mysqlPool.execute('SELECT recurso_codigo, capacidade_diaria_minutos, tempo_padrao_minutos FROM app_recursos_capacidade');
         const capMap = {};
         mysqlCaps.forEach(c => {
             capMap[c.recurso_codigo.trim().toUpperCase()] = {
-                horas_dia: parseFloat(c.horas_dia) || 8.8,
-                default_tempo_peca: parseFloat(c.default_tempo_peca) || 0
+                horas_dia: (parseFloat(c.capacidade_diaria_minutos) || 528) / 60, // minutos → horas
+                default_tempo_peca: (parseFloat(c.tempo_padrao_minutos) || 0) / 60 // minutos → horas
             };
         });
 
