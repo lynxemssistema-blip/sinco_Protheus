@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const db = require('../db');
@@ -78,334 +78,212 @@ router.post('/recursos', async (req, res) => {
 });
 
 // GET /api/pcp-refinado/taxa-ocupacao - Calculate daily occupation rate
+// ARQUITETURA CORRIGIDA: MetalFisa usa c2_sequen='001','002'... como sequencia de estrutura de OP,
+// NAO como codigo de operacao. O JOIN antigo (c2_sequen=g2_operac) sempre retornava 0 rows.
+// Nova logica: MySQL planning e a fonte primaria; sg2010 e buscado por produto+operacao_codigo.
 router.get('/taxa-ocupacao', async (req, res) => {
     let pgClient;
     try {
         pgClient = await db.connect();
-        
-        // 1. Fetch active OPs and their operations
-        // Considering an OP active if C2_QUJE < C2_QUANT (has pending balance)
         const { data_inicio, data_fim, recurso, only_active = 'false' } = req.query;
 
-        let whereClause = `
+        // PASSO 1: Buscar OPs do Protheus (sc2010) SEM JOIN de operacao
+        let pgWhere = `
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
               AND c2.c2_quje < c2.c2_quant
-              AND TRIM(c2.c2_datpri) <> ''
               AND TRIM(c2.c2_num) <> ''
               AND COALESCE(TRIM(c2.c2_pedido), '') <> ''
+              AND TRIM(c2.c2_itempv) <> ''
         `;
-
-        const queryParams = [];
-
-        // Removemos o filtro de datas do Postgres porque as datas verdadeiras (planejadas)
-        // podem estar no MySQL. Filtraremos via Javascript depois do merge.
-
-        if (recurso) {
-            queryParams.push(`%${recurso.toUpperCase().trim()}%`);
-            whereClause += ` AND (TRIM(g2.g2_recurso) LIKE $${queryParams.length} OR UPPER(TRIM(h1.h1_descri)) LIKE $${queryParams.length})`;
-        }
-
         if (only_active === 'true') {
-            whereClause += ` AND (
-                COALESCE(c5.c5_nota, '') = '' 
-                OR EXISTS (
-                    SELECT 1 FROM public.sc6010 c6 
-                    WHERE c6.c6_num = c5.c5_num 
-                    AND c6.c6_filial = c5.c5_filial 
-                    AND COALESCE(c6.d_e_l_e_t_, '') = ''
-                    AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
-                )
-            )`;
+            pgWhere += ` AND (COALESCE(c5.c5_nota,'')='' OR EXISTS (
+                SELECT 1 FROM public.sc6010 c6
+                WHERE c6.c6_num=c5.c5_num AND c6.c6_filial=c5.c5_filial
+                AND COALESCE(c6.d_e_l_e_t_,'')=''
+                AND ((c6.c6_qtdven-c6.c6_qtdent)>0 OR c6.c6_qtdlib>0)))`;
         }
 
-        const pgQuery = `
-            SELECT 
-                TRIM(c2.c2_num) AS op_num,
-                TRIM(c2.c2_item) AS item_op,
-                TRIM(c2.c2_sequen) AS sequen,
-                TRIM(c2.c2_produto) AS produto,
-                TRIM(c2.c2_pedido) AS pedido,
-                TRIM(c2.c2_itempv) AS item_pedido,
-                c2.c2_quant AS qtde,
-                c2.c2_quje AS qtde_feita,
-                TRIM(c2.c2_datpri) AS data_planejada,
-                TRIM(c2.c2_datprf) AS data_planejada_final,
-                TRIM(g2.g2_operac) AS operacao,
-                TRIM(g2.g2_recurso) AS recurso_codigo,
-                g2.g2_tempad AS tempo_operacao_g2,
-                TRIM(h1.h1_descri) AS recurso_descri,
-                TRIM(a1.a1_nome) AS cliente_nome
+        const pgResult = await pgClient.query(`
+            SELECT TRIM(c2.c2_num) AS op_num, TRIM(c2.c2_item) AS item_op,
+                   TRIM(c2.c2_produto) AS produto, TRIM(c2.c2_pedido) AS pedido,
+                   TRIM(c2.c2_itempv) AS item_pedido, c2.c2_quant AS qtde, c2.c2_quje AS qtde_feita,
+                   TRIM(a1.a1_nome) AS cliente_nome
             FROM public.sc2010 c2
-            -- No Protheus, c2_sequen é o código da operação que mapeia diretamente a g2_operac em SG2010.
-            -- Cada linha de SC2010 representa UMA operação da OP. Este JOIN é 1:1 por operação.
-            JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto)
-                                 AND TRIM(g2.g2_operac)  = TRIM(c2.c2_sequen)
-                                 AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
-                                      AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
-                                      AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c5.c5_cliente)
-                                      AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
-            ${whereClause}
-        `;
-        const pgResult = await pgClient.query(pgQuery, queryParams);
-        const ops = pgResult.rows;
+            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num)=TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod)=TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
+            ${pgWhere}
+            ORDER BY c2.c2_num, c2.c2_item LIMIT 10000
+        `);
+        const opRows = pgResult.rows;
 
-        // === INÍCIO: Buscar datas do planejamento no MySQL (app_production_planning) ===
-        const opNums = [...new Set(ops.map(o => o.op_num))];
-        if (opNums.length > 0) {
-            const [planRows] = await mysqlPool.query(`
-                SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim 
-                FROM app_production_planning 
-                WHERE op_numero IN (?)
-            `, [opNums]);
-            
-            const planMap = {};
-            const planMapLegacy = {}; // Mapa para fallback O(1)
-            for (const row of planRows) {
-                const op = row.op_numero ? row.op_numero.trim() : '';
-                const it = row.op_item ? row.op_item.trim() : '';
-                const sq = row.op_sequencia ? row.op_sequencia.trim() : '';
-                const opc = row.operacao_codigo ? row.operacao_codigo.trim() : '';
-                const key = `${op}_${it}_${sq}_${opc}`;
-                planMap[key] = row;
-                // Guarda uma referência legada (op_opc)
-                planMapLegacy[`${op}_${opc}`] = row;
+        // Indice: op_num|item_op -> row
+        const opMap = {};
+        for (const r of opRows) opMap[`${r.op_num}|${r.item_op}`] = r;
+
+        // PASSO 2: Buscar roteiro (sg2010) por produto+operacao
+        const distinctProds = [...new Set(opRows.map(r => r.produto).filter(Boolean))];
+        const routingMap = {}; // { produto: { operac: { recurso_codigo, recurso_descri, tempo } } }
+        if (distinctProds.length > 0) {
+            const routingParams = [distinctProds];
+            let routingFilter = '';
+            if (recurso) {
+                routingParams.push(`%${recurso.toUpperCase().trim()}%`);
+                routingFilter = ` AND (TRIM(g2.g2_recurso) LIKE $2 OR UPPER(TRIM(h1.h1_descri)) LIKE $2)`;
             }
-
-            const formatMySqlDateToYYYYMMDD = (val) => {
-                if (!val) return '';
-                if (typeof val === 'string') return val.replace(/-/g, '');
-                if (val instanceof Date) {
-                    const y = val.getFullYear();
-                    const m = String(val.getMonth() + 1).padStart(2, '0');
-                    const d = String(val.getDate()).padStart(2, '0');
-                    return `${y}${m}${d}`;
-                }
-                return '';
-            };
-            
-            for (const op of ops) {
-                const opn = op.op_num ? op.op_num.trim() : '';
-                const itn = op.item_op ? op.item_op.trim() : '01';
-                const sqn = op.sequen ? op.sequen.trim() : '001';
-                const opcn = op.operacao ? op.operacao.trim() : '';
-                const key = `${opn}_${itn}_${sqn}_${opcn}`;
-                const legacyKey = `${opn}_${opcn}`;
-                
-                let planData = planMap[key];
-                
-                // Fallback para mapeamento antigo em O(1)
-                if (!planData && planMapLegacy[legacyKey]) {
-                    planData = planMapLegacy[legacyKey];
-                }
-
-                if (planData) {
-                    const pInicio = planData.data_planejada_inicio;
-                    const pFim = planData.data_planejada_fim;
-                    
-                    if (pInicio) {
-                        op.data_planejada = formatMySqlDateToYYYYMMDD(pInicio);
-                    }
-                    if (pFim) {
-                        op.data_planejada_final = formatMySqlDateToYYYYMMDD(pFim);
-                    }
-                }
+            const pgRouting = await pgClient.query(`
+                SELECT TRIM(g2.g2_produto) prod, TRIM(g2.g2_operac) operac,
+                       TRIM(g2.g2_recurso) recurso, g2.g2_tempad tempo,
+                       TRIM(h1.h1_descri) recurso_descri
+                FROM public.sg2010 g2
+                LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo)=TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_,'') IN ('',' ')
+                WHERE TRIM(g2.g2_produto) = ANY($1)
+                  AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                  ${routingFilter}
+            `, routingParams);
+            for (const r of pgRouting.rows) {
+                if (!routingMap[r.prod]) routingMap[r.prod] = {};
+                routingMap[r.prod][r.operac] = { recurso_codigo: r.recurso, recurso_descri: r.recurso_descri || r.recurso, tempo: parseFloat(r.tempo) || 0 };
             }
         }
 
-        // === INÍCIO: Buscar Apontamentos de Produção (app_production_appointments) ===
+        // PASSO 3: Planejamento MySQL
+        const opNums = [...new Set(opRows.map(r => r.op_num).filter(Boolean))];
+        let planRows = [];
+        if (opNums.length > 0) {
+            for (let i = 0; i < opNums.length; i += 500) {
+                const chunk = opNums.slice(i, i + 500);
+                const [rows] = await mysqlPool.query(`SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim FROM app_production_planning WHERE op_numero IN (?)`, [chunk]);
+                planRows = planRows.concat(rows);
+            }
+        }
+
+        // PASSO 4: Apontamentos MySQL
         const apptsMap = {};
         if (opNums.length > 0) {
-            const chunkSize = 1000;
-            for (let i = 0; i < opNums.length; i += chunkSize) {
-                const chunk = opNums.slice(i, i + chunkSize);
-                const placeholders = chunk.map(() => '?').join(',');
-                const [mysqlRows] = await mysqlPool.query(`
-                    SELECT
-                        op_numero,
-                        op_item,
-                        op_sequencia,
-                        operacao_codigo,
-                        SUM(quantidade) AS total_produzido
-                    FROM app_production_appointments
-                    WHERE op_numero IN (${placeholders})
-                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-                `, chunk);
-
-                for (const a of mysqlRows) {
-                    const opn = a.op_numero ? a.op_numero.trim() : '';
-                    const itn = a.op_item ? a.op_item.trim() : '01';
-                    const sqn = a.op_sequencia ? a.op_sequencia.trim() : '001';
-                    const opcn = a.operacao_codigo ? a.operacao_codigo.trim() : '';
-                    const k = `${opn}_${itn}_${sqn}_${opcn}`;
-                    apptsMap[k] = Number(a.total_produzido) || 0;
+            for (let i = 0; i < opNums.length; i += 500) {
+                const chunk = opNums.slice(i, i + 500);
+                const ph = chunk.map(() => '?').join(',');
+                const [rows] = await mysqlPool.query(`SELECT op_numero, op_item, operacao_codigo, SUM(quantidade) AS total FROM app_production_appointments WHERE op_numero IN (${ph}) GROUP BY op_numero, op_item, operacao_codigo`, chunk);
+                for (const a of rows) {
+                    apptsMap[`${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.operacao_codigo||'').trim()}`] = Number(a.total) || 0;
                 }
             }
         }
-        // === FIM: Buscar Apontamentos ===
-        // 2. Fetch local capacity configurations
-        const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
-        const configMap = {};
-        mysqlResult.forEach(row => {
-            configMap[row.recurso_codigo] = row;
-        });
 
-        // 2b. Fetch inactive sales orders to exclude them
+        // PASSO 5: Configs
+        const [capRows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
+        const configMap = {};
+        capRows.forEach(r => { configMap[r.recurso_codigo] = r; });
         const [inativosResult] = await mysqlPool.query('SELECT pedido_numero FROM app_pedidos_inativos');
         const inativosSet = new Set(inativosResult.map(r => r.pedido_numero.trim()));
 
-        // 3. Process and aggregate data
-        const aggregated = {}; // Format: { date: { resource_code: { resource_desc, consumed_minutes, capacity, occupation_percent } } }
-
-        for (const op of ops) {
-            // Ignore OPs tied to an inactive sales order
-            // OPs sem pedido (intermediárias) devem entrar no cálculo de ocupação
-            if (op.pedido && inativosSet.has(op.pedido)) {
-                continue;
+        const fmtDate = (val) => {
+            if (!val) return '';
+            if (typeof val === 'string') return val.replace(/-/g,'').substring(0,8);
+            if (val instanceof Date) {
+                return `${val.getFullYear()}${String(val.getMonth()+1).padStart(2,'0')}${String(val.getDate()).padStart(2,'0')}`;
             }
+            return '';
+        };
 
-            const resCode = op.recurso_codigo;
+        // PASSO 6: Agregar via planning MySQL como fonte primaria
+        const aggregated = {};
+        for (const plan of planRows) {
+            const opn  = (plan.op_numero       || '').trim();
+            const itn  = (plan.op_item         || '').trim();
+            const opcn = (plan.operacao_codigo || '').trim();
+            const pIni = fmtDate(plan.data_planejada_inicio);
+            const pFim = fmtDate(plan.data_planejada_fim);
+            if (!pIni) continue;
+            if (data_inicio && pIni < data_inicio.replace(/-/g,'')) continue;
+            if (data_fim    && pIni > data_fim.replace(/-/g,''))    continue;
+
+            const opRow = opMap[`${opn}|${itn}`];
+            if (!opRow) continue; // OP nao existe no Protheus (deletada/concluida)
+            if (opRow.pedido && inativosSet.has(opRow.pedido)) continue;
+
+            const prodRouting = routingMap[opRow.produto] || {};
+            const routeEntry  = prodRouting[opcn];
+            if (!routeEntry && recurso) continue; // Filtro de recurso ativo mas sem routing
+            if (!routeEntry) continue; // Sem routing configurado, nao ha recurso para calcular
+
+            const resCode = routeEntry.recurso_codigo;
             if (!resCode) continue;
-
-            const dateKey = op.data_planejada; // YYYYMMDD (pode ter sido sobrescrito pelo MySQL acima)
-            
-            // FIX: Descartar OPs sem data planejada válida após o merge com MySQL.
-            if (!dateKey || dateKey.trim() === '') continue;
-            
-            // Filtro de data via JavaScript (para respeitar o override do MySQL)
-            if (data_inicio && dateKey < data_inicio.replace(/-/g, '')) continue;
-            if (data_fim && dateKey > data_fim.replace(/-/g, '')) continue;
+            if (recurso && !resCode.toUpperCase().includes(recurso.toUpperCase().trim())) continue;
 
             const conf = configMap[resCode] || {};
-            
-            // FIX: g2_tempad no Protheus é em HORAS/peça. Converter para MINUTOS.
-            // Ignorar valor padrão/nulo do Protheus (0.01 horas ≈ 0.6min — considerado placeholder).
-            let unitTimeMinutes;
-            const g2_tempo_horas = parseFloat(op.tempo_operacao_g2);
-            if (g2_tempo_horas && g2_tempo_horas > 0.01) {
-                // Converte horas → minutos
-                unitTimeMinutes = g2_tempo_horas * 60;
+
+            // g2_tempad do Protheus está em HORAS/peça → converter para MINUTOS/peça
+            // Threshold 0.01h (0.6min) = placeholder do Protheus, usar fallback MySQL
+            const g2_horas = parseFloat(routeEntry.tempo) || 0;
+            let unitTimeMin; // SEMPRE em minutos
+            if (g2_horas > 0.01) {
+                unitTimeMin = g2_horas * 60; // horas → minutos
             } else {
-                // Fallback: tempo padrão cadastrado no MySQL (já em minutos)
-                unitTimeMinutes = parseFloat(conf.tempo_padrao_minutos) || 0;
-            }
-            
-            const opn = op.op_num ? op.op_num.trim() : '';
-            const itn = op.item_op ? op.item_op.trim() : '01';
-            const sqn = op.sequen ? op.sequen.trim() : '001';
-            const opcn = op.operacao ? op.operacao.trim() : '';
-            const apptKey = `${opn}_${itn}_${sqn}_${opcn}`;
-            const operacao_feita = Number(apptsMap[apptKey]) || 0;
-
-            // Prioriza apontamento específico da operação (MySQL) por ser mais preciso.
-            // Usa qtde_feita do Protheus (c2_quje) apenas como fallback quando não há apontamento no MySQL.
-            // Math.max() foi removido: poderia inflar a execução (ex: c2_quje=100 peças da OP inteira
-            // vs 30 peças da operação específica → usava 100, tornando qtde_pendente negativa).
-            const qtde_feita_real = operacao_feita > 0 ? operacao_feita : (Number(op.qtde_feita) || 0);
-            const qtde_total = Number(op.qtde) || 0;
-            const pendingQty = Math.max(0, qtde_total - qtde_feita_real);
-
-            const minutos_totais = qtde_total * unitTimeMinutes;
-            const minutos_executados = Math.min(qtde_feita_real, qtde_total) * unitTimeMinutes;
-            const minutos_pendentes = pendingQty * unitTimeMinutes;
-            
-            const capacity = conf.capacidade_diaria_minutos || 0;
-
-            if (!aggregated[dateKey]) {
-                aggregated[dateKey] = {};
+                unitTimeMin = parseFloat(conf.tempo_padrao_minutos) || 0; // já em minutos
             }
 
-            if (!aggregated[dateKey][resCode]) {
-                aggregated[dateKey][resCode] = {
-                    recurso_codigo: resCode,
-                    recurso_descri: op.recurso_descri || 'Desconhecido',
-                    // minutos_consumidos = carga TOTAL planejada (pendente + executado)
-                    // É a base correta para taxa_ocupacao: mede quanto o recurso foi/será carregado
-                    minutos_consumidos: 0,
-                    minutos_totais: 0,
-                    minutos_executados: 0,
-                    minutos_pendentes: 0,
-                    capacidade_diaria: capacity,
-                    taxa_ocupacao: 0,
-                    percentual_executado: 0,
-                    ops: []
+            const apptKey = `${opn}|${itn}|${opcn}`;
+            const qtde_apontada = apptsMap[apptKey] || 0;
+            const qtde_total    = Number(opRow.qtde) || 0;
+            // Prioriza apontamento específico da operação (MySQL); fallback: c2_quje do Protheus
+            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (Number(opRow.qtde_feita) || 0);
+            const qtde_pendente = Math.max(0, qtde_total - qtde_feita);
+
+            // Tudo em MINUTOS
+            const min_totais = qtde_total                           * unitTimeMin;
+            const min_exec   = Math.min(qtde_feita, qtde_total)    * unitTimeMin;
+            const min_pend   = qtde_pendente                        * unitTimeMin;
+            const capacity   = conf.capacidade_diaria_minutos || 0;
+
+            if (!aggregated[pIni]) aggregated[pIni] = {};
+            if (!aggregated[pIni][resCode]) {
+                aggregated[pIni][resCode] = {
+                    recurso_codigo: resCode, recurso_descri: routeEntry.recurso_descri,
+                    // minutos_consumidos = carga TOTAL planejada (base da taxa_ocupacao)
+                    minutos_consumidos: 0, minutos_totais: 0, minutos_executados: 0, minutos_pendentes: 0,
+                    capacidade_diaria: capacity, taxa_ocupacao: 0, percentual_executado: 0, ops: []
                 };
             }
-
-            // Carga total planejada = base da taxa de ocupação (reflete o quanto o recurso foi comprometido)
-            aggregated[dateKey][resCode].minutos_consumidos += minutos_totais;
-            aggregated[dateKey][resCode].minutos_totais    += minutos_totais;
-            aggregated[dateKey][resCode].minutos_executados += minutos_executados;
-            aggregated[dateKey][resCode].minutos_pendentes  += minutos_pendentes;
-            
-            aggregated[dateKey][resCode].ops.push({
-                op: op.op_num,
-                operacao: op.operacao,
-                item_op: op.item_op,
-                sequen: op.sequen,
-                recurso: resCode,
-                produto: op.produto,
-                pedido: op.pedido || '',
-                item_pedido: op.item_pedido || '',
-                cliente: op.cliente_nome || '',
-                data_planejada: op.data_planejada || '',
-                data_planejada_final: op.data_planejada_final || '',
-                qtde_total: op.qtde,
-                qtde_feita: qtde_feita_real,
-                qtde_pendente: pendingQty,
-                minutos_totais_op: minutos_totais,
-                minutos_executados_op: minutos_executados,
-                minutos_pendentes_op: minutos_pendentes,
-                minutos_estimados: minutos_pendentes
+            const bucket = aggregated[pIni][resCode];
+            // taxa_ocupacao = total planejado / capacidade → mede comprometimento real do recurso
+            bucket.minutos_consumidos += min_totais;
+            bucket.minutos_totais     += min_totais;
+            bucket.minutos_executados += min_exec;
+            bucket.minutos_pendentes  += min_pend;
+            bucket.ops.push({
+                op: opn, operacao: opcn, item_op: itn, sequen: (plan.op_sequencia||'').trim(),
+                recurso: resCode, produto: opRow.produto, pedido: opRow.pedido || '',
+                item_pedido: opRow.item_pedido || '', cliente: opRow.cliente_nome || '',
+                data_planejada: pIni, data_planejada_final: pFim,
+                qtde_total, qtde_feita, qtde_pendente,
+                tempo_unitario_min: unitTimeMin,
+                minutos_totais_op: min_totais, minutos_executados_op: min_exec,
+                minutos_pendentes_op: min_pend, minutos_estimados: min_pend
             });
         }
 
-        // Calculate final percentages and flatten structure for easier frontend consumption
         const reportList = [];
         Object.keys(aggregated).forEach(dateStr => {
             Object.keys(aggregated[dateStr]).forEach(resCode => {
                 const data = aggregated[dateStr][resCode];
-                // taxa_ocupacao = carga total planejada / capacidade
-                // Representa o quanto o recurso está comprometido no dia (independente do que foi executado)
-                if (data.capacidade_diaria > 0) {
-                    data.taxa_ocupacao = (data.minutos_consumidos / data.capacidade_diaria) * 100;
-                } else {
-                    data.taxa_ocupacao = data.minutos_consumidos > 0 ? 999 : 0;
-                }
-
-                // percentual_executado = quanto do planejado foi concluído
-                if (data.minutos_totais > 0) {
+                data.taxa_ocupacao = data.capacidade_diaria > 0
+                    ? (data.minutos_consumidos / data.capacidade_diaria) * 100
+                    : (data.minutos_consumidos > 0 ? 999 : 0);
+                if (data.minutos_totais > 0)
                     data.percentual_executado = (data.minutos_executados / data.minutos_totais) * 100;
-                }
-
-                // Normaliza dateStr para YYYY-MM-DD (aceita tanto YYYYMMDD quanto YYYY-MM-DD)
                 let formattedDate = dateStr;
-                if (dateStr.length === 8 && !dateStr.includes('-')) {
-                    formattedDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-                } else if (dateStr.length > 10) {
-                    formattedDate = dateStr.substring(0, 10); // trunca timestamp se vier com hora
-                }
-
-                reportList.push({
-                    data: formattedDate,
-                    ...data
-                });
+                if (dateStr.length === 8 && !dateStr.includes('-'))
+                    formattedDate = `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`;
+                reportList.push({ data: formattedDate, ...data });
             });
         });
-
-        // Sort by date ascending, then occupation descending
-        reportList.sort((a, b) => {
-            if (a.data < b.data) return -1;
-            if (a.data > b.data) return 1;
-            return b.taxa_ocupacao - a.taxa_ocupacao;
-        });
-
+        reportList.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : b.taxa_ocupacao - a.taxa_ocupacao);
         res.json(reportList);
     } catch (error) {
-        console.error('❌ [TAXA OCUPAÇÃO] Error:', error);
-        res.status(500).json({ error: 'Erro ao gerar taxa de ocupação: ' + error.message });
+        console.error('? [TAXA OCUPACAO] Error:', error);
+
+        res.status(500).json({ error: 'Erro ao gerar taxa de ocupacao: ' + error.message });
     } finally {
         if (pgClient) pgClient.release();
     }
@@ -414,209 +292,115 @@ router.get('/taxa-ocupacao', async (req, res) => {
 // Atualizar Datas Planejadas da OP
 router.put('/op/:op/dates', async (req, res) => {
     const { op } = req.params;
-    const { data_inicio, data_fim, operacao_codigo, item_op, sequen, pedido, item_pedido, produto } = req.body; // YYYYMMDD
+    const { data_inicio, data_fim, operacao_codigo, item_op, sequen, pedido, item_pedido, produto } = req.body;
     let pgClient = null;
 
     try {
-        console.log(`[UPDATE OP DATES] Start for OP: ${op}`, req.body);
         if (!op || (!data_inicio && !data_fim)) {
-            return res.status(400).json({ error: 'OP e pelo menos uma data são obrigatórios.' });
+            return res.status(400).json({ error: 'OP e pelo menos uma data sao obrigatorios.' });
         }
-
         pgClient = await db.connect();
-        console.log(`[UPDATE OP DATES] Connected to PG`);
 
-        // Busca os itens/sequencias/operações da OP no Postgres para persistir no MySQL
         let pgQuery = `
             SELECT 
-                TRIM(c2.c2_num) AS op_num,
-                TRIM(c2.c2_item) AS item_op,
-                TRIM(c2.c2_sequen) AS sequen,
-                TRIM(g2.g2_operac) AS operacao
+                TRIM(c2.c2_num)     AS op_num,
+                TRIM(c2.c2_item)    AS item_op,
+                TRIM(c2.c2_sequen)  AS sequen,
+                TRIM(g2.g2_operac)  AS operacao,
+                TRIM(g2.g2_recurso) AS recurso,
+                TRIM(c2.c2_produto) AS produto
             FROM public.sc2010 c2
-            JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto) 
+            JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto)
                                  AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
             WHERE TRIM(c2.c2_num) = $1
               AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
         `;
-        
         const queryParams = [op];
-        
-        if (item_op) {
-            queryParams.push(item_op.trim());
-            pgQuery += ` AND TRIM(c2.c2_item) = $${queryParams.length}`;
-        }
-        if (sequen) {
-            queryParams.push(sequen.trim());
-            pgQuery += ` AND TRIM(c2.c2_sequen) = $${queryParams.length}`;
-        }
-        if (operacao_codigo) {
-            queryParams.push(operacao_codigo.trim());
-            pgQuery += ` AND TRIM(g2.g2_operac) = $${queryParams.length}`;
-        }
-        if (pedido) {
-            queryParams.push(pedido.trim());
-            pgQuery += ` AND TRIM(c2.c2_pedido) = $${queryParams.length}`;
-        }
-        if (item_pedido) {
-            queryParams.push(item_pedido.trim());
-            pgQuery += ` AND TRIM(c2.c2_itempv) = $${queryParams.length}`;
-        }
-        if (produto) {
-            queryParams.push(produto.trim());
-            pgQuery += ` AND TRIM(c2.c2_produto) = $${queryParams.length}`;
-        }
+        if (item_op)         { queryParams.push(item_op.trim());         pgQuery += ` AND TRIM(c2.c2_item)   = $${queryParams.length}`; }
+        if (sequen)          { queryParams.push(sequen.trim());          pgQuery += ` AND TRIM(c2.c2_sequen) = $${queryParams.length}`; }
+        if (operacao_codigo) { queryParams.push(operacao_codigo.trim()); pgQuery += ` AND TRIM(g2.g2_operac) = $${queryParams.length}`; }
+        if (pedido)          { queryParams.push(pedido.trim());          pgQuery += ` AND TRIM(c2.c2_pedido) = $${queryParams.length}`; }
+        if (item_pedido)     { queryParams.push(item_pedido.trim());     pgQuery += ` AND TRIM(c2.c2_itempv) = $${queryParams.length}`; }
+        if (produto)         { queryParams.push(produto.trim());         pgQuery += ` AND TRIM(c2.c2_produto) = $${queryParams.length}`; }
 
         const pgResult = await pgClient.query(pgQuery, queryParams);
-
         if (pgResult.rows.length === 0) {
-            return res.status(404).json({ error: 'OP não encontrada ou sem operações associadas no roteiro.' });
+            return res.status(404).json({ error: 'OP nao encontrada ou sem operacoes no roteiro.' });
         }
 
-        const formattedStart = data_inicio ? `${data_inicio.substring(0,4)}-${data_inicio.substring(4,6)}-${data_inicio.substring(6,8)}` : null;
-        const formattedEnd = data_fim ? `${data_fim.substring(0,4)}-${data_fim.substring(4,6)}-${data_fim.substring(6,8)}` : null;
-        
+        const fmtISO = (yyyymmdd) => yyyymmdd ? `${yyyymmdd.substring(0,4)}-${yyyymmdd.substring(4,6)}-${yyyymmdd.substring(6,8)}` : null;
+        const formattedStart = fmtISO(data_inicio);
+        const formattedEnd   = fmtISO(data_fim);
         const usuario = req.user?.login || req.user?.username || 'pcp_refinado';
 
-        // 1. Fetch existing data for history
-        const [existingPlanRows] = await mysqlPool.query(`
-            SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
-            FROM app_production_planning
-            WHERE op_numero = ?
-        `, [op]);
-
+        const [existingRows] = await mysqlPool.query(`SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim FROM app_production_planning WHERE op_numero = ?`, [op]);
         const existingMap = {};
-        for (const row of existingPlanRows) {
-            const o = row.op_numero ? row.op_numero.trim() : '';
-            const i = row.op_item ? row.op_item.trim() : '';
-            const s = row.op_sequencia ? row.op_sequencia.trim() : '';
-            const c = row.operacao_codigo ? row.operacao_codigo.trim() : '';
-            existingMap[`${o}_${i}_${s}_${c}`] = row;
-        }
+        existingRows.forEach(r => { existingMap[`${(r.op_numero||'').trim()}_${(r.op_item||'').trim()}_${(r.op_sequencia||'').trim()}_${(r.operacao_codigo||'').trim()}`] = r; });
 
-        const mysqlValues = [];
-        const historicoValues = [];
+        const mysqlValues = [], historicoValues = [];
         const hoje = new Date();
+        const formatOld = (d) => {
+            if (!d) return null;
+            if (typeof d === 'string') return d.substring(0,10);
+            if (d instanceof Date) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return null;
+        };
 
         pgResult.rows.forEach(row => {
-            const mysqlOp = row.op_num;
-            const mysqlItemOp = row.item_op || '01';
-            const mysqlSequen = row.sequen || '001';
-            const mysqlOpCodigo = row.operacao || '01';
-
-            mysqlValues.push([
-                mysqlOp, 
-                mysqlItemOp, 
-                mysqlSequen, 
-                mysqlOpCodigo,
-                formattedStart,
-                formattedEnd,
-                usuario,
-                'Atualização via Painel Taxa de Ocupação'
-            ]);
-
-            const key = `${mysqlOp}_${mysqlItemOp}_${mysqlSequen}_${mysqlOpCodigo}`;
-            const existing = existingMap[key];
-            const oldStart = existing?.data_planejada_inicio || null;
-            const oldEnd = existing?.data_planejada_fim || null;
-
-            const formatOld = (d) => {
-                if (!d) return null;
-                if (typeof d === 'string') return d.substring(0,10);
-                if (d instanceof Date) {
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const dNum = String(d.getDate()).padStart(2, '0');
-                    return `${y}-${m}-${dNum}`;
-                }
-                return null;
-            };
-            const fOldStart = formatOld(oldStart);
-            const fOldEnd = formatOld(oldEnd);
-
-            if (fOldStart !== formattedStart || fOldEnd !== formattedEnd) {
-                const mudou_de = `Início: ${fOldStart || 'N/A'} | Fim: ${fOldEnd || 'N/A'}`;
-                const mudou_para = `Início: ${formattedStart || 'N/A'} | Fim: ${formattedEnd || 'N/A'}`;
-                
-                historicoValues.push([
-                    mysqlOp,
-                    mysqlOpCodigo,
-                    usuario,
-                    hoje,
-                    mudou_de,
-                    mudou_para,
-                    'Painel Taxa de Ocupação'
-                ]);
+            const myOp   = row.op_num;
+            const myItem = row.item_op  || '01';
+            const mySeq  = row.sequen   || '001';
+            const myOpc  = row.operacao || '01';
+            mysqlValues.push([myOp, myItem, mySeq, myOpc, row.recurso || null, row.produto || null, formattedStart, formattedEnd, usuario, 'Atualizacao via Taxa de Ocupacao']);
+            const existing = existingMap[`${myOp}_${myItem}_${mySeq}_${myOpc}`];
+            const fOldS = formatOld(existing?.data_planejada_inicio);
+            const fOldE = formatOld(existing?.data_planejada_fim);
+            if (fOldS !== formattedStart || fOldE !== formattedEnd) {
+                historicoValues.push([myOp, myOpc, usuario, hoje, `Inicio: ${fOldS||'N/A'} | Fim: ${fOldE||'N/A'}`, `Inicio: ${formattedStart||'N/A'} | Fim: ${formattedEnd||'N/A'}`, 'Painel Taxa de Ocupacao']);
             }
         });
-        
-        const mysqlQuery = `
+
+        await mysqlPool.query(`
             INSERT INTO app_production_planning
-                (op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim, usuario_planejador, observacao_lote)
+                (op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo,
+                 data_planejada_inicio, data_planejada_fim, usuario_planejador, observacao_lote)
             VALUES ?
             ON DUPLICATE KEY UPDATE
+                recurso_codigo        = COALESCE(VALUES(recurso_codigo),        recurso_codigo),
+                produto_codigo        = COALESCE(VALUES(produto_codigo),        produto_codigo),
                 data_planejada_inicio = IF(VALUES(data_planejada_inicio) IS NOT NULL, VALUES(data_planejada_inicio), data_planejada_inicio),
-                data_planejada_fim = IF(VALUES(data_planejada_fim) IS NOT NULL, VALUES(data_planejada_fim), data_planejada_fim),
-                usuario_planejador = VALUES(usuario_planejador),
-                observacao_lote = VALUES(observacao_lote)
-        `;
-        await mysqlPool.query(mysqlQuery, [mysqlValues]);
+                data_planejada_fim    = IF(VALUES(data_planejada_fim)    IS NOT NULL, VALUES(data_planejada_fim),    data_planejada_fim),
+                usuario_planejador    = VALUES(usuario_planejador),
+                observacao_lote       = VALUES(observacao_lote)
+        `, [mysqlValues]);
 
-        // Registrar Histórico
-        await mysqlPool.query(`
-            CREATE TABLE IF NOT EXISTS app_pcp_historico_revisao (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                op_numero VARCHAR(50),
-                operacao_codigo VARCHAR(50),
-                usuario VARCHAR(100),
-                data_alteracao DATETIME,
-                mudou_de TEXT,
-                mudou_para TEXT,
-                origem VARCHAR(100)
-            )
-        `);
-
+        await mysqlPool.query(`CREATE TABLE IF NOT EXISTS app_pcp_historico_revisao (id INT AUTO_INCREMENT PRIMARY KEY, op_numero VARCHAR(50), operacao_codigo VARCHAR(50), usuario VARCHAR(100), data_alteracao DATETIME, mudou_de TEXT, mudou_para TEXT, origem VARCHAR(100))`);
         if (historicoValues.length > 0) {
-            await mysqlPool.query(`
-                INSERT INTO app_pcp_historico_revisao
-                    (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem)
-                VALUES ?
-            `, [historicoValues]);
+            await mysqlPool.query(`INSERT INTO app_pcp_historico_revisao (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem) VALUES ?`, [historicoValues]);
         }
 
-        res.json({ message: 'Datas da OP atualizadas com sucesso.', op });
+        res.json({ message: 'Datas atualizadas com sucesso.', op });
     } catch (error) {
-        console.error('❌ [UPDATE OP DATES] Error:', error);
-        res.status(500).json({ error: 'Erro ao atualizar datas da OP: ' + error.message });
+        console.error('ERROR [UPDATE OP DATES]:', error);
+        res.status(500).json({ error: 'Erro ao atualizar datas: ' + error.message });
     } finally {
         if (pgClient) pgClient.release();
     }
 });
 
-// Obter Histórico de Revisão
+// Obter Historico de Revisao
 router.get('/historico', async (req, res) => {
     try {
-        const [rows] = await mysqlPool.query(`
-            SELECT id, op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem
-            FROM app_pcp_historico_revisao
-            ORDER BY data_alteracao DESC
-            LIMIT 200
-        `);
+        const [rows] = await mysqlPool.query(`SELECT id, op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem FROM app_pcp_historico_revisao ORDER BY data_alteracao DESC LIMIT 200`);
         res.json(rows);
     } catch (error) {
-        if (error.code === 'ER_NO_SUCH_TABLE') {
-            return res.json([]);
-        }
-        console.error('❌ [HISTORICO REVISAO] Error:', error);
-        res.status(500).json({ error: 'Erro ao buscar histórico: ' + error.message });
+        if (error.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+        res.status(500).json({ error: 'Erro ao buscar historico: ' + error.message });
     }
 });
 
-
-
 // ==========================================
 // ROTA: Rastreabilidade (Super Query)
-// ==========================================
 router.get('/rastreabilidade', async (req, res) => {
     let pgClient;
     try {
