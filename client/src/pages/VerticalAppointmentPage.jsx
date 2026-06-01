@@ -549,6 +549,11 @@ export default function VerticalAppointmentPage() {
                                                     <div className="min-w-0">
                                                         <div className="font-bold text-slate-800 text-xs truncate" title={row.produto}>{row.produto}</div>
                                                         <div className="text-xs text-slate-500 truncate mt-0.5" title={row.desc_produto}>{row.desc_produto}</div>
+                                                        {row.componente_buscado && (
+                                                            <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" title={`OP encontrada via BOM: contém ${row.componente_buscado} como componente`}>
+                                                                ⤷ {row.componente_buscado}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     {row.tem_arquivos ? (
                                                         <div className="relative group">

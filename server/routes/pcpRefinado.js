@@ -580,4 +580,404 @@ router.get('/historico', async (req, res) => {
     }
 });
 
+
+
+// ==========================================
+// ROTA: Rastreabilidade (Super Query)
+// ==========================================
+router.get('/rastreabilidade', async (req, res) => {
+    let pgClient;
+    try {
+        pgClient = await db.connect();
+        
+        const { pedido, cliente, produto, dataInicial, dataFinal, dateType, only_active } = req.query;
+        let whereClauses = ["COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')"];
+        
+        if (only_active !== 'false') {
+             whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
+        }
+        
+        if (pedido) whereClauses.push(`TRIM(c5.c5_num) ILIKE '%${pedido.trim()}%'`);
+        if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
+        if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
+        
+        if (dataInicial && dataFinal) {
+            const di = dataInicial.replace(/-/g, '');
+            const df = dataFinal.replace(/-/g, '');
+            if (dateType === 'entrega') {
+                whereClauses.push(`c6.c6_entreg BETWEEN '${di}' AND '${df}'`);
+            } else {
+                whereClauses.push(`c5.c5_emissao BETWEEN '${di}' AND '${df}'`);
+            }
+        }
+        
+        const whereSql = whereClauses.join(' AND ');
+
+        const pedidosQuery = `
+            SELECT 
+                TRIM(c5.c5_num) AS pedido, 
+                TRIM(a1.a1_nome) AS cliente, 
+                TRIM(c6.c6_entreg) AS data_entrega,
+                TRIM(c6.c6_item) AS item,
+                TRIM(c6.c6_produto) AS produto,
+                TRIM(c6.c6_descri) AS descricao,
+                c6.c6_qtdven AS qtd_vendida,
+                c6.c6_qtdent AS qtd_entregue
+            FROM public.sc6010 c6
+            JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c6.c6_num) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE ${whereSql}
+            ORDER BY c6.c6_entreg ASC
+            LIMIT 50
+        `;
+        const pedidosResult = await pgClient.query(pedidosQuery);
+        
+        if (pedidosResult.rows.length === 0) {
+            return res.json([]);
+        }
+
+        const produtosSet = new Set();
+        const pedidosMap = {}; 
+        
+        for (const row of pedidosResult.rows) {
+            produtosSet.add(row.produto);
+            if (!pedidosMap[row.pedido]) {
+                const ano = row.data_entrega.substring(0,4);
+                const mes = row.data_entrega.substring(4,6);
+                const dia = row.data_entrega.substring(6,8);
+                
+                pedidosMap[row.pedido] = {
+                    pedido: row.pedido,
+                    cliente: row.cliente,
+                    data_entrega: dia && mes && ano ? `${dia}/${mes}/${ano}` : row.data_entrega,
+                    itens: []
+                };
+            }
+            const qtdVendida = Number(row.qtd_vendida) || 0;
+            const qtdFaturada = Number(row.qtd_entregue) || 0;
+            pedidosMap[row.pedido].itens.push({
+                item: row.item,
+                produto: row.produto,
+                descricao: row.descricao,
+                qtd_vendida: qtdVendida,
+                qtd_faturada: qtdFaturada,
+                qtd_a_faturar: Math.max(0, qtdVendida - qtdFaturada),
+                percentual_evolucao: qtdVendida > 0 ? ((qtdFaturada / qtdVendida) * 100).toFixed(1) : 0,
+                qtd_estoque: 0,
+                status_global: 'warning',
+                mensagem: 'Calculando...',
+                ops: []
+            });
+        }
+
+        const arrayProdutos = Array.from(produtosSet);
+        
+        if (arrayProdutos.length > 0) {
+            const placeholders = arrayProdutos.map((_, i) => `$${i+1}`).join(',');
+            const estoqueQuery = `
+                SELECT TRIM(b2_cod) as produto, SUM(b2_qatu) as qtd_estoque
+                FROM public.sb2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(b2_cod) IN (${placeholders})
+                GROUP BY TRIM(b2_cod)
+            `;
+            const estoqueResult = await pgClient.query(estoqueQuery, arrayProdutos);
+            const estoqueMap = {};
+            for (const row of estoqueResult.rows) {
+                estoqueMap[row.produto] = Number(row.qtd_estoque) || 0;
+            }
+            
+            for (const key in pedidosMap) {
+                for (const item of pedidosMap[key].itens) {
+                    const est = estoqueMap[item.produto] || 0;
+                    item.qtd_estoque = est;
+                    if (est >= (item.qtd_vendida - item.qtd_entregue)) {
+                        item.status_global = 'success';
+                        item.mensagem = 'Pronto para Faturar (Saldo em Estoque)';
+                    } else {
+                        item.status_global = 'warning';
+                        item.mensagem = 'Em Processamento / Produção';
+                    }
+                }
+            }
+        }
+
+        const pFilter = Object.keys(pedidosMap).map(p => `'${p}'`).join(',');
+        const opsQuery = `
+            SELECT 
+                TRIM(c2.c2_num) AS op_num,
+                TRIM(c2.c2_item) AS op_item,
+                TRIM(c2.c2_sequen) AS op_seq,
+                TRIM(c2.c2_produto) AS produto,
+                c2.c2_quant AS qtd_op,
+                c2.c2_quje AS qtd_feita,
+                TRIM(c2.c2_pedido) AS original_pedido,
+                COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS pedido,
+                COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS itempv
+            FROM public.sc2010 c2
+            LEFT JOIN (
+                SELECT c2_num, MAX(c2_pedido) as c2_pedido, MAX(c2_itempv) as c2_itempv
+                FROM public.sc2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ') AND TRIM(c2_pedido) != ''
+                GROUP BY c2_num
+            ) root_op ON root_op.c2_num = c2.c2_num
+            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+              AND COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) IN (${pFilter})
+            ORDER BY op_num, op_item, op_seq
+        `;
+        const opsResult = await pgClient.query(opsQuery);
+        
+        const opsPorItemPedido = {}; 
+        const allOpProdutos = new Set();
+        
+        for (const op of opsResult.rows) {
+            allOpProdutos.add(op.produto);
+            const k = `${op.pedido}_${op.itempv}`;
+            if (!opsPorItemPedido[k]) opsPorItemPedido[k] = [];
+            
+            let statusOp = 'Não Iniciado';
+            if (op.qtd_feita >= op.qtd_op) statusOp = 'Concluído';
+            else if (op.qtd_feita > 0) statusOp = 'Em Andamento';
+
+            const formattedOp = {
+                op: op.op_num + op.op_item + op.op_seq,
+                op_raw: op.op_num,
+                produto: op.produto,
+                qtd_op: op.qtd_op,
+                qtd_feita: op.qtd_feita,
+                tipo: op.op_seq === '001' ? 'PAI' : 'FILHA', 
+                status_op: statusOp,
+                operacoes: [],
+                ops_filhas: []
+            };
+
+            if (op.original_pedido) {
+                // This is a TRUE parent OP (it has the sales order explicitly linked)
+                opsPorItemPedido[k].push(formattedOp);
+            } else {
+                // This is a sub-assembly (child OP). We must find its parent by op_num.
+                const parentOp = opsPorItemPedido[k].find(p => p.op_raw === op.op_num);
+                if (parentOp) {
+                    parentOp.ops_filhas.push(formattedOp);
+                } else {
+                    // Fallback if parent isn't found for some reason, just push it to the main array
+                    opsPorItemPedido[k].push(formattedOp);
+                }
+            }
+        }
+        
+        for (const key in pedidosMap) {
+            for (const item of pedidosMap[key].itens) {
+                const opKey = `${item.pedido || pedidosMap[key].pedido}_${item.item}`;
+                if (opsPorItemPedido[opKey]) {
+                    item.ops = opsPorItemPedido[opKey];
+                }
+            }
+        }
+
+        const arrayOpProdutos = Array.from(allOpProdutos);
+        if (arrayOpProdutos.length > 0) {
+            const placeholders = arrayOpProdutos.map((_, i) => `$${i+1}`).join(',');
+            const roteiroQuery = `
+                SELECT 
+                    TRIM(g2_produto) AS produto,
+                    TRIM(g2_operac) AS op_seq,
+                    TRIM(g2_recurso) AS recurso,
+                    TRIM(g2_descri) AS desc,
+                    g2_tempad,
+                    g2_setup
+                FROM public.sg2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2_produto) IN (${placeholders})
+                ORDER BY g2_operac
+            `;
+            const roteiroResult = await pgClient.query(roteiroQuery, arrayOpProdutos);
+            
+            // BUSCAR CAPACIDADES PADRÃO (FALLBACK)
+            const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos FROM app_recursos_capacidade');
+            const fallbackCapacidade = {};
+            mysqlResult.forEach(row => {
+                fallbackCapacidade[row.recurso_codigo] = Number(row.tempo_padrao_minutos) || 0;
+            });
+
+            const roteiroMap = {}; 
+            for (const rot of roteiroResult.rows) {
+                if (!roteiroMap[rot.produto]) roteiroMap[rot.produto] = [];
+                
+                let tempad = Number(rot.g2_tempad) || 0;
+                // Fallback para o valor configurado na tela de Capacidades se o roteiro vier zerado
+                // A tabela MySQL guarda em minutos, mas o roteiro e o painel somam em horas
+                if (tempad === 0 && fallbackCapacidade[rot.recurso]) {
+                    tempad = fallbackCapacidade[rot.recurso] / 60.0;
+                }
+
+                roteiroMap[rot.produto].push({
+                    op_seq: rot.op_seq,
+                    recurso: rot.recurso,
+                    desc: rot.desc || 'OPERACAO',
+                    tempo_padrao: tempad,
+                    tempo_setup: Number(rot.g2_setup) || 0,
+                    qtd_apontada: 0,
+                    qtd_total: 0,
+                    status: 'pendente'
+                });
+            }
+            
+            const mysqlPool = require('../services/mysqlService');
+            
+            // Get opCodes and opCodOperacoes to fetch from MySQL
+            const opCodes = [];
+            const opCodOperacoes = [];
+            for (const key in pedidosMap) {
+                for (const item of pedidosMap[key].itens) {
+                    for (const op of item.ops) {
+                        opCodes.push(op.op_raw); // op.op_raw contains just c2_num
+                        if (roteiroMap[op.produto]) {
+                            for (const r of roteiroMap[op.produto]) {
+                                opCodOperacoes.push(r.op_seq);
+                            }
+                        }
+                    }
+                }
+            }
+
+            const uniqueOpCodes = [...new Set(opCodes)];
+            const uniqueOpCodOperacoes = [...new Set(opCodOperacoes)];
+            
+            let appointments = [];
+            let plans = [];
+
+            if (uniqueOpCodes.length > 0 && uniqueOpCodOperacoes.length > 0) {
+                const opPlaceholders = uniqueOpCodes.map(() => '?').join(',');
+                const opOperacPlaceholders = uniqueOpCodOperacoes.map(() => '?').join(',');
+
+                const [aRows] = await mysqlPool.query(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                           SUM(quantidade) as total_produzido
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                `, [...uniqueOpCodes, ...uniqueOpCodOperacoes]);
+                appointments = aRows;
+
+                const [pRows] = await mysqlPool.query(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                           data_planejada_inicio, data_planejada_fim
+                    FROM app_production_planning
+                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+                `, [...uniqueOpCodes, ...uniqueOpCodOperacoes]);
+                plans = pRows;
+            }
+
+            for (const key in pedidosMap) {
+                for (const item of pedidosMap[key].itens) {
+                    for (const op of item.ops) {
+                        const processOp = (currentOp) => {
+                            const o_num = currentOp.op.substring(0, 6);
+                            const o_item = currentOp.op.substring(6, 8);
+                            const o_seq = currentOp.op.substring(8, 11);
+
+                            if (roteiroMap[currentOp.produto]) {
+                                currentOp.operacoes = roteiroMap[currentOp.produto].map(r => {
+                                    const a = appointments.find(appt =>
+                                        appt.op_numero === o_num &&
+                                        appt.op_item === o_item &&
+                                        appt.op_sequencia === o_seq &&
+                                        appt.operacao_codigo === r.op_seq
+                                    );
+                                    const p = plans.find(plan =>
+                                        plan.op_numero === o_num &&
+                                        plan.op_item === o_item &&
+                                        plan.op_sequencia === o_seq &&
+                                        plan.operacao_codigo === r.op_seq
+                                    );
+                                    
+                                    const qtd_total = currentOp.qtd_op;
+                                    const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
+                                    let status = 'pendente';
+                                    if (qtd_apontada >= qtd_total && qtd_total > 0) {
+                                        status = 'concluido';
+                                    } else if (qtd_apontada > 0) {
+                                        status = 'andamento';
+                                    }
+
+                                    return {
+                                        ...r,
+                                        qtd_total,
+                                        qtd_apontada,
+                                        tempo_previsto: (r.tempo_padrao * qtd_total) + r.tempo_setup,
+                                        status,
+                                        planejamento_inicio: p ? p.data_planejada_inicio : null,
+                                        planejamento_fim: p ? p.data_planejada_fim : null
+                                    };
+                                });
+                            }
+                        };
+
+                        processOp(op);
+                        
+                        if (op.ops_filhas) {
+                            for (const filha of op.ops_filhas) {
+                                processOp(filha);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fetch PDF Documents for all products
+            const allProductCodes = new Set(arrayProdutos);
+            for (const op of arrayOpProdutos) {
+                allProductCodes.add(op);
+            }
+            
+            const arrayAllProducts = Array.from(allProductCodes);
+            if (arrayAllProducts.length > 0) {
+                try {
+                    const placeholdersDocs = arrayAllProducts.map(() => '?').join(',');
+                    const [docsResult] = await mysqlPool.execute(
+                        `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${placeholdersDocs})`,
+                        arrayAllProducts
+                    );
+                    
+                    const docsMap = {};
+                    docsResult.forEach(d => {
+                        if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
+                        docsMap[d.produto_codigo].push(d);
+                    });
+
+                    for (const key in pedidosMap) {
+                        for (const item of pedidosMap[key].itens) {
+                            const pDocs = docsMap[item.produto] || [];
+                            item.primeiro_arquivo = pDocs.length > 0 ? pDocs[0].url_arquivo : null;
+                            
+                            for (const op of item.ops) {
+                                const opDocs = docsMap[op.produto] || [];
+                                op.primeiro_arquivo = opDocs.length > 0 ? opDocs[0].url_arquivo : null;
+                                
+                                if (op.ops_filhas) {
+                                    for (const filha of op.ops_filhas) {
+                                        const fDocs = docsMap[filha.produto] || [];
+                                        filha.primeiro_arquivo = fDocs.length > 0 ? fDocs[0].url_arquivo : null;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('⚠️ Erro ao buscar documentos no MySQL para rastreabilidade:', err.message);
+                }
+            }
+        }
+
+        res.json(Object.values(pedidosMap));
+
+    } catch (error) {
+        console.error('❌ Erro em /rastreabilidade:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        if (pgClient) pgClient.release();
+    }
+});
+
 module.exports = router;

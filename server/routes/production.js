@@ -1784,6 +1784,126 @@ router.post('/plan', async (req, res) => {
     }
 });
 
+// POST /api/production/cascade-preview - Calcula a cascata de programação baseada em capacidade e tempo padrão
+router.post('/cascade-preview', async (req, res) => {
+    try {
+        const { ops, start_date } = req.body;
+        
+        if (!Array.isArray(ops) || ops.length === 0) {
+            return res.status(400).json({ error: 'Nenhuma OP fornecida para a cascata.' });
+        }
+
+        // 1. Obter capacidades cadastradas (Fallback do PCP Refinado)
+        const [mysqlCaps] = await mysqlPool.execute('SELECT recurso_codigo, horas_dia, default_tempo_peca FROM app_recursos_capacidade');
+        const capMap = {};
+        mysqlCaps.forEach(c => {
+            capMap[c.recurso_codigo.trim().toUpperCase()] = {
+                horas_dia: parseFloat(c.horas_dia) || 8.8,
+                default_tempo_peca: parseFloat(c.default_tempo_peca) || 0
+            };
+        });
+
+        // 2. Obter tempos padrão do Protheus (SG2010)
+        const productCodes = [...new Set(ops.map(o => (o.cod_produto_op || o.produto || '').trim().toUpperCase()))].filter(Boolean);
+        let sgMap = {};
+        
+        if (productCodes.length > 0) {
+            const ph = productCodes.map((_, i) => `$${i + 1}`).join(',');
+            const sgRes = await db.query(`
+                SELECT TRIM(g2_produto) as produto, TRIM(g2_operac) as operacao, TRIM(g2_recurso) as recurso,
+                       g2_tempad, g2_setup
+                FROM public.sg2010
+                WHERE TRIM(g2_produto) IN (${ph}) AND COALESCE(d_e_l_e_t_,'') IN ('', ' ')
+            `, productCodes);
+            
+            sgRes.rows.forEach(r => {
+                const key = `${r.produto}_${r.operacao}`;
+                sgMap[key] = {
+                    tempad: parseFloat(r.g2_tempad) || 0,
+                    setup: parseFloat(r.g2_setup) || 0,
+                    recurso: r.recurso
+                };
+            });
+        }
+
+        // 3. Ordenar as operações para simular a cascata (Primeiro prioridade/pedido, depois sequencia)
+        ops.sort((a, b) => {
+            // Se vier prioridade, usa
+            if (a.prioridade !== b.prioridade) return (a.prioridade || 99) - (b.prioridade || 99);
+            // Agrupar pela mesma OP
+            if (a.op !== b.op) return (a.op || '').localeCompare(b.op || '');
+            if (a.item_op !== b.item_op) return (a.item_op || '').localeCompare(b.item_op || '');
+            // Por fim, ordenar pela sequencia para garantir N+1 apos N
+            return (a.sequen || '').localeCompare(b.sequen || '');
+        });
+
+        // 4. Lógica de Sequenciamento
+        // resourceAvailability guarda o horário que cada recurso estará livre
+        let resourceAvailability = {};
+        // opFinish guarda quando a sequência anterior da mesma OP terminou
+        let opFinish = {};
+        
+        let globalStart = start_date ? new Date(start_date) : new Date();
+        
+        const results = ops.map(op => {
+            const produto = (op.cod_produto_op || op.produto || '').trim().toUpperCase();
+            const operacao = (op.operacao || '').trim().toUpperCase();
+            const recurso = (op.recurso || '').trim().toUpperCase();
+            const qtd = parseFloat(op.qtd_planejada_op) || parseFloat(op.qtd) || 0;
+            
+            const sgData = sgMap[`${produto}_${operacao}`] || {};
+            const capData = capMap[recurso] || capMap[sgData.recurso] || { horas_dia: 8.8, default_tempo_peca: 0.1 };
+            
+            // Usar o fallback se g2_tempad for zero
+            let tempoUnitario = sgData.tempad;
+            if (!tempoUnitario || tempoUnitario <= 0) {
+                tempoUnitario = capData.default_tempo_peca;
+            }
+            
+            const setupH = sgData.setup || 0;
+            const tempoTotalHoras = setupH + (qtd * tempoUnitario);
+            
+            // Converter horas totais para dias, com base na capacidade diária do recurso
+            const horasPorDia = capData.horas_dia > 0 ? capData.horas_dia : 8.8;
+            const diasNecessarios = tempoTotalHoras / horasPorDia;
+            const msNecessarios = diasNecessarios * 24 * 60 * 60 * 1000; // Aproximação corrida
+            
+            const opKey = `${op.op}_${op.item_op}`;
+            
+            // O início desta sequência deve ser APÓS a sequência anterior da mesma OP,
+            // E APÓS o recurso ficar livre (Finite Capacity).
+            let startDate = globalStart;
+            
+            if (opFinish[opKey] && opFinish[opKey] > startDate) {
+                startDate = new Date(opFinish[opKey]);
+            }
+            
+            if (resourceAvailability[recurso] && resourceAvailability[recurso] > startDate) {
+                startDate = new Date(resourceAvailability[recurso]);
+            }
+            
+            const endDate = new Date(startDate.getTime() + msNecessarios);
+            
+            // Atualizar disponibilidades
+            opFinish[opKey] = endDate;
+            resourceAvailability[recurso] = endDate;
+            
+            return {
+                ...op,
+                data_inicio_calc: startDate.toISOString(),
+                data_fim_calc: endDate.toISOString(),
+                tempo_total_horas: tempoTotalHoras,
+                dias_necessarios: diasNecessarios
+            };
+        });
+
+        res.json({ cascade: results });
+    } catch (error) {
+        console.error('[CASCADE ERROR]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // POST /api/production/plan-batch - Save Batch Planning v2 (Macro)
 // Melhorias v2: validação de datas, lote_id no backend, auditoria de usuário,
 //               campo de observação, gravação em app_planning_history

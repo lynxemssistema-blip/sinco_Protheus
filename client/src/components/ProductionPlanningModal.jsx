@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Calendar, X, Layers, History, User, Clock } from 'lucide-react';
-import { getPlanningHistory } from '../services/api';
+import { getPlanningHistory, previewCascade } from '../services/api';
 
 export default function ProductionPlanningModal({ ops, onClose, onSave }) {
     const isBatch = Array.isArray(ops) && ops.length > 1;
@@ -20,6 +20,8 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
     const [loading, setLoading] = useState(false);
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [cascadePreview, setCascadePreview] = useState(null);
+    const [loadingCascade, setLoadingCascade] = useState(false);
 
     useEffect(() => {
         if (!isBatch && firstOp?.op) {
@@ -31,28 +33,64 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
         }
     }, [isBatch, firstOp?.op]);
 
+    const handleGenerateCascade = async () => {
+        setLoadingCascade(true);
+        try {
+            const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
+            const payload = {
+                ops: opsArray,
+                start_date: start
+            };
+            const result = await previewCascade(payload);
+            setCascadePreview(result.cascade);
+        } catch (error) {
+            alert('Erro ao gerar cascata: ' + error.message);
+        } finally {
+            setLoadingCascade(false);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
-            const end = `${formData.data_fim} ${formData.hora_fim}:00`;
             const lote_id = `LOTE-${new Date().getTime()}`; // Simple batch ID
+            let plans = [];
 
-            const plans = opsArray.map(op => ({
-                op_numero: op.op,
-                op_item: op.item_op,
-                op_sequencia: op.sequen || '',
-                operacao_codigo: op.operacao || '',
-                recurso_code: op.recurso || null,
-                recurso_desc: op.desc_recurso || null,
-                pedido_venda: op.pedido_venda || op.pedido || null,
-                data_inicio: start,
-                data_fim: end,
-                lote_id: lote_id
-            }));
+            if (cascadePreview && cascadePreview.length > 0) {
+                // Save using computed cascaded dates
+                plans = cascadePreview.map(op => ({
+                    op_numero: op.op,
+                    op_item: op.item_op,
+                    op_sequencia: op.sequen || '',
+                    operacao_codigo: op.operacao || '',
+                    recurso_code: op.recurso || null,
+                    recurso_desc: op.desc_recurso || null,
+                    pedido_venda: op.pedido_venda || op.pedido || null,
+                    data_inicio: op.data_inicio_calc.replace('T', ' ').substring(0, 19),
+                    data_fim: op.data_fim_calc.replace('T', ' ').substring(0, 19),
+                    lote_id: lote_id
+                }));
+            } else {
+                // Save using manual dates for all
+                const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
+                const end = `${formData.data_fim} ${formData.hora_fim}:00`;
 
-            await onSave(plans, formData.observacao); // We'll modify onSave to handle array
+                plans = opsArray.map(op => ({
+                    op_numero: op.op,
+                    op_item: op.item_op,
+                    op_sequencia: op.sequen || '',
+                    operacao_codigo: op.operacao || '',
+                    recurso_code: op.recurso || null,
+                    recurso_desc: op.desc_recurso || null,
+                    pedido_venda: op.pedido_venda || op.pedido || null,
+                    data_inicio: start,
+                    data_fim: end,
+                    lote_id: lote_id
+                }));
+            }
+
+            await onSave(plans, formData.observacao); 
             onClose();
         } catch (error) {
             alert('Erro ao salvar: ' + error.message);
@@ -63,11 +101,11 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
                 <div className="flex justify-between items-center p-4 border-b shrink-0">
                     <h3 className="font-bold text-lg flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-blue-600" />
-                        Planejamento {isBatch ? 'em Lote' : 'da Ordem'}
+                        Planejamento {isBatch ? 'em Lote / Cascata' : 'da Ordem'}
                     </h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
                         <X className="w-5 h-5" />
@@ -81,11 +119,9 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                                 <Layers className="w-4 h-4" />
                                 {opsArray.length} Ordens Selecionadas
                             </div>
-                            <ul className="list-disc pl-5 space-y-1 text-slate-700">
-                                {opsArray.map((o, i) => (
-                                    <li key={i}>{o.op} - Item {o.item_op} (Recurso: {o.recurso || o.operacao})</li>
-                                ))}
-                            </ul>
+                            <p className="text-slate-600 mb-2 text-xs">
+                                Dica: Utilize a "Cascata Automática" para calcular as datas de fim considerando a capacidade dos recursos e dependências entre operações.
+                            </p>
                         </>
                     ) : (
                         <>
@@ -95,57 +131,106 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                     )}
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-4 space-y-4 shrink-0">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Data Início Planejada</label>
-                            <input type="date" required className="w-full border rounded p-2 text-sm"
-                                value={formData.data_inicio} onChange={e => setFormData({ ...formData, data_inicio: e.target.value })} />
+                <div className="flex-1 overflow-y-auto">
+                    <form onSubmit={handleSubmit} className="p-4 space-y-4 shrink-0">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Data Início Planejada</label>
+                                <input type="date" required className="w-full border rounded p-2 text-sm"
+                                    value={formData.data_inicio} onChange={e => { setFormData({ ...formData, data_inicio: e.target.value }); setCascadePreview(null); }} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Hora Início</label>
+                                <input type="time" required className="w-full border rounded p-2 text-sm"
+                                    value={formData.hora_inicio} onChange={e => { setFormData({ ...formData, hora_inicio: e.target.value }); setCascadePreview(null); }} />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Hora Início</label>
-                            <input type="time" required className="w-full border rounded p-2 text-sm"
-                                value={formData.hora_inicio} onChange={e => setFormData({ ...formData, hora_inicio: e.target.value })} />
-                        </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Data Fim Planejada</label>
-                            <input type="date" required className="w-full border rounded p-2 text-sm"
-                                value={formData.data_fim} onChange={e => setFormData({ ...formData, data_fim: e.target.value })} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Hora Fim</label>
-                            <input type="time" required className="w-full border rounded p-2 text-sm"
-                                value={formData.hora_fim} onChange={e => setFormData({ ...formData, hora_fim: e.target.value })} />
-                        </div>
-                    </div>
+                        {!cascadePreview && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">Data Fim Planejada</label>
+                                    <input type="date" required={!cascadePreview} className="w-full border rounded p-2 text-sm"
+                                        value={formData.data_fim} onChange={e => setFormData({ ...formData, data_fim: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">Hora Fim</label>
+                                    <input type="time" required={!cascadePreview} className="w-full border rounded p-2 text-sm"
+                                        value={formData.hora_fim} onChange={e => setFormData({ ...formData, hora_fim: e.target.value })} />
+                                </div>
+                            </div>
+                        )}
 
-                    {isReplan && (
-                        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-2 rounded flex items-start gap-2">
-                            <span className="font-bold">Atenção:</span> Você está replanejando uma ou mais ordens. É obrigatório informar o motivo da alteração.
-                        </div>
-                    )}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Observação / Justificativa {isReplan && <span className="text-red-500">*</span>}
-                        </label>
-                        <textarea 
-                            required={isReplan}
-                            className="w-full border rounded p-2 text-sm resize-none" 
-                            rows="2"
-                            placeholder={isReplan ? "Descreva o motivo do replanejamento..." : "Observações adicionais (opcional)"}
-                            value={formData.observacao} 
-                            onChange={e => setFormData({ ...formData, observacao: e.target.value })} 
-                        />
-                    </div>
+                        {!cascadePreview && (
+                            <div className="flex justify-end pt-2">
+                                <button type="button" onClick={handleGenerateCascade} disabled={loadingCascade || !formData.data_inicio || !formData.hora_inicio} 
+                                    className="px-4 py-2 bg-indigo-600 text-white font-bold text-sm rounded hover:bg-indigo-700 flex items-center gap-2">
+                                    {loadingCascade ? 'Calculando...' : 'Gerar Cascata Automática (Tempo Finito)'}
+                                </button>
+                            </div>
+                        )}
 
-                    <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white rounded-lg p-2 font-bold hover:bg-blue-700 flex justify-center items-center gap-2">
-                        <Save className="w-4 h-4" />
-                        {loading ? 'Salvando...' : 'Salvar Planejamento'}
-                    </button>
-                </form>
+                        {cascadePreview && (
+                            <div className="mt-4 border rounded p-3 bg-slate-50">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h4 className="font-bold text-sm text-indigo-800">Preview da Cascata</h4>
+                                    <button type="button" onClick={() => setCascadePreview(null)} className="text-xs text-red-600 hover:underline">
+                                        Cancelar Cascata
+                                    </button>
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto">
+                                    <table className="w-full text-left text-xs bg-white border border-slate-200">
+                                        <thead className="bg-slate-100 text-slate-600">
+                                            <tr>
+                                                <th className="p-2 border-b">OP / Item</th>
+                                                <th className="p-2 border-b">Operação</th>
+                                                <th className="p-2 border-b">Recurso</th>
+                                                <th className="p-2 border-b">Duração Estimada</th>
+                                                <th className="p-2 border-b">Início Estimado</th>
+                                                <th className="p-2 border-b">Fim Estimado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {cascadePreview.map((op, idx) => (
+                                                <tr key={idx} className="border-b last:border-0 hover:bg-slate-50">
+                                                    <td className="p-2 font-medium">{op.op} - {op.item_op}</td>
+                                                    <td className="p-2">{op.operacao}</td>
+                                                    <td className="p-2">{op.recurso || op.desc_recurso || '-'}</td>
+                                                    <td className="p-2">{op.tempo_total_horas ? `${op.tempo_total_horas.toFixed(1)}h (${op.dias_necessarios.toFixed(1)}d)` : 'Padrão'}</td>
+                                                    <td className="p-2 text-indigo-700">{new Date(op.data_inicio_calc).toLocaleString('pt-BR')}</td>
+                                                    <td className="p-2 text-indigo-700 font-bold">{new Date(op.data_fim_calc).toLocaleString('pt-BR')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {isReplan && (
+                            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-2 rounded flex items-start gap-2">
+                                <span className="font-bold">Atenção:</span> Você está replanejando uma ou mais ordens. É obrigatório informar o motivo da alteração.
+                            </div>
+                        )}
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Observação / Justificativa {isReplan && <span className="text-red-500">*</span>}
+                            </label>
+                            <textarea 
+                                required={isReplan}
+                                className="w-full border rounded p-2 text-sm resize-none" 
+                                rows="2"
+                                placeholder={isReplan ? "Descreva o motivo do replanejamento..." : "Observações adicionais (opcional)"}
+                                value={formData.observacao} 
+                                onChange={e => setFormData({ ...formData, observacao: e.target.value })} 
+                            />
+                        </div>
+
+                        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white rounded-lg p-2 font-bold hover:bg-blue-700 flex justify-center items-center gap-2">
+                            <Save className="w-4 h-4" />
+                            {loading ? 'Salvando...' : 'Salvar Planejamento'}
+                        </button>
+                    </form>
 
                 {!isBatch && (
                     <div className="p-4 border-t border-slate-200 bg-slate-50 rounded-b-xl overflow-y-auto min-h-[150px]">
@@ -187,6 +272,7 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                         )}
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );

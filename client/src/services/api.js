@@ -405,6 +405,9 @@ export const getOperationById = (opId) => api.get(`/production/operations/${opId
 export const saveProductionPlan = (data) => api.post('/production/plan', data).then(res => res.data);
 export const saveProductionPlanBatch = (plans, observacao, modo_calculo, preferencias) =>
     api.post('/production/plan-batch', { plans, observacao, modo_calculo, preferencias }).then(res => res.data);
+
+export const previewCascade = (payload) =>
+    api.post('/production/cascade-preview', payload).then(res => res.data);
 export const getPlanningHistory = (op) => api.get(`/production/planning-history/${encodeURIComponent(op)}`).then(res => res.data);
 export const getPlanningPrefs = (op) => api.get(`/production/planning-prefs/${encodeURIComponent(op)}`).then(res => res.data);
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);

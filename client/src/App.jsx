@@ -110,6 +110,8 @@ const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecE
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
+const Sinco1DocsPage = React.lazy(() => import('./pages/sinco/Sinco1DocsPage'));
+const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -430,6 +432,16 @@ function App() {
                                         <Route path="/admin/protheus-estudo" element={
                                             <Layout fullWidth={true}>
                                                 <ProtheusOverview />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sinco-1-0/docs" element={
+                                            <Layout fullWidth={true}>
+                                                <Sinco1DocsPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp-refinado/rastreabilidade" element={
+                                            <Layout fullWidth={true}>
+                                                <RastreabilidadePCP />
                                             </Layout>
                                         } />
                                         <Route path="/producao/relatorios" element={

@@ -400,7 +400,7 @@ export default function SINCOFormularioPrincipal() {
             const rSz0 = await getSincoRestricoesSz0(produto);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
         } catch (err) {
-            showToast('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message, 'error'));
+            showToast('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message), 'error');
         } finally {
             setSavingSz0(false);
         }
@@ -549,7 +549,7 @@ export default function SINCOFormularioPrincipal() {
             // Recarrega os dados do ERP
             await carregarProtheus(produtoPai);
         } catch (err) {
-            showToast('Erro ao salvar estrutura: ' + (err.response?.data?.error || err.response?.data?.details || err.message, 'error'));
+            showToast('Erro ao salvar estrutura: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
         } finally {
             setSavingArvore(false);
         }
@@ -662,7 +662,8 @@ export default function SINCOFormularioPrincipal() {
             showToast('Roteiro atualizado com sucesso no Protheus!', 'success');
             await carregarProtheus(produtoPai);
         } catch (err) {
-            showToast('Erro ao salvar roteiro: ' + (err.response?.data?.error || err.response?.data?.details || err.message, 'error'));
+            console.error('❌ Falha ao salvar Roteiro:', err);
+            showToast('Erro ao salvar roteiro: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
         } finally {
             setSavingOperacoes(false);
         }

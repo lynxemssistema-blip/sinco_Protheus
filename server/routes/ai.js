@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mysqlPool = require('../services/mysqlService');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -187,6 +188,7 @@ router.post('/export-word', async (req, res) => {
     }
 });
 
+
 // ==========================================
 // ROTA: Análise 3D e Metrologia com Gemini
 // ==========================================
@@ -202,7 +204,7 @@ router.post('/analyze-3d', async (req, res) => {
         const genAI = new GoogleGenerativeAI(apiKey);
         // Utiliza o modelo pro para melhor visão espacial
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro",
+            model: "gemini-2.5-pro",
             generationConfig: {
                 temperature: 0.1, // Baixa temperatura para ser estritamente técnico
                 responseMimeType: "application/json"
@@ -251,7 +253,7 @@ Gere no mínimo 1 e no máximo 4 discrepâncias reais observadas. Se a peça est
         const result = await model.generateContent(parts);
         const responseText = await result.response.text();
         
-        // Em gemini-1.5-pro com responseMimeType json, ele retorna string JSON pura.
+        // Em gemini-2.5-pro com responseMimeType json, ele retorna string JSON pura.
         const parsed = JSON.parse(responseText);
 
         res.json(parsed);
@@ -259,6 +261,154 @@ Gere no mínimo 1 e no máximo 4 discrepâncias reais observadas. Se a peça est
     } catch (err) {
         console.error('❌ Erro na rota AI /analyze-3d:', err);
         res.status(500).json({ error: err.message || 'Erro ao processar análise 3D com a IA.' });
+    }
+});
+
+// ==========================================
+// ROTA: Estratégia de Fabricação com Gemini
+// ==========================================
+router.post('/manufacturing-strategy', async (req, res) => {
+    try {
+        const { orderData } = req.body;
+        
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey || apiKey === 'sua_api_key_aqui') {
+            return res.status(500).json({ error: 'GEMINI_API_KEY não configurada no servidor.' });
+        }
+
+        // Busca capacidades dos recursos
+        let capacidades = [];
+        try {
+            const [rows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
+            capacidades = rows;
+        } catch (e) {
+            console.warn('Não foi possível buscar capacidades:', e.message);
+        }
+
+        // Busca a Estrutura de Produto (BOM) do Protheus
+        let estruturasDeProduto = {};
+        try {
+            const db = require('../db');
+            const pgClient = await db.connect();
+            
+            let codigosProduto = [];
+            if (orderData.produto) {
+                codigosProduto = [orderData.produto];
+            } else if (orderData.itens) {
+                codigosProduto = orderData.itens.map(i => i.produto).filter(Boolean);
+            }
+            
+            if (codigosProduto.length > 0) {
+                // Fetch first level BOM for these products
+                const placeholders = codigosProduto.map((_, i) => `$${i+1}`).join(',');
+                const bomQuery = `
+                    WITH RECURSIVE
+                    arvore AS (
+                        SELECT
+                            TRIM(g1.g1_cod) as pai_original,
+                            TRIM(g1.g1_cod) as pai, 
+                            TRIM(g1.g1_comp) as filho, 
+                            CAST(REPLACE(CAST(g1.g1_quant AS text), ',', '.') AS numeric) as qtd, 
+                            TRIM(b1.b1_desc) as descricao,
+                            1 as nivel,
+                            ARRAY[TRIM(g1.g1_cod)] as visitados
+                        FROM public.sg1010 g1
+                        LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(b1.d_e_l_e_t_, '') IN ('', ' ')
+                        WHERE TRIM(g1.g1_cod) IN (${placeholders})
+                          AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
+
+                        UNION ALL
+
+                        SELECT
+                            a.pai_original,
+                            TRIM(g1.g1_cod) as pai,
+                            TRIM(g1.g1_comp) as filho,
+                            CAST(REPLACE(CAST(g1.g1_quant AS text), ',', '.') AS numeric) as qtd,
+                            TRIM(b1.b1_desc) as descricao,
+                            a.nivel + 1,
+                            a.visitados || TRIM(g1.g1_cod)
+                        FROM arvore a
+                        JOIN public.sg1010 g1 ON TRIM(g1.g1_cod) = a.filho AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
+                        LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(b1.d_e_l_e_t_, '') IN ('', ' ')
+                        WHERE a.nivel < 12
+                          AND NOT (TRIM(g1.g1_cod) = ANY(a.visitados))
+                    )
+                    SELECT pai_original, pai, filho, qtd, descricao, nivel FROM arvore ORDER BY pai_original, nivel
+                `;
+                const bomResult = await pgClient.query(bomQuery, codigosProduto);
+                
+                bomResult.rows.forEach(row => {
+                    const raiz = row.pai_original;
+                    if (!estruturasDeProduto[raiz]) estruturasDeProduto[raiz] = [];
+                    // Avoid inserting duplicates if the same sub-assembly is referenced multiple times in the hierarchy
+                    const exists = estruturasDeProduto[raiz].some(e => e.pai === row.pai && e.filho === row.filho);
+                    if (!exists) {
+                        estruturasDeProduto[raiz].push({
+                            nivel: row.nivel,
+                            pai: row.pai,
+                            filho: row.filho,
+                            descricao: row.descricao,
+                            qtd: row.qtd
+                        });
+                    }
+                });
+            }
+            pgClient.release();
+        } catch (e) {
+            console.warn('Não foi possível buscar a estrutura do produto:', e.message);
+        }
+
+        const dataAtual = new Date().toLocaleDateString('pt-BR');
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-pro",
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 2048,
+            }
+        });
+
+        const promptText = `Seu nome é "PCP Metal".
+Você é um Diretor Industrial e Especialista Sênior em PCP (Planejamento e Controle da Produção).
+A sua tarefa é analisar os dados reais de rastreabilidade de um pedido na fábrica, além das capacidades dos recursos e da estrutura do produto (BOM), e gerar uma estratégia de fabricação e um cronograma de alocação.
+
+DATA ATUAL: ${dataAtual}
+
+CAPACIDADES DOS RECURSOS (em minutos diários):
+${JSON.stringify(capacidades, null, 2)}
+
+ESTRUTURA DOS PRODUTOS DO PEDIDO (BOM / Engenharia):
+${JSON.stringify(estruturasDeProduto, null, 2)}
+
+DADOS DE RASTREABILIDADE MICRO (O Pedido em foco, com todas as OPs Pai e Filhas já geradas e saldo de entrega):
+${JSON.stringify(orderData, null, 2)}
+
+Sua análise deve obrigatoriamente conter:
+1. **Visão Ampla da Fábrica:** Demonstre entender o contexto da fábrica e como as operações deste pedido se encaixam no cenário geral de recursos.
+2. **Diagnóstico do Gargalo:** Qual é a operação, máquina ou OP que está atrasando o produto pai.
+3. **Priorização por Data de Entrega (PCP):** A estratégia deve ser estritamente baseada na data de entrega do PCP, definindo a sequência de produção.
+4. **Alocação de Datas Planejadas (Cronograma):** Com base na data atual, na capacidade de cada recurso (minutos por dia) e na demanda necessária de cada OP (pai/filha), você DEVE planejar as datas de início e fim de cada operação/recurso. Vá alocando as execuções cronologicamente para garantir o fluxo pai-filho. Apresente isso em formato de tabela.
+5. **Lista de Peças Críticas (Faturamento Parcial ou Total):** Você deve SEMPRE retornar a lista exata das peças/componentes que fazem parte da estratégia para garantir a entrega.
+6. **Estratégia de Ação Imediata:** O que o encarregado do chão de fábrica precisa fazer AGORA para desatar o nó.
+
+Responda em linguagem direta, profissional, formato Markdown. Seja analítico, aponte datas específicas calculadas por você, códigos de peças, nomes de máquinas e defina claramente o que priorizar.`;
+
+        console.log(`[AI Strategy] Enviando prompt para o Gemini. Tamanho: ${promptText.length} caracteres.`);
+        const result = await model.generateContent(promptText);
+        const responseText = await result.response.text();
+        console.log(`[AI Strategy] Resposta recebida. Tamanho: ${responseText.length} caracteres.`);
+        if (responseText.length < 50) {
+            console.log(`[AI Strategy] Resposta suspeita: ${responseText}`);
+        }
+        
+        const safeResponse = responseText && responseText.trim() ? responseText : "A IA não retornou nenhuma estratégia válida. O tamanho da resposta original foi 0.";
+        res.json({ strategy: safeResponse });
+
+    } catch (err) {
+        console.error('❌ Erro na rota AI /manufacturing-strategy:', err);
+        require('fs').writeFileSync('ai_error.log', err.stack || err.message || String(err));
+        res.status(500).json({ error: err.message || 'Erro ao processar estratégia com a IA.' });
     }
 });
 

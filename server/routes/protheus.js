@@ -627,8 +627,10 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
         res.json({ success: true, message: 'Roteiro atualizado com sucesso', raw: responseData });
 
     } catch (error) {
-        console.error('❌ Protheus Integrador Erro [Roteiro]:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Erro ao Submeter Roteiro à API.', details: error.response?.data || error.message });
+        const errDetail = error.response?.data || error.message;
+        console.error('❌ Protheus Integrador Erro [Roteiro]:', errDetail);
+        require('fs').writeFileSync('roteiro_error.log', new Date().toISOString() + '\nMESSAGE: ' + error.message + '\nSTATUS: ' + (error.response?.status || 'N/A') + '\nDETAILS: ' + JSON.stringify(errDetail) + '\nSTACK: ' + (error.stack || '') + '\n');
+        res.status(500).json({ error: 'Erro ao Submeter Roteiro à API.', details: errDetail });
     }
 });
 

@@ -63,6 +63,13 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'sinco_1_0',
+        label: 'SINCO 1.0',
+        items: [
+            { id: 'sinco1_docs', label: 'Dicionário de Dados', path: '/sinco-1-0/docs', icon: Database }
+        ]
+    },
+    {
         id: 'pcp',
         label: 'PCP Geral',
         items: [
@@ -95,7 +102,8 @@ export const MENU_GROUPS = [
         label: 'PCP Refinado',
         items: [
             { id: 'pcp_cadastro_capacidade', label: 'Cadastro de Capacidade', path: '/pcp-refinado/capacidade', icon: Layers },
-            { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 }
+            { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 },
+            { id: 'rastreabilidade_pedidos', label: 'Rastreio de Faturamento', path: '/pcp-refinado/rastreabilidade', icon: Network }
         ]
     },
     {

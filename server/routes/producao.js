@@ -784,8 +784,35 @@ router.get('/vertical/:operacao', async (req, res) => {
       sc2Count++;
     }
     if (produto) {
-      sc2Conditions.push(`TRIM(c2.c2_produto) ILIKE $${sc2Count++}`);
-      sc2Params.push(`%${produto.trim()}%`);
+      const produtoTrimmed = produto.trim().toUpperCase();
+      const matchDireto = produtosDoRecurso.some(p => p.toUpperCase().includes(produtoTrimmed));
+
+      if (matchDireto) {
+        // Produto tem roteiro direto para este recurso — filtro padrão
+        sc2Conditions.push(`TRIM(c2.c2_produto) ILIKE $${sc2Count++}`);
+        sc2Params.push(`%${produto.trim()}%`);
+      } else {
+        // Produto não tem roteiro direto → busca como componente na BOM (sg1010)
+        // Encontra produtos PAI que usam este componente E têm este recurso no roteiro
+        const bomLookup = await db.query(`
+          SELECT DISTINCT TRIM(g1.g1_cod) AS pai
+          FROM public.sg1010 g1
+          WHERE TRIM(g1.g1_comp) ILIKE $1
+            AND TRIM(g1.g1_cod) = ANY($2)
+            AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')
+        `, [`%${produtoTrimmed}%`, produtosDoRecurso]);
+
+        if (bomLookup.rows.length > 0) {
+          const paiCodes = bomLookup.rows.map(r => r.pai);
+          console.log(`🔍 [VERTICAL] "${produtoTrimmed}" é componente de: ${paiCodes.join(', ')} — expandindo busca via BOM`);
+          sc2Conditions.push(`TRIM(c2.c2_produto) = ANY($${sc2Count++})`);
+          sc2Params.push(paiCodes);
+        } else {
+          // Não encontrado nem diretamente nem via BOM — mantém filtro original (retorna vazio com aviso correto)
+          sc2Conditions.push(`TRIM(c2.c2_produto) ILIKE $${sc2Count++}`);
+          sc2Params.push(`%${produto.trim()}%`);
+        }
+      }
     }
 
     // Filtro de cliente precisa de JOIN extra — só inclui se o filtro foi passado
@@ -851,11 +878,14 @@ router.get('/vertical/:operacao', async (req, res) => {
     // Enriquecer cada linha com os dados do roteiro (operacao, recurso, desc) do routingMap
     pgResult.rows.forEach(row => {
       const routes = routingMap[row.produto] || [];
-      // Pega a primeira operação do roteiro para esse produto neste recurso
       const route = routes[0] || {};
       row.operacao_codigo = route.operacao_codigo || null;
       row.operacao_desc   = route.operacao_desc   || null;
       row.recurso_codigo  = route.recurso_codigo  || operacao;
+      // Indica quando a OP foi encontrada via BOM (produto pai contém o componente pesquisado)
+      if (produto && row.produto.toUpperCase() !== produto.trim().toUpperCase()) {
+        row.componente_buscado = produto.trim().toUpperCase();
+      }
     });
 
     const opsList = pgResult.rows;
