@@ -1099,6 +1099,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
 
         console.log(`[production GET /] ${opRows.length} OPs + ${ops.length} rows (c/roteiro) em ${Date.now() - t0}ms`);
 
+
         // Apply specific operation/recurso filter to the expanded rows
         if (operacao || setor) {
             let recursoArray = [];
@@ -1134,13 +1135,16 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                     if (operacao) return matchOperacao;
                     return true;
                 });
-            }
-        }
+            } // fecha: if (recursoArray.length > 0 || operacaoArray.length > 0)
+        } // fecha: if (operacao || setor)
         // 3. Apply MySQL pre-filter (planned dates)
         if (plannedOpsFilter) {
-            // Include operation code in the set key to filter specifically which operation falls in the date range
-            const plannedSet = new Set(plannedOpsFilter.map(p => `${p.op_numero}|${p.op_item}|${p.op_sequencia}|${p.operacao_codigo}`));
-            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`));
+            // CORRIGIDO: usa chave op|item|operacao (sem op_sequencia).
+            // MySQL salva op_sequencia='001' (linha base do sc2010), mas os expanded rows
+            // podem ter sequen diferente (ex: '010','020') dependendo do c2_sequen.
+            // Ignorar sequen garante o match correto pelo código de operação.
+            const plannedSet = new Set(plannedOpsFilter.map(p => `${(p.op_numero||'').trim()}|${(p.op_item||'').trim()}|${(p.operacao_codigo||'').trim()}`));
+            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.operacao}`));
         }
 
         // 4. Fetch Plans & Appointments from MySQL
@@ -1267,13 +1271,20 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         const finalOps = mergedOps.map(op => {
             const doc = docsMap[(op.cod_produto_op || '').trim().toUpperCase()];
             const fcKey = `${String(op.pedido_venda || '').trim()}|${String(op.item_op || '').trim()}`;
+            // Fallback: se não há previsão PCP salva, usa a data de entrega comercial do Protheus (c6_entreg)
+            // Converte formato YYYYMMDD → ISO (YYYY-MM-DD) para o frontend processar
+            let entregaFallback = null;
+            const rawComercial = String(op.data_entrega_comercial || '').trim();
+            if (rawComercial.length === 8) {
+                entregaFallback = `${rawComercial.slice(0,4)}-${rawComercial.slice(4,6)}-${rawComercial.slice(6,8)}`;
+            }
             return {
                 ...op,
-                doc_url:         doc?.url || null,
-                tem_arquivos:    !!doc?.url,
-                area_pintura:    doc?.area || null,
-                operacao_doc:    doc?.operacao || null,
-                data_entrega_pcp: pcpForecastMap[fcKey] || null,
+                doc_url:          doc?.url || null,
+                tem_arquivos:     !!doc?.url,
+                area_pintura:     doc?.area || null,
+                operacao_doc:     doc?.operacao || null,
+                data_entrega_pcp: pcpForecastMap[fcKey] || entregaFallback || null,
             };
         });
 
@@ -1898,13 +1909,13 @@ router.post('/cascade-preview', async (req, res) => {
             return res.status(400).json({ error: 'Nenhuma OP fornecida para a cascata.' });
         }
 
-        // 1. Obter capacidades cadastradas (Fallback do PCP Refinado)
+        // 1. Obter capacidades cadastradas — tudo em MINUTOS direto (sem conversão hora)
         const [mysqlCaps] = await mysqlPool.execute('SELECT recurso_codigo, capacidade_diaria_minutos, tempo_padrao_minutos FROM app_recursos_capacidade');
         const capMap = {};
         mysqlCaps.forEach(c => {
             capMap[c.recurso_codigo.trim().toUpperCase()] = {
-                horas_dia: (parseFloat(c.capacidade_diaria_minutos) || 528) / 60, // minutos → horas
-                default_tempo_peca: (parseFloat(c.tempo_padrao_minutos) || 0) / 60 // minutos → horas
+                cap_dia_min:   parseFloat(c.capacidade_diaria_minutos) || 528,  // minutos/dia disponíveis
+                tempo_padrao:  parseFloat(c.tempo_padrao_minutos) || 1         // minutos/peça padrão (fallback)
             };
         });
 
@@ -1970,32 +1981,27 @@ router.post('/cascade-preview', async (req, res) => {
             const qtd = Math.max(0, planejado - produzido);
             
             const sgData = sgMap[`${produto}_${operacao}`] || {};
-            const capData = capMap[recurso] || capMap[sgData?.recurso] || { horas_dia: 8.8, default_tempo_peca: 0.1 };
+            // Fallback de capacidade: tenta recurso da OP, depois recurso da SG2, depois default 528 min/dia
+            const capData = capMap[recurso] || capMap[(sgData?.recurso || '').toUpperCase()] || { cap_dia_min: 528, tempo_padrao: 1 };
             
-            // FIX: g2_tempad no Protheus é em HORAS/peça → converter para MINUTOS.
-            // (Valor padrão/placeholder do Protheus é 0.01h ≈ 0.6min — ignorar)
-            const g2_tempo_horas = parseFloat(sgData.tempad) || 0;
-            let tempoUnitarioMinutos;
-            if (g2_tempo_horas > 0.01) {
-                tempoUnitarioMinutos = g2_tempo_horas * 60; // horas → minutos
-            } else {
-                // Fallback: tempo padrão cadastrado no MySQL (já em minutos)
-                tempoUnitarioMinutos = capData.default_tempo_peca * 60;
-            }
+            // g2_tempad e tempo_padrao_minutos já estão em MINUTOS/peça — usar direto.
+            const g2_tempo_min = parseFloat(sgData.tempad) || 0;
+            const tempoUnitarioMinutos = g2_tempo_min > 0.001
+                ? g2_tempo_min              // Protheus: minutos/peça
+                : capData.tempo_padrao;     // MySQL fallback: minutos/peça
             
-            // Setup em horas → minutos
+            // Setup em horas (padrão Protheus) → minutos
             const setupMinutos = (sgData.setup || 0) * 60;
             
-            // O tempo total só é consumido se houver quantidade pendente.
-            // Itens com status concluído (ou qtd <= 0) têm tempo requerido ZERO.
-            let tempoTotalMinutos = 0;
-            if (qtd > 0) {
-                tempoTotalMinutos = setupMinutos + (qtd * tempoUnitarioMinutos);
-            }
+            // Tempo total: só calcula se há saldo pendente
+            let tempoTotalMinutos = qtd > 0
+                ? setupMinutos + (qtd * tempoUnitarioMinutos)
+                : 0;
             
-            const horasPorDia = capData.horas_dia > 0 ? capData.horas_dia : 8.8;
-            const capacidadeDiariaMinutos = horasPorDia * 60;
-            const diasNecessariosFloat = tempoTotalMinutos / capacidadeDiariaMinutos;
+            const capacidadeDiariaMinutos = capData.cap_dia_min; // já em minutos — sem conversão!
+            const diasNecessariosFloat = capacidadeDiariaMinutos > 0
+                ? tempoTotalMinutos / capacidadeDiariaMinutos
+                : 0;
             
             // FIX: inclui sequen na chave para encadear corretamente operações 010→020→030
             // A operação N só começa quando a operação N-1 da mesma OP/item terminar.
@@ -2157,15 +2163,18 @@ router.post('/plan-batch', async (req, res) => {
                 const chunk = plans.slice(i, i + CHUNK_SIZE);
                 if (chunk.length === 0) continue;
 
-                const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?)').join(',');
+                const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
                 const sql = `
                     INSERT INTO app_production_planning
                         (op_numero, op_item, op_sequencia, operacao_codigo,
+                         recurso_codigo, produto_codigo,
                          data_planejada_inicio, data_planejada_fim,
                          lote_id, usuario_planejador, observacao_lote,
                          duracao_dias, modo_calculo)
                     VALUES ${placeholders}
                     ON DUPLICATE KEY UPDATE
+                        recurso_codigo        = COALESCE(VALUES(recurso_codigo), recurso_codigo),
+                        produto_codigo        = COALESCE(VALUES(produto_codigo), produto_codigo),
                         data_planejada_inicio = VALUES(data_planejada_inicio),
                         data_planejada_fim     = VALUES(data_planejada_fim),
                         lote_id               = VALUES(lote_id),
@@ -2179,6 +2188,8 @@ router.post('/plan-batch', async (req, res) => {
                 chunk.forEach(p => {
                     values.push(
                         p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo,
+                        p.recurso_codigo  || null,
+                        p.produto_codigo  || null,
                         p.data_inicio, p.data_fim,
                         lote_id, usuario, observacao || null,
                         p.duracao_dias || null,
@@ -4690,4 +4701,99 @@ router.get('/capacities', async (req, res) => {
     }
 });
 
+// GET /api/production/resumo-pedidos — Resumo de planejamento agrupado por pedido e recurso
+router.get('/resumo-pedidos', async (req, res) => {
+    let pgClient = null;
+    try {
+        const { pedido } = req.query;
+
+        // 1. Busca dados do MySQL agrupados por op_numero + recurso_codigo
+        const mysqlWhere = pedido ? `AND op_numero = ?` : '';
+        const mysqlParams = pedido ? [pedido] : [];
+
+        const [rows] = await mysqlPool.execute(`
+            SELECT
+                op_numero,
+                recurso_codigo,
+                produto_codigo,
+                MIN(data_planejada_inicio)  AS data_inicio,
+                MAX(data_planejada_fim)     AS data_fim,
+                (DATEDIFF(MAX(data_planejada_fim), MIN(data_planejada_inicio)) + 1) AS total_dias,
+                COUNT(*)                   AS total_ops,
+                GROUP_CONCAT(DISTINCT operacao_codigo ORDER BY operacao_codigo) AS operacoes
+            FROM app_production_planning
+            WHERE recurso_codigo IS NOT NULL
+              AND data_planejada_inicio IS NOT NULL
+              ${mysqlWhere}
+            GROUP BY op_numero, recurso_codigo, produto_codigo
+            ORDER BY op_numero, data_planejada_inicio
+        `, mysqlParams);
+
+        if (rows.length === 0) return res.json([]);
+
+        // 2. Busca mapeamento op_numero -> pedido_venda no Protheus
+        const uniqueOps = [...new Set(rows.map(r => (r.op_numero || '').trim()))];
+        pgClient = await db.connect();
+        const pgRes = await pgClient.query(`
+            SELECT DISTINCT TRIM(c2_num) AS op, TRIM(c2_pedido) AS pedido, TRIM(c2_itempv) AS ped_item,
+                   TRIM(c2_produto) AS produto
+            FROM public.sc2010
+            WHERE TRIM(c2_num) = ANY($1)
+              AND COALESCE(d_e_l_e_t_,'') IN ('',' ')
+        `, [uniqueOps]);
+
+        const opPedidoMap = {};
+        pgRes.rows.forEach(r => {
+            if (!opPedidoMap[r.op]) opPedidoMap[r.op] = r.pedido || r.op;
+        });
+
+        // 3. Busca capacidade dos recursos
+        const [caps] = await mysqlPool.execute(
+            'SELECT recurso_codigo, capacidade_diaria_minutos FROM app_recursos_capacidade'
+        );
+        const capMap = {};
+        caps.forEach(c => { capMap[(c.recurso_codigo||'').trim().toUpperCase()] = parseFloat(c.capacidade_diaria_minutos)||528; });
+
+        // 4. Monta resultado final com minutos calculados por dias
+        const result = rows.map(r => {
+            const opTrimmed  = (r.op_numero||'').trim();
+            const recurso    = (r.recurso_codigo||'').trim().toUpperCase();
+            const capDia     = capMap[recurso] || 528;
+            const totalDias  = parseFloat(r.total_dias) || 1;
+            const totalMin   = totalDias * capDia;
+
+            const dtInicio = r.data_inicio ? new Date(r.data_inicio) : null;
+            const dtFim    = r.data_fim    ? new Date(r.data_fim)    : null;
+            // Dias corridos reais entre inicio e fim
+            const diasCorridos = (dtInicio && dtFim)
+                ? Math.ceil((dtFim - dtInicio) / (1000 * 60 * 60 * 24)) + 1
+                : totalDias;
+
+            return {
+                pedido_venda:   opPedidoMap[opTrimmed] || opTrimmed,
+                op_numero:      opTrimmed,
+                recurso_codigo: recurso,
+                produto_codigo: (r.produto_codigo||'').trim(),
+                data_inicio:    dtInicio ? dtInicio.toISOString().split('T')[0] : null,
+                data_fim:       dtFim    ? dtFim.toISOString().split('T')[0]    : null,
+                total_dias_planejados: totalDias,
+                dias_corridos:  diasCorridos,
+                total_minutos:  Math.round(totalMin),
+                total_horas:    parseFloat((totalMin / 60).toFixed(1)),
+                capacidade_dia_min: capDia,
+                total_ops:      parseInt(r.total_ops)||0,
+                operacoes:      r.operacoes || ''
+            };
+        });
+
+        res.json(result);
+    } catch (err) {
+        console.error('[RESUMO-PEDIDOS ERROR]', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (pgClient) pgClient.release();
+    }
+});
+
 module.exports = router;
+

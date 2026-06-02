@@ -556,10 +556,10 @@ const TaxaOcupacao = () => {
                                                                         <button 
                                                                             onClick={() => setSelectedDetail({ data: d, recurso: item })}
                                                                             className={`w-full py-2 px-1 rounded border shadow-sm transition-all text-xs flex flex-col items-center justify-center gap-0.5 ${colorClass}`}
-                                                                            title={`Capacidade: ${item.capacidade_diaria}m | Consumo: ${item.minutos_consumidos}m`}
+                                                                            title={`Capacidade: ${Math.round(item.capacidade_diaria)}m | Consumo: ${Math.round(item.minutos_consumidos)}m`}
                                                                         >
                                                                             <span>{percent.toFixed(0)}%</span>
-                                                                            {item.minutos_consumidos > 0 && <span className="text-[9px] opacity-70">{item.minutos_consumidos}m</span>}
+                                                                            {item.minutos_consumidos > 0 && <span className="text-[9px] opacity-70">{Math.round(item.minutos_consumidos)}m</span>}
                                                                         </button>
                                                                     </td>
                                                                 );

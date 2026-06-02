@@ -478,12 +478,14 @@ export default function PlanejamentoAvancado() {
             const draft = draftPlans[key];
             if (draft) {
                 payload.push({
-                    op_numero: op.op,
-                    op_item: op.item_op,
-                    op_sequencia: op.sequen,
-                    operacao_codigo: op.operacao,
+                    op_numero:         op.op,
+                    op_item:           op.item_op,
+                    op_sequencia:      op.sequen,
+                    operacao_codigo:   op.operacao,
+                    recurso_codigo:    op.recurso        || null,
+                    produto_codigo:    op.cod_produto_op || null,
                     data_planejada_inicio: draft.inicio || null,
-                    data_planejada_fim: draft.fim || null
+                    data_planejada_fim:    draft.fim    || null
                 });
             }
         });
@@ -522,12 +524,14 @@ export default function PlanejamentoAvancado() {
             const draft = draftPlans[key];
             if (draft) {
                 payload.push({
-                    op_numero: op.op,
-                    op_item: op.item_op,
-                    op_sequencia: op.sequen,
-                    operacao_codigo: op.operacao,
+                    op_numero:         op.op,
+                    op_item:           op.item_op,
+                    op_sequencia:      op.sequen,
+                    operacao_codigo:   op.operacao,
+                    recurso_codigo:    op.recurso        || null,
+                    produto_codigo:    op.cod_produto_op || null,
                     data_planejada_inicio: draft.inicio || null,
-                    data_planejada_fim: draft.fim || null
+                    data_planejada_fim:    draft.fim    || null
                 });
             }
         });

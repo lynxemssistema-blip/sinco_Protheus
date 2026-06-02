@@ -613,12 +613,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         group.items.forEach(item => {
                             if (!item.operacao) return;
                             plansToSave.push({
-                                op_numero: item.op,
-                                op_item: item.item_op,
-                                op_sequencia: item.sequen,
-                                operacao_codigo: item.operacao,
+                                op_numero:         item.op,
+                                op_item:           item.item_op,
+                                op_sequencia:      item.sequen,
+                                operacao_codigo:   item.operacao,
+                                recurso_codigo:    item.recurso         || null,
+                                produto_codigo:    item.cod_produto_op  || null,
                                 data_inicio: plan.start.includes('T') ? plan.start : `${plan.start} 00:00:00`,
-                                data_fim: plan.end.includes('T') ? plan.end : `${plan.end} 23:59:59`,
+                                data_fim:    plan.end.includes('T')   ? plan.end   : `${plan.end}   23:59:59`,
                                 duracao_dias: plan.duracao || null,
                                 recurso_code: code,
                                 recurso_desc: group.desc || null

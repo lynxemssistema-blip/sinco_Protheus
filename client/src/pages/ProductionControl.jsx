@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     Calendar, Clock, CheckSquare, Search, Filter, AlertTriangle,
     ChevronDown, ChevronRight, MoreHorizontal, AlertOctagon, CheckCircle, List, Printer, FileText, HelpCircle,
-    Maximize2, Minimize2, Zap
+    Maximize2, Minimize2, Zap, Bot
 } from 'lucide-react';
 
 
@@ -13,10 +13,12 @@ import ProductionAppointmentModal from '../components/ProductionAppointmentModal
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
 import PCPMetalDrawer from '../components/PCPMetalDrawer';
+import PlanejamentoInteligenteModal from '../components/PlanejamentoInteligenteModal';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import CurvaSPedido from './pcp/CurvaSPedido';
 import EvolucaoApontamentosView from './pcp/EvolucaoApontamentosView';
 import PlanningAuditPanel from '../components/PlanningAuditPanel';
+import ResumoPlanejamentoView from '../components/ResumoPlanejamentoView';
 import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError, getResourceCapacities } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { generateProductionControlPdf } from '../services/productionControlPdfGenerator';
@@ -46,6 +48,9 @@ export default function ProductionControl() {
     // PCPMetal AI Drawer State
     const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
     const [pcpmetalContext, setPcpmetalContext] = useState({});
+    
+    // Planejamento Inteligente State
+    const [smartPlannerOpen, setSmartPlannerOpen] = useState(false);
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -456,6 +461,16 @@ export default function ProductionControl() {
                             <Zap className="w-5 h-5" />
                             PCPMetal AI
                         </button>
+                        <button
+                            onClick={() => {
+                                setSmartPlannerOpen(true);
+                            }}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                            title="Agente de Planejamento Inteligente FCS"
+                        >
+                            <Bot className="w-5 h-5" />
+                            Planejamento Inteligente
+                        </button>
                         {appointmentMode && (
                             <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                                 appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
@@ -624,6 +639,10 @@ export default function ProductionControl() {
                         <button onClick={() => setActiveTab('auditoria')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'auditoria' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
                             Auditoria de Planejamento
                             {activeTab === 'auditoria' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                        </button>
+                        <button onClick={() => setActiveTab('resumo_pedidos')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'resumo_pedidos' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Resumo por Pedido
+                            {activeTab === 'resumo_pedidos' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                         </button>
                     </div>
 
@@ -824,8 +843,8 @@ export default function ProductionControl() {
                                                     <div className="text-[10px] text-slate-500 font-bold uppercase" title="Tempo Padrão Unitário">
                                                         Unid: {op.tempad > 0 ? `${op.tempad.toFixed(2)} min` : '-'}
                                                     </div>
-                                                    <div className="text-xs text-indigo-700 font-bold" title="Tempo Total (Unitário x Qtd + Setup)">
-                                                        Total: {op.tempad > 0 ? `${((op.tempad * Number(op.qtd_planejada_op)) + (op.setup || 0)).toFixed(0)} min` : '-'}
+                                                    <div className="text-xs text-indigo-700 font-bold" title="Tempo Total Pendente (Unitário x Saldo + Setup)">
+                                                        Total: {op.tempad > 0 ? `${((op.tempad * Math.max(0, Number(op.qtd_planejada_op) - Number(op.qtd_produzida_real))) + (Number(op.qtd_produzida_real) === 0 ? (op.setup || 0) : 0)).toFixed(0)} min` : '-'}
                                                     </div>
                                                 </div>
                                             </td>
@@ -882,6 +901,10 @@ export default function ProductionControl() {
                     />
                 ) : activeTab === 'auditoria' ? (
                     <PlanningAuditPanel />
+                ) : activeTab === 'resumo_pedidos' ? (
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-1">
+                        <ResumoPlanejamentoView />
+                    </div>
                 ) : (
                     <CurvaSPedido filters={filters} />
                 ))}
@@ -962,6 +985,17 @@ export default function ProductionControl() {
             <div className="hidden print:block print:absolute print:top-0 print:left-0 print:w-full print:bg-white print:z-[9999]">
                 <ProductionPrint ops={ops} filters={filters} />
             </div>
+
+            <PlanejamentoInteligenteModal 
+                isOpen={smartPlannerOpen}
+                onClose={() => setSmartPlannerOpen(false)}
+                selectedOps={selectedOps}
+                onPlanSuccess={() => {
+                    setSmartPlannerOpen(false);
+                    setSelectedOps([]);
+                    loadData();
+                }}
+            />
         </>
     );
 }

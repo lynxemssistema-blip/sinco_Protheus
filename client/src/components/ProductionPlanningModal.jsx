@@ -24,6 +24,7 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [cascadePreview, setCascadePreview] = useState(null); // array de ops com datas calculadas
     const [loadingCascade, setLoadingCascade] = useState(false);
+    const [incluiSabado, setIncluiSabado] = useState(false);
 
     useEffect(() => {
         if (!isBatch && firstOp?.op) {
@@ -40,7 +41,7 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
         setCascadePreview(null);
         try {
             const start = `${formData.data_inicio}T${formData.hora_inicio}:00`;
-            const result = await previewCascade({ ops: opsArray, start_date: start });
+            const result = await previewCascade({ ops: opsArray, start_date: start, incluiSabado });
             setCascadePreview(result.cascade);
         } catch (error) {
             alert('Erro ao gerar cascata: ' + error.message);
@@ -70,9 +71,11 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                     op_item:         op.item_op,
                     op_sequencia:    op.sequen || '',
                     operacao_codigo: op.operacao || '',
-                    recurso_code:    op.recurso || null,
-                    recurso_desc:    op.desc_recurso || null,
-                    pedido_venda:    op.pedido_venda || op.pedido || null,
+                    recurso_codigo:  op.recurso         || null,
+                    produto_codigo:  op.cod_produto_op  || null,
+                    recurso_code:    op.recurso         || null,
+                    recurso_desc:    op.desc_recurso    || null,
+                    pedido_venda:    op.pedido_venda    || op.pedido || null,
                     data_inicio:     op.data_inicio_calc.replace('T', ' ').substring(0, 19),
                     data_fim:        op.data_fim_calc.replace('T', ' ').substring(0, 19),
                     lote_id
@@ -85,9 +88,11 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                     op_item:         op.item_op,
                     op_sequencia:    op.sequen || '',
                     operacao_codigo: op.operacao || '',
-                    recurso_code:    op.recurso || null,
-                    recurso_desc:    op.desc_recurso || null,
-                    pedido_venda:    op.pedido_venda || op.pedido || null,
+                    recurso_codigo:  op.recurso         || null,
+                    produto_codigo:  op.cod_produto_op  || null,
+                    recurso_code:    op.recurso         || null,
+                    recurso_desc:    op.desc_recurso    || null,
+                    pedido_venda:    op.pedido_venda    || op.pedido || null,
                     data_inicio:     start,
                     data_fim:        end,
                     lote_id
@@ -143,41 +148,24 @@ export default function ProductionPlanningModal({ ops, onClose, onSave }) {
                     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
 
                         {/* Datas */}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3">
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 mb-1">Data Início Planejada</label>
                                 <input type="date" required className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={formData.data_inicio}
                                     onChange={e => { setFormData(p => ({ ...p, data_inicio: e.target.value })); setCascadePreview(null); }} />
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Hora Início</label>
-                                <input type="time" required className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={formData.hora_inicio}
-                                    onChange={e => { setFormData(p => ({ ...p, hora_inicio: e.target.value })); setCascadePreview(null); }} />
-                            </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Data Fim Planejada</label>
-                                <input type="date" required={!cascadePreview} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                                    value={formData.data_fim}
-                                    disabled={!!cascadePreview}
-                                    onChange={e => setFormData(p => ({ ...p, data_fim: e.target.value }))} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Hora Fim</label>
-                                <input type="time" required={!cascadePreview} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                                    value={formData.hora_fim}
-                                    disabled={!!cascadePreview}
-                                    onChange={e => setFormData(p => ({ ...p, hora_fim: e.target.value }))} />
-                            </div>
-                        </div>
+
 
                         {/* Botão cascata ou resultado */}
                         {!cascadePreview ? (
-                            <div className="flex justify-end">
+                            <div className="flex flex-col items-end gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600 font-medium">
+                                    <input type="checkbox" checked={incluiSabado} onChange={e => setIncluiSabado(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
+                                    Incluir sábados na cascata?
+                                </label>
                                 <button type="button" onClick={handleGenerateCascade}
                                     disabled={loadingCascade || !formData.data_inicio || !formData.hora_inicio}
                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold text-sm rounded-lg flex items-center gap-2 transition-colors">

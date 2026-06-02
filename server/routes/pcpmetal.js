@@ -65,14 +65,14 @@ const initPCPMetal = async () => {
                 (
                     'Analista SQL PCPMetal',
                     'analista_sql',
-                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da MetalFisa (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App MetalFisa. Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Nunca gere UPDATE, INSERT, DELETE.',
+                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da MetalFisa (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App MetalFisa (como app_production_planning). Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Você TEM PERMISSÃO para gerar comandos UPDATE e INSERT no banco MySQL para alterar planejamento (ex: tabela app_production_planning) quando o usuário solicitar mudanças ou otimizações, mas NUNCA no PostgreSQL (Protheus).',
                     'A MetalFisa é uma indústria metalúrgica brasileira. Trabalha com pedidos de venda que envolvem produtos fabricados internamente. O PCP (Planejamento e Controle da Produção) precisa monitorar constantemente o andamento das Ordens de Produção vs datas de entrega comprometidas com os clientes.',
                     'gemini-2.5-flash'
                 ),
                 (
                     'Estrategista PCPMetal',
                     'estrategista',
-                    'Você é PCPMetal, o assistente estrategista de Planejamento e Controle da Produção da MetalFisa. Você recebe dados coletados do banco e elabora relatórios técnicos completos focados em: status de fabricação, risco de atraso de entrega ao cliente, quantidade faltante para completar o pedido, e estratégias práticas de ação para o PCP. Seus relatórios são objetivos, técnicos, estruturados em Markdown, sempre em Português (Brasil). Você é parceiro do PCP e sempre prioriza a satisfação do cliente final.',
+                    'Você é PCPMetal, o assistente estrategista de Planejamento e Controle da Produção da MetalFisa. Você recebe dados coletados do banco e elabora relatórios técnicos completos. Foco: entender a estrutura completa de cada OP e seus filhos, respeitando a sequência de fabricação e recursos. Você deve definir a melhor estratégia de produção, propondo antecipar (puxar) a carga de dias futuros para o dia atual quando houver capacidade ociosa disponível. Você pode alertar o usuário com dicas importantes e tem autorização para emitir comandos que alterem o planejamento (solicitando ao Analista SQL). Seus relatórios devem permitir que o usuário interaja e comente para novas análises.',
                     'A MetalFisa opera com lead times de produção que variam de 10 a 90 dias dependendo da complexidade do produto. Priorize pedidos com data de entrega mais próxima. Considere que a engenharia precisa de pelo menos 3 dias para liberar BOM antes de iniciar a produção.',
                     'gemini-2.5-flash'
                 ),
@@ -334,7 +334,7 @@ router.post('/ask', async (req, res) => {
 // POST /api/pcpmetal/ask-stream — SSE streaming via POST (fetch + ReadableStream)
 // Accepts history in body so multi-turn context works without URL limits.
 router.post('/ask-stream', async (req, res) => {
-    const { pergunta, pedido, item, cliente, produto, userId, historico = [] } = req.body;
+    const { pergunta, pedido, item, cliente, produto, userId, historico = [], pageData = null } = req.body;
 
     if (!pergunta || !pergunta.trim()) {
         res.status(400).json({ error: 'Informe uma pergunta.' });
@@ -361,8 +361,9 @@ router.post('/ask-stream', async (req, res) => {
         const result = await orchestrate({
             userMessage: pergunta,
             requestContext: { pedido, item, cliente, produto },
+            pageData,           // ← dados da página controle-producao
             userId: parseInt(userId) || 0,
-            historico,   // last N turns passed to Gemini for context
+            historico,
             emit: sendEvent
         });
 
@@ -374,6 +375,7 @@ router.post('/ask-stream', async (req, res) => {
         res.end();
     }
 });
+
 
 module.exports = router;
 

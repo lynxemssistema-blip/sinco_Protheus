@@ -408,6 +408,7 @@ export const saveProductionPlanBatch = (plans, observacao, modo_calculo, prefere
 
 export const previewCascade = (payload) =>
     api.post('/production/cascade-preview', payload).then(res => res.data);
+export const getResourceCapacities = () => api.get('/production/capacities').then(res => res.data);
 export const getPlanningHistory = (op) => api.get(`/production/planning-history/${encodeURIComponent(op)}`).then(res => res.data);
 export const getPlanningPrefs = (op) => api.get(`/production/planning-prefs/${encodeURIComponent(op)}`).then(res => res.data);
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);

@@ -38,10 +38,11 @@ async function loadAllActiveAgents() {
  * @param {Object} params
  * @param {string} params.userMessage
  * @param {Object} params.requestContext - { pedido, item, cliente, produto }
+ * @param {Object} [params.pageData]     - Dados ja carregados na pagina (ops, filtros, etc.)
  * @param {number} params.userId
  * @param {Function} [params.emit] - optional SSE callback: emit({ type, message, data? })
  */
-async function orchestrate({ userMessage, requestContext = {}, userId, historico = [], emit }) {
+async function orchestrate({ userMessage, requestContext = {}, pageData = null, userId, historico = [], emit }) {
     const send = emit || (() => { });
     const executedSQLs = [];
 
@@ -53,13 +54,25 @@ async function orchestrate({ userMessage, requestContext = {}, userId, historico
         recentHistory.map(h => `**${h.role === 'user' ? 'Usuário' : 'PCPMetal'}:** ${h.text}`).join('\n\n')
         : '';
 
-    // ---- STEP 1: Load schema and order context ----
-    send({ type: 'step', icon: '🗂️', message: 'Carregando contexto e esquema dos bancos de dados...' });
-    const schemaRows = await loadSchemaContext();
+    // Detectar se o usuário quer explicitamente uma consulta ao banco de dados
+    const DB_KEYWORDS = [
+        'banco', 'banco de dados', 'consultar', 'consulta', 'sql', 'buscar no banco',
+        'historico de apontamentos', 'histórico de apontamentos', 'apontamentos reais',
+        'planejamento salvo', 'datas salvas', 'atualizar planejamento', 'alterar planejamento',
+        'salvar data', 'registrar', 'gravar'
+    ];
+    const perguntaLower = userMessage.toLowerCase();
+    const needsDB = DB_KEYWORDS.some(kw => perguntaLower.includes(kw));
+
+    send({ type: 'step', icon: '🗂️', message: needsDB
+        ? 'Consulta ao banco de dados solicitada — ativando Analista SQL...'
+        : 'Analisando dados da página de Controle de Produção...' });
+
+    const schemaRows = needsDB ? await loadSchemaContext() : [];
 
     let orderContext = null;
-    if (requestContext.pedido) {
-        send({ type: 'step', icon: '📦', message: `Buscando dados do pedido ${requestContext.pedido.trim()}...` });
+    if (needsDB && requestContext.pedido) {
+        send({ type: 'step', icon: '📦', message: `Buscando dados do pedido ${requestContext.pedido.trim()} no banco...` });
         orderContext = await getOrderContext(requestContext.pedido, requestContext.item);
         if (orderContext) {
             const itemCount = orderContext.itens?.length || 0;
@@ -67,58 +80,63 @@ async function orchestrate({ userMessage, requestContext = {}, userId, historico
         }
     }
 
-    // ---- STEP 2: SQL Analyst Phase ----
-    send({ type: 'step', icon: '🤖', message: 'Analista SQL analisando a pergunta e gerando consultas...' });
-
-    const analystAgent = await loadAgent('analista_sql');
-    if (!analystAgent) {
-        send({ type: 'error', message: 'Agente Analista não configurado.' });
-        return {
-            answer: '❌ Agente Analista SQL não configurado. Vá em Configurações > Inteligência Artificial.',
-            sqlsExecuted: [],
-            error: 'analyst_not_configured'
-        };
-    }
-
-    send({ type: 'step', icon: '💬', message: `Consultando modelo **${analystAgent.modelo || 'gemini-2.5-flash'}**...` });
-    const analystPrompt = buildSystemPrompt(analystAgent, { ...requestContext, orderContext }, schemaRows);
-    const analystQuestion = `Pergunta do usuário: "${userMessage}"${historyContext}\n\nGenere as consultas SQL necessárias para obter TODOS os dados relevantes para responder essa pergunta. Execute no máximo ${MAX_SQL_ROUNDS} consultas. Formato: \`\`\`sql\n[BANCO: postgresql ou mysql]\nSELECT...\n\`\`\``;
-
-    const analystResponse = await askGemini(analystPrompt, analystQuestion, analystAgent.modelo);
-
-    // ---- STEP 3: Execute generated SQL queries ----
-    const sqlQueries = parseSQLFromResponse(analystResponse);
+    // ---- STEP 2: SQL Analyst Phase (somente quando DB explicitamente solicitado) ----
     const queryResults = [];
 
-    if (sqlQueries.length === 0) {
-        send({ type: 'step', icon: '⚠️', message: 'Nenhuma consulta SQL gerada — respondendo com contexto base.' });
-    } else {
-        send({ type: 'step', icon: '🔍', message: `${sqlQueries.length} consulta(s) SQL gerada(s) — executando...` });
-    }
+    if (needsDB) {
+        send({ type: 'step', icon: '🤖', message: 'Analista SQL analisando a pergunta e gerando consultas...' });
 
-    for (let i = 0; i < sqlQueries.slice(0, MAX_SQL_ROUNDS).length; i++) {
-        const { banco, sql } = sqlQueries[i];
-        const dbLabel = banco === 'postgresql' ? 'Protheus (PostgreSQL)' : 'App MetalFisa (MySQL)';
-        send({
-            type: 'sql',
-            icon: '⚙️',
-            message: `Executando consulta ${i + 1}/${sqlQueries.length} em **${dbLabel}**`,
-            data: { banco, sql }
-        });
-        try {
-            const result = await runQuery(banco, sql);
-            queryResults.push({ banco, sql, rows: result.rows, rowCount: result.rowCount, error: null });
-            executedSQLs.push({ banco, sql, rowCount: result.rowCount });
-            send({ type: 'step', icon: '✅', message: `Consulta ${i + 1} retornou **${result.rowCount}** linha(s)` });
-        } catch (err) {
-            queryResults.push({ banco, sql, rows: [], rowCount: 0, error: err.message });
-            executedSQLs.push({ banco, sql, error: err.message });
-            send({ type: 'step', icon: '❌', message: `Consulta ${i + 1} falhou: ${err.message}` });
+        const analystAgent = await loadAgent('analista_sql');
+        if (!analystAgent) {
+            send({ type: 'error', message: 'Agente Analista não configurado.' });
+            return {
+                answer: '❌ Agente Analista SQL não configurado. Vá em Configurações > Inteligência Artificial.',
+                sqlsExecuted: [],
+                error: 'analyst_not_configured'
+            };
+        }
+
+        send({ type: 'step', icon: '💬', message: `Consultando modelo **${analystAgent.modelo || 'gemini-2.5-flash'}**...` });
+        const analystPrompt = buildSystemPrompt(analystAgent, { ...requestContext, orderContext }, schemaRows);
+        const analystQuestion = `Pergunta do usuário: "${userMessage}"${historyContext}\n\nGenere as consultas SQL necessárias para obter TODOS os dados relevantes para responder essa pergunta. Execute no máximo ${MAX_SQL_ROUNDS} consultas. Formato: \`\`\`sql\n[BANCO: postgresql ou mysql]\nSELECT...\n\`\`\``;
+
+        const analystResponse = await askGemini(analystPrompt, analystQuestion, analystAgent.modelo);
+
+        // ---- STEP 3: Execute generated SQL queries ----
+        const sqlQueries = parseSQLFromResponse(analystResponse);
+
+        if (sqlQueries.length === 0) {
+            send({ type: 'step', icon: '⚠️', message: 'Nenhuma consulta SQL gerada — respondendo com contexto base.' });
+        } else {
+            send({ type: 'step', icon: '🔍', message: `${sqlQueries.length} consulta(s) SQL gerada(s) — executando...` });
+        }
+
+        for (let i = 0; i < sqlQueries.slice(0, MAX_SQL_ROUNDS).length; i++) {
+            const { banco, sql } = sqlQueries[i];
+            const dbLabel = banco === 'postgresql' ? 'Protheus (PostgreSQL)' : 'App MetalFisa (MySQL)';
+            send({
+                type: 'sql',
+                icon: '⚙️',
+                message: `Executando consulta ${i + 1}/${sqlQueries.length} em **${dbLabel}**`,
+                data: { banco, sql }
+            });
+            try {
+                const result = await runQuery(banco, sql);
+                queryResults.push({ banco, sql, rows: result.rows, rowCount: result.rowCount, error: null });
+                executedSQLs.push({ banco, sql, rowCount: result.rowCount });
+                send({ type: 'step', icon: '✅', message: `Consulta ${i + 1} retornou **${result.rowCount}** linha(s)` });
+            } catch (err) {
+                queryResults.push({ banco, sql, rows: [], rowCount: 0, error: err.message });
+                executedSQLs.push({ banco, sql, error: err.message });
+                send({ type: 'step', icon: '❌', message: `Consulta ${i + 1} falhou: ${err.message}` });
+            }
         }
     }
 
     // ---- STEP 4: Strategist Phase ----
-    send({ type: 'step', icon: '🧠', message: 'Estrategista PCPMetal analisando os dados coletados...' });
+    send({ type: 'step', icon: '🧠', message: needsDB
+        ? 'Estrategista PCPMetal analisando os dados coletados do banco...'
+        : 'Estrategista PCPMetal analisando dados da página de Controle de Produção...' });
 
     const strategistAgent = await loadAgent('estrategista');
     if (!strategistAgent) {
@@ -131,13 +149,28 @@ async function orchestrate({ userMessage, requestContext = {}, userId, historico
     }
 
     const strategistPrompt = buildSystemPrompt(strategistAgent, { ...requestContext, orderContext }, schemaRows);
-    const dataForStrategist = queryResults.map((qr, idx) => {
-        const rows = qr.rows || [];
-        const preview = JSON.stringify(rows.slice(0, 50), null, 2);
-        return `### Resultado ${idx + 1} (${qr.banco}):\nSQL: \`${qr.sql}\`\n${qr.error ? `ERRO: ${qr.error}` : `${qr.rowCount} linha(s):\n\`\`\`json\n${preview}\n\`\`\``}`;
-    }).join('\n\n');
 
-    const finalQuestion = `Pergunta original: "${userMessage}"${historyContext}\n\n${dataForStrategist ? `DADOS COLETADOS:\n${dataForStrategist}` : 'Nenhuma consulta executada.'}\n\nElabore um relatório técnico completo de PCP em Markdown com: Resumo Executivo, Análise de Prazo, Quantidade Faltante, Estratégia e Alertas. Responda em Português (Brasil).`;
+    // Monta bloco de dados: prioriza pageData, depois resultados de SQL
+    let dataBlock = '';
+    if (pageData && (pageData.ops?.length || pageData.selectedOps?.length)) {
+        const opsParaAnalise = pageData.selectedOps?.length > 0 ? pageData.selectedOps : pageData.ops;
+        const preview = JSON.stringify((opsParaAnalise || []).slice(0, 100), null, 2);
+        dataBlock += `### DADOS DA PÁGINA "CONTROLE DE PRODUÇÃO" (fonte primária):\n`;
+        dataBlock += `Total de OPs visíveis: ${pageData.ops?.length || 0} | OPs selecionadas: ${pageData.selectedOps?.length || 0}\n`;
+        if (pageData.filters) dataBlock += `Filtros ativos: ${JSON.stringify(pageData.filters)}\n`;
+        dataBlock += `\nAmostra das OPs (até 100):\n\`\`\`json\n${preview}\n\`\`\`\n`;
+    }
+    if (queryResults.length > 0) {
+        dataBlock += queryResults.map((qr, idx) => {
+            const rows = qr.rows || [];
+            const preview = JSON.stringify(rows.slice(0, 50), null, 2);
+            return `### Resultado SQL ${idx + 1} (${qr.banco}):\nSQL: \`${qr.sql}\`\n${qr.error ? `ERRO: ${qr.error}` : `${qr.rowCount} linha(s):\n\`\`\`json\n${preview}\n\`\`\``}`;
+        }).join('\n\n');
+    }
+    if (!dataBlock) dataBlock = 'Nenhum dado disponível.';
+
+    const finalQuestion = `Pergunta original: "${userMessage}"${historyContext}\n\n${dataBlock}\n\nElabore um relatório técnico completo de PCP em Markdown com: Resumo Executivo, Análise de Prazo, Quantidade Faltante, Estratégia e Alertas. Responda em Português (Brasil).`;
+
 
     send({ type: 'step', icon: '💬', message: `Gerando relatório com **${strategistAgent.modelo || 'gemini-2.5-flash'}**...` });
     const finalAnswer = await askGemini(strategistPrompt, finalQuestion, strategistAgent.modelo);
