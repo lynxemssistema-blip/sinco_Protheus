@@ -374,181 +374,257 @@ export default function ProductionMatrixPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {data.items.map((item) => (
-                                    <tr key={`${item.op}_${item.item_op}_${item.sequencia || '001'}`} className={`transition-colors ${(!item.sequencia || item.sequencia === '001') ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
-                                        <td className="border-b border-r px-4 py-3 bg-white sticky left-0 z-10">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className={`flex-1 ${(item.sequencia && item.sequencia !== '001') ? 'pl-4 border-l-2 border-slate-200 ml-1' : ''}`}>
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="text-[10px] text-slate-500 font-mono">
-                                                            {item.op}-{item.item_op}
-                                                            {item.sequencia && item.sequencia !== '001' && (
-                                                                <span className="ml-1 text-slate-400">Seq: {item.sequencia}</span>
-                                                            )}
-                                                        </div>
-                                                        {(item.sequencia && item.sequencia !== '001') && <div className="text-[10px] text-slate-300">↳</div>}
-                                                    </div>
+                                {(() => {
+                                    // 1. Agrupar itens por Produto
+                                    const grouped = data.items.reduce((acc, item) => {
+                                        const key = item.cod_produto || 'Sem Produto';
+                                        if (!acc[key]) {
+                                            acc[key] = {
+                                                cod_produto: key,
+                                                desc_produto: item.desc_produto,
+                                                items: [],
+                                                totalSolicitada: 0,
+                                                totalProduzida: 0
+                                            };
+                                        }
+                                        acc[key].items.push(item);
+                                        return acc;
+                                    }, {});
 
-                                                    {item.nome_cliente && <div className="text-[10px] text-slate-400 truncate max-w-[150px]" title={item.nome_cliente}>{item.nome_cliente}</div>}
-                                                    <div className="text-xs text-slate-600 mt-0.5">{item.desc_produto}</div>
-                                                    <div className="text-xs text-blue-600 mt-0.5 font-mono">{item.cod_produto}</div>
-                                                    {item.pedido_venda && (
-                                                        <div className="text-xs text-blue-600 mt-1">PV: {item.pedido_venda}</div>
-                                                    )}
-                                                </div>
-                                                {/* Botão de PDF */}
-                                                {item.doc_url ? (
-                                                    <a
-                                                        href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.doc_url)}`)}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-red-50 text-red-600 rounded border border-red-100 text-[10px] font-bold hover:bg-red-100 transition-colors"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        title={`Ver desenho técnico (Rev: ${item.doc_rev || 'N/A'})`}
-                                                    >
-                                                        <FileText className="w-3 h-3" />
-                                                        PDF
-                                                    </a>
-                                                ) : (
-                                                    <span
-                                                        className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded border border-slate-200 text-[10px] font-bold cursor-not-allowed grayscale opacity-60"
-                                                        title="Sem desenho associado"
-                                                    >
-                                                        <FileText className="w-3 h-3 opacity-50" />
-                                                        PDF
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        {
-                                            data.operations.map(op => {
-                                                const opCode = typeof op === 'object' ? op.code : op;
-                                                const opData = item.operations[opCode];
+                                    // 2. Calcular totais para cada grupo
+                                    Object.values(grouped).forEach(group => {
+                                        let solicitada = 0;
+                                        let produzida = 0;
 
-                                                if (!opData) {
-                                                    return (
-                                                        <td key={opCode} className="border-b px-2 py-2 text-center bg-gray-50">
-                                                            <span className="text-gray-300 text-xs">-</span>
-                                                        </td>
-                                                    );
+                                        group.items.forEach(item => {
+                                            const ops = Object.values(item.operations);
+                                            if (ops.length > 0) {
+                                                // Quantidade solicitada = máxima planejada entre as operações (geralmente é igual em todas)
+                                                const maxPlan = Math.max(...ops.map(o => o.qtd_planejada || 0));
+                                                solicitada += maxPlan;
+
+                                                // Quantidade produzida = quantidade produzida da ÚLTIMA operação (maior sequen/operacao_real)
+                                                const sortedOps = [...ops].sort((a, b) => {
+                                                    const seqA = Number(a.sequen) || 0;
+                                                    const seqB = Number(b.sequen) || 0;
+                                                    if (seqA !== seqB) return seqA - seqB;
+                                                    return (Number(a.operacao_real) || 0) - (Number(b.operacao_real) || 0);
+                                                });
+                                                const lastOp = sortedOps[sortedOps.length - 1];
+                                                if (lastOp) {
+                                                    produzida += (lastOp.qtd_produzida || 0);
                                                 }
+                                            }
+                                        });
 
-                                                const timerId = `${item.op}_${item.item_op || '01'}_${item.sequencia || '001'}_${opData.operacao_real || opCode}`;
-                                                const cellTimer = timers[timerId];
-                                                const isRunning = cellTimer && cellTimer.isRunning;
-                                                const startedTime = cellTimer?.startedAt
-                                                    ? new Date(cellTimer.startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                                                    : null;
+                                        group.totalSolicitada = solicitada;
+                                        group.totalProduzida = produzida;
+                                        group.saldo = Math.max(0, solicitada - produzida);
+                                    });
 
-                                                return (
-                                                    <td
-                                                        key={opCode}
-                                                        className={`border-b px-2 py-2 cursor-pointer hover:opacity-80 transition-all group ${getStatusColor(opData.status)} ${isRunning ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50' : ''}`}
-                                                        onClick={() => handleCellClick(item, opCode)}
-                                                    >
-                                                        <div className="text-center space-y-1 relative">
-                                                            {/* Display Operation Code */}
-                                                            {opData.operacao_real && (
-                                                                <div className="text-[10px] font-mono font-bold text-slate-500 mb-0.5 bg-white/30 rounded inline-block px-1">
-                                                                    Op: {opData.operacao_real}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex items-center justify-center gap-1">
-                                                                {getStatusIcon(opData.status)}
-                                                                <span className="font-bold text-sm">
-                                                                    {opData.qtd_produzida.toFixed(0)}/{opData.qtd_planejada.toFixed(0)}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-xs font-medium">{opData.percentual}%</div>
-                                                            
-                                                            {opData.dates?.plan_start && (
-                                                                <div className="text-[9px] font-medium text-slate-500 bg-white/50 rounded inline-block px-1 mb-1">
-                                                                    P: {formatDate(opData.dates.plan_start)} 
-                                                                    {opData.dates.plan_end && formatDate(opData.dates.plan_start) !== formatDate(opData.dates.plan_end) ? ` a ${formatDate(opData.dates.plan_end)}` : ''}
-                                                                </div>
-                                                            )}
+                                    // 3. Renderizar Grupos e Itens
+                                    return Object.values(grouped).map(group => (
+                                        <React.Fragment key={`group-${group.cod_produto}`}>
+                                            {/* Linha de Cabeçalho do Grupo */}
+                                            <tr className="bg-slate-200 border-b-2 border-slate-300">
+                                                <td colSpan={data.operations.length + 1} className="px-4 py-3 font-bold text-slate-800 sticky left-0 z-20">
+                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <Package className="w-5 h-5 text-indigo-600" />
+                                                            <span>Produto: {group.cod_produto} - {group.desc_produto}</span>
+                                                        </div>
+                                                        <div className="flex gap-4 text-xs md:text-sm">
+                                                            <span className="bg-white px-3 py-1 rounded shadow-sm border border-slate-200">
+                                                                Qtd Solicitada: <span className="text-blue-600">{group.totalSolicitada.toFixed(0)}</span>
+                                                            </span>
+                                                            <span className="bg-white px-3 py-1 rounded shadow-sm border border-slate-200">
+                                                                Qtd Produzida: <span className="text-emerald-600">{group.totalProduzida.toFixed(0)}</span>
+                                                            </span>
+                                                            <span className="bg-white px-3 py-1 rounded shadow-sm border border-slate-200">
+                                                                Saldo: <span className="text-rose-600">{group.saldo.toFixed(0)}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
 
-                                                            {opData.tem_pendencia && (
-                                                                <div
-                                                                    className="mt-0.5 flex justify-center cursor-pointer"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        const opObj = buildOpObject(item, opCode);
-                                                                        if (opObj) setHistoryTarget(opObj);
-                                                                    }}
-                                                                >
-                                                                    <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" title="Apontamentos pendentes de conferência nesta operação. Clique para verificar.">
-                                                                        <Clock className="w-2.5 h-2.5" />
-                                                                        Conf.
+                                            {/* Itens do Grupo */}
+                                            {group.items.map((item) => (
+                                                <tr key={`${item.op}_${item.item_op}_${item.sequencia || '001'}`} className={`transition-colors ${(!item.sequencia || item.sequencia === '001') ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
+                                                    <td className="border-b border-r px-4 py-3 bg-white sticky left-0 z-10">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <div className={`flex-1 ${(item.sequencia && item.sequencia !== '001') ? 'pl-4 border-l-2 border-slate-200 ml-1' : ''}`}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="text-[10px] text-slate-500 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                        OP: {item.op}-{item.item_op}
+                                                                        {item.sequencia && item.sequencia !== '001' && (
+                                                                            <span className="ml-1 text-slate-400">Seq: {item.sequencia}</span>
+                                                                        )}
                                                                     </div>
+                                                                    {(item.sequencia && item.sequencia !== '001') && <div className="text-[10px] text-slate-300">↳</div>}
                                                                 </div>
-                                                            )}
 
-                                                            {/* TIMER: Static badge showing started time (no live counter) */}
-                                                            {cellTimer && (
-                                                                <div className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 ${isRunning ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                                                                    {isRunning ? `▶ ${startedTime}` : `⏸ ${startedTime}`}
-                                                                </div>
-                                                            )}
-
-                                                            <div className="h-1.5 bg-white/50 rounded-full overflow-hidden mt-1">
-                                                                <div
-                                                                    className="h-full bg-current transition-all"
-                                                                    style={{ width: `${Math.min(100, opData.percentual)}%` }}
-                                                                />
+                                                                {item.nome_cliente && <div className="text-[10px] text-slate-400 truncate max-w-[150px] mt-1" title={item.nome_cliente}>Cli: {item.nome_cliente}</div>}
+                                                                {item.pedido_venda && (
+                                                                    <div className="text-[10px] text-blue-600 mt-0.5 font-mono">PV: {item.pedido_venda}</div>
+                                                                )}
                                                             </div>
-
-                                                            {/* IN-CELL CONTROLS (Hover State) */}
-                                                            {opData.percentual < 100 && (
-                                                                <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1 bg-white shadow-md border border-slate-200 rounded-full px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-1/2 z-10 ${isRunning ? 'opacity-100 ring-1 ring-emerald-400' : ''}`} onClick={e => e.stopPropagation()}>
-                                                                    {!isRunning ? (
-                                                                        <button onClick={(e) => handleCellPlay(e, item, opCode)} className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-full" title="Iniciar/Retomar">
-                                                                            <Play className="w-3.5 h-3.5 fill-current" />
-                                                                        </button>
-                                                                    ) : (
-                                                                        <button onClick={(e) => handleCellPause(e, timerId)} className="p-1 hover:bg-amber-100 text-amber-600 rounded-full" title="Pausar">
-                                                                            <Pause className="w-3.5 h-3.5 fill-current" />
-                                                                        </button>
-                                                                    )}
-
-                                                                    <button
-                                                                        onClick={(e) => handleCellStop(e, timerId, item, opCode)}
-                                                                        disabled={!cellTimer}
-                                                                        className="p-1 hover:bg-rose-100 text-rose-600 rounded-full disabled:opacity-30 disabled:hover:bg-transparent"
-                                                                        title="Finalizar (Apontar)"
-                                                                    >
-                                                                        <Square className="w-3.5 h-3.5 fill-current" />
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={(e) => handleCellRestart(e, timerId)}
-                                                                        disabled={!cellTimer}
-                                                                        className="p-1 hover:bg-slate-200 text-slate-700 rounded-full disabled:opacity-30 disabled:hover:bg-transparent"
-                                                                        title="Zerar Tempo"
-                                                                    >
-                                                                        <RotateCcw className="w-3.5 h-3.5 fill-current" />
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            const opObj = buildOpObject(item, opCode);
-                                                                            if (opObj) setHistoryTarget(opObj);
-                                                                        }}
-                                                                        className="p-1 hover:bg-indigo-100 text-indigo-600 rounded-full"
-                                                                        title="Ver Histórico / Conferir"
-                                                                    >
-                                                                        <History className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </div>
+                                                            {/* Botão de PDF */}
+                                                            {item.doc_url ? (
+                                                                <a
+                                                                    href={getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.doc_url)}`)}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-red-50 text-red-600 rounded border border-red-100 text-[10px] font-bold hover:bg-red-100 transition-colors"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    title={`Ver desenho técnico (Rev: ${item.doc_rev || 'N/A'})`}
+                                                                >
+                                                                    <FileText className="w-3 h-3" />
+                                                                    PDF
+                                                                </a>
+                                                            ) : (
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded border border-slate-200 text-[10px] font-bold cursor-not-allowed grayscale opacity-60"
+                                                                    title="Sem desenho associado"
+                                                                >
+                                                                    <FileText className="w-3 h-3 opacity-50" />
+                                                                    PDF
+                                                                </span>
                                                             )}
                                                         </div>
                                                     </td>
-                                                );
-                                            })
-                                        }
-                                    </tr>
-                                ))}
+                                                    {
+                                                        data.operations.map(op => {
+                                                            const opCode = typeof op === 'object' ? op.code : op;
+                                                            const opData = item.operations[opCode];
+
+                                                            if (!opData) {
+                                                                return (
+                                                                    <td key={opCode} className="border-b px-2 py-2 text-center bg-gray-50">
+                                                                        <span className="text-gray-300 text-xs">-</span>
+                                                                    </td>
+                                                                );
+                                                            }
+
+                                                            const timerId = `${item.op}_${item.item_op || '01'}_${item.sequencia || '001'}_${opData.operacao_real || opCode}`;
+                                                            const cellTimer = timers[timerId];
+                                                            const isRunning = cellTimer && cellTimer.isRunning;
+                                                            const startedTime = cellTimer?.startedAt
+                                                                ? new Date(cellTimer.startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                                                                : null;
+
+                                                            return (
+                                                                <td
+                                                                    key={opCode}
+                                                                    className={`border-b px-2 py-2 cursor-pointer hover:opacity-80 transition-all group ${getStatusColor(opData.status)} ${isRunning ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50' : ''}`}
+                                                                    onClick={() => handleCellClick(item, opCode)}
+                                                                >
+                                                                    <div className="text-center space-y-1 relative">
+                                                                        {/* Display Operation Code */}
+                                                                        {opData.operacao_real && (
+                                                                            <div className="text-[10px] font-mono font-bold text-slate-500 mb-0.5 bg-white/30 rounded inline-block px-1">
+                                                                                Op: {opData.operacao_real}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="flex items-center justify-center gap-1">
+                                                                            {getStatusIcon(opData.status)}
+                                                                            <span className="font-bold text-sm">
+                                                                                {opData.qtd_produzida.toFixed(0)}/{opData.qtd_planejada.toFixed(0)}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="text-xs font-medium">{opData.percentual}%</div>
+                                                                        
+                                                                        {opData.dates?.plan_start && (
+                                                                            <div className="text-[9px] font-medium text-slate-500 bg-white/50 rounded inline-block px-1 mb-1">
+                                                                                P: {formatDate(opData.dates.plan_start)} 
+                                                                                {opData.dates.plan_end && formatDate(opData.dates.plan_start) !== formatDate(opData.dates.plan_end) ? ` a ${formatDate(opData.dates.plan_end)}` : ''}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {opData.tem_pendencia && (
+                                                                            <div
+                                                                                className="mt-0.5 flex justify-center cursor-pointer"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const opObj = buildOpObject(item, opCode);
+                                                                                    if (opObj) setHistoryTarget(opObj);
+                                                                                }}
+                                                                            >
+                                                                                <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" title="Apontamentos pendentes de conferência nesta operação. Clique para verificar.">
+                                                                                    <Clock className="w-2.5 h-2.5" />
+                                                                                    Conf.
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* TIMER: Static badge showing started time (no live counter) */}
+                                                                        {cellTimer && (
+                                                                            <div className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 ${isRunning ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                                                {isRunning ? `▶ ${startedTime}` : `⏸ ${startedTime}`}
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div className="h-1.5 bg-white/50 rounded-full overflow-hidden mt-1">
+                                                                            <div
+                                                                                className="h-full bg-current transition-all"
+                                                                                style={{ width: `${Math.min(100, opData.percentual)}%` }}
+                                                                            />
+                                                                        </div>
+
+                                                                        {/* IN-CELL CONTROLS (Hover State) */}
+                                                                        {opData.percentual < 100 && (
+                                                                            <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1 bg-white shadow-md border border-slate-200 rounded-full px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-1/2 z-10 ${isRunning ? 'opacity-100 ring-1 ring-emerald-400' : ''}`} onClick={e => e.stopPropagation()}>
+                                                                                {!isRunning ? (
+                                                                                    <button onClick={(e) => handleCellPlay(e, item, opCode)} className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-full" title="Iniciar/Retomar">
+                                                                                        <Play className="w-3.5 h-3.5 fill-current" />
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <button onClick={(e) => handleCellPause(e, timerId)} className="p-1 hover:bg-amber-100 text-amber-600 rounded-full" title="Pausar">
+                                                                                        <Pause className="w-3.5 h-3.5 fill-current" />
+                                                                                    </button>
+                                                                                )}
+
+                                                                                <button
+                                                                                    onClick={(e) => handleCellStop(e, timerId, item, opCode)}
+                                                                                    disabled={!cellTimer}
+                                                                                    className="p-1 hover:bg-rose-100 text-rose-600 rounded-full disabled:opacity-30 disabled:hover:bg-transparent"
+                                                                                    title="Finalizar (Apontar)"
+                                                                                >
+                                                                                    <Square className="w-3.5 h-3.5 fill-current" />
+                                                                                </button>
+
+                                                                                <button
+                                                                                    onClick={(e) => handleCellRestart(e, timerId)}
+                                                                                    disabled={!cellTimer}
+                                                                                    className="p-1 hover:bg-slate-200 text-slate-700 rounded-full disabled:opacity-30 disabled:hover:bg-transparent"
+                                                                                    title="Zerar Tempo"
+                                                                                >
+                                                                                    <RotateCcw className="w-3.5 h-3.5 fill-current" />
+                                                                                </button>
+
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        const opObj = buildOpObject(item, opCode);
+                                                                                        if (opObj) setHistoryTarget(opObj);
+                                                                                    }}
+                                                                                    className="p-1 hover:bg-indigo-100 text-indigo-600 rounded-full"
+                                                                                    title="Ver Histórico / Conferir"
+                                                                                >
+                                                                                    <History className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            );
+                                                        })
+                                                    }
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ));
+                                })()}
                             </tbody>
                         </table>
                     </div>

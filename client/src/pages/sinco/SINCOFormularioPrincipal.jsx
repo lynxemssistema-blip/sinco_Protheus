@@ -266,7 +266,8 @@ export default function SINCOFormularioPrincipal() {
                 }));
             }
         } catch (e) {
-            setErroProtheus(`Produto ${codigoSemExtensao} não encontrado no Protheus (SB1/SB5). As tabelas ainda podem retornar dados se existirem.`);
+            console.warn(`Produto ${codigoSemExtensao} não encontrado no Protheus (SB1/SB5).`);
+            showToast(`Produto ${codigoSemExtensao} não cadastrado. Criando novo...`, 'warning');
         }
 
         carregarProtheus(codigoSemExtensao);

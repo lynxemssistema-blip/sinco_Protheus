@@ -64,6 +64,12 @@ api.interceptors.response.use(
         // 409 Conflict = duplicate resource (login/e-mail já cadastrado) — handled at component level
         if (status === 409) return Promise.reject(error);
 
+        // Suprimir log de 404 esperado para a rota /sinco/produto/ (produto novo)
+        const url = error.config?.url || '';
+        if (status === 404 && url.includes('/sinco/produto/')) {
+            return Promise.reject(error);
+        }
+
         console.error(`❌ Erro na API [${status || 'NET'}] ${error.config?.method?.toUpperCase() || '?'} ${error.config?.url} — ${error.message}`);
         return Promise.reject(error);
     }

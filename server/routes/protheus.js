@@ -15,6 +15,111 @@ async function queryProtheus(sql, params = []) {
 }
 
 // =========================================================================
+// ROTA: Buscar Associação Fornecedor x Produto (De/Para NF)
+// =========================================================================
+router.post('/de-para-produtos', async (req, res) => {
+    try {
+        const { cnpj, codigos_fornecedor, numero_nf } = req.body;
+        if (!cnpj || !codigos_fornecedor || codigos_fornecedor.length === 0) {
+            return res.json({});
+        }
+
+        const cleanCnpj = cnpj.replace(/\D/g, '');
+        const sqlFornecedor = `SELECT trim(a2_cod) as a2_cod FROM public.sa2010 WHERE trim(a2_cgc) = $1 AND d_e_l_e_t_ = ' ' LIMIT 1`;
+        const fornecedores = await queryProtheus(sqlFornecedor, [cleanCnpj]);
+
+        if (fornecedores.length === 0) return res.json({});
+
+        const a2_cod = fornecedores[0].a2_cod.trim();
+        
+        const inParams = codigos_fornecedor.map((_, i) => `$${i + 2}`).join(',');
+        
+        // Aplica TRIM no a5_fornece e a5_codprf
+        const sqlAssociacao = `
+            SELECT trim(a5_codprf) as a5_codprf, trim(a5_produto) as a5_produto 
+            FROM public.sa5010 
+            WHERE trim(a5_fornece) = $1 AND trim(a5_codprf) IN (${inParams}) AND d_e_l_e_t_ = ' '
+        `;
+        
+        const params = [a2_cod, ...codigos_fornecedor.map(c => String(c).trim())];
+        const associacoes = await queryProtheus(sqlAssociacao, params);
+        
+        const map = {};
+        associacoes.forEach(a => {
+            map[a.a5_codprf] = a.a5_produto;
+        });
+
+        // ==========================================
+        // FALLBACK: Buscar na SD1010 (Notas Fiscais de Entrada)
+        // Caso a amarração SA5010 esteja vazia, mas a nota já tenha sido importada no Protheus.
+        // ==========================================
+        if (numero_nf) {
+            try {
+                // Protheus d1_doc tem 9 posições com zeros à esquerda
+                const docFormated = String(numero_nf).padStart(9, '0');
+                const sqlSd1 = `SELECT d1_item, trim(d1_cod) as d1_cod FROM public.sd1010 WHERE trim(d1_doc) = $1 AND trim(d1_fornece) = $2 AND d_e_l_e_t_ = ' ' ORDER BY d1_item ASC`;
+                const itensSd1 = await queryProtheus(sqlSd1, [docFormated, a2_cod]);
+                
+                // Mapeia pela sequência do item na nota (nItem XML -> d1_item)
+                codigos_fornecedor.forEach((cProd, index) => {
+                    if (!map[cProd]) {
+                        const itemTarget = String(index + 1).padStart(4, '0');
+                        const matchSd1 = itensSd1.find(i => i.d1_item === itemTarget);
+                        if (matchSd1 && matchSd1.d1_cod) {
+                            map[cProd] = matchSd1.d1_cod;
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Erro ao buscar Fallback SD1010:', e);
+            }
+        }
+
+        res.json(map);
+    } catch (error) {
+        console.error('Erro ao buscar de/para de produtos:', error);
+        res.status(500).json({ error: 'Erro ao buscar associação de produtos.' });
+    }
+});
+
+// =========================================================================
+// ROTA: Buscar Pedido de Compra (SC7010)
+// =========================================================================
+router.get('/pedido/:numero', async (req, res) => {
+    try {
+        const { numero } = req.params;
+        const numFormatado = String(numero).padStart(6, '0');
+
+        const sql = `
+            SELECT 
+                trim(c7_produto) as c7_produto, 
+                trim(c7_descri) as c7_descri, 
+                c7_quant, 
+                c7_preco, 
+                c7_total, 
+                c7_quje,
+                c7_emissao,
+                trim(c7_fornece) as c7_fornece,
+                trim(c7_loja) as c7_loja,
+                trim(c7_item) as c7_item
+            FROM public.sc7010
+            WHERE c7_num = $1 AND d_e_l_e_t_ = ' '
+            ORDER BY c7_item ASC
+        `;
+        const itens = await queryProtheus(sql, [numFormatado]);
+        
+        if (itens.length === 0) {
+            return res.status(404).json({ error: 'Pedido não encontrado.' });
+        }
+
+        res.json(itens);
+    } catch (error) {
+        console.error('Erro ao buscar pedido SC7:', error);
+        res.status(500).json({ error: 'Erro ao buscar pedido.' });
+    }
+});
+
+// =========================================================================
 // ROTA: Buscar Listas (Combos de Grupo, Tipo e UM)
 // =========================================================================
 router.get('/dropdowns', async (req, res) => {
@@ -536,16 +641,24 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
                 CFILANT: filial || "0101",
                 G1_COD: produto,
                 G1_QUANT: quantidade || 1,
-                estrutura: estrutura.map(item => ({
-                    G1_COD: produto,
-                    G1_COMP: item.G1_COMP,
-                    G1_TRT: item.G1_TRT || "   ",
-                    G1_QUANT: item.G1_QUANT,
-                    G1_PERDA: item.G1_PERDA || 0,
-                    G1_INI: item.G1_INI || "19000101",
-                    G1_FIM: item.G1_FIM || "20491231",
-                    OPCAO: item.OPCAO // "INCLUIR", "ALTERAR" ou "EXCLUIR"
-                }))
+                estrutura: estrutura.map(item => {
+                    let trt = item.G1_TRT;
+                    if (!trt || String(trt).trim() === '') {
+                        trt = "   ";
+                    } else {
+                        trt = String(trt).padEnd(3, ' ').substring(0, 3);
+                    }
+                    return {
+                        G1_COD: produto,
+                        G1_COMP: item.G1_COMP,
+                        G1_TRT: trt,
+                        G1_QUANT: item.G1_QUANT,
+                        G1_PERDA: item.G1_PERDA || 0,
+                        G1_INI: item.G1_INI || "19000101",
+                        G1_FIM: item.G1_FIM || "20491231",
+                        OPCAO: item.OPCAO // "INCLUIR", "ALTERAR" ou "EXCLUIR"
+                    };
+                })
             }
         };
 

@@ -9,6 +9,7 @@ import EmailClient from '../components/EmailClient';
 import MonitoringDashboard from '../components/MonitoringDashboard';
 import DBAMonitoringTab from '../components/DBAMonitoringTab';
 import ErrorListTab from '../components/ErrorListTab';
+import WinSCPTab from '../components/WinSCPTab';
 
 export default function Settings() {
     const { user, isAdmin } = useAuth();
@@ -30,6 +31,7 @@ export default function Settings() {
         { id: 'email', label: 'E-mail Corporativo', icon: Mail },
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
         { id: 'monitoring', label: 'Monitoramento do Sistema', icon: Activity },
+        ...(user?.tipo === 'SA' ? [{ id: 'winscp', label: 'Processo WinSCP', icon: Send }] : []),
     ];
 
     const formatPhone = (val) => {
@@ -2273,6 +2275,13 @@ export default function Settings() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* WINSCP TAB */}
+                {activeTab === 'winscp' && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <WinSCPTab />
                     </div>
                 )}
 

@@ -775,6 +775,78 @@ const RNCEmailsTab = () => {
     );
 };
 
+// ─── Aba E-mails NFe (Fiscal) ───────────────────────────────────────────────
+const NFEReceiptsTab = () => {
+    const [history, setHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchHistory = async () => {
+        setLoading(true);
+        try {
+            const { data } = await api.get('/nfe-recebimento/emails/todos');
+            setHistory(data);
+        } catch (err) {
+            toast.error('Falha ao carregar histórico de e-mails da NFe.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchHistory();
+    }, []);
+
+    const formatDate = dateStr => {
+        if (!dateStr) return '—';
+        return new Date(dateStr).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    };
+
+    return (
+        <div className="space-y-5">
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-purple-600" />
+                    <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Registro de Comunicação (Fiscal / Almoxarifado)</h2>
+                </div>
+                <button onClick={fetchHistory} className="px-4 py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-bold shadow-sm hover:bg-purple-100 transition-all">Atualizar</button>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                            {['NF', 'Fornecedor', 'Data / Hora', 'Remetente', 'Destinatários', 'Assunto', 'Status'].map(h => (
+                                <th key={h} className="px-5 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                        {loading ? (
+                            <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto" /></td></tr>
+                        ) : history.length === 0 ? (
+                            <tr><td colSpan={7} className="py-16 text-center text-slate-400 text-sm"><Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />Nenhum e-mail de NFe encontrado.</td></tr>
+                        ) : history.map(row => (
+                            <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="px-5 py-4 font-bold font-mono text-slate-700">{row.numero_nf}</td>
+                                <td className="px-5 py-4 font-medium text-slate-800 text-sm max-w-[200px] truncate">{row.emitente_nome}</td>
+                                <td className="px-5 py-4 text-xs text-slate-500">{formatDate(row.created_at)}</td>
+                                <td className="px-5 py-4 text-xs font-semibold text-slate-700">{row.remetente}</td>
+                                <td className="px-5 py-4 text-[11px] text-slate-500 max-w-[200px] truncate" title={row.destinatarios}>{row.destinatarios}</td>
+                                <td className="px-5 py-4 text-xs text-slate-600 max-w-[200px] truncate" title={row.assunto}>{row.assunto}</td>
+                                <td className="px-5 py-4">
+                                    <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[10px] font-bold">{row.status}</span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 const EngineeringReleaseReport = () => {
     const [activeTab, setActiveTab] = useState('engenharia');
@@ -784,6 +856,7 @@ const EngineeringReleaseReport = () => {
         { id: 'pcp',        label: 'PCP / Lote Aglutinado', icon: Factory,       color: 'green' },
         { id: 'romaneio',   label: 'Controle Romaneio', icon: Package,       color: 'blue' },
         { id: 'rnc_emails', label: 'Controle Envios RNC', icon: Mail,          color: 'indigo' },
+        { id: 'nfe_emails', label: 'Recebimentos Fiscais', icon: FileText,     color: 'purple' },
     ];
 
     return (
@@ -810,6 +883,7 @@ const EngineeringReleaseReport = () => {
                         green: { active: 'bg-white text-green-600 shadow-sm border border-green-100', inactive: 'text-slate-500 hover:text-green-500' },
                         blue:  { active: 'bg-white text-blue-600 shadow-sm border border-blue-100',  inactive: 'text-slate-500 hover:text-blue-500' },
                         indigo:{ active: 'bg-white text-indigo-600 shadow-sm border border-indigo-100', inactive: 'text-slate-500 hover:text-indigo-500' },
+                        purple:{ active: 'bg-white text-purple-600 shadow-sm border border-purple-100', inactive: 'text-slate-500 hover:text-purple-500' },
                     };
                     return (
                         <button
@@ -827,7 +901,8 @@ const EngineeringReleaseReport = () => {
             {/* Tab Content */}
             {activeTab === 'engenharia' ? <EngineeringTab /> : 
              activeTab === 'pcp' ? <PCPTab /> : 
-             activeTab === 'rnc_emails' ? <RNCEmailsTab /> : <RomaneioHistoryTab />}
+             activeTab === 'rnc_emails' ? <RNCEmailsTab /> : 
+             activeTab === 'nfe_emails' ? <NFEReceiptsTab /> : <RomaneioHistoryTab />}
         </div>
     );
 };

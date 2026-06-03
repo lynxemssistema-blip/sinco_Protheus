@@ -147,7 +147,9 @@ export const MENU_GROUPS = [
             { id: 'solicitacoes', label: 'Solicitações', path: '/solicitacoes-compras', icon: ShoppingCart },
             { id: 'pedidos_pv', label: 'Pedidos x PV Cliente', path: '/pedidos-compras-pv', icon: FileText },
             { id: 'requisicoes_internas', label: 'Requisições Internas', path: '/suprimentos/requisicoes', icon: ClipboardList },
-            { id: 'rastreio_sc', label: 'Rastreio SC -> NF', path: '/fluxo-compras-nf', icon: ArrowLeftRight }
+            { id: 'rastreio_sc', label: 'Rastreio SC -> NF', path: '/fluxo-compras-nf', icon: ArrowLeftRight },
+            { id: 'espelho_nf', label: 'Ver Espelho da NF', path: '/suprimentos/espelho-nf', icon: FileText },
+            { id: 'auditoria_pc', label: 'Auditoria PC x XML', path: '/auditoria-pc', icon: ShieldCheck }
         ]
     },
     {

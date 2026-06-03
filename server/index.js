@@ -215,6 +215,7 @@ console.log('✅ [DEBUG] Rota /api/production montada.');
 
 // Compras Route (Solicitações e Pedidos de Compras)
 app.use('/api/compras', require('./routes/compras'));
+app.use('/api/auditoria-pc', require('./routes/auditoriaPC'));
 
 // Reports Route
 app.use('/api/reports', require('./routes/reports'));
@@ -275,6 +276,13 @@ app.use('/api/monitoramento', require('./routes/monitoramento'));
 
 // PCP Refinado route
 app.use('/api/pcp-refinado', require('./routes/pcpRefinado'));
+
+// WinSCP
+app.use('/api/winscp', require('./routes/winscp'));
+
+// Recebimentos de NF (Suprimentos/Almoxarifado)
+app.use('/api/nfe-recebimento', require('./routes/recebimentosNfe'));
+
 const systemMonitor = require('./services/systemMonitor');
 systemMonitor.startMonitoring(app);
 

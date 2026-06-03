@@ -124,6 +124,9 @@ MENU_GROUPS.forEach(group => {
 });
 
 // Private Route Component with permission guard
+const EspelhoNFViewer = React.lazy(() => import('./pages/suprimentos/EspelhoNFViewer'));
+const AuditoriaPC = React.lazy(() => import('./pages/suprimentos/AuditoriaPC'));
+
 const PrivateRoute = () => {
     const { signed, loading, user, hasPermission, isAdmin } = useAuth();
     const location = useLocation();
@@ -377,6 +380,16 @@ function App() {
                                         <Route path="/suprimentos/requisicoes" element={
                                             <Layout>
                                                 <InternalRequestsPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/suprimentos/espelho-nf" element={
+                                            <Layout>
+                                                <EspelhoNFViewer />
+                                            </Layout>
+                                        } />
+                                        <Route path="/auditoria-pc" element={
+                                            <Layout>
+                                                <AuditoriaPC />
                                             </Layout>
                                         } />
                                         <Route path="/controle-producao" element={
