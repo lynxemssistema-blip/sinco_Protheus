@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Search, CheckCircle, XCircle, Mail, Info, ChevronRight, X } from 'lucide-react';
+import { Upload, Search, CheckCircle, XCircle, Mail, Info, ChevronRight, X, BarChart2, List } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -8,6 +8,7 @@ export default function AuditoriaPC() {
     const { user } = useAuth();
     const [view, setView] = useState('list'); // list or new
     const [auditorias, setAuditorias] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
     
     // Form state
     const [pcNumero, setPcNumero] = useState('');
@@ -28,10 +29,31 @@ export default function AuditoriaPC() {
     };
 
     useEffect(() => {
-        if (view === 'list') fetchAuditorias();
+        if (view === 'list' || view === 'kpi') fetchAuditorias();
     }, [view]);
 
     const formatMoney = (val) => Number(val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const kpiData = React.useMemo(() => {
+        if (!auditorias || auditorias.length === 0) return [];
+        const suppliers = {};
+        auditorias.forEach(aud => {
+            const nome = aud.fornecedor_nome || 'Desconhecido';
+            if (!suppliers[nome]) {
+                suppliers[nome] = { nome, total: 0, conformes: 0, divergentes: 0 };
+            }
+            // Count items instead of NFs
+            suppliers[nome].total += Number(aud.total_itens || (aud.status === 'Conforme' ? 1 : 1));
+            suppliers[nome].conformes += Number(aud.itens_conformes || (aud.status === 'Conforme' ? 1 : 0));
+            suppliers[nome].divergentes += Number(aud.itens_divergentes || (aud.status !== 'Conforme' ? 1 : 0));
+        });
+        const result = Object.values(suppliers).map(s => ({
+            ...s,
+            percentConforme: s.total > 0 ? Math.round((s.conformes / s.total) * 100) : 0
+        }));
+        // Sort by amount of divergentes DESC (worst first)
+        return result.sort((a, b) => b.divergentes - a.divergentes || b.total - a.total);
+    }, [auditorias]);
 
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
@@ -255,52 +277,83 @@ export default function AuditoriaPC() {
                         </h1>
                         <p className="text-sm text-slate-500 mt-1">Confronte Pedidos de Compra com XMLs antes da entrada fiscal.</p>
                     </div>
-                    {view === 'list' ? (
-                        <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Nova Auditoria</button>
-                    ) : (
-                        <button onClick={() => setView('list')} className="text-slate-600 font-bold hover:text-slate-900">Voltar à Lista</button>
-                    )}
+                    <div className="flex gap-2">
+                        {view === 'list' && (
+                            <>
+                                <button onClick={() => setView('kpi')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-900 flex items-center gap-2"><BarChart2 className="w-4 h-4"/> Ver KPIs</button>
+                                <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Nova Auditoria</button>
+                            </>
+                        )}
+                        {view === 'kpi' && (
+                            <>
+                                <button onClick={() => setView('list')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-900 flex items-center gap-2"><List className="w-4 h-4"/> Ver Lista</button>
+                                <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Nova Auditoria</button>
+                            </>
+                        )}
+                        {view === 'new' && (
+                            <button onClick={() => setView('list')} className="text-slate-600 font-bold hover:text-slate-900">Voltar à Lista</button>
+                        )}
+                    </div>
                 </div>
 
                 {view === 'list' && (
-                    <div className="bg-white rounded border border-black overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-800 text-white border-b border-black">
-                                <tr>
-                                    <th className="px-4 py-2 border-r border-black w-32">Data</th>
-                                    <th className="px-4 py-2 border-r border-black w-24">Pedido</th>
-                                    <th className="px-4 py-2 border-r border-black w-32">NF</th>
-                                    <th className="px-4 py-2 border-r border-black">Fornecedor</th>
-                                    <th className="px-4 py-2 border-r border-black w-32">Usuário</th>
-                                    <th className="px-4 py-2 w-40 text-center">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {auditorias.map(aud => (
-                                    <tr key={aud.id} className="border-b border-slate-200 hover:bg-slate-50">
-                                        <td className="px-4 py-2 border-r border-slate-200">{new Date(aud.created_at).toLocaleString('pt-BR')}</td>
-                                        <td className="px-4 py-2 border-r border-slate-200 font-bold font-mono">{aud.pedido_compra}</td>
-                                        <td className="px-4 py-2 border-r border-slate-200 font-bold">{aud.numero_nf}</td>
-                                        <td className="px-4 py-2 border-r border-slate-200 truncate max-w-[200px]">{aud.fornecedor_nome}</td>
-                                        <td className="px-4 py-2 border-r border-slate-200">{aud.usuario}</td>
-                                        <td className="px-4 py-2 text-center">
-                                            {aud.status === 'Conforme' ? (
-                                                <span className="bg-green-100 text-green-800 font-bold text-xs px-2 py-1 rounded">✅ Conforme</span>
-                                            ) : (
-                                                <span className="bg-red-100 text-red-800 font-bold text-xs px-2 py-1 rounded">❌ Divergência</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {auditorias.length === 0 && (
-                                    <tr>
-                                        <td colSpan="6" className="text-center py-8 text-slate-500">Nenhuma auditoria registrada.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 bg-white p-3 rounded border border-slate-200 shadow-sm w-full md:w-96">
+                            <Search className="w-5 h-5 text-slate-400" />
+                            <input 
+                                type="text" 
+                                placeholder="Filtrar por fornecedor, PC ou NF..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full bg-transparent border-none outline-none text-sm text-slate-700"
+                            />
+                        </div>
+                        <div className="bg-white rounded border border-black overflow-hidden shadow-sm">
+                            <div className="max-h-[60vh] overflow-y-auto">
+                                <table className="w-full text-left text-sm relative">
+                                    <thead className="bg-slate-800 text-white border-b border-black sticky top-0 z-10 shadow">
+                                        <tr>
+                                            <th className="px-4 py-2 border-r border-black w-32">Data</th>
+                                            <th className="px-4 py-2 border-r border-black w-24">Pedido</th>
+                                            <th className="px-4 py-2 border-r border-black w-32">NF</th>
+                                            <th className="px-4 py-2 border-r border-black">Fornecedor</th>
+                                            <th className="px-4 py-2 border-r border-black w-32">Usuário</th>
+                                            <th className="px-4 py-2 w-40 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {auditorias.filter(aud => 
+                                            (aud.fornecedor_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            (aud.pedido_compra || '').includes(searchTerm) ||
+                                            (aud.numero_nf || '').includes(searchTerm)
+                                        ).map(aud => (
+                                            <tr key={aud.id} className="border-b border-slate-200 hover:bg-slate-50">
+                                                <td className="px-4 py-2 border-r border-slate-200">{new Date(aud.created_at).toLocaleString('pt-BR')}</td>
+                                                <td className="px-4 py-2 border-r border-slate-200 font-bold font-mono">{aud.pedido_compra}</td>
+                                                <td className="px-4 py-2 border-r border-slate-200 font-bold">{aud.numero_nf}</td>
+                                                <td className="px-4 py-2 border-r border-slate-200 truncate max-w-[200px]">{aud.fornecedor_nome}</td>
+                                                <td className="px-4 py-2 border-r border-slate-200">{aud.usuario}</td>
+                                                <td className="px-4 py-2 text-center">
+                                                    {aud.status === 'Conforme' ? (
+                                                        <span className="bg-green-100 text-green-800 font-bold text-xs px-2 py-1 rounded">✅ Conforme</span>
+                                                    ) : (
+                                                        <span className="bg-red-100 text-red-800 font-bold text-xs px-2 py-1 rounded">❌ Divergência</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {auditorias.length === 0 && (
+                                            <tr>
+                                                <td colSpan="6" className="text-center py-8 text-slate-500">Nenhuma auditoria registrada.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 )}
+
 
                 {view === 'new' && (
                     <div className="space-y-6">
@@ -352,9 +405,9 @@ export default function AuditoriaPC() {
                                         Salvar Auditoria no Banco
                                     </button>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-sm" style={{ fontSize: '11px' }}>
-                                        <thead className="bg-slate-100 border-b border-black text-slate-700">
+                                <div className="max-h-[60vh] overflow-y-auto">
+                                    <table className="w-full text-left text-sm relative" style={{ fontSize: '11px' }}>
+                                        <thead className="bg-slate-100 border-b border-black text-slate-700 sticky top-0 z-10 shadow">
                                             <tr>
                                                 <th className="p-2 border-r border-black text-center w-10">Item XML</th>
                                                 <th className="p-2 border-r border-black w-20">Cód Fornecedor</th>
@@ -389,6 +442,68 @@ export default function AuditoriaPC() {
                             </div>
                         )}
                     </div>
+                )}
+
+                {view === 'kpi' && (
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                                <p className="text-sm text-slate-500 font-bold uppercase">Total de Fornecedores Auditados</p>
+                                <p className="text-3xl font-black text-slate-800 mt-2">{kpiData.length}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                                <p className="text-sm text-slate-500 font-bold uppercase">Total de NFs Com Divergência</p>
+                                <p className="text-3xl font-black text-red-600 mt-2">{kpiData.reduce((acc, curr) => acc + curr.divergentes, 0)}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                                <p className="text-sm text-slate-500 font-bold uppercase">Média Geral de Conformidade</p>
+                                <p className="text-3xl font-black text-indigo-600 mt-2">
+                                    {kpiData.length > 0 ? Math.round((kpiData.reduce((acc, curr) => acc + curr.conformes, 0) / kpiData.reduce((acc, curr) => acc + curr.total, 0)) * 100) : 0}%
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded border border-black overflow-hidden shadow-sm">
+                            <div className="max-h-[60vh] overflow-y-auto">
+                                <table className="w-full text-left text-sm relative">
+                                    <thead className="bg-slate-800 text-white border-b border-black sticky top-0 z-10 shadow">
+                                        <tr>
+                                            <th className="px-4 py-3 border-r border-black w-12 text-center">#</th>
+                                        <th className="px-4 py-3 border-r border-black">Fornecedor</th>
+                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Total Itens Aud.</th>
+                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Itens Conformes</th>
+                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Itens Divergentes</th>
+                                        <th className="px-4 py-3 w-40 text-center">Taxa de Sucesso</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {kpiData.map((kpi, idx) => (
+                                        <tr key={idx} className={`border-b border-slate-200 ${kpi.divergentes > 0 ? 'bg-red-50/20' : 'bg-green-50/20'}`}>
+                                            <td className="px-4 py-3 border-r border-slate-200 text-center font-bold text-slate-400">{idx + 1}</td>
+                                            <td className="px-4 py-3 border-r border-slate-200 font-bold truncate max-w-[250px]">{kpi.nome}</td>
+                                            <td className="px-4 py-3 border-r border-slate-200 text-center font-bold">{kpi.total}</td>
+                                            <td className="px-4 py-3 border-r border-slate-200 text-center text-green-600 font-bold">{kpi.conformes}</td>
+                                            <td className="px-4 py-3 border-r border-slate-200 text-center text-red-600 font-bold">{kpi.divergentes}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <div className="w-20 bg-gray-200 rounded-full h-2.5">
+                                                        <div className={`h-2.5 rounded-full ${kpi.percentConforme > 80 ? 'bg-green-600' : kpi.percentConforme > 50 ? 'bg-yellow-500' : 'bg-red-600'}`} style={{ width: `${kpi.percentConforme}%` }}></div>
+                                                    </div>
+                                                    <span className="font-bold text-xs">{kpi.percentConforme}%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {kpiData.length === 0 && (
+                                        <tr>
+                                            <td colSpan="6" className="text-center py-8 text-slate-500">Nenhum dado para analisar.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
                 )}
             </div>
 

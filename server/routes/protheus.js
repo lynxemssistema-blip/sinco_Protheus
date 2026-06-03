@@ -31,19 +31,19 @@ router.post('/de-para-produtos', async (req, res) => {
         if (fornecedores.length === 0) return res.json({});
 
         const a2_cod = fornecedores[0].a2_cod.trim();
-        
+
         const inParams = codigos_fornecedor.map((_, i) => `$${i + 2}`).join(',');
-        
+
         // Aplica TRIM no a5_fornece e a5_codprf
         const sqlAssociacao = `
             SELECT trim(a5_codprf) as a5_codprf, trim(a5_produto) as a5_produto 
             FROM public.sa5010 
             WHERE trim(a5_fornece) = $1 AND trim(a5_codprf) IN (${inParams}) AND d_e_l_e_t_ = ' '
         `;
-        
+
         const params = [a2_cod, ...codigos_fornecedor.map(c => String(c).trim())];
         const associacoes = await queryProtheus(sqlAssociacao, params);
-        
+
         const map = {};
         associacoes.forEach(a => {
             map[a.a5_codprf] = a.a5_produto;
@@ -59,7 +59,7 @@ router.post('/de-para-produtos', async (req, res) => {
                 const docFormated = String(numero_nf).padStart(9, '0');
                 const sqlSd1 = `SELECT d1_item, trim(d1_cod) as d1_cod FROM public.sd1010 WHERE trim(d1_doc) = $1 AND trim(d1_fornece) = $2 AND d_e_l_e_t_ = ' ' ORDER BY d1_item ASC`;
                 const itensSd1 = await queryProtheus(sqlSd1, [docFormated, a2_cod]);
-                
+
                 // Mapeia pela sequência do item na nota (nItem XML -> d1_item)
                 codigos_fornecedor.forEach((cProd, index) => {
                     if (!map[cProd]) {
@@ -107,7 +107,7 @@ router.get('/pedido/:numero', async (req, res) => {
             ORDER BY c7_item ASC
         `;
         const itens = await queryProtheus(sql, [numFormatado]);
-        
+
         if (itens.length === 0) {
             return res.status(404).json({ error: 'Pedido não encontrado.' });
         }

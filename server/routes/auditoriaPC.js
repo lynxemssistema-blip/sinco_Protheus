@@ -35,7 +35,16 @@ router.post('/', async (req, res) => {
 // Listar auditorias
 router.get('/', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM nfe_auditorias ORDER BY created_at DESC');
+        const [rows] = await pool.query(`
+            SELECT a.*,
+                   COUNT(i.id) as total_itens,
+                   SUM(CASE WHEN i.status LIKE '%✅%' THEN 1 ELSE 0 END) as itens_conformes,
+                   SUM(CASE WHEN i.status LIKE '%❌%' THEN 1 ELSE 0 END) as itens_divergentes
+            FROM nfe_auditorias a
+            LEFT JOIN nfe_auditoria_itens i ON a.id = i.id_auditoria
+            GROUP BY a.id
+            ORDER BY a.created_at DESC
+        `);
         res.json(rows);
     } catch (error) {
         console.error('Erro ao listar auditorias:', error);

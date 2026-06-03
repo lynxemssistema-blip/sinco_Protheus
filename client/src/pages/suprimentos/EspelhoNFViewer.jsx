@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Download, Printer, Save, CheckSquare, X, Mail, Clock, Eye, History, User, Trash2 } from 'lucide-react';
+import { Upload, FileText, Download, Printer, Save, CheckSquare, X, Mail, Clock, Eye, History, User, Trash2, Search } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -8,6 +8,7 @@ const EspelhoNFViewer = () => {
     const { user } = useAuth();
     const [view, setView] = useState('list'); // 'list' | 'viewer'
     const [nfs, setNfs] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
     
     // Viewer states
     const [activeNf, setActiveNf] = useState(null);
@@ -259,7 +260,7 @@ const EspelhoNFViewer = () => {
     if (view === 'list') {
         return (
             <div className="space-y-6">
-                <div className="flex justify-between items-center border-b pb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 gap-4">
                     <div>
                         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                             <FileText className="w-6 h-6 text-indigo-600" />
@@ -268,17 +269,30 @@ const EspelhoNFViewer = () => {
                         <p className="text-sm text-gray-500 mt-1">Gerencie a entrada física de materiais via XML.</p>
                     </div>
                     
-                    <label className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer shadow">
-                        <Upload className="w-4 h-4" />
-                        <span>Importar XML</span>
-                        <input type="file" accept=".xml" onChange={handleFileUpload} className="hidden" />
-                    </label>
+                    <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                        <div className="flex items-center gap-2 bg-white p-2 rounded border border-gray-300 shadow-sm w-full sm:w-64">
+                            <Search className="w-4 h-4 text-gray-400" />
+                            <input 
+                                type="text" 
+                                placeholder="Buscar NF, Emissor..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full bg-transparent border-none outline-none text-sm text-gray-700"
+                            />
+                        </div>
+                        <label className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer shadow whitespace-nowrap w-full sm:w-auto">
+                            <Upload className="w-4 h-4" />
+                            <span>Importar XML</span>
+                            <input type="file" accept=".xml" onChange={handleFileUpload} className="hidden" />
+                        </label>
+                    </div>
                 </div>
 
                 <div className="bg-white rounded-lg shadow border overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-gray-700">
-                            <tr>
+                    <div className="max-h-[60vh] overflow-y-auto">
+                        <table className="w-full text-sm text-left relative">
+                            <thead className="bg-gray-50 text-gray-700 sticky top-0 z-10 shadow-sm">
+                                <tr>
                                 <th className="p-4">NF / Série</th>
                                 <th className="p-4">Emitente</th>
                                 <th className="p-4">Emissão</th>
@@ -288,9 +302,17 @@ const EspelhoNFViewer = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {nfs.length === 0 ? (
-                                <tr><td colSpan="6" className="p-6 text-center text-gray-500">Nenhuma NF importada ainda.</td></tr>
-                            ) : nfs.map(nf => (
+                            {nfs.filter(nf => 
+                                (nf.numero_nf || '').includes(searchTerm) ||
+                                (nf.emitente_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                (nf.emitente_cnpj || '').includes(searchTerm)
+                            ).length === 0 ? (
+                                <tr><td colSpan="6" className="p-6 text-center text-gray-500">Nenhuma NF encontrada.</td></tr>
+                            ) : nfs.filter(nf => 
+                                (nf.numero_nf || '').includes(searchTerm) ||
+                                (nf.emitente_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                (nf.emitente_cnpj || '').includes(searchTerm)
+                            ).map(nf => (
                                 <tr key={nf.id} className="border-b hover:bg-gray-50 transition-colors">
                                     <td className="p-4 font-bold">{nf.numero_nf} <span className="text-gray-400 font-normal">/ {nf.serie}</span></td>
                                     <td className="p-4">
@@ -321,6 +343,7 @@ const EspelhoNFViewer = () => {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
         );
@@ -403,9 +426,9 @@ const EspelhoNFViewer = () => {
                     {/* Products & Receive Table */}
                     <div className="mt-4">
                         <div className="font-bold text-[10px] uppercase mb-1">Dados dos Produtos (Conferência Físico)</div>
-                        <div className="border border-black rounded overflow-x-auto">
-                            <table className="w-full text-left" style={{ fontSize: '10px' }}>
-                                <thead className="border-b border-black bg-gray-50">
+                        <div className="border border-black rounded max-h-[50vh] overflow-y-auto">
+                            <table className="w-full text-left relative" style={{ fontSize: '10px' }}>
+                                <thead className="border-b border-black bg-gray-50 sticky top-0 z-10 shadow">
                                     <tr className="uppercase text-gray-700">
                                         <th className="p-2 border-r border-black w-24">Cód. Forn.</th>
                                         <th className="p-2 border-r border-black w-24">Cód. MetalFisa</th>
