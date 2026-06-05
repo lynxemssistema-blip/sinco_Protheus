@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const mysqlPool = require('./mysqlService');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 /**
  * Analisa o relatório FCS com contexto histórico e retorna análise estruturada em PT-BR.
@@ -50,15 +50,36 @@ async function analisarRelatorioFCS(report) {
         ).join('\n')
         : '  • Nenhuma carga futura planejada nos próximos 30 dias.';
 
-    const prompt = `
-Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para uma empresa metalúrgica de médio porte chamada MetalFisa.
-Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada.
-
-=== CONTEXTO DA EMPRESA ===
+    // Configurações padrão de fallback
+    let systemPrompt = `Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para uma empresa metalúrgica de médio porte chamada MetalFisa.
+Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada.`;
+    let contextoNegocio = `=== CONTEXTO DA EMPRESA ===
 - Empresa: MetalFisa (metalurgia, produção sob encomenda e para estoque)
 - Todos os tempos são em MINUTOS
 - Dias úteis = segunda a sexta-feira (sem fins de semana)
-- Capacidade diária = definida por recurso em minutos/dia
+- Capacidade diária = definida por recurso em minutos/dia`;
+    let modeloNome = 'gemini-2.0-flash';
+
+    try {
+        const [rows] = await mysqlPool.query(
+            "SELECT system_prompt, contexto_negocio, modelo FROM pcpmetal_agentes WHERE nome = 'Planejamento Inteligente' AND ativo = 1 LIMIT 1"
+        );
+        if (rows && rows.length > 0) {
+            if (rows[0].system_prompt) systemPrompt = rows[0].system_prompt;
+            if (rows[0].contexto_negocio) contextoNegocio = rows[0].contexto_negocio;
+            if (rows[0].modelo) modeloNome = rows[0].modelo;
+        }
+    } catch (err) {
+        console.warn('⚠️ Não foi possível carregar o agente Planejamento Inteligente do banco, usando fallback:', err.message);
+    }
+
+    const model = genAI.getGenerativeModel({ model: modeloNome });
+
+    const prompt = `
+${systemPrompt}
+
+=== CONTEXTO DE NEGÓCIO ===
+${contextoNegocio}
 
 === DADOS DO PLANEJAMENTO ATUAL ===
 Data base: ${report.data_base}
@@ -92,7 +113,7 @@ Responda EXCLUSIVAMENTE em JSON válido com esta estrutura exata (sem markdown):
   "resumo_executivo": "3-4 linhas descrevendo o planejamento, contexto geral e estado da produção.",
   "analise_capacidade": "Análise técnica da capacidade dos recursos, cruzando com histórico e carga futura.",
   "analise_gargalos": "Análise detalhada dos gargalos, identificando se são estruturais (recorrentes) ou pontuais.",
-  "padroes_detectados": "Padrões identificados no histórico que impactam decisões futuras.",
+  "padroes_detectados": "Padrões identificados no histórico que impactam decisões futures.",
   "sugestoes": [
     "Sugestão 1 — objetiva, acionável e específica para MetalFisa",
     "Sugestão 2 — objetiva, acionável e específica para MetalFisa",

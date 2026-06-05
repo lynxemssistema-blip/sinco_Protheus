@@ -173,7 +173,13 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                         </div>
                                         <div className="text-slate-700 text-sm leading-relaxed">
                                             <p className="font-semibold mb-1">Olá! Eu sou o especialista em PCP.</p>
-                                            <p>Vou analisar <strong>{selectedOps.length}</strong> ordem(ns) de produção selecionada(s). Meu algoritmo irá respeitar a hierarquia do roteiro e a capacidade diária de cada recurso. Se o recurso atingir o limite, forçarei a transição para o próximo dia automaticamente.</p>
+                                            <p>Vou processar <strong>{selectedOps.length}</strong> ordem(ns) selecionada(s) aplicando as seguintes regras:</p>
+                                            <ul className="mt-2 space-y-1 text-slate-600 list-none">
+                                                <li>📋 <strong>Varredura do passado:</strong> planejamentos não executados anteriores à data de início são automaticamente incluídos na fila e replanejados.</li>
+                                                <li>🎯 <strong>Prioridade por entrega PCP:</strong> a fila é ordenada por <em>data de entrega PCP</em> crescente — quem entrega mais cedo recebe capacidade primeiro.</li>
+                                                <li>📅 <strong>Sem data de entrega:</strong> OPs sem data PCP cadastrada vão para o <em>final</em> da fila.</li>
+                                                <li>🚫 <strong>Passado bloqueado:</strong> nenhuma operação é alocada antes da data de início — disponibilidade zero para datas anteriores.</li>
+                                            </ul>
                                         </div>
                                     </div>
 
@@ -185,10 +191,11 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                         <input 
                                             type="date" 
                                             value={dataInicio}
+                                            min={getTodayDate()}
                                             onChange={(e) => setDataInicio(e.target.value)}
                                             className="w-full md:w-1/2 px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium text-slate-700"
                                         />
-                                        <p className="text-xs text-slate-500 mt-2">A partir desta data, distribuirei a carga produtiva respeitando a capacidade finita.</p>
+                                        <p className="text-xs text-slate-500 mt-2">A partir desta data, distribuirei a carga produtiva respeitando a capacidade finita. Datas anteriores a hoje são automaticamente ajustadas para hoje.</p>
                                     </div>
                                 </>
                             )}

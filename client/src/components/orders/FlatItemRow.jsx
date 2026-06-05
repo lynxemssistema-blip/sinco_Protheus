@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { BillingForecastInput } from './BillingForecastInput';
 
 /**
  * Memoized flat-view table row. Receives all data and callbacks as props.
@@ -36,7 +38,9 @@ const FlatItemRow = ({
     onPrintOPWithOpsStampWithDrawings,
     onExportOPByOperationExcel,
     onSetMenuPosition,
+    onUpdateFaturamentoDate,
 }) => {
+    const { user } = useAuth();
     const handleNfClick = useCallback((nf) => {
         onSetInvoiceModal({ nf, item });
     }, [item, onSetInvoiceModal]);
@@ -405,6 +409,15 @@ const FlatItemRow = ({
                     )}
                 </div>
             </td>
+
+            {/* Prev. Fat. */}
+            <td className="px-4 py-2 text-center text-xs">
+                <BillingForecastInput
+                    item={item}
+                    user={user}
+                    onUpdateSuccess={onUpdateFaturamentoDate}
+                />
+            </td>
         </tr>
     );
 };
@@ -416,6 +429,7 @@ const areEqual = (prev, next) => {
         prev.item.item === next.item.item &&
         prev.item.pcp_delivery_forecast_date === next.item.pcp_delivery_forecast_date &&
         prev.item.pcp_delivery_forecast_qtd === next.item.pcp_delivery_forecast_qtd &&
+        prev.item.data_prevista_faturamento === next.item.data_prevista_faturamento &&
         prev.item.op_num === next.item.op_num &&
         prev.item.qtd_faturar === next.item.qtd_faturar &&
         prev.item.romaneios === next.item.romaneios &&

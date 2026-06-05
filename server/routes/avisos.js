@@ -34,7 +34,22 @@ const upload = multer({
 // --- Database init ---
 const initDB = async () => {
     try {
-        // Tabela de Grupos
+        // Create sistema_avisos table first (no FK so it never fails on missing refs)
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS sistema_avisos (
+                idAviso INT AUTO_INCREMENT PRIMARY KEY,
+                idRemetente INT UNSIGNED NOT NULL,
+                idDestinatario INT UNSIGNED DEFAULT NULL,
+                mensagem TEXT,
+                lido TINYINT(1) DEFAULT 0,
+                concluido TINYINT(1) DEFAULT 0,
+                data_envio DATETIME DEFAULT CURRENT_TIMESTAMP,
+                data_conclusao DATETIME DEFAULT NULL,
+                idRespostaDe INT DEFAULT NULL
+            )
+        `);
+
+        // Create grupos tables (no FK constraints to avoid type mismatch issues)
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS sistema_avisos_grupos (
                 idGrupo INT AUTO_INCREMENT PRIMARY KEY,
@@ -42,45 +57,35 @@ const initDB = async () => {
                 descricao TEXT,
                 fotoGrupo VARCHAR(255),
                 idCriador INT UNSIGNED NOT NULL,
-                data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (idCriador) REFERENCES usuario(idUsuario)
+                data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
-        // Tabela de Membros de Grupos
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS sistema_avisos_grupos_membros (
                 idGrupo INT NOT NULL,
                 idUsuario INT UNSIGNED NOT NULL,
                 data_entrada DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (idGrupo, idUsuario),
-                FOREIGN KEY (idGrupo) REFERENCES sistema_avisos_grupos(idGrupo),
-                FOREIGN KEY (idUsuario) REFERENCES usuario(idUsuario)
+                PRIMARY KEY (idGrupo, idUsuario)
             )
         `);
 
-        // Verificar/adicionar colunas de grupo na tabela de mensagens
+        // Add optional columns if missing
         const [columns] = await mysqlPool.query('SHOW COLUMNS FROM sistema_avisos');
         const colNames = columns.map(c => c.Field);
 
-        if (!colNames.includes('idGrupo')) {
-            await mysqlPool.query('ALTER TABLE sistema_avisos ADD COLUMN idGrupo INT DEFAULT NULL AFTER idDestinatario');
-            await mysqlPool.query('ALTER TABLE sistema_avisos MODIFY COLUMN idDestinatario INT UNSIGNED DEFAULT NULL');
-            await mysqlPool.query('ALTER TABLE sistema_avisos ADD FOREIGN KEY (idGrupo) REFERENCES sistema_avisos_grupos(idGrupo)');
-        }
+        const addCol = async (col, def) => {
+            if (!colNames.includes(col)) {
+                try { await mysqlPool.query(`ALTER TABLE sistema_avisos ADD COLUMN ${col} ${def}`); } catch (_) {}
+            }
+        };
 
-        // --- Colunas de mídia ---
-        if (!colNames.includes('tipo_midia')) {
-            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN tipo_midia ENUM('text','image','audio','file') DEFAULT 'text' AFTER mensagem");
-        }
-        if (!colNames.includes('midia_url')) {
-            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN midia_url VARCHAR(500) DEFAULT NULL AFTER tipo_midia");
-        }
-        if (!colNames.includes('midia_nome')) {
-            await mysqlPool.query("ALTER TABLE sistema_avisos ADD COLUMN midia_nome VARCHAR(255) DEFAULT NULL AFTER midia_url");
-        }
+        await addCol('idGrupo', 'INT DEFAULT NULL AFTER idDestinatario');
+        await addCol('tipo_midia', "ENUM('text','image','audio','file') DEFAULT 'text' AFTER mensagem");
+        await addCol('midia_url', 'VARCHAR(500) DEFAULT NULL AFTER tipo_midia');
+        await addCol('midia_nome', 'VARCHAR(255) DEFAULT NULL AFTER midia_url');
 
-        console.log('✅ Tabelas de avisos, grupos e mídia verificadas/atualizadas.');
+        console.log('✅ Tabelas de avisos verificadas/atualizadas.');
     } catch (e) {
         console.error('❌ Erro ao inicializar tabelas de avisos:', e.message);
     }
@@ -196,7 +201,8 @@ router.get('/nao-concluidos/:idUsuario', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar avisos ativos:', error);
-        res.status(500).json({ error: 'Erro ao buscar avisos' });
+        require('fs').writeFileSync(require('path').join(__dirname, '..', 'error_log.txt'), 'ERRO AVISOS:\n' + error.stack);
+        res.status(500).json({ error: 'Erro ao buscar avisos', details: error.message });
     }
 });
 

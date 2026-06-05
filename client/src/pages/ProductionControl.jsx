@@ -19,6 +19,7 @@ import CurvaSPedido from './pcp/CurvaSPedido';
 import EvolucaoApontamentosView from './pcp/EvolucaoApontamentosView';
 import PlanningAuditPanel from '../components/PlanningAuditPanel';
 import ResumoPlanejamentoView from '../components/ResumoPlanejamentoView';
+import ConsolidadoView from '../components/ConsolidadoView';
 import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError, getResourceCapacities } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { generateProductionControlPdf } from '../services/productionControlPdfGenerator';
@@ -51,6 +52,57 @@ export default function ProductionControl() {
     
     // Planejamento Inteligente State
     const [smartPlannerOpen, setSmartPlannerOpen] = useState(false);
+    const [smartPlannerOps, setSmartPlannerOps] = useState([]);
+    const [loadingAllOps, setLoadingAllOps] = useState(false);
+    const [showSmartPlanMenu, setShowSmartPlanMenu] = useState(false);
+    const smartPlanMenuRef = useRef(null);
+
+    // Fecha o menu ao clicar fora
+    useEffect(() => {
+        if (!showSmartPlanMenu) return;
+        const close = () => setShowSmartPlanMenu(false);
+        document.addEventListener('click', close);
+        return () => document.removeEventListener('click', close);
+    }, [showSmartPlanMenu]);
+
+    const handleOpenSmartPlannerWithSelected = () => {
+        if (!selectedOps || selectedOps.length === 0) {
+            toast.warning('Selecione pelo menos uma OP na tabela primeiro.');
+            return;
+        }
+        setSmartPlannerOps(selectedOps);
+        setSmartPlannerOpen(true);
+        setShowSmartPlanMenu(false);
+    };
+
+    const handleOpenSmartPlannerWithAll = async () => {
+        setShowSmartPlanMenu(false);
+        setLoadingAllOps(true);
+        try {
+            // Busca todas as OPs ativas do banco (pending_delivery = com saldo pendente)
+            const res = await getProductionDashboard({ pending_delivery: true, limit: 5000 });
+            const allOps = res.data || [];
+            if (allOps.length === 0) {
+                toast.info('Nenhuma OP ativa com saldo pendente encontrada no banco.');
+                return;
+            }
+            // Deduplica por OP número (o FCS trabalha por OP, não por linha de roteiro)
+            const uniqueOps = Object.values(
+                allOps.reduce((acc, op) => {
+                    if (!acc[op.op]) acc[op.op] = op;
+                    return acc;
+                }, {})
+            );
+            toast.info(`${uniqueOps.length} OPs ativas carregadas do banco.`);
+            setSmartPlannerOps(uniqueOps);
+            setSmartPlannerOpen(true);
+        } catch (err) {
+            console.error('Erro ao carregar todas as OPs:', err);
+            toast.error('Falha ao buscar OPs do banco.');
+        } finally {
+            setLoadingAllOps(false);
+        }
+    };
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -461,16 +513,40 @@ export default function ProductionControl() {
                             <Zap className="w-5 h-5" />
                             PCPMetal AI
                         </button>
-                        <button
-                            onClick={() => {
-                                setSmartPlannerOpen(true);
-                            }}
-                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm"
-                            title="Agente de Planejamento Inteligente FCS"
-                        >
-                            <Bot className="w-5 h-5" />
-                            Planejamento Inteligente
-                        </button>
+                        {/* Botão Planejamento Inteligente com dropdown */}
+                        <div className="relative" ref={smartPlanMenuRef}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowSmartPlanMenu(v => !v); }}
+                                disabled={loadingAllOps}
+                                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-60"
+                                title="Motor FCS (Capacidade Finita): replaneja OPs não executadas do passado, ordena por data de entrega PCP (mais urgente primeiro) e aloca capacidade a partir da data informada. Itens sem data de entrega vão para o final da fila."
+                            >
+                                {loadingAllOps
+                                    ? <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />Carregando...</>
+                                    : <><Bot className="w-5 h-5" />Planejamento Inteligente<ChevronDown className="w-4 h-4 ml-1" /></>
+                                }
+                            </button>
+
+                            {showSmartPlanMenu && (
+                                <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                    <button
+                                        onClick={handleOpenSmartPlannerWithSelected}
+                                        disabled={selectedOps.length === 0}
+                                        className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed flex flex-col gap-0.5 border-b border-slate-100"
+                                    >
+                                        <span className="flex items-center gap-2"><CheckSquare className="w-4 h-4 text-blue-600" />Usar OPs Selecionadas</span>
+                                        <span className="text-xs text-slate-400 font-normal ml-6">{selectedOps.length} OP(s) marcadas · ordenadas por entrega PCP</span>
+                                    </button>
+                                    <button
+                                        onClick={handleOpenSmartPlannerWithAll}
+                                        className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-indigo-50 flex flex-col gap-0.5"
+                                    >
+                                        <span className="flex items-center gap-2"><MoreHorizontal className="w-4 h-4 text-indigo-600" />Todas do Banco</span>
+                                        <span className="text-xs text-slate-400 font-normal ml-6">Inclui OPs ativas + replaneja pendentes do passado · prioridade por data de entrega PCP</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         {appointmentMode && (
                             <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                                 appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
@@ -592,6 +668,13 @@ export default function ProductionControl() {
 
 
                         <div className="flex gap-2">
+                            <button
+                                onClick={() => setFilters(prev => ({ ...prev, status: [], planned_date_start: '', planned_date_end: '' }))}
+                                className="px-3 py-2 bg-slate-100 text-slate-600 font-semibold rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-1.5 text-sm shrink-0"
+                                title="Limpar filtros de status e datas"
+                            >
+                                Limpar Filtros
+                            </button>
                             <button onClick={async () => {
                                 if (!ops || ops.length === 0) {
                                     toast.warning('Faça uma busca primeiro para gerar o relatório.');
@@ -644,9 +727,24 @@ export default function ProductionControl() {
                             Resumo por Pedido
                             {activeTab === 'resumo_pedidos' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                         </button>
+                        <button onClick={() => setActiveTab('consolidado_produto')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'consolidado_produto' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Consolidado por Produto
+                            {activeTab === 'consolidado_produto' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                        </button>
                     </div>
 
                 </div>
+
+                {/* Aviso quando filtros de status estão ativos: OPs sem planejamento ficam ocultas */}
+                {Array.isArray(filters.status) && filters.status.length > 0 && (
+                    <div className="mx-4 mt-2 mb-1 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-700 text-xs">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                            <strong>Filtro de status ativo:</strong> OPs sem planejamento de datas ficam ocultas.
+                            {' '}Clique em <strong>Limpar Filtros</strong> ou desmarque os filtros de status para ver todas as OPs.
+                        </span>
+                    </div>
+                )}
 
                 <ErrorStateOverlay error={apiError} onRetry={loadData} />
 
@@ -905,9 +1003,12 @@ export default function ProductionControl() {
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-1">
                         <ResumoPlanejamentoView />
                     </div>
+                ) : activeTab === 'consolidado_produto' ? (
+                    <ConsolidadoView ops={ops} />
                 ) : (
                     <CurvaSPedido filters={filters} />
                 ))}
+
 
                 {/* MODALS — global, independent of active tab */}
                 {selectedOpHistory && (
@@ -988,10 +1089,11 @@ export default function ProductionControl() {
 
             <PlanejamentoInteligenteModal 
                 isOpen={smartPlannerOpen}
-                onClose={() => setSmartPlannerOpen(false)}
-                selectedOps={selectedOps}
+                onClose={() => { setSmartPlannerOpen(false); setSmartPlannerOps([]); }}
+                selectedOps={smartPlannerOps.length > 0 ? smartPlannerOps : selectedOps}
                 onPlanSuccess={() => {
                     setSmartPlannerOpen(false);
+                    setSmartPlannerOps([]);
                     setSelectedOps([]);
                     loadData();
                 }}

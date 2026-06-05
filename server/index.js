@@ -179,6 +179,9 @@ app.use('/api/protheus', require('./routes/protheus'));
 // PCPMetal AI Agent Routes
 app.use('/api/pcpmetal', require('./routes/pcpmetal'));
 
+// Hermes AI Agent Routes
+app.use('/api/hermes', require('./routes/hermes'));
+
 
 console.log('🔄 [DEBUG] Montando rota /api/producao...');
 app.use('/api/producao', require('./routes/producao'));
@@ -430,6 +433,9 @@ cron.schedule('0 6,15 * * *', async () => {
 
 const { startFaturamentoCron } = require('./services/faturamentoCron');
 startFaturamentoCron();
+
+const { startHermesScheduler } = require('./services/hermes/scheduler');
+startHermesScheduler();
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);

@@ -8,6 +8,7 @@ import useStickyState from '../hooks/useStickyState';
 
 import ProductImageModal from '../components/ProductImageModal';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
+import { BillingForecastInput } from '../components/orders/BillingForecastInput';
 
 const ItensAFaturar = () => {
     const { user } = useAuth();
@@ -138,6 +139,54 @@ const ItensAFaturar = () => {
         const saldo = parseFloat(row.qtd_faturar || 0);
         return opQtd > 0 ? Math.min(opQtd, saldo) : saldo;
     };
+
+    const handleUpdateFaturamentoDate = React.useCallback((pedidoId, itemId, dateValue, newId) => {
+        setOrders(prev => prev.map(o => {
+            if (o.pedido === pedidoId && o.item === itemId) {
+                const updatedForecasts = Array.isArray(o.pcp_programacoes) ? o.pcp_programacoes.map(p => {
+                    return {
+                        ...p,
+                        id: newId || p.id,
+                        data_prevista_faturamento: dateValue
+                    };
+                }) : o.pcp_programacoes;
+
+                return {
+                    ...o,
+                    pcp_delivery_forecast_id: newId || o.pcp_delivery_forecast_id,
+                    data_prevista_faturamento: dateValue,
+                    pcp_programacoes: updatedForecasts
+                };
+            }
+            return o;
+        }));
+
+        setSelectedItems(prev => {
+            const copy = { ...prev };
+            let updated = false;
+            Object.keys(copy).forEach(key => {
+                const item = copy[key];
+                if (item.pedido === pedidoId && item.item === itemId) {
+                    const updatedForecasts = Array.isArray(item.pcp_programacoes) ? item.pcp_programacoes.map(p => {
+                        return {
+                            ...p,
+                            id: newId || p.id,
+                            data_prevista_faturamento: dateValue
+                        };
+                    }) : item.pcp_programacoes;
+
+                    copy[key] = {
+                        ...item,
+                        pcp_delivery_forecast_id: newId || item.pcp_delivery_forecast_id,
+                        data_prevista_faturamento: dateValue,
+                        pcp_programacoes: updatedForecasts
+                    };
+                    updated = true;
+                }
+            });
+            return updated ? copy : prev;
+        });
+    }, []);
 
     // Expande orders em rows: 1 linha por programação PCP, ou 1 linha normal se sem programação.
     // O backend agora retorna 1 row por OP (múltiplas OPs = múltiplas rows por item).
@@ -644,6 +693,7 @@ const ItensAFaturar = () => {
                                 <th className="px-3 py-3 font-semibold text-right">Qtd Entr.</th>
                                 <th className="px-3 py-3 font-semibold text-right text-blue-700">Saldo</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
+                                <th className="px-3 py-3 font-semibold text-center text-teal-700 whitespace-nowrap">Prev. Fat.</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série MF</th>
                                 <th className="px-3 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
@@ -656,7 +706,7 @@ const ItensAFaturar = () => {
                         <tbody className="divide-y divide-gray-50 text-[13px]">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center">
+                                    <td colSpan={canViewFinancials ? 25 : 23} className="px-6 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                                             <span className="text-gray-400 font-medium">Carregando itens...</span>
@@ -665,7 +715,7 @@ const ItensAFaturar = () => {
                                 </tr>
                             ) : error ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center text-red-500">
+                                    <td colSpan={canViewFinancials ? 25 : 23} className="px-6 py-12 text-center text-red-500">
                                         <div className="flex flex-col items-center gap-2">
                                             <AlertCircle className="h-8 w-8" />
                                             <span className="font-semibold">{error}</span>
@@ -674,7 +724,7 @@ const ItensAFaturar = () => {
                                 </tr>
                             ) : filteredRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={canViewFinancials ? 24 : 22} className="px-6 py-12 text-center text-gray-400">
+                                    <td colSpan={canViewFinancials ? 25 : 23} className="px-6 py-12 text-center text-gray-400">
                                         {rows.length > 0
                                             ? 'Nenhum item com Saldo Produzido > 0. Desative o filtro "Mostrar Apenas Prontos" para ver todos.'
                                             : 'Nenhum item encontrado com os filtros selecionados.'}
@@ -741,6 +791,13 @@ const ItensAFaturar = () => {
                                             {/* Colunas PCP */}
                                             <td className="px-2 py-2 text-center text-xs font-bold text-indigo-700 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                                 {prog?.data_entrega_pcp ? new Date(prog.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
+                                            </td>
+                                            <td className="px-2 py-2 text-center text-xs whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                <BillingForecastInput
+                                                    item={order}
+                                                    user={user}
+                                                    onUpdateSuccess={handleUpdateFaturamentoDate}
+                                                />
                                             </td>
                                             <td className="px-2 py-2 text-center text-xs text-indigo-600 font-medium" onClick={(e) => e.stopPropagation()}>
                                                 {prog?.serie_cliente || <span className="text-gray-300">—</span>}

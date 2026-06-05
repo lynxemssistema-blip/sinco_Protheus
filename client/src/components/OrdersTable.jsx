@@ -7,6 +7,8 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 
 import PCPExportTab from './orders/PCPExportTab';
+import OrdersTimelineTab from './orders/OrdersTimelineTab';
+import MaterialRequirementsTab from './orders/MaterialRequirementsTab';
 import DocsModal from './DocsModal';
 import NotesDrawer from './NotesDrawer';
 import MeetingReportModal from './MeetingReportModal';
@@ -18,6 +20,8 @@ import InvoiceDetailsModal from './InvoiceDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
+import { toast } from 'react-toastify';
+import { BillingForecastInput } from './orders/BillingForecastInput';
 
 // Sub-components
 import OrderFiltersBar from './orders/OrderFiltersBar';
@@ -71,6 +75,9 @@ const OrdersTable = () => {
     const [downloadingPDF, setDownloadingPDF] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
 
+    // Global page-blocking state: prevents simultaneous heavy DB queries
+    const [pageBlocking, setPageBlocking] = useState(null); // null = free, string = blocking message
+
     // PCPMetal AI Drawer State
     const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
     const [pcpmetalContext, setPcpmetalContext] = useState({});
@@ -105,11 +112,14 @@ const OrdersTable = () => {
         dateType: orderFilters.dateType,
         tipo_item: orderFilters.tipo_item || '',
         op_status: orderFilters.op_status || '',
-        only_active: orderFilters.only_active
+        only_active: orderFilters.only_active,
+        sortBy: orderFilters.sortBy,
+        sortOrder: orderFilters.sortOrder
     }), [
         orderFilters.cliente, orderFilters.pedido, orderFilters.produto,
         orderFilters.dataInicial, orderFilters.dataFinal, orderFilters.dateType,
-        orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active
+        orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active,
+        orderFilters.sortBy, orderFilters.sortOrder
     ]);
 
     const setFilters = (val) => {
@@ -126,11 +136,11 @@ const OrdersTable = () => {
     const setPage = (val) => updateOrderFilters({ page: val });
 
     const limit = viewMode === 'flat' ? 50 : 20;
-    const colSpanCount = viewMode === 'flat' ? 23 : 7;
+    const colSpanCount = viewMode === 'flat' ? 24 : 7;
 
-    // useOrders: encapsulates fetch, retry, expand, poll
     const {
         orders,
+        setOrders,
         loading,
         error,
         totalPages,
@@ -167,37 +177,63 @@ const OrdersTable = () => {
     // Keep selection cleared when orders change
     useEffect(() => { setSelectedItems([]); }, [orders, viewMode]);
 
-    const [hasSearched, setHasSearched] = useState(false);
-
     const hasAnyFilter = () => {
         return !!(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
     };
 
-    // Fetch on page/viewMode/active filter change
+    // Fetch on page/viewMode/active/sort filter change
     useEffect(() => {
-        if (!hasSearched) return;
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, viewMode, filters.only_active, hasSearched]);
+    }, [page, viewMode, filters.only_active, filters.sortBy, filters.sortOrder]);
 
     const handleFilterChange = useCallback((e) => {
         const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
-    }, [setFilters]);
+        
+        // Se mudou a ordenação, volta para a página 1
+        if (name === 'sortBy' || name === 'sortOrder') {
+            setPage(1);
+        }
 
+        setFilters(prev => ({ ...prev, [name]: value }));
+    }, [setFilters, setPage]);
 
     const handleSearch = (e) => {
         e.preventDefault();
-        if (!hasAnyFilter()) {
-            alert('Por favor, informe pelo menos um filtro (Cliente, Pedido, Produto, Datas, etc) antes de buscar.');
-            return;
-        }
-        setHasSearched(true);
         // Set context page to 1
         setPage(1);
         // Execute fetch immediately with page 1 override to avoid closure lag
         fetchData({ page: 1 });
     };
+
+    const handleUpdateFaturamentoDate = useCallback((pedidoId, itemId, dateValue, newId) => {
+        // Update local orders array (for flat view)
+        setOrders(prev => prev.map(o => {
+            if (o.pedido === pedidoId && o.item === itemId) {
+                return {
+                    ...o,
+                    pcp_delivery_forecast_id: newId || o.pcp_delivery_forecast_id,
+                    data_prevista_faturamento: dateValue
+                };
+            }
+            return o;
+        }));
+
+        // Also update tree view items cache (for expanded rows)
+        if (orderItems[pedidoId]) {
+            const updatedItems = orderItems[pedidoId].map(item => {
+                if (item.item === itemId) {
+                    return {
+                        ...item,
+                        pcp_delivery_forecast_id: newId || item.pcp_delivery_forecast_id,
+                        data_prevista_faturamento: dateValue
+                    };
+                }
+                return item;
+            });
+            updateOrderItemsForPedido(pedidoId, updatedItems);
+        }
+    }, [orderItems, setOrders, updateOrderItemsForPedido]);
 
     const handleDownloadPDF = async () => {
         setDownloadingPDF(true);
@@ -593,6 +629,25 @@ const OrdersTable = () => {
                     </div>
                 </div>
             )}
+
+            {/* ── BLOQUEIO GLOBAL DE PÁGINA ── Evita consultas simultâneas pesadas */}
+            {pageBlocking && (
+                <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm" style={{ pointerEvents: 'all' }}>
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-md border border-gray-100">
+                        <div className="relative mb-5">
+                            <div className="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 rounded-full border-4 border-transparent border-t-blue-400 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.7s' }} />
+                            </div>
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Processando...</h3>
+                        <p className="text-sm text-gray-500 leading-relaxed">{pageBlocking}</p>
+                        <div className="mt-4 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                            ⚠️ Página bloqueada para evitar consultas simultâneas. Aguarde.
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Header & Filtros */}
             <div className="border-b border-gray-100 bg-white print:hidden">
                 {/* ── Top loading progress bar ── */}
@@ -842,25 +897,54 @@ const OrdersTable = () => {
                         </button>
                     </div>
 
-                    <div className="md:col-span-6 flex flex-col gap-1 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                        <div className="flex items-center gap-2">
-                            <label className="relative inline-flex items-center cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={filters.only_active === 'true'}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false', page: 1 }))}
-                                    className="sr-only peer"
-                                />
-                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                                <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
-                            </label>
-                            <span className="text-[10px] text-gray-400 italic flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                Desative para uma busca muito mais rápida.
-                            </span>
+                    <div className="md:col-span-8 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
+                        <div className="flex flex-col gap-1 flex-1">
+                            <div className="flex items-center gap-2">
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.only_active === 'true'}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false', page: 1 }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                    <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
+                                </label>
+                                <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Desative para uma busca muito mais rápida.
+                                </span>
+                            </div>
+                            <div className="text-[10px] text-gray-400 italic">
+                                Datas do filtro = <span className="font-semibold text-gray-500">Entrada/Emissão do pedido</span> (Protheus).
+                            </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 italic">
-                            Datas do filtro = <span className="font-semibold text-gray-500">Entrada/Emissão do pedido</span> (Protheus).
+
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[11px] font-medium text-gray-600">Ordenar por:</label>
+                            <div className="flex gap-2">
+                                <select 
+                                    name="sortBy" 
+                                    value={filters.sortBy || 'emissao'} 
+                                    onChange={handleFilterChange}
+                                    className="w-40 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none focus:border-blue-500"
+                                >
+                                    <option value="pedido">Pedido/Item</option>
+                                    <option value="emissao">Data do Pedido</option>
+                                    <option value="entrega">Data de Entrega (Pedido)</option>
+                                    <option value="entrega_pcp">Data de Entrega PCP</option>
+                                    <option value="prev_fat">Prev. Fat. (Faturamento)</option>
+                                </select>
+                                <select 
+                                    name="sortOrder" 
+                                    value={filters.sortOrder || 'DESC'} 
+                                    onChange={handleFilterChange}
+                                    className="w-24 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none focus:border-blue-500"
+                                >
+                                    <option value="DESC">Recentes</option>
+                                    <option value="ASC">Antigos</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -890,6 +974,28 @@ const OrdersTable = () => {
                     >
                         <FileSpreadsheet className="w-4 h-4" />
                         Exportação Materiais
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('cronograma')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'cronograma'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <Calendar className="w-4 h-4" />
+                        Cronograma / Gantt
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('mrp-bulk')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'mrp-bulk'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <Package className="w-4 h-4" />
+                        📦 Necessidades MP (Almox 01/03)
                     </button>
                 </div>
                 
@@ -955,6 +1061,7 @@ const OrdersTable = () => {
                                         <th className="px-4 py-3 font-semibold text-center">Entrega</th>
                                         <th className="px-4 py-3 font-semibold text-right text-xs">Qtd. PCP</th>
                                         <th className="px-4 py-3 font-semibold text-center text-xs">Data PCP</th>
+                                        <th className="px-4 py-3 font-semibold text-center text-xs text-teal-800">Prev. Fat.</th>
                                     </tr>
                                 )}
                             </thead>
@@ -1184,6 +1291,7 @@ const OrdersTable = () => {
                                                                                         <th className="px-4 py-2 text-center">Entrega</th>
                                                                                         <th className="px-4 py-2 text-right text-xs">Qtd. PCP</th>
                                                                                         <th className="px-4 py-2 text-center text-xs">Data PCP</th>
+                                                                                        <th className="px-4 py-2 text-center text-xs text-teal-800">Prev. Fat.</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody>
@@ -1507,6 +1615,13 @@ const OrdersTable = () => {
                                                                                                             ) : <span className="text-gray-400 group-hover/pcp:text-teal-600">Definir...</span>}
                                                                                                         </div>
                                                                                                     </td>
+                                                                                                    <td className="px-4 py-2 text-center text-xs">
+                                                                                                        <BillingForecastInput
+                                                                                                            item={item}
+                                                                                                            user={user}
+                                                                                                            onUpdateSuccess={handleUpdateFaturamentoDate}
+                                                                                                        />
+                                                                                                    </td>
                                                                                                 </tr>
                                                                                             ))
                                                                                     ) : (
@@ -1549,6 +1664,7 @@ const OrdersTable = () => {
                                                     onPrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
                                                     onExportOPByOperationExcel={handleExportOPByOperationExcel}
                                                     onSetMenuPosition={setMenuPosition}
+                                                    onUpdateFaturamentoDate={handleUpdateFaturamentoDate}
                                                 />
                                             ))
                                         )}
@@ -1593,6 +1709,22 @@ const OrdersTable = () => {
                 activeTab === 'pcp-export' && (
                     <div className="flex-1 overflow-auto min-h-0 p-4">
                         <PCPExportTab />
+                    </div>
+                )
+            }
+
+            {/* Cronograma / Gantt */}
+            {
+                activeTab === 'cronograma' && (
+                    <OrdersTimelineTab filters={filters} />
+                )
+            }
+
+            {/* MRP Bulk - Necessidades */}
+            {
+                activeTab === 'mrp-bulk' && (
+                    <div className="flex-1 overflow-auto min-h-0 bg-gray-50">
+                        <MaterialRequirementsTab setPageBlocking={setPageBlocking} />
                     </div>
                 )
             }

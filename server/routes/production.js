@@ -1012,7 +1012,8 @@ op_enrich AS (
         TRIM(a1.a1_nome)     AS nome_cliente,
         TRIM(a1.a1_nreduz)   AS nome_fantasia,
         TRIM(c6.c6_pedcli)   AS ped_cliente,
-        TRIM(c6.c6_entreg)   AS data_entrega_comercial
+        TRIM(c6.c6_entreg)   AS data_entrega_comercial,
+        (COALESCE(NULLIF(TRIM(c6.c6_qtdven::text), '')::numeric, 0) - COALESCE(NULLIF(TRIM(c6.c6_qtdent::text), '')::numeric, 0)) AS qtd_faturar
     FROM op_base ob
     LEFT JOIN public.sb1010 sb1
         ON  sb1.b1_cod = ob.produto_raw
@@ -1040,7 +1041,7 @@ SELECT
     oe.c2_num AS op, oe.c2_item AS item_op, oe.c2_sequen AS sequen,
     oe.produto_raw AS cod_produto_op_raw, oe.produto AS cod_produto_op, oe.pedido_resolved AS pedido_venda,
     oe.desc_produto, oe.tipo_produto, oe.um_op,
-    oe.qtd_planejada_op, oe.qtd_apontada_erp,
+    oe.qtd_planejada_op, oe.qtd_apontada_erp, oe.qtd_faturar,
     oe.cod_cliente, oe.nome_cliente, oe.nome_fantasia, oe.ped_cliente, oe.data_entrega_comercial
 FROM op_enrich oe
 ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen

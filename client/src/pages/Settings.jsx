@@ -10,6 +10,7 @@ import MonitoringDashboard from '../components/MonitoringDashboard';
 import DBAMonitoringTab from '../components/DBAMonitoringTab';
 import ErrorListTab from '../components/ErrorListTab';
 import WinSCPTab from '../components/WinSCPTab';
+import HermesConfigTab from '../components/HermesConfigTab';
 
 export default function Settings() {
     const { user, isAdmin } = useAuth();
@@ -32,6 +33,7 @@ export default function Settings() {
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
         { id: 'monitoring', label: 'Monitoramento do Sistema', icon: Activity },
         ...(user?.tipo === 'SA' ? [{ id: 'winscp', label: 'Processo WinSCP', icon: Send }] : []),
+        ...(user?.tipo === 'SA' ? [{ id: 'hermes', label: 'Agente Hermes', icon: Bot }] : []),
     ];
 
     const formatPhone = (val) => {
@@ -292,7 +294,7 @@ export default function Settings() {
         try {
             setLoadingPedidos(true);
             const settings = await getPedidosStatusSettings();
-            setHideInactiveOrders(settings.hide_inactive_orders === 1);
+            setHideInactiveOrders(settings.hideInactive === true || settings.hideInactive === 1);
             
             const list = await getPedidosStatusList(search);
             setInactiveOrdersList(list);
@@ -1114,8 +1116,8 @@ export default function Settings() {
                                                     {inactiveOrdersList
                                                         .filter(p => !pedidosSearch || p.pedido.includes(pedidosSearch) || (p.cliente_nome && p.cliente_nome.toLowerCase().includes(pedidosSearch.toLowerCase())))
                                                         .slice(0, 100) // Render only top 100 to avoid lag
-                                                        .map(item => (
-                                                        <tr key={item.pedido} className={item.ativo ? '' : 'bg-red-50'}>
+                                                        .map((item, index) => (
+                                                        <tr key={`${item.pedido}-${index}`} className={item.ativo ? '' : 'bg-red-50'}>
                                                             <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.pedido}</td>
                                                             <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 truncate max-w-[200px]" title={item.cliente_nome}>{item.cliente_nome || '-'}</td>
                                                             <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
@@ -2282,6 +2284,13 @@ export default function Settings() {
                 {activeTab === 'winscp' && (
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                         <WinSCPTab />
+                    </div>
+                )}
+
+                {/* HERMES TAB */}
+                {activeTab === 'hermes' && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <HermesConfigTab />
                     </div>
                 )}
 

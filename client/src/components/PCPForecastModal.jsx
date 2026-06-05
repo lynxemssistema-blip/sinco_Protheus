@@ -428,12 +428,20 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
             const newProgs = await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess(newProgs);
         } catch (err) {
-            console.error("❌ [ERRO API PROTHEUS/SINGLE] Detalhes:", JSON.stringify(err.response?.data || err));
-            const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao salvar.';
-            toast.error(`Falha ao Gerar O.P.: ${errMsg}`, { autoClose: 8000 });
+            // Determina se o erro veio do PCP (salvar) ou do Protheus (OP)
+            const isProtheusErr = err?.config?.url?.includes('protheus') || err?.config?.url?.includes('ordem-producao');
+            const errData = err.response?.data;
+            const errMsg = errData?.details || errData?.error || err.message || 'Erro ao salvar.';
+            console.error('❌ [ERRO SINGLE]', isProtheusErr ? 'PROTHEUS' : 'PCP', '→', errMsg, errData || err.message);
+            if (isProtheusErr) {
+                toast.error(`Programação salva, mas falha ao Gerar O.P. no Protheus: ${errMsg}`, { autoClose: 10000 });
+            } else {
+                toast.error(`Falha ao salvar programação: ${errMsg}`, { autoClose: 8000 });
+            }
         } finally {
             setSaving(false);
         }
+
     };
 
     const startEdit = (prog) => {

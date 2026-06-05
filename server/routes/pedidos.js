@@ -13,12 +13,31 @@ const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
+
+        // Fetch forecasts from MySQL first
+        let valuesList = "(CAST('DUMMY' AS varchar), CAST('DUMMY' AS varchar), CAST(NULL AS varchar), CAST(NULL AS varchar))";
+        try {
+            const [forecastRows] = await mysqlPool.query(`
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                FROM app_pcp_delivery_forecasts
+                WHERE pedido IS NOT NULL AND item IS NOT NULL
+            `);
+            if (forecastRows.length > 0) {
+                valuesList = forecastRows.map(row => {
+                    const entregaPcpStr = row.data_entrega_pcp ? `'${row.data_entrega_pcp}'` : 'NULL';
+                    const prevFatStr = row.data_prevista_faturamento ? `'${row.data_prevista_faturamento}'` : 'NULL';
+                    return `(CAST('${row.pedido}' AS varchar), CAST('${row.item}' AS varchar), CAST(${entregaPcpStr} AS varchar), CAST(${prevFatStr} AS varchar))`;
+                }).join(', ');
+            }
+        } catch (err) {
+            console.error('Error fetching forecasts for virtual join:', err);
+        }
 
         // Parâmetros para query
         const params = [];
@@ -179,6 +198,18 @@ router.get('/', async (req, res) => {
         ON sa1.a1_cod = c5.c5_cliente
         AND COALESCE(sa1.d_e_l_e_t_, '') = ''
       LEFT JOIN (
+          SELECT c6.c6_num, c6.c6_filial,
+              MIN(fc.data_entrega_pcp) AS min_entrega_pcp,
+              MAX(fc.data_prevista_faturamento) AS max_prev_fat
+          FROM public.sc6010 c6
+          LEFT JOIN (
+              VALUES ${valuesList}
+          ) AS fc(pedido, item, data_entrega_pcp, data_prevista_faturamento)
+              ON fc.pedido = TRIM(c6.c6_num) AND fc.item = TRIM(c6.c6_item)
+          WHERE COALESCE(c6.d_e_l_e_t_, '') = ''
+          GROUP BY c6.c6_num, c6.c6_filial
+      ) fc_agg ON fc_agg.c6_num = c5.c5_num AND fc_agg.c6_filial = c5.c5_filial
+      LEFT JOIN (
           SELECT c6_num, c6_filial,
               COUNT(*)                AS itens_count,
               COUNT(DISTINCT c6_item) AS itens_distintos,
@@ -192,12 +223,12 @@ router.get('/', async (req, res) => {
               COUNT(DISTINCT c6_x.c6_item) AS itens_com_op
           FROM public.sc6010 c6_x
           WHERE COALESCE(c6_x.d_e_l_e_t_, '') = ''
-            AND EXISTS (
-                SELECT 1 FROM public.sc2010 c2_x
-                WHERE c2_x.c2_pedido = c6_x.c6_num
-                  AND c2_x.c2_itempv = c6_x.c6_item
-                  AND COALESCE(c2_x.d_e_l_e_t_, '') = ''
-            )
+          AND EXISTS (
+              SELECT 1 FROM public.sc2010 c2_x
+              WHERE c2_x.c2_pedido = c6_x.c6_num
+                AND c2_x.c2_itempv = c6_x.c6_item
+                AND COALESCE(c2_x.d_e_l_e_t_, '') = ''
+          )
           GROUP BY c6_x.c6_num, c6_x.c6_filial
       ) c6_op_agg ON c6_op_agg.c6_num = c5.c5_num AND c6_op_agg.c6_filial = c5.c5_filial
       LEFT JOIN (
@@ -208,9 +239,17 @@ router.get('/', async (req, res) => {
           GROUP BY c2_pedido
       ) c2_agg ON c2_agg.c2_pedido = c5.c5_num
       ${whereClause}
-      ${dateType === 'entrega' 
-          ? "ORDER BY NULLIF(TRIM(c6_agg.entrega_raw), '') ASC NULLS LAST, c5.c5_num DESC" 
-          : "ORDER BY c5.c5_emissao DESC, c5.c5_num DESC"}
+      ${sortBy === 'entrega' 
+          ? `ORDER BY NULLIF(TRIM(c6_agg.entrega_raw), '') ${sortOrder === 'ASC' ? 'ASC' : 'DESC'} NULLS LAST, c5.c5_num DESC` 
+          : sortBy === 'emissao'
+          ? `ORDER BY c5.c5_emissao ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c5.c5_num DESC`
+          : sortBy === 'entrega_pcp'
+          ? `ORDER BY CASE WHEN fc_agg.min_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, fc_agg.min_entrega_pcp ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c5.c5_num DESC`
+          : sortBy === 'prev_fat'
+          ? `ORDER BY CASE WHEN fc_agg.max_prev_fat IS NULL THEN 1 ELSE 0 END ASC, fc_agg.max_prev_fat ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c5.c5_num DESC`
+          : sortBy === 'pedido'
+          ? `ORDER BY c5.c5_num ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}`
+          : `ORDER BY c5.c5_num DESC`}
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
@@ -265,13 +304,52 @@ router.get('/flat', async (req, res) => {
     let paramsCount = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '' } = req.query;
+        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
 
-        params = [];
-        let paramCount = 1;
+        // Fetch forecasts from MySQL first — limit to recent records to keep payload small
+        let forecastJson = '[]';
+        try {
+            const [forecastRows] = await mysqlPool.query(`
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                FROM app_pcp_delivery_forecasts
+                WHERE pedido IS NOT NULL AND item IS NOT NULL
+                  AND (updated_at >= DATE_SUB(NOW(), INTERVAL 180 DAY) OR created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY))
+            `);
+            if (forecastRows.length > 0) {
+                forecastJson = JSON.stringify(forecastRows.map(row => ({
+                    pedido: row.pedido,
+                    item: row.item,
+                    data_entrega_pcp: row.data_entrega_pcp || null,
+                    data_prevista_faturamento: row.data_prevista_faturamento || null
+                })));
+            }
+        } catch (err) {
+            // If date filtering fails (no updated_at column), fall back to unfiltered
+            try {
+                const [forecastRows] = await mysqlPool.query(`
+                    SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                    FROM app_pcp_delivery_forecasts
+                    WHERE pedido IS NOT NULL AND item IS NOT NULL
+                    LIMIT 5000
+                `);
+                if (forecastRows.length > 0) {
+                    forecastJson = JSON.stringify(forecastRows.map(row => ({
+                        pedido: row.pedido,
+                        item: row.item,
+                        data_entrega_pcp: row.data_entrega_pcp || null,
+                        data_prevista_faturamento: row.data_prevista_faturamento || null
+                    })));
+                }
+            } catch (e2) {
+                console.error('Error fetching forecasts for virtual join:', e2);
+            }
+        }
+
+        params = [forecastJson];
+        let paramCount = 2;
 
         // Base Filter Logic
         const getInactiveFilter = await getInactiveOrdersFilter();
@@ -446,6 +524,48 @@ router.get('/flat', async (req, res) => {
         // O JOIN externo com sc2010 sem LIMIT expande cada item para todas as suas OPs.
         // Isso garante que múltiplas OPs do mesmo item sejam todas visíveis com seus
         // respectivos saldos produzidos e programações PCP.
+        let orderClauseInner = '';
+        if (sortBy === 'entrega') {
+            orderClauseInner = `ORDER BY NULLIF(TRIM(COALESCE(c6.c6_entreg, '')), '') ${sortOrder === 'ASC' ? 'ASC' : 'DESC'} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'emissao') {
+            orderClauseInner = `ORDER BY c5.c5_emissao ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'entrega_pcp') {
+            orderClauseInner = `ORDER BY 
+                CASE WHEN fc.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, 
+                fc.data_entrega_pcp ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
+                c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'prev_fat') {
+            orderClauseInner = `ORDER BY 
+                CASE WHEN fc.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, 
+                fc.data_prevista_faturamento ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
+                c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'pedido') {
+            orderClauseInner = `ORDER BY c5.c5_num ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c6.c6_item ASC`;
+        } else {
+            orderClauseInner = `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
+        }
+
+        let orderClauseOuter = '';
+        if (sortBy === 'entrega') {
+            orderClauseOuter = `ORDER BY NULLIF(TRIM(pi.entrega), '') ${sortOrder === 'ASC' ? 'ASC' : 'DESC'} NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        } else if (sortBy === 'emissao') {
+            orderClauseOuter = `ORDER BY pi.emissao ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        } else if (sortBy === 'entrega_pcp') {
+            orderClauseOuter = `ORDER BY 
+                CASE WHEN pi.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, 
+                pi.data_entrega_pcp ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
+                pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        } else if (sortBy === 'prev_fat') {
+            orderClauseOuter = `ORDER BY 
+                CASE WHEN pi.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, 
+                pi.data_prevista_faturamento ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
+                pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        } else if (sortBy === 'pedido') {
+            orderClauseOuter = `ORDER BY pi.pedido ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        } else {
+            orderClauseOuter = `ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+        }
+
         query = `
             WITH paged_items AS (
                 SELECT
@@ -472,7 +592,8 @@ router.get('/flat', async (req, res) => {
                     TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
                     c6.c6_pedcli as ped_cliente,
                     c5.c5_liberok as status_cor,
-                    c5.c5_liberok as status_cor
+                    fc.data_entrega_pcp,
+                    fc.data_prevista_faturamento
                 FROM public.sc5010 c5
                 JOIN public.sc6010 c6
                     ON COALESCE(c6.d_e_l_e_t_, '') = ''
@@ -485,10 +606,10 @@ router.get('/flat', async (req, res) => {
                 LEFT JOIN public.sb1010 sb1
                     ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                LEFT JOIN jsonb_to_recordset($1::jsonb) AS fc(pedido varchar, item varchar, data_entrega_pcp varchar, data_prevista_faturamento varchar)
+                    ON fc.pedido = TRIM(c5.c5_num) AND fc.item = TRIM(c6.c6_item)
                 ${whereClause}
-                ${dateType === 'entrega' 
-                    ? "ORDER BY NULLIF(TRIM(COALESCE(c6.c6_entreg, '')), '') ASC NULLS LAST, c5.c5_num DESC, c6.c6_item ASC" 
-                    : "ORDER BY c5.c5_num DESC, c6.c6_item ASC"}
+                ${orderClauseInner}
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
             )
             SELECT
@@ -530,9 +651,7 @@ router.get('/flat', async (req, res) => {
                 WHERE TRIM(g2_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
                 LIMIT 1
             ) sg2_agg ON true
-            ${dateType === 'entrega'
-                ? "ORDER BY NULLIF(TRIM(pi.entrega), '') ASC NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC"
-                : "ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC"}
+            ${orderClauseOuter}
         `;
 
         params.push(limitParsed, offset);
@@ -540,7 +659,27 @@ router.get('/flat', async (req, res) => {
         // Count query (mesma estrutura, sem LATERAL — não afeta o count)
         errorStep = 'pg_main_query';
         // ── MAIN QUERY (com COUNT(*) OVER() integrado) ─────────────────────────────────────
-        const result = await db.query(query, params);
+        // Usa client dedicado para aumentar timeout desta query pesada (CTE + LATERAL joins)
+        const pgClient = await db.connect();
+        let result;
+        try {
+            await pgClient.query("SET LOCAL statement_timeout = '120000'");
+            result = await pgClient.query(query, params);
+        } finally {
+            pgClient.release();
+        }
+        
+        if (req.query.minimal === 'true') {
+            return res.json({
+                data: result.rows,
+                meta: {
+                    total: result.rows.length > 0 ? parseInt(result.rows[0].full_count, 10) : 0,
+                    page: pageParsed,
+                    limit: limitParsed
+                }
+            });
+        }
+        
         const countResult = { rows: [{ total: result.rows.length > 0 ? result.rows[0].full_count : 0 }] };
         errorStep = 'enrichment';
 
@@ -735,12 +874,16 @@ router.get('/flat', async (req, res) => {
                             }
                         }
 
+                        row.pcp_delivery_forecast_id = matchedForecast.id;
+                        row.data_prevista_faturamento = matchedForecast.data_prevista_faturamento;
                         row.pcp_delivery_forecast_date = matchedForecast.data_entrega_pcp;
                         row.pcp_delivery_forecast_qtd = matchedForecast.quantidade_pcp;
                         row.pcp_delivery_forecast_user = matchedForecast.usuario;
                         row.pcp_delivery_forecast_at = matchedForecast.created_at;
                         row.pcp_programacoes = [matchedForecast];
                     } else {
+                        row.pcp_delivery_forecast_id = null;
+                        row.data_prevista_faturamento = null;
                         row.pcp_programacoes = [];
                     }
                     
@@ -1444,12 +1587,16 @@ router.get('/:id/itens', async (req, res) => {
                             }
                         }
 
+                        item.pcp_delivery_forecast_id = matchedForecast.id;
+                        item.data_prevista_faturamento = matchedForecast.data_prevista_faturamento;
                         item.pcp_delivery_forecast_date = matchedForecast.data_entrega_pcp;
                         item.pcp_delivery_forecast_qtd = matchedForecast.quantidade_pcp;
                         item.pcp_delivery_forecast_user = matchedForecast.usuario;
                         item.pcp_delivery_forecast_at = matchedForecast.created_at;
                         item.pcp_programacoes = [matchedForecast];
                     } else {
+                        item.pcp_delivery_forecast_id = null;
+                        item.data_prevista_faturamento = null;
                         item.pcp_delivery_forecast_date = null;
                         item.pcp_delivery_forecast_qtd = null;
                         item.pcp_delivery_forecast_user = null;
@@ -1993,7 +2140,7 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
 
 router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
     try {
-        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item } = req.body;
+        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item, data_prevista_faturamento } = req.body;
 
         if (!pedido || !item || !data_entrega_pcp || quantidade_pcp === undefined || !usuario) {
             return res.status(400).json({ error: 'Dados incompletos para o planejamento PCP.' });
@@ -2016,8 +2163,8 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
         }
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null]
+            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null]
         );
 
         res.json({ success: true, id: result.insertId });
@@ -2030,7 +2177,7 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
 router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, usuario, qtd_total_item } = req.body;
+        const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, usuario, qtd_total_item, data_prevista_faturamento } = req.body;
 
         if (!data_entrega_pcp || quantidade_pcp === undefined) {
             return res.status(400).json({ error: 'Data e quantidade são obrigatórios.' });
@@ -2053,13 +2200,43 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
         }
 
         await mysqlPool.query(
-            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, lote = ?, numero_lote = ? WHERE id = ?',
-            [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, id]
+            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, lote = ?, numero_lote = ?, data_prevista_faturamento = ? WHERE id = ?',
+            [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
         );
 
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/pcp-forecasts/faturamento', async (req, res) => {
+    try {
+        const { id, pedido, item, data_prevista_faturamento, data_entrega_pcp, quantidade_pcp, usuario } = req.body;
+
+        if (id) {
+            await mysqlPool.query(
+                'UPDATE app_pcp_delivery_forecasts SET data_prevista_faturamento = ? WHERE id = ?',
+                [data_prevista_faturamento || null, id]
+            );
+            return res.json({ success: true, id });
+        } else {
+            if (!pedido || !item || !usuario) {
+                return res.status(400).json({ error: 'Pedido, item e usuário são obrigatórios para inicializar a previsão de faturamento.' });
+            }
+            if (!data_entrega_pcp || quantidade_pcp === undefined) {
+                return res.status(400).json({ error: 'Data de entrega e quantidade do item são necessárias para inicializar a previsão de faturamento.' });
+            }
+
+            const [result] = await mysqlPool.query(
+                'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?)',
+                [pedido, item, data_entrega_pcp, parseFloat(quantidade_pcp), usuario, data_prevista_faturamento || null]
+            );
+            return res.json({ success: true, id: result.insertId });
+        }
+    } catch (err) {
+        console.error('Error patching billing forecast:', err);
         res.status(500).json({ error: err.message });
     }
 });

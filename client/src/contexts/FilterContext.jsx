@@ -41,7 +41,9 @@ export const FilterProvider = ({ children }) => {
             viewMode: 'flat',
             activeTab: 'evolucao',
             page: 1,
-            expandedOrderId: null
+            expandedOrderId: null,
+            sortBy: 'emissao',
+            sortOrder: 'DESC'
         })
     );
 

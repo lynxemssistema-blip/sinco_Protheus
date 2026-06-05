@@ -172,29 +172,33 @@ router.post('/export', async (req, res) => {
 
         const itemsPayload = items.map(i => ({
             produto: String(i.produto).trim(),
-            quantidade: parseFloat(i.quantidade) || 1
+            quantidade: parseFloat(i.quantidade) || 1,
+            pedido:    String(i.pedido   || '').trim(),
+            cliente:   String(i.cliente  || '').trim(),
+            descricao_pai: String(i.descricao_pai || '').trim(),
         }));
 
+        // ── Query 1: BOM consolidada (aglutinada) ─────────────────────────────
         const bomQuery = `
             WITH RECURSIVE estrutura AS (
-                -- Começamos com os próprios produtos (nível 0)
                 SELECT
-                    0                         AS nivel,
-                    CAST(p.produto AS VARCHAR(30))   AS produto_pai,
-                    CAST(p.produto AS VARCHAR(30))   AS componente,
-                    1::numeric                AS qtd_unitaria,
-                    p.quantidade::numeric     AS qtd_total
-                FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric)
+                    0                                      AS nivel,
+                    CAST(p.produto AS VARCHAR(30))         AS produto_raiz,
+                    CAST(p.produto AS VARCHAR(30))         AS produto_pai,
+                    CAST(p.produto AS VARCHAR(30))         AS componente,
+                    1::numeric                             AS qtd_unitaria,
+                    p.quantidade::numeric                  AS qtd_total
+                FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
 
                 UNION ALL
 
-                -- Explodimos os filhos se existirem
                 SELECT
                     e.nivel + 1,
-                    CAST(TRIM(e.componente) AS VARCHAR(30)) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp)   AS VARCHAR(30)) AS componente,
-                    g1.g1_quant::numeric                    AS qtd_unitaria,
-                    e.qtd_total * g1.g1_quant::numeric      AS qtd_total
+                    CAST(TRIM(e.produto_raiz) AS VARCHAR(30)),
+                    CAST(TRIM(e.componente)   AS VARCHAR(30)) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)     AS VARCHAR(30)) AS componente,
+                    g1.g1_quant::numeric,
+                    e.qtd_total * g1.g1_quant::numeric
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON  TRIM(g1.g1_cod) = TRIM(e.componente)
@@ -210,7 +214,6 @@ router.post('/export', async (req, res) => {
             LEFT JOIN sb1010 sb1
                 ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-            -- Filtramos apenas as folhas (materiais que não têm mais estrutura abaixo deles)
             WHERE NOT EXISTS (
                 SELECT 1 FROM sg1010 sg1leaf
                 WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
@@ -220,8 +223,68 @@ router.post('/export', async (req, res) => {
             ORDER BY e.componente
         `;
 
-        const result = await db.query(bomQuery, [JSON.stringify(itemsPayload)]);
+        // ── Query 2: BOM detalhada (sem aglutinar — linha por produto pai) ────
+        const bomDetalhadaQuery = `
+            WITH RECURSIVE estrutura AS (
+                SELECT
+                    0                                      AS nivel,
+                    CAST(p.produto AS VARCHAR(30))         AS produto_raiz,
+                    CAST(p.descricao_pai AS VARCHAR(120))  AS descricao_raiz,
+                    CAST(p.pedido   AS VARCHAR(20))        AS pedido,
+                    CAST(p.cliente  AS VARCHAR(80))        AS cliente,
+                    CAST(p.produto AS VARCHAR(30))         AS produto_pai,
+                    CAST(p.produto AS VARCHAR(30))         AS componente,
+                    1::numeric                             AS qtd_unitaria,
+                    p.quantidade::numeric                  AS qtd_total
+                FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
 
+                UNION ALL
+
+                SELECT
+                    e.nivel + 1,
+                    CAST(TRIM(e.produto_raiz)   AS VARCHAR(30)),
+                    CAST(TRIM(e.descricao_raiz) AS VARCHAR(120)),
+                    CAST(TRIM(e.pedido)         AS VARCHAR(20)),
+                    CAST(TRIM(e.cliente)        AS VARCHAR(80)),
+                    CAST(TRIM(e.componente)     AS VARCHAR(30)) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)       AS VARCHAR(30)) AS componente,
+                    g1.g1_quant::numeric,
+                    e.qtd_total * g1.g1_quant::numeric
+                FROM estrutura e
+                JOIN sg1010 g1
+                    ON  TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 10
+            )
+            SELECT
+                e.produto_raiz,
+                e.descricao_raiz,
+                e.pedido,
+                e.cliente,
+                e.componente,
+                TRIM(sb1.b1_desc) AS descricao,
+                TRIM(sb1.b1_um)   AS unidade,
+                e.qtd_total
+            FROM estrutura e
+            LEFT JOIN sb1010 sb1
+                ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
+                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sg1010 sg1leaf
+                WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
+                  AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
+            )
+            ORDER BY e.produto_raiz, e.componente
+        `;
+
+        // ── Executar queries em paralelo ──────────────────────────────────────
+        const jsonPayload = JSON.stringify(itemsPayload);
+        const [result, detalhadaResult] = await Promise.all([
+            db.query(bomQuery,          [jsonPayload]),
+            db.query(bomDetalhadaQuery, [jsonPayload]),
+        ]);
+
+        // Consolidar aba 1
         for (const row of result.rows) {
             const key = row.componente;
             const qtdTotal = parseFloat(row.qtd_total) || 0;
@@ -238,115 +301,230 @@ router.post('/export', async (req, res) => {
             }
         }
 
-        // ── Gerar Excel ──────────────────────────────────────────────────────
-        const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'MetalFisa PCP';
-        workbook.created = new Date();
+        // Produtos sem estrutura (selecionados que não geraram nenhum material)
+        const produtosComMaterial = new Set(detalhadaResult.rows.map(r => r.produto_raiz));
+        const semEstrutura = itemsPayload.filter(i => !produtosComMaterial.has(i.produto));
 
-        const sheet = workbook.addWorksheet('Lista de Materiais', {
-            views: [{ state: 'frozen', ySplit: 3 }],
-        });
-
+        // ── Helpers para estilo de aba ────────────────────────────────────────
         const dataGeracao = new Date().toLocaleDateString('pt-BR', {
             day: '2-digit', month: '2-digit', year: 'numeric',
             hour: '2-digit', minute: '2-digit',
         });
 
-        // Linha 1 — título
-        sheet.mergeCells('A1:E1');
-        const titleCell = sheet.getCell('A1');
-        titleCell.value = `Lista de Materiais — Gerada em ${dataGeracao}`;
-        titleCell.font = { bold: true, size: 13, color: { argb: 'FF1E3A5F' } };
-        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } };
-        sheet.getRow(1).height = 28;
+        const AZUL_ESCURO = 'FF1E3A5F';
+        const AZUL_CLARO  = 'FFD6E4F0';
+        const BRANCO      = 'FFFFFFFF';
+        const ZEBRA       = 'FFF5F8FC';
+        const LARANJA     = 'FFFF6B35';
+        const LARANJA_CLR = 'FFFFF0EA';
 
-        // Linha 2 — resumo de seleção
-        sheet.mergeCells('A2:E2');
-        const summaryCell = sheet.getCell('A2');
-        summaryCell.value = `${items.length} produto(s) selecionado(s) | ${consolidado.size} matéria(s)-prima(s) identificada(s)`;
-        summaryCell.font = { italic: true, size: 10, color: { argb: 'FF555555' } };
-        summaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        sheet.getRow(2).height = 18;
+        const styleHeaderRow = (row, numCols, fillArgb = AZUL_ESCURO) => {
+            for (let c = 1; c <= numCols; c++) {
+                const cell = row.getCell(c);
+                cell.font  = { bold: true, color: { argb: BRANCO }, size: 10 };
+                cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } };
+                cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+                cell.border = { bottom: { style: 'medium', color: { argb: 'FF2E5B8A' } } };
+            }
+            row.height = 22;
+        };
 
-        // Linha 3 — cabeçalho
-        const headerRow = sheet.getRow(3);
-        const headers = [
-            { header: 'Código', key: 'codigo', width: 18 },
-            { header: 'Descrição', key: 'descricao', width: 48 },
-            { header: 'Unidade', key: 'unidade', width: 12 },
-            { header: 'Qtde Total', key: 'qtd', width: 16 },
-        ];
+        const styleTitleCell = (cell, text, numCols, sheetRef) => {
+            cell.value = text;
+            cell.font  = { bold: true, size: 12, color: { argb: AZUL_ESCURO } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL_CLARO } };
+            sheetRef.getRow(sheetRef.rowCount).height = 26;
+        };
+
+        // ── Gerar Excel ───────────────────────────────────────────────────────
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator  = 'MetalFisa PCP';
+        workbook.created  = new Date();
+
+        // ════════════════════════════════════════════════════════════════════
+        // ABA 1 — Lista de Materiais (Consolidada / Aglutinada)
+        // ════════════════════════════════════════════════════════════════════
+        const sheet = workbook.addWorksheet('Lista de Materiais', {
+            views: [{ state: 'frozen', ySplit: 3 }],
+        });
 
         sheet.columns = [
-            { key: 'codigo', width: 18 },
-            { key: 'descricao', width: 48 },
-            { key: 'unidade', width: 12 },
-            { key: 'qtd', width: 16 },
-            { key: '_empty', width: 6 },
+            { key: 'codigo',   width: 20 },
+            { key: 'descricao',width: 50 },
+            { key: 'unidade',  width: 12 },
+            { key: 'qtd',      width: 18 },
+            { key: '_empty',   width: 5  },
         ];
 
-        headers.forEach((h, i) => {
-            const cell = headerRow.getCell(i + 1);
-            cell.value = h.header;
-            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
-            cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = {
-                bottom: { style: 'medium', color: { argb: 'FF2E5B8A' } },
-            };
-        });
-        headerRow.height = 24;
-
-        // Linhas de dados
-        const sortedRows = Array.from(consolidado.values()).sort((a, b) =>
-            a.codigo.localeCompare(b.codigo)
+        sheet.mergeCells('A1:D1');
+        styleTitleCell(
+            sheet.getCell('A1'),
+            `Lista de Materiais (Consolidada) — Gerada em ${dataGeracao}`,
+            4, sheet
         );
 
+        sheet.mergeCells('A2:D2');
+        const sum2 = sheet.getCell('A2');
+        sum2.value = `${items.length} produto(s) selecionado(s) | ${consolidado.size} matéria(s)-prima(s)`;
+        sum2.font  = { italic: true, size: 9, color: { argb: 'FF555555' } };
+        sum2.alignment = { horizontal: 'center', vertical: 'middle' };
+        sheet.getRow(2).height = 16;
+
+        const hRow1 = sheet.getRow(3);
+        ['Código', 'Descrição', 'Unidade', 'Qtde Total'].forEach((h, i) => {
+            hRow1.getCell(i + 1).value = h;
+        });
+        styleHeaderRow(hRow1, 4);
+
+        const sortedRows = Array.from(consolidado.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
         sortedRows.forEach((mat, idx) => {
             const row = sheet.addRow([mat.codigo, mat.descricao, mat.unidade, mat.quantidade]);
-            row.height = 18;
-
-            // Zebragem leve
+            row.height = 17;
             if (idx % 2 === 1) {
-                row.eachCell({ includeEmpty: false }, (cell) => {
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F8FC' } };
+                row.eachCell({ includeEmpty: false }, cell => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } };
                 });
             }
-
-            // Formatação da coluna de quantidade
             row.getCell(4).numFmt = '#,##0.000';
             row.getCell(4).alignment = { horizontal: 'right' };
             row.getCell(3).alignment = { horizontal: 'center' };
         });
 
-        // Linha de total
         if (sortedRows.length > 0) {
-            const totalRow = sheet.addRow(['', 'TOTAL DE ITENS:', '', sortedRows.length]);
-            totalRow.getCell(2).font = { bold: true };
-            totalRow.getCell(4).font = { bold: true };
-            totalRow.getCell(4).alignment = { horizontal: 'right' };
-            totalRow.height = 20;
+            const tr = sheet.addRow(['', 'TOTAL DE ITENS DISTINTOS:', '', sortedRows.length]);
+            tr.getCell(2).font = { bold: true };
+            tr.getCell(4).font = { bold: true };
+            tr.getCell(4).alignment = { horizontal: 'right' };
+            tr.height = 20;
         }
 
-        // Bordas externas na tabela de dados
-        const dataStartRow = 3;
-        const dataEndRow = sheet.rowCount;
-        for (let r = dataStartRow; r <= dataEndRow; r++) {
-            const row = sheet.getRow(r);
-            [1, 2, 3, 4].forEach(colIdx => {
-                const cell = row.getCell(colIdx);
-                cell.border = {
-                    ...cell.border,
-                    left: colIdx === 1 ? { style: 'thin' } : undefined,
-                    right: colIdx === 4 ? { style: 'thin' } : undefined,
-                    top: r === dataStartRow ? { style: 'thin' } : undefined,
-                    bottom: r === dataEndRow ? { style: 'thin' } : undefined,
-                };
+        // ════════════════════════════════════════════════════════════════════
+        // ABA 2 — Detalhado (sem aglutinar — linha por produto pai)
+        // ════════════════════════════════════════════════════════════════════
+        const sheetDet = workbook.addWorksheet('Detalhado', {
+            views: [{ state: 'frozen', ySplit: 3 }],
+        });
+
+        sheetDet.columns = [
+            { key: 'pedido',        width: 14 },
+            { key: 'cliente',       width: 32 },
+            { key: 'produto_raiz',  width: 18 },
+            { key: 'desc_raiz',     width: 46 },
+            { key: 'componente',    width: 18 },
+            { key: 'descricao',     width: 46 },
+            { key: 'unidade',       width: 10 },
+            { key: 'qtd',           width: 16 },
+            { key: '_empty',        width: 4  },
+        ];
+
+        sheetDet.mergeCells('A1:H1');
+        styleTitleCell(
+            sheetDet.getCell('A1'),
+            `Detalhado de Materiais (Por Produto Pai) — Gerado em ${dataGeracao}`,
+            8, sheetDet
+        );
+
+        sheetDet.mergeCells('A2:H2');
+        const sd2 = sheetDet.getCell('A2');
+        sd2.value = `${detalhadaResult.rows.length} linha(s) | ${items.length} produto(s) selecionado(s)`;
+        sd2.font  = { italic: true, size: 9, color: { argb: 'FF555555' } };
+        sd2.alignment = { horizontal: 'center', vertical: 'middle' };
+        sheetDet.getRow(2).height = 16;
+
+        const hRowDet = sheetDet.getRow(3);
+        ['Pedido', 'Cliente', 'Produto Pai', 'Desc. Produto Pai', 'Componente', 'Descrição Componente', 'Un', 'Quantidade'].forEach((h, i) => {
+            hRowDet.getCell(i + 1).value = h;
+        });
+        styleHeaderRow(hRowDet, 8);
+
+        detalhadaResult.rows.forEach((row, idx) => {
+            const r = sheetDet.addRow([
+                row.pedido         || '',
+                row.cliente        || '',
+                row.produto_raiz   || '',
+                row.descricao_raiz || '',
+                row.componente     || '',
+                row.descricao      || '',
+                row.unidade        || 'UN',
+                parseFloat(row.qtd_total) || 0,
+            ]);
+            r.height = 17;
+
+            if (idx % 2 === 1) {
+                r.eachCell({ includeEmpty: false }, cell => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } };
+                });
+            }
+            r.getCell(8).numFmt = '#,##0.000';
+            r.getCell(8).alignment = { horizontal: 'right' };
+            r.getCell(7).alignment = { horizontal: 'center' };
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ABA 3 — Sem Estrutura (produtos sem BOM)
+        // ════════════════════════════════════════════════════════════════════
+        const sheetSE = workbook.addWorksheet('Sem Estrutura', {
+            views: [{ state: 'frozen', ySplit: 3 }],
+        });
+
+        sheetSE.columns = [
+            { key: 'pedido',     width: 14 },
+            { key: 'cliente',    width: 38 },
+            { key: 'produto',    width: 20 },
+            { key: 'descricao',  width: 52 },
+            { key: 'quantidade', width: 16 },
+            { key: '_empty',     width: 4  },
+        ];
+
+        sheetSE.mergeCells('A1:E1');
+        const titleSE = sheetSE.getCell('A1');
+        titleSE.value = `Produtos Sem Estrutura (Sem BOM) — Gerado em ${dataGeracao}`;
+        titleSE.font  = { bold: true, size: 12, color: { argb: BRANCO } };
+        titleSE.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } };
+        titleSE.alignment = { horizontal: 'center', vertical: 'middle' };
+        sheetSE.getRow(1).height = 26;
+
+        sheetSE.mergeCells('A2:E2');
+        const sd2SE = sheetSE.getCell('A2');
+        sd2SE.value = semEstrutura.length > 0
+            ? `⚠️ ${semEstrutura.length} produto(s) sem estrutura de materiais cadastrada`
+            : '✅ Todos os produtos selecionados possuem estrutura de materiais';
+        sd2SE.font  = { italic: true, bold: true, size: 10, color: { argb: semEstrutura.length > 0 ? 'FFC0392B' : 'FF27AE60' } };
+        sd2SE.alignment = { horizontal: 'center', vertical: 'middle' };
+        sheetSE.getRow(2).height = 18;
+
+        const hRowSE = sheetSE.getRow(3);
+        ['Pedido', 'Cliente', 'Produto', 'Descrição', 'Qtd. a Faturar'].forEach((h, i) => {
+            hRowSE.getCell(i + 1).value = h;
+        });
+        styleHeaderRow(hRowSE, 5, LARANJA);
+
+        if (semEstrutura.length === 0) {
+            const rSE = sheetSE.addRow(['', '', '', '— Nenhum produto sem estrutura —', '']);
+            rSE.getCell(4).font = { italic: true, color: { argb: 'FF888888' } };
+            rSE.height = 18;
+        } else {
+            semEstrutura.forEach((item, idx) => {
+                // Buscar descricao_pai e outros dados dos items originais
+                const original = items.find(i => String(i.produto).trim() === item.produto);
+                const r = sheetSE.addRow([
+                    original?.pedido         || '',
+                    original?.cliente        || '',
+                    item.produto,
+                    original?.descricao_pai  || '',
+                    item.quantidade,
+                ]);
+                r.height = 17;
+                r.eachCell({ includeEmpty: false }, cell => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? LARANJA_CLR : BRANCO } };
+                });
+                r.getCell(5).numFmt = '#,##0.000';
+                r.getCell(5).alignment = { horizontal: 'right' };
             });
         }
 
-        // Enviar resposta
+        // ── Enviar resposta ───────────────────────────────────────────────────
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="lista_materiais_${Date.now()}.xlsx"`);
 

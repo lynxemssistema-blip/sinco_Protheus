@@ -8,6 +8,7 @@ const mysqlPool = require('../services/mysqlService');
 const { orchestrate, loadAllActiveAgents } = require('../services/pcpmetal/orchestrator');
 const { loadSchemaContext } = require('../services/pcpmetal/contextBuilder');
 const SCHEMA_CONTEXT = require('../services/pcpmetal/schemaContext');
+const pgDb = require('../db');
 
 // ========= DATABASE INITIALIZATION =========
 const initPCPMetal = async () => {
@@ -82,6 +83,13 @@ const initPCPMetal = async () => {
                     'Você é o orquestrador do ecossistema PCPMetal. Coordene os agentes especialistas, delegue tarefas de coleta de dados ao Analista SQL e de análise ao Estrategista. Consolide as respostas em um relatório final coerente.',
                     NULL,
                     'gemini-2.5-flash'
+                ),
+                (
+                    'Planejamento Inteligente',
+                    'especialista',
+                    'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                    'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor FCS assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                    'gemini-2.5-flash'
                 )
             `);
             console.log('✅ [PCPMetal] Agentes padrão inseridos.');
@@ -90,6 +98,22 @@ const initPCPMetal = async () => {
             await mysqlPool.query(
                 "UPDATE pcpmetal_agentes SET modelo = 'gemini-2.5-flash' WHERE modelo NOT IN ('gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash-001','gemini-2.0-flash-lite')"
             );
+
+            // Migração: garantir que o agente 'Planejamento Inteligente' existe
+            const [piExists] = await mysqlPool.query("SELECT COUNT(*) as cnt FROM pcpmetal_agentes WHERE nome = 'Planejamento Inteligente'");
+            if (piExists[0].cnt === 0) {
+                await mysqlPool.query(`
+                    INSERT INTO pcpmetal_agentes (nome, papel, system_prompt, contexto_negocio, modelo) VALUES
+                    (
+                        'Planejamento Inteligente',
+                        'especialista',
+                        'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                        'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor FCS assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                        'gemini-2.5-flash'
+                    )
+                `);
+                console.log('✅ [PCPMetal] Agente Planejamento Inteligente inserido via migração.');
+            }
         }
 
         // Seed schema context if empty
@@ -223,6 +247,100 @@ router.delete('/schema/:id', async (req, res) => {
         res.json({ message: 'Schema removido.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/pcpmetal/schema/sync — Synchronize database structures into pcpmetal_schema_context
+router.post('/schema/sync', async (req, res) => {
+    let pgClient;
+    try {
+        // 1. Fetch current schema context
+        const [rows] = await mysqlPool.query('SELECT * FROM pcpmetal_schema_context');
+        
+        let pgConnected = false;
+        try {
+            pgClient = await pgDb.connect();
+            pgConnected = true;
+        } catch (err) {
+            console.warn('⚠️ Não foi possível conectar ao PostgreSQL (Protheus) para sincronizar schemas:', err.message);
+        }
+
+        const report = [];
+
+        for (const row of rows) {
+            let colMap = {};
+            try {
+                if (row.colunas_chave) {
+                    colMap = JSON.parse(row.colunas_chave);
+                }
+            } catch (_) {
+                colMap = {};
+            }
+
+            let columnsFound = [];
+
+            if (row.banco === 'postgresql') {
+                if (!pgConnected) {
+                    report.push({ tabela: row.tabela, banco: row.banco, status: 'Ignorado (Sem conexão PG)' });
+                    continue;
+                }
+                const pgRes = await pgClient.query(`
+                    SELECT column_name, data_type 
+                    FROM information_schema.columns 
+                    WHERE LOWER(table_name) = LOWER($1) 
+                      AND table_schema = 'public'
+                `, [row.tabela]);
+                
+                columnsFound = pgRes.rows.map(c => ({
+                    name: c.column_name,
+                    description: `Tipo: ${c.data_type}`
+                }));
+            } else if (row.banco === 'mysql') {
+                const [mysqlRes] = await mysqlPool.query(`
+                    SELECT column_name, column_type, column_comment 
+                    FROM information_schema.columns 
+                    WHERE LOWER(table_name) = LOWER(?) 
+                      AND table_schema = DATABASE()
+                `, [row.tabela]);
+                
+                columnsFound = mysqlRes.map(c => ({
+                    name: c.column_name,
+                    description: c.column_comment?.trim() || `Tipo: ${c.column_type}`
+                }));
+            }
+
+            if (columnsFound.length === 0) {
+                report.push({ tabela: row.tabela, banco: row.banco, status: 'Não encontrada no banco real' });
+                continue;
+            }
+
+            // Sync columns
+            let updated = false;
+            for (const col of columnsFound) {
+                if (!colMap[col.name]) {
+                    colMap[col.name] = col.description;
+                    updated = true;
+                }
+            }
+
+            if (updated) {
+                const updatedJson = JSON.stringify(colMap);
+                await mysqlPool.query(
+                    'UPDATE pcpmetal_schema_context SET colunas_chave = ? WHERE id = ?',
+                    [updatedJson, row.id]
+                );
+                report.push({ tabela: row.tabela, banco: row.banco, status: 'Sincronizada (Novas colunas adicionadas)' });
+            } else {
+                report.push({ tabela: row.tabela, banco: row.banco, status: 'Já atualizada' });
+            }
+        }
+
+        res.json({ message: 'Sincronização concluída com sucesso.', report });
+    } catch (err) {
+        console.error('❌ Erro na sincronização do schema:', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (pgClient) pgClient.release();
     }
 });
 

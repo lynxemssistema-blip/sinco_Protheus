@@ -120,9 +120,11 @@ const PCPExportTab = () => {
         setExporting(true);
         try {
             const payload = selectedItems.map(it => ({
-                produto: it.produto,
-                quantidade: parseFloat(it.qtd_faturar) || 0,
-                descricao_pai: it.descricao,
+                produto:       it.produto,
+                quantidade:    parseFloat(it.qtd_faturar) || 0,
+                descricao_pai: it.descricao  || '',
+                pedido:        it.pedido     || '',
+                cliente:       it.cliente    || '',
             }));
 
             const response = await api.post(

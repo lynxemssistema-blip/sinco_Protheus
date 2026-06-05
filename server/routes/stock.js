@@ -36,6 +36,49 @@ router.get('/:codigo/saldo', async (req, res) => {
     }
 });
 
+// POST /balances-batch - Retorna o saldo dos produtos para o almoxarifado 01
+router.post('/balances-batch', express.json(), async (req, res) => {
+    try {
+        const { codigos } = req.body;
+        if (!Array.isArray(codigos) || codigos.length === 0) {
+            return res.json({});
+        }
+        
+        const codigosLimpos = codigos.map(c => c.trim().toUpperCase()).filter(c => c);
+        if (codigosLimpos.length === 0) {
+            return res.json({});
+        }
+
+        const placeholders = codigosLimpos.map((_, i) => `$${i + 1}`).join(',');
+        const query = `
+            SELECT 
+                TRIM(b2_cod) as codigo,
+                COALESCE(SUM(b2_qatu), 0) as saldo
+            FROM public.sb2010 
+            WHERE TRIM(b2_cod) IN (${placeholders}) 
+              AND TRIM(b2_local) = '01'
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+            GROUP BY TRIM(b2_cod)
+        `;
+        
+        const result = await db.query(query, codigosLimpos);
+        
+        const balanceMap = {};
+        codigosLimpos.forEach(c => {
+            balanceMap[c] = 0;
+        });
+        
+        result.rows.forEach(row => {
+            balanceMap[row.codigo] = parseFloat(row.saldo);
+        });
+
+        res.json(balanceMap);
+    } catch (error) {
+        console.error('Erro ao buscar saldos em lote:', error);
+        res.status(500).json({ error: 'Erro ao buscar saldos em lote' });
+    }
+});
+
 // GET /:codigo/movimentos - Retorna histórico de movimentações (Protheus SD3010)
 router.get('/:codigo/movimentos', async (req, res) => {
     try {

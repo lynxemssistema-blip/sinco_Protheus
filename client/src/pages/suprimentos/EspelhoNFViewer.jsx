@@ -179,8 +179,14 @@ const EspelhoNFViewer = () => {
                 toast.success('Nota Fiscal importada com sucesso!');
                 loadNf(res.data.id);
             } catch (err) {
-                toast.error(err.response?.data?.error || 'Erro ao processar arquivo XML.');
-            }
+                    const status = err.response?.status;
+                    const serverMsg = err.response?.data?.error || '';
+                    if (status === 400 && serverMsg.toLowerCase().includes('j\u00e1 foi importada')) {
+                        toast.warn('⚠️ Esta Nota Fiscal já foi importada anteriormente. Localize-a na lista abaixo.');
+                    } else {
+                        toast.error(serverMsg || 'Erro ao processar arquivo XML.');
+                    }
+                }
         };
         reader.readAsText(file);
     };

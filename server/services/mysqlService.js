@@ -11,10 +11,10 @@ const pool = mysql.createPool({
     queueLimit: 0,
     charset: 'utf8mb4',
     enableKeepAlive: true,
-    keepAliveInitialDelay: 30000,  // ping a cada 30s para manter conexão viva
-    connectTimeout: 15000,
-    // Descarta conexões ociosas antes do MySQL fechar (wait_timeout padrão = 28800s)
-    idleTimeout: 60000,            // libera após 60s ociosa
+    keepAliveInitialDelay: 30000,
+    connectTimeout: 10000,   // timeout de conexão por tentativa
+    acquireTimeout: 10000,   // timeout máximo para obter conexão do pool
+    idleTimeout: 60000,
 });
 
 // Testar conexão na inicialização

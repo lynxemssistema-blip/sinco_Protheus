@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
-import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History } from 'lucide-react';
+import { Search, Grid3x3, CheckCircle, Clock, AlertTriangle, ChevronDown, FileText, Play, Pause, Square, RotateCcw, History, Package } from 'lucide-react';
 import { getProductionMatrix, saveAppointment, getProductDocuments, getFileUrl, getCompanySettings, reportSystemError } from '../services/api';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';

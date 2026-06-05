@@ -3,6 +3,7 @@ const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const db = require('../db');
 const { analisarRelatorioFCS } = require('../services/geminiPcpService');
+const { runFcsSequencing } = require('../services/fcsEngine');
 
 // GET /api/pcp-refinado/recursos - Fetch all resources from Protheus and their capacities from MySQL
 router.get('/recursos', async (req, res) => {
@@ -857,9 +858,354 @@ router.get('/rastreabilidade', async (req, res) => {
 
         res.json(Object.values(pedidosMap));
 
-    } catch (error) {
-        console.error('❌ Erro em /rastreabilidade:', error);
-        res.status(500).json({ error: error.message });
+    } finally {
+        if (pgClient) pgClient.release();
+    }
+});
+
+// GET /api/pcp-refinado/cronograma
+router.get('/cronograma', async (req, res) => {
+    let pgClient;
+    try {
+        const { pedido, cliente, produto, dataInicial, dataFinal, dateType, only_active } = req.query;
+        pgClient = await db.connect();
+        await pgClient.query("SET LOCAL statement_timeout = '55000'");
+
+        let whereClauses = [
+            "COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')",
+            "COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')"
+        ];
+
+        if (only_active !== 'false') {
+            // Filtra itens sem saldo a faturar (qtd_vendida - qtd_entregue <= 0)
+            whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
+
+            // Filtra pedidos encerrados: c5_nota preenchido significa pedido fechado/faturado no Protheus.
+            // Mantém pedidos sem c5_nota, OU pedidos com c5_nota mas que ainda tenham itens com saldo.
+            whereClauses.push(`(
+                COALESCE(c5.c5_nota, '') = ''
+                OR EXISTS (
+                    SELECT 1 FROM public.sc6010 c6x
+                    WHERE TRIM(c6x.c6_num) = TRIM(c5.c5_num)
+                      AND COALESCE(c6x.d_e_l_e_t_, '') IN ('', ' ')
+                      AND (c6x.c6_qtdven - c6x.c6_qtdent) > 0
+                )
+            )`);
+        }
+        if (pedido) whereClauses.push(`TRIM(c5.c5_num) ILIKE '%${pedido.trim()}%'`);
+        if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
+        if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
+
+        if (dataInicial && dataFinal) {
+            const di = dataInicial.replace(/-/g, '');
+            const df = dataFinal.replace(/-/g, '');
+            if (dateType === 'entrega') {
+                whereClauses.push(`c6.c6_entreg BETWEEN '${di}' AND '${df}'`);
+            } else {
+                whereClauses.push(`c5.c5_emissao BETWEEN '${di}' AND '${df}'`);
+            }
+        }
+
+        const whereSql = whereClauses.join(' AND ');
+        const pgQuery = `
+            SELECT 
+                TRIM(c5.c5_num) AS pedido,
+                TRIM(a1.a1_nome) AS cliente,
+                TRIM(COALESCE(a1.a1_email, '')) AS cliente_email,
+                TRIM(c5.c5_emissao) AS data_emissao,
+                TRIM(c6.c6_entreg) AS data_entrega,
+                TRIM(c6.c6_item) AS item,
+                TRIM(c6.c6_produto) AS produto,
+                TRIM(c6.c6_descri) AS descricao,
+                c6.c6_qtdven AS qtd_vendida,
+                c6.c6_qtdent AS qtd_entregue
+            FROM public.sc6010 c6
+            JOIN public.sc5010 c5 
+                ON COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+                AND TRIM(c5.c5_num) = TRIM(c6.c6_num)
+            LEFT JOIN public.sa1010 a1 
+                ON COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+                AND TRIM(a1.a1_cod) = TRIM(c5.c5_cliente)
+                AND TRIM(a1.a1_loja) = TRIM(c5.c5_lojacli)
+            WHERE ${whereSql}
+            ORDER BY c5.c5_num, c6.c6_item
+        `;
+
+        const pgResult = await pgClient.query(pgQuery);
+        const rows = pgResult.rows;
+
+        if (rows.length === 0) {
+            return res.json([]);
+        }
+
+        // Build pedidos Map
+        const pedidosMap = {};
+        const allPedidoNums = [];
+        rows.forEach(row => {
+            const num = row.pedido;
+            allPedidoNums.push(num);
+            if (!pedidosMap[num]) {
+                pedidosMap[num] = {
+                    pedido: num,
+                    cliente: row.cliente,
+                    cliente_email: row.cliente_email,
+                    data_emissao: row.data_emissao,
+                    data_entrega: row.data_entrega,
+                    itens: []
+                };
+            }
+            pedidosMap[num].itens.push({
+                item: row.item,
+                produto: row.produto,
+                descricao: row.descricao,
+                qtd_vendida: parseFloat(row.qtd_vendida) || 0,
+                qtd_faturada: parseFloat(row.qtd_entregue) || 0,
+                data_entrega: row.data_entrega,
+                data_emissao: row.data_emissao,
+                data_entrega_pcp: null,
+                data_prevista_faturamento: null,
+                progresso_granular: 0,
+                progresso_agregado: 0,
+                ops: []
+            });
+        });
+
+        // 1. Fetch Forecasts from MySQL
+        try {
+            const uniquePedidos = [...new Set(allPedidoNums)];
+            const [forecasts] = await mysqlPool.query(`
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento
+                FROM app_pcp_delivery_forecasts
+                WHERE pedido IN (${uniquePedidos.map(() => '?').join(',')})
+            `, uniquePedidos);
+
+            const forecastMap = {};
+            forecasts.forEach(f => {
+                forecastMap[`${f.pedido}_${f.item}`] = {
+                    data_entrega_pcp: f.data_entrega_pcp,
+                    data_prevista_faturamento: f.data_prevista_faturamento
+                };
+            });
+
+            // Map forecasts back to items
+            Object.values(pedidosMap).forEach(p => {
+                p.itens.forEach(item => {
+                    const key = `${p.pedido}_${item.item}`;
+                    const f = forecastMap[key];
+                    if (f) {
+                        item.data_entrega_pcp = f.data_entrega_pcp;
+                        item.data_prevista_faturamento = f.data_prevista_faturamento;
+                    }
+                });
+            });
+        } catch (err) {
+            console.error('⚠️ Erro ao buscar previsões de entrega:', err.message);
+        }
+
+        // 2. Fetch OPs — direct filter on c2_pedido for speed
+        const uniquePedidosPG = [...new Set(allPedidoNums)];
+        const opsQuery = `
+            SELECT 
+                TRIM(c2_num) AS op_num,
+                TRIM(c2_item) AS op_item,
+                TRIM(c2_sequen) AS op_seq,
+                TRIM(c2_produto) AS produto,
+                c2_quant AS qtd_op,
+                c2_quje AS qtd_feita,
+                TRIM(c2_pedido) AS pedido,
+                TRIM(c2_itempv) AS itempv
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+              AND TRIM(c2_pedido) = ANY($1::varchar[])
+            ORDER BY c2_num, c2_item, c2_sequen
+        `;
+
+        const opsResult = await pgClient.query(opsQuery, [uniquePedidosPG]);
+        const dbOps = opsResult.rows;
+
+        // Group ops by original pedido & itempv
+        const opsPorPedidoItem = {};
+        dbOps.forEach(op => {
+            const k = `${op.pedido}_${op.itempv}`;
+            if (!opsPorPedidoItem[k]) opsPorPedidoItem[k] = [];
+            opsPorPedidoItem[k].push({
+                op: `${op.op_num}${op.op_item}${op.op_seq}`,
+                op_raw: op.op_num,
+                produto: op.produto,
+                qtd_op: parseFloat(op.qtd_op) || 0,
+                qtd_feita: parseFloat(op.qtd_feita) || 0,
+                ops_filhas: [],
+                operacoes: []
+            });
+        });
+
+        // Nest child ops under parent ops (same logic as /rastreabilidade)
+        for (const k in opsPorPedidoItem) {
+            const list = opsPorPedidoItem[k];
+            const parentOps = list.filter(o => o.op.endsWith('001'));
+            const childOps = list.filter(o => !o.op.endsWith('001'));
+            childOps.forEach(child => {
+                const parent = parentOps.find(p => p.op_raw === child.op_raw);
+                if (parent) {
+                    parent.ops_filhas.push(child);
+                } else {
+                    parentOps.push(child);
+                }
+            });
+            opsPorPedidoItem[k] = parentOps;
+        }
+
+        // Fetch routing (sg2) and appointments (same logic)
+        const opCodes = [];
+        const opCodOperacoes = [];
+        const sb1Codes = [...new Set(dbOps.map(op => op.produto))];
+
+        const roteiroMap = {};
+        if (sb1Codes.length > 0) {
+            const routingQuery = `
+                SELECT 
+                    TRIM(g2.g2_produto) AS produto,
+                    TRIM(g2.g2_operac) AS op_seq,
+                    TRIM(g2.g2_recurso) AS recurso_codigo,
+                    TRIM(h1.h1_descri) AS recurso_descricao
+                FROM public.sg2010 g2
+                LEFT JOIN public.sh1010 h1 
+                    ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                    AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2.g2_produto) = ANY($1::varchar[])
+                ORDER BY g2.g2_produto, g2.g2_operac
+            `;
+            const rResult = await pgClient.query(routingQuery, [sb1Codes]);
+            rResult.rows.forEach(r => {
+                if (!roteiroMap[r.produto]) roteiroMap[r.produto] = [];
+                roteiroMap[r.produto].push({
+                    op_seq: r.op_seq,
+                    recurso_codigo: r.recurso_codigo,
+                    recurso_descricao: r.recurso_descricao || r.recurso_codigo
+                });
+            });
+        }
+
+        for (const k in opsPorPedidoItem) {
+            opsPorPedidoItem[k].forEach(op => {
+                opCodes.push(op.op_raw);
+                if (roteiroMap[op.produto]) {
+                    roteiroMap[op.produto].forEach(r => opCodOperacoes.push(r.op_seq));
+                }
+                op.ops_filhas.forEach(child => {
+                    opCodes.push(child.op_raw);
+                    if (roteiroMap[child.produto]) {
+                        roteiroMap[child.produto].forEach(r => opCodOperacoes.push(r.op_seq));
+                    }
+                });
+            });
+        }
+
+        const uniqueOpCodes = [...new Set(opCodes)];
+        const uniqueOpCodOperacoes = [...new Set(opCodOperacoes)];
+        
+        let appointments = [];
+        let plans = [];
+
+        if (uniqueOpCodes.length > 0 && uniqueOpCodOperacoes.length > 0) {
+            const opPlaceholders = uniqueOpCodes.map(() => '?').join(',');
+            const opOperacPlaceholders = uniqueOpCodOperacoes.map(() => '?').join(',');
+            const args = [...uniqueOpCodes, ...uniqueOpCodOperacoes];
+
+            const [[aRows], [pRows]] = await Promise.all([
+                mysqlPool.query(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                           SUM(quantidade) as total_produzido
+                    FROM app_production_appointments
+                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                `, args),
+                mysqlPool.query(`
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                           data_planejada_inicio, data_planejada_fim
+                    FROM app_production_planning
+                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+                `, args)
+            ]);
+            appointments = aRows;
+            plans = pRows;
+        }
+
+        // Attach operations and calculate progress
+        Object.values(pedidosMap).forEach(p => {
+            p.itens.forEach(item => {
+                const k = `${p.pedido}_${item.item}`;
+                const itemOps = opsPorPedidoItem[k] || [];
+                item.ops = itemOps;
+
+                // Process operations recursively to compute progress
+                let totalOpUnits = 0;
+                let totalDoneUnits = 0;
+                let totalOpQty = 0;
+                let totalDoneQty = 0;
+
+                const processOp = (currentOp) => {
+                    const o_num = currentOp.op.substring(0, 6);
+                    const o_item = currentOp.op.substring(6, 8);
+                    const o_seq = currentOp.op.substring(8, 11);
+
+                    totalOpQty += currentOp.qtd_op;
+                    totalDoneQty += currentOp.qtd_feita;
+
+                    if (roteiroMap[currentOp.produto]) {
+                        currentOp.operacoes = roteiroMap[currentOp.produto].map(r => {
+                            const a = appointments.find(appt =>
+                                appt.op_numero === o_num &&
+                                appt.op_item === o_item &&
+                                appt.op_sequencia === o_seq &&
+                                appt.operacao_codigo === r.op_seq
+                            );
+                            const p = plans.find(plan =>
+                                plan.op_numero === o_num &&
+                                plan.op_item === o_item &&
+                                plan.op_sequencia === o_seq &&
+                                plan.operacao_codigo === r.op_seq
+                            );
+                            
+                            const qtd_total = currentOp.qtd_op;
+                            const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
+                            
+                            totalOpUnits += qtd_total;
+                            totalDoneUnits += qtd_apontada;
+
+                            let status = 'pendente';
+                            if (qtd_apontada >= qtd_total && qtd_total > 0) {
+                                status = 'concluido';
+                            } else if (qtd_apontada > 0) {
+                                status = 'andamento';
+                            }
+
+                            return {
+                                ...r,
+                                qtd_total,
+                                qtd_apontada,
+                                status,
+                                planejamento_inicio: p ? p.data_planejada_inicio : null,
+                                planejamento_fim: p ? p.data_planejada_fim : null
+                            };
+                        });
+                    }
+                    currentOp.ops_filhas.forEach(processOp);
+                };
+
+                itemOps.forEach(processOp);
+
+                item.progresso_granular = totalOpUnits > 0 ? Math.round(Math.min(100, (totalDoneUnits / totalOpUnits) * 100)) : 0;
+                item.progresso_agregado = totalOpQty > 0 ? Math.round(Math.min(100, (totalDoneQty / totalOpQty) * 100)) : 0;
+            });
+        });
+
+        res.json(Object.values(pedidosMap));
+    } catch (err) {
+        console.error('⚠️ Erro no endpoint /cronograma:', err);
+        require('fs').writeFileSync('error_log.txt', 'ERRO NO CRONOGRAMA:\n' + err.stack);
+        res.status(500).json({ error: 'Erro interno ao processar o cronograma.', details: err.message });
     } finally {
         if (pgClient) pgClient.release();
     }
@@ -867,475 +1213,31 @@ router.get('/rastreabilidade', async (req, res) => {
 
 // ============// ROTA: Planejamento Inteligente (Smart Planner FCS)
 router.post('/smart-plan', async (req, res) => {
-    let pgClient;
     try {
         const { ops, data_inicio } = req.body;
-        if (!ops || !ops.length || !data_inicio) {
-            return res.status(400).json({ error: 'Lista de OPs e data de início são obrigatórios.' });
-        }
-
-        pgClient = await db.connect();
-        const agent_logs = [];
-        agent_logs.push(`Iniciando análise de ${ops.length} ordens de produção.`);
-        
-        // Obter capacidades diárias do MySQL
-        agent_logs.push('Obtendo matriz de capacidades diárias por recurso...');
-        const [capRows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
-        const capacidades = {};       // cap. diária em minutos
-        const fallbackCapacidade = {}; // tempo padrão unitário em minutos
-        capRows.forEach(r => { 
-            capacidades[r.recurso_codigo] = Number(r.capacidade_diaria_minutos) || 0;
-            fallbackCapacidade[r.recurso_codigo] = Number(r.tempo_padrao_minutos) || 0;
-        });
-
-        // Buscar descrição dos recursos via roteiro sg2010 (g2_descri confirmado) — opcional
-        const recursosCodigos = capRows.map(r => r.recurso_codigo).filter(Boolean);
-        const descRecursoMap = {};
-        if (recursosCodigos.length > 0) {
-            try {
-                const sg2Res = await pgClient.query(
-                    `SELECT DISTINCT TRIM(g2_recurso) AS cod, TRIM(g2_descri) AS descri
-                     FROM public.sg2010
-                     WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
-                       AND TRIM(g2_recurso) = ANY($1)
-                       AND g2_descri IS NOT NULL AND TRIM(g2_descri) <> ''`,
-                    [recursosCodigos]
-                );
-                sg2Res.rows.forEach(r => { if (!descRecursoMap[r.cod]) descRecursoMap[r.cod] = r.descri; });
-            } catch {
-                // descrição é opcional — não impede o FCS
-            }
-        }
-
-
-
-        // Log da matriz de capacidade carregada
-        agent_logs.push(`--- MATRIZ DE CAPACIDADE DE PRODUÇÃO (${capRows.length} recursos) ---`);
-        capRows.forEach(r => {
-            const desc = descRecursoMap[r.recurso_codigo] || r.recurso_codigo;
-            const cap = Number(r.capacidade_diaria_minutos) || 0;
-            agent_logs.push(`  [${r.recurso_codigo}] ${desc}: ${cap} min/dia (${(cap/60).toFixed(1)}h/dia)`);
-        });
-        agent_logs.push(`------`);
-
-        // Buscar detalhes das OPs selecionadas no Protheus
-        const placeholders = ops.map((_, i) => `$${i+1}`).join(',');
-        const pgOpsQuery = `
-            SELECT 
-                TRIM(c2.c2_num) AS op_num,
-                TRIM(c2.c2_item) AS item_op,
-                TRIM(c2.c2_sequen) AS sequen,
-                TRIM(c2.c2_produto) AS produto,
-                TRIM(c2.c2_pedido) AS pedido,
-                TRIM(c2.c2_itempv) AS itempv,
-                c2.c2_quant AS qtde,
-                c2.c2_quje AS qtde_feita
-            FROM public.sc2010 c2
-            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-              AND TRIM(c2.c2_num) IN (${placeholders})
-            ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
-        `;
-        const opsResult = await pgClient.query(pgOpsQuery, ops);
-        const opsEncontradas = opsResult.rows;
-
-        // Buscar apontamentos específicos por operação no MySQL
-        const opNumbers = opsEncontradas.map(op => op.op_num);
-        let apontamentosMap = {};
-        if (opNumbers.length > 0) {
-            try {
-                const [apptRows] = await mysqlPool.query(`
-                    SELECT op_numero, operacao_codigo, SUM(qtde_produzida) as total_produzido
-                    FROM app_producao_apontamentos
-                    WHERE op_numero IN (?)
-                    GROUP BY op_numero, operacao_codigo
-                `, [opNumbers]);
-                apptRows.forEach(r => {
-                    const key = `${r.op_numero}-${r.operacao_codigo}`;
-                    apontamentosMap[key] = Number(r.total_produzido) || 0;
-                });
-            } catch (e) {
-                // Tabela pode não existir em alguns ambientes
-                console.warn('⚠️ Não foi possível carregar apontamentos MySQL:', e.message);
-            }
-        }
-
-        // Buscar o roteiro de todos os produtos envolvidos
-        const produtosSet = new Set(opsEncontradas.map(op => op.produto).filter(Boolean));
-        const arrayProdutos = Array.from(produtosSet);
-        
-        let roteiroMap = {};
-        if (arrayProdutos.length > 0) {
-            agent_logs.push(`Buscando roteiro de engenharia para ${arrayProdutos.length} produto(s)...`);
-            const pPlaceholders = arrayProdutos.map((_, i) => `$${i+1}`).join(',');
-            const pgRoutingQuery = `
-                SELECT 
-                    TRIM(g2.g2_produto) AS produto,
-                    TRIM(g2.g2_operac) AS operac,
-                    TRIM(g2.g2_recurso) AS recurso,
-                    g2.g2_tempad AS tempo_horas
-                FROM public.sg2010 g2
-                WHERE COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-                  AND TRIM(g2.g2_produto) IN (${pPlaceholders})
-                ORDER BY g2.g2_operac ASC
-            `;
-            const routingResult = await pgClient.query(pgRoutingQuery, arrayProdutos);
-            
-            for (const r of routingResult.rows) {
-                if (!roteiroMap[r.produto]) roteiroMap[r.produto] = [];
-                
-                // Na MetalFisa o g2_tempad é cadastrado diretamente em MINUTOS!
-                let tempoMinutos = Number(r.tempo_horas) || 0;
-                
-                // Fallback se o roteiro do ERP não tiver tempo configurado (0)
-                if (tempoMinutos <= 0 && fallbackCapacidade[r.recurso]) {
-                    tempoMinutos = fallbackCapacidade[r.recurso];
-                }
-
-                roteiroMap[r.produto].push({
-                    operac: r.operac,
-                    recurso: r.recurso,
-                    tempoMinutos
-                });
-            }
-        }
-
-        // 1. VERIFICAR PRODUTOS SEM TEMPO DE OPERAÇÃO
-        const missingTimes = [];
-        for (const op of opsEncontradas) {
-            const roteiros = roteiroMap[op.produto];
-            if (roteiros) {
-                for (const rot of roteiros) {
-                    if (rot.tempoMinutos <= 0) {
-                        missingTimes.push({
-                            produto: op.produto,
-                            recurso: rot.recurso,
-                            operacao: rot.operac,
-                            mensagem: `Produto ${op.produto} (OP ${op.op_num}) não possui tempo padrão para o recurso ${rot.recurso}`
-                        });
-                    }
-                }
-            }
-        }
-
-        if (missingTimes.length > 0) {
-            return res.status(400).json({
-                error: 'Faltam tempos de operação definidos. O preenchimento é obrigatório.',
-                missing_times: missingTimes
-            });
-        }
-
-        // PRE-ESTUDO: Diagnóstico de capacidade por recurso antes de alocar
-        agent_logs.push(`--- PRÉ-ANÁLISE DE GARGALOS DE CAPACIDADE ---`);
-        const demandaPorRecurso = {};
-        for (const op of opsEncontradas) {
-            const qtdPend = Math.max(0, op.qtde - op.qtde_feita);
-            for (const rot of (roteiroMap[op.produto] || [])) {
-                if (!demandaPorRecurso[rot.recurso]) demandaPorRecurso[rot.recurso] = 0;
-                demandaPorRecurso[rot.recurso] += qtdPend * rot.tempoMinutos;
-            }
-        }
-        for (const [rec, demandaTotal] of Object.entries(demandaPorRecurso)) {
-            const capDia = capacidades[rec] || 480;
-            const diasNec = Math.ceil(demandaTotal / capDia);
-            const pct = capDia > 0 ? ((demandaTotal / capDia) * 100).toFixed(0) : '??';
-            const desc = descRecursoMap[rec] || rec;
-            if (diasNec > 1) {
-                agent_logs.push(`  ⚠️ GARGALO [${rec}] ${desc}: demanda total = ${Math.round(demandaTotal)} min | cap/dia = ${capDia} min | ${diasNec} dias necessários (${pct}% da cap. diária).`);
-            } else {
-                agent_logs.push(`  ✅ OK     [${rec}] ${desc}: demanda total = ${Math.round(demandaTotal)} min | ${pct}% da cap. diária.`);
-            }
-        }
-        agent_logs.push(`------`);
-
-        // 2. ALGORITMO FCS (Sequenciamento de Capacidade Finita)
-        agent_logs.push(`Iniciando motor FCS a partir da data base: ${data_inicio}`);
-        const resource_buckets = {};
-
-        // Verifica se uma data é dia útil (seg-sex)
-        const isBusinessDay = (dateStr) => {
-            const d = new Date(dateStr + 'T12:00:00');
-            const dow = d.getDay(); // 0=Dom, 6=Sab
-            return dow !== 0 && dow !== 6;
-        };
-
-        // Avança N dias corridos, mas garante que o resultado seja dia útil
-        const addDays = (dateStr, days) => {
-            const date = new Date(dateStr + 'T12:00:00');
-            date.setDate(date.getDate() + days);
-            // Pula fins de semana
-            while (date.getDay() === 0 || date.getDay() === 6) {
-                date.setDate(date.getDate() + 1);
-            }
-            return date.toISOString().split('T')[0];
-        };
-
-        // Retorna o primeiro dia útil a partir de uma data (inclusive)
-        const toBusinessDay = (dateStr) => {
-            const date = new Date(dateStr + 'T12:00:00');
-            while (date.getDay() === 0 || date.getDay() === 6) {
-                date.setDate(date.getDate() + 1);
-            }
-            return date.toISOString().split('T')[0];
-        };
-
-        const getCapacity = (dateStr, recurso) => {
-            // Fins de semana: capacidade zero — dia não existe para produção
-            if (!isBusinessDay(dateStr)) return 0;
-            if (!resource_buckets[dateStr]) resource_buckets[dateStr] = {};
-            if (resource_buckets[dateStr][recurso] === undefined) {
-                resource_buckets[dateStr][recurso] = capacidades[recurso] || 480; // 480 = 8h fallback
-            }
-            return resource_buckets[dateStr][recurso];
-        };
-
-        const consumeCapacity = (dateStr, recurso, minNeeded) => {
-            // Dia não útil: não aloca nada, devolve tudo como remaining
-            if (!isBusinessDay(dateStr)) return { allocated: 0, remaining: minNeeded };
-            let available = getCapacity(dateStr, recurso);
-            if (available >= minNeeded) {
-                resource_buckets[dateStr][recurso] -= minNeeded;
-                return { allocated: minNeeded, remaining: 0 };
-            } else {
-                resource_buckets[dateStr][recurso] = 0;
-                return { allocated: available, remaining: minNeeded - available };
-            }
-        };
-
-
-        const newPlans = [];
-        const forecastUpdates = [];
         const usuario = req.user?.login || req.user?.username || 'planejamento_inteligente';
-        const hoje = new Date();
-
-        // Garante que a data base informada seja um dia útil
-        const dataBaseUtil = toBusinessDay(data_inicio);
-        if (dataBaseUtil !== data_inicio) {
-            agent_logs.push(`⚠️ Data base ${data_inicio} é fim de semana. Ajustando para o primeiro dia útil: ${dataBaseUtil}.`);
-        } else {
-            agent_logs.push(`✅ Data base ${data_inicio} é dia útil (${new Date(data_inicio + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}). Produção começa neste dia.`);
-        }
-
-        for (const op of opsEncontradas) {
-            const roteiros = roteiroMap[op.produto] || [];
-            let currentDate = dataBaseUtil;
-            let lastAllocatedDate = null; // para salvar a data final do pai
-            let finalQtdeRestante = op.qtde; // Saldo calculado pelo MySQL
-            
-            agent_logs.push(`[ESTUDO] Analisando OP ${op.op_num} (Qtd: ${op.qtde} | Produto: ${op.produto})`);
-
-            for (let i = 0; i < roteiros.length; i++) {
-                const rot = roteiros[i];
-                
-                // Desconta o que já foi apontado NESTA operação específica
-                const keyApontamento = `${op.op_num}-${rot.operac}`;
-                const qtdeApontada = apontamentosMap[keyApontamento] || 0;
-                
-                // Pega o maior entre a qtd totalmente finalizada no Protheus (c2_quje) e a apontada na operação
-                const qtdeJaFeita = Math.max(Number(op.qtde_feita) || 0, qtdeApontada);
-                const qtdeRestante = Math.max(0, op.qtde - qtdeJaFeita);
-                
-                if (i === roteiros.length - 1) {
-                    finalQtdeRestante = qtdeRestante;
-                }
-                
-                let minNeeded = qtdeRestante * rot.tempoMinutos;
-                
-                if (minNeeded <= 0) {
-                    agent_logs.push(` ↳ Operação ${rot.operac}: Quantidade concluída (Apontado: ${qtdeJaFeita}/${op.qtde}), ignorando.`);
-                    continue; 
-                }
-
-                agent_logs.push(` ↳ Operação ${rot.operac} (${rot.recurso}): Faltam ${qtdeRestante} peças. Requer ${minNeeded.toFixed(0)} min. Cap/dia = ${capacidades[rot.recurso]||480} min.`);
-
-                let dataPlanejadaInicio = currentDate;
-                lastAllocatedDate = currentDate;
-
-                let logsLocais = { alocados: 0, diasAvancados: 0 };
-
-                while (minNeeded > 0) {
-                    const { allocated, remaining } = consumeCapacity(currentDate, rot.recurso, minNeeded);
-                    if (allocated > 0) {
-                        lastAllocatedDate = currentDate;
-                        logsLocais.alocados += allocated;
-                    }
-                    if (remaining > 0) {
-                        currentDate = addDays(currentDate, 1);
-                        logsLocais.diasAvancados++;
-                    }
-                    minNeeded = remaining;
-                }
-
-                agent_logs.push(`    → Alocação concluída: de ${dataPlanejadaInicio} até ${lastAllocatedDate} (avanço de ${logsLocais.diasAvancados} dia(s)).`);
-
-                newPlans.push({
-                    op_numero: op.op_num,
-                    op_item: op.item_op,
-                    op_sequencia: op.sequen,
-                    operacao_codigo: rot.operac,
-                    recurso_codigo: rot.recurso,
-                    produto_codigo: op.produto,
-                    data_planejada_inicio: dataPlanejadaInicio,
-                    data_planejada_fim: lastAllocatedDate,
-                    usuario_planejador: usuario,
-                    observacao_lote: `Planejamento Inteligente - Gerado em ${hoje.toLocaleDateString('pt-BR')} ${hoje.toLocaleTimeString('pt-BR')}`
-                });
-
-                // Regra de sequenciamento entre operações:
-                // - Mesma peça passa por uma operação e vai para a próxima.
-                // - Se o próximo recurso for IGUAL, obriga a pular para o dia seguinte (senão encavala o tempo).
-                // - Se o próximo recurso for DIFERENTE, pode iniciar no mesmo lastAllocatedDate (fluxo contínuo), 
-                //   desde que haja capacidade no outro recurso.
-                if (i < roteiros.length - 1) {
-                    const proxRecurso = roteiros[i + 1].recurso;
-                    if (proxRecurso === rot.recurso) {
-                        // Mesmo recurso: operação seguinte obrigatoriamente no próximo dia útil
-                        currentDate = addDays(lastAllocatedDate, 1);
-                        agent_logs.push(`    → Mesmo recurso (${rot.recurso}): próxima operação forçada para ${currentDate}.`);
-                    } else {
-                        // Recurso diferente: usa o lastAllocatedDate como referência.
-                        // A próxima op começa no dia em que a anterior TERMINOU (fluxo de peça),
-                        // mas usa o bucket do SEU próprio recurso — sem conflito.
-                        currentDate = lastAllocatedDate;
-                        const capProx = getCapacity(currentDate, proxRecurso);
-                        if (capProx <= 0) {
-                            // Recurso diferente mas sem cap hoje → avança
-                            currentDate = addDays(lastAllocatedDate, 1);
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}) sem capacidade em ${lastAllocatedDate}. Avançando para ${currentDate}.`);
-                        } else {
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}): ${capProx} min disponíveis em ${currentDate}. Mantendo dia.`);
-                        }
-                    }
-                }
-
-            }
-            
-            // Check if this is a parent OP and we scheduled it
-            if (op.pedido && op.itempv && lastAllocatedDate) {
-                forecastUpdates.push({
-                    pedido: op.pedido,
-                    item: op.itempv,
-                    data_entrega_pcp: lastAllocatedDate,
-                    quantidade_pcp: finalQtdeRestante,
-                    op_protheus: op.op_num
+        
+        const result = await runFcsSequencing({ ops, data_inicio, usuario });
+        if (!result.success) {
+            if (result.missing_times) {
+                return res.status(400).json({
+                    error: result.error,
+                    missing_times: result.missing_times,
+                    agent_logs: result.agent_logs
                 });
             }
+            return res.status(500).json({ error: result.error, agent_logs: result.agent_logs });
         }
 
-        // 3. SALVAR NO MYSQL
-        if (newPlans.length > 0) {
-            agent_logs.push(`Salvando planejamento consolidado no banco de dados (${newPlans.length} operações).`);
-            const mysqlValues = newPlans.map(p => [
-                p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo, p.recurso_codigo, p.produto_codigo,
-                p.data_planejada_inicio, p.data_planejada_fim, p.usuario_planejador, p.observacao_lote
-            ]);
-
-            await mysqlPool.query(`
-                INSERT INTO app_production_planning
-                    (op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo,
-                     data_planejada_inicio, data_planejada_fim, usuario_planejador, observacao_lote)
-                VALUES ?
-                ON DUPLICATE KEY UPDATE
-                    recurso_codigo        = VALUES(recurso_codigo),
-                    produto_codigo        = VALUES(produto_codigo),
-                    data_planejada_inicio = VALUES(data_planejada_inicio),
-                    data_planejada_fim    = VALUES(data_planejada_fim),
-                    usuario_planejador    = VALUES(usuario_planejador),
-                    observacao_lote       = VALUES(observacao_lote)
-            `, [mysqlValues]);
-
-            if (forecastUpdates.length > 0) {
-                agent_logs.push(`Atualizando previsão de entrega PCP para ${forecastUpdates.length} pedido(s) associado(s).`);
-                const forecastValues = forecastUpdates.map(f => [
-                    f.pedido, f.item, f.data_entrega_pcp, f.quantidade_pcp, usuario, 'Automático - Agente FCS', f.op_protheus
-                ]);
-                await mysqlPool.query(`
-                    INSERT INTO app_pcp_delivery_forecasts 
-                        (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, op_protheus)
-                    VALUES ?
-                `, [forecastValues]);
-            }
-            
-            agent_logs.push(`Gerando logs de auditoria e rastreabilidade.`);
-            const historicoValues = newPlans.map(p => [
-                p.op_numero, p.operacao_codigo, usuario, hoje, 
-                'Automático IA', `Inicio: ${p.data_planejada_inicio} | Fim: ${p.data_planejada_fim}`, 'Planejamento Inteligente'
-            ]);
-            
-            await mysqlPool.query(`CREATE TABLE IF NOT EXISTS app_pcp_historico_revisao (id INT AUTO_INCREMENT PRIMARY KEY, op_numero VARCHAR(50), operacao_codigo VARCHAR(50), usuario VARCHAR(100), data_alteracao DATETIME, mudou_de TEXT, mudou_para TEXT, origem VARCHAR(100))`);
-            if (historicoValues.length > 0) {
-                await mysqlPool.query(`INSERT INTO app_pcp_historico_revisao (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem) VALUES ?`, [historicoValues]);
-            }
-        }
-
-        // 4. GERAR RELATÓRIO ESTRUTURADO (tudo em MINUTOS)
-        const report = {
-            gerado_em: new Date().toISOString(),
-            planejador: usuario,
-            data_base: data_inicio,
-            total_ops: opsEncontradas.length,
-            total_operacoes_planejadas: newPlans.length,
-            resumo_recursos: {},
-            decisoes: []
-        };
-
-        for (const plan of newPlans) {
-            // Encontra a operação correspondente no roteiro para pegar os minutos
-            const op = opsEncontradas.find(o => o.op_num === plan.op_numero);
-            const rot = (roteiroMap[plan.produto_codigo] || []).find(r => r.operac === plan.operacao_codigo);
-            const qtdPendente = op ? Math.max(0, op.qtde - op.qtde_feita) : 0;
-            const minTotais = rot ? Math.round(qtdPendente * rot.tempoMinutos) : 0;
-            const capDia = capacidades[plan.recurso_codigo] || 480;
-            const diasNecessarios = capDia > 0 ? Math.ceil(minTotais / capDia) : 1;
-            const dataDif = plan.data_planejada_inicio !== plan.data_planejada_fim;
-
-            // Acumula por recurso
-            if (!report.resumo_recursos[plan.recurso_codigo]) {
-                report.resumo_recursos[plan.recurso_codigo] = {
-                    recurso: plan.recurso_codigo,
-                    desc_recurso: descRecursoMap[plan.recurso_codigo] || plan.recurso_codigo,
-                    capacidade_diaria_min: capDia,
-                    total_minutos_alocados: 0,
-                    total_operacoes: 0
-                };
-            }
-            report.resumo_recursos[plan.recurso_codigo].total_minutos_alocados += minTotais;
-            report.resumo_recursos[plan.recurso_codigo].total_operacoes += 1;
-
-            report.decisoes.push({
-                op_numero: plan.op_numero,
-                produto: plan.produto_codigo,
-                operacao: plan.operacao_codigo,
-                recurso: plan.recurso_codigo,
-                desc_recurso: descRecursoMap[plan.recurso_codigo] || plan.recurso_codigo,
-                capacidade_recurso_min_dia: capDia,
-                qtd_pendente: qtdPendente,
-                tempo_unitario_min: rot ? Math.round(rot.tempoMinutos) : 0,
-                total_minutos_necessarios: minTotais,
-                // Percentual da capacidade diária que esta operação ocupa (pode ser >100%)
-                capacity_pct: capDia > 0 ? Math.round((minTotais / capDia) * 100) : null,
-                excede_capacidade_dia: minTotais > capDia,
-                dias_necessarios: diasNecessarios,
-                data_inicio: plan.data_planejada_inicio,
-                data_fim: plan.data_planejada_fim,
-                span_multiplos_dias: dataDif,
-                justificativa: dataDif
-                    ? `Carga de ${minTotais} min excede capacidade diária de ${capDia} min do recurso ${plan.recurso_codigo}. Distribuída em ${diasNecessarios} dia(s).`
-                    : `Carga de ${minTotais} min dentro da capacidade diária de ${capDia} min. Alocada em ${plan.data_planejada_inicio}.`
-            });
-        }
-
-        agent_logs.push(`Fim do processamento.`);
         res.json({
             message: 'Planejamento inteligente concluído com sucesso.',
-            plans: newPlans.length,
-            agent_logs,
-            report
+            plans: result.plans,
+            agent_logs: result.agent_logs,
+            report: result.report
         });
     } catch (error) {
         console.error('❌ Erro em /smart-plan:', error);
         res.status(500).json({ error: error.message });
-    } finally {
-        if (pgClient) pgClient.release();
     }
 });
 /**

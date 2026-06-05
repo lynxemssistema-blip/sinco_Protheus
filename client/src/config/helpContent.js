@@ -134,16 +134,16 @@ export const HELP_CONTENT = {
     categoryColor: '#3b82f6',
     title: 'Dashboard de Faturamento',
     icon: 'BarChart2',
-    description: 'VisÃ£o executiva (Analytics) do faturamento da empresa, consolidando as notas emitidas e as metas financeiras mensais.',
+    description: 'Visão executiva (Analytics) do faturamento da empresa, consolidando as notas emitidas e as metas financeiras mensais.',
     steps: [
-      'Acompanhe o velocÃ­metro de "Meta Atingida" e os KPIs principais: Faturamento do MÃªs, Ticket MÃ©dio e Comparativo com mÃªs anterior.',
-      'O grÃ¡fico "EvoluÃ§Ã£o do Faturamento" plota o faturamento diÃ¡rio contra a Linha de Meta DiÃ¡ria.',
-      'O grÃ¡fico "Top Clientes" ajuda a identificar concentraÃ§Ã£o de receita (Pareto).',
-      'Use o filtro de "MÃªs/Ano" no topo para analisar o histÃ³rico passado do sistema.'
+      'Acompanhe o velocímetro de "Meta Atingida" e os KPIs principais: Faturamento do Mês, Ticket Médio e Comparativo com mês anterior.',
+      'O gráfico "Evolução do Faturamento" plota o faturamento diário contra a Linha de Meta Diária.',
+      'O gráfico "Top Clientes" ajuda a identificar concentração de receita (Pareto).',
+      'Use o filtro de "Mês/Ano" no topo para analisar o histórico passado do sistema.'
     ],
     tips: [
-      'A meta mensal Ã© configurÃ¡vel. Clique no botÃ£o de engrenagem prÃ³ximo ao velocÃ­metro para ajustÃ¡-la.',
-      'A tabela de "Ãšltimos Faturamentos" na parte inferior permite auditar quais OPs/Pedidos geraram a receita do dia.'
+      'A meta mensal é configurável. Clique no botão de engrenagem próximo ao velocímetro para ajustá-la.',
+      'A tabela de "Últimos Faturamentos" na parte inferior permite auditar quais OPs/Pedidos geraram a receita do dia.'
     ],
     links: [
       { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
@@ -153,44 +153,80 @@ export const HELP_CONTENT = {
   '/comercial/atrasos': {
     category: 'Comercial / PCP',
     categoryColor: '#ef4444',
-    title: 'VisÃ£o Gerencial (Atrasos)',
+    title: 'Visão Gerencial (Atrasos)',
     icon: 'Target',
-    description: 'Espelho dinÃ¢mico da fÃ¡brica, focado 100% em itens pendentes com data de entrega inferior a hoje.',
+    description: 'Espelho dinâmico da fábrica, focado 100% em itens pendentes com data de entrega inferior a hoje.',
     steps: [
-      'Escolha a perspectiva no topo: "LogÃ­stica & Qtds" (foco em peÃ§as fÃ­sicas) ou "Dashboard Financeiro" (foco no Risco em R$).',
-      'O painel resume o Total de Itens Atrasados, Quantidade FÃ­sica Pendente, e a MÃ©dia de Atraso em dias.',
-      'Os grÃ¡ficos (Top 5 Clientes e Atrasos por MÃªs) refletem dinamicamente a perspectiva escolhida (Volume vs. Dinheiro).',
-      'A tabela "Espelho DinÃ¢mico" agrupa os gargalos em uma hierarquia de: Cliente > MÃªs de Atraso > Itens Individuais.'
+      'Escolha a perspectiva no topo: "Logística & Qtds" (foco em peças físicas) ou "Dashboard Financeiro" (foco no Risco em R$).',
+      'O painel resume o Total de Itens Atrasados, Quantidade Física Pendente, e a Média de Atraso em dias.',
+      'Os gráficos (Top 5 Clientes e Atrasos por Mês) refletem dinamicamente a perspectiva escolhida (Volume vs. Dinheiro).',
+      'A tabela "Espelho Dinâmico" agrupa os gargalos em uma hierarquia de: Cliente > Mês de Atraso > Itens Individuais.'
     ],
     tips: [
-      'O botÃ£o "Gerar PDF (Resumo)" exporta um snapshot da tela para ser usado em reuniÃµes de diretoria.',
-      'VocÃª pode abrir e fechar as "pastas" na tabela clicando nas setas (Chevron) ao lado dos clientes e meses para detalhar pedidos e operaÃ§Ãµes paradas.',
-      'A visualizaÃ§Ã£o "Dashboard Financeiro" Ã© restrita apenas a usuÃ¡rios com permissÃ£o "valores_financeiros".'
+      'O botão "Gerar PDF (Resumo)" exporta um snapshot da tela para ser usado em reuniões de diretoria.',
+      'Você pode abrir e fechar as "pastas" na tabela clicando nas setas (Chevron) ao lado dos clientes e meses para detalhar pedidos e operações paradas.',
+      'A visualização "Dashboard Financeiro" é restrita apenas a usuários com permissão "valores_financeiros".'
     ],
     links: [
-      { path: '/comercial/gestao-ops', label: 'GestÃ£o de OPs' },
-      { path: '/controle-producao', label: 'Controle de ProduÃ§Ã£o' },
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
     ],
   },
 
   '/visao-geral': {
     category: 'Comercial',
     categoryColor: '#3b82f6',
-    title: 'Pedidos de Venda (VisÃ£o Geral)',
+    title: 'Pedidos de Venda (Visão Geral)',
     icon: 'ShoppingCart',
-    description: 'Interface de listagem e acompanhamento global dos pedidos de venda abertos ou encerrados no sistema.',
+    description: 'Interface principal de acompanhamento global dos pedidos de venda abertos ou encerrados. Reúne quatro abas especializadas: Listagem Geral, Cronograma Gantt de Pedidos (timeline visual por cliente/produto), Exportação de Materiais PCP e Detalhamento por OP.',
+    tabs: [
+      {
+        id: 'geral',
+        label: 'Aba: Listagem Geral',
+        description: 'Tabela principal com todos os pedidos de venda.',
+        steps: [
+          'Busque pedidos específicos utilizando a barra de pesquisa superior (por número de pedido, cliente ou produto).',
+          'Utilize os filtros de status para alternar entre pedidos abertos, faturados parcialmente ou totalmente encerrados.',
+          'Clique sobre um pedido para expandir os itens atrelados e ver o status de atendimento de cada linha.',
+          'Use os filtros de data (Emissão / Entrega / NF) para focar em um período específico de análise.',
+          'Exporte a listagem atual clicando no botão Excel no cabeçalho — gera planilha com todos os pedidos filtrados.'
+        ]
+      },
+      {
+        id: 'cronograma',
+        label: 'Aba: Cronograma (Timeline de Pedidos)',
+        description: 'Visualização Gantt dos pedidos de venda agrupados por cliente e produto, com linha do tempo horizontal.',
+        steps: [
+          'Selecione o período desejado no filtro de datas no topo da aba para definir o intervalo do cronograma.',
+          'A linha do tempo exibe cada item de pedido como uma barra horizontal posicionada entre sua data de emissão e data de entrega prevista.',
+          'As cores das barras indicam o status: Verde = Entregue, Laranja = Pendente, Vermelho = Atrasado (data de entrega já passou).',
+          'Passe o mouse sobre uma barra para ver um tooltip com os detalhes completos: pedido, cliente, produto, quantidade e datas.',
+          'Imprimir o Cronograma em PDF (Padrão MetalFisa): Clique no botão "Exportar PDF" (ícone de impressora) no canto superior direito da aba. O sistema gera automaticamente um arquivo .pdf no formato A4 Paisagem (297×210 mm) com:',
+          '  — Cabeçalho corporativo MetalFisa com o logo oficial da empresa no bloco azul marinho (RGB 30, 58, 95).',
+          '  — Bloco de título cinza com o período coberto pelo cronograma e a data de geração.',
+          '  — Tabela de itens com colunas: Pedido, Cliente, Produto, Descrição, Qtd, Unidade, Data Emissão, Data Entrega, Status.',
+          '  — Header persistente em todas as páginas: o cabeçalho MetalFisa reaparece automaticamente em cada nova folha do PDF, garantindo identificação corporativa em relatórios de várias páginas.',
+          '  — Rodapé com número de páginas (Página X de Y) e identificação do relatório.',
+          '  — Linhas alternadas em zebra para facilitar leitura em impressões físicas no chão de fábrica.',
+          'O arquivo é baixado automaticamente com o nome no formato: Cronograma_Pedidos_AAAAMMDD_HHMM.pdf'
+        ]
+      }
+    ],
     steps: [
-      'Busque pedidos especÃ­ficos utilizando a barra de pesquisa superior.',
-      'Utilize os filtros de status para alternar entre pedidos abertos, faturados parcialmente ou totalmente encerrados.',
-      'Clique sobre um pedido para visualizar os itens atrelados a ele e seu status de atendimento.',
-      'Exporte a listagem atual clicando no botÃ£o Excel no cabeÃ§alho.'
+      'Navegue entre as abas no topo: "Pedidos" (listagem geral), "Cronograma" (timeline visual), "Exportação Materiais" e "Detalhamento".',
+      'Na aba Cronograma, use o filtro de período para focar nas entregas do mês ou da semana atual.',
+      'Use o botão "Exportar PDF" na aba Cronograma para gerar o relatório no padrão corporativo MetalFisa em A4 paisagem.',
     ],
     tips: [
-      'Esta tela oferece uma visÃ£o mais "limpa" focada estritamente no financeiro e no comercial, diferente da GestÃ£o de OPs que foca na produÃ§Ã£o.'
+      'A aba Cronograma é ideal para reuniões de planejamento: o PDF gerado já vem formatado com o logo e o cabeçalho MetalFisa, pronto para apresentação.',
+      'O PDF do cronograma inclui header persistente — em relatórios com muitas páginas, o cabeçalho MetalFisa aparece em todas as folhas automaticamente.',
+      'Esta visão oferece uma perspectiva mais focada no comercial/entrega, diferente do Controle de Produção que foca nas operações fabris.',
     ],
     links: [
       { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
       { path: '/vendas/itens-faturar', label: 'Itens a Faturar' },
+      { path: '/pcp/exportacao-materiais', label: 'Exportação de Materiais PCP' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
     ],
   },
 
@@ -238,43 +274,43 @@ export const HELP_CONTENT = {
   '/pcp/analytics': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Analytics da FÃ¡brica',
+    title: 'Analytics da Fábrica',
     icon: 'BarChart',
-    description: 'Painel gerencial de indicadores de produÃ§Ã£o, OEE (Overall Equipment Effectiveness) e capacidade instalada.',
+    description: 'Painel gerencial de indicadores de produção, OEE (Overall Equipment Effectiveness) e capacidade instalada.',
     steps: [
-      'Acompanhe o painel superior para ver o OEE consolidado da fÃ¡brica no perÃ­odo selecionado.',
-      'O grÃ¡fico de carga mÃ¡quina mostra os recursos que estÃ£o sobrecarregados (gargalos) ou ociosos.',
-      'Utilize os filtros de Setor e Data para refinar os grÃ¡ficos.',
-      'Acompanhe a tabela de "Top RejeiÃ§Ãµes" para entender onde ocorrem as maiores perdas de qualidade.'
+      'Acompanhe o painel superior para ver o OEE consolidado da fábrica no período selecionado.',
+      'O gráfico de carga máquina mostra os recursos que estão sobrecarregados (gargalos) ou ociosos.',
+      'Utilize os filtros de Setor e Data para refinar os gráficos.',
+      'Acompanhe a tabela de "Top Rejeições" para entender onde ocorrem as maiores perdas de qualidade.'
     ],
     tips: [
-      'O Analytics Ã© atualizado a cada 1 hora com base nos apontamentos de produÃ§Ã£o e encerramentos de OPs.'
+      'O Analytics é atualizado a cada 1 hora com base nos apontamentos de produção e encerramentos de OPs.'
     ],
     links: [
-      { path: '/pcp/visao-fabrica', label: 'VisÃ£o Global (FÃ¡brica)' },
-      { path: '/pcp/evolucao-apontamento', label: 'EvoluÃ§Ã£o dos Apontamentos' },
+      { path: '/pcp/visao-fabrica', label: 'Visão Global (Fábrica)' },
+      { path: '/pcp/evolucao-apontamento', label: 'Evolução dos Apontamentos' },
     ],
   },
 
   '/ind-apontamento': {
-    category: 'ChÃ£o de FÃ¡brica',
+    category: 'Chão de Fábrica',
     categoryColor: '#8b5cf6',
     title: 'Apontamento Fracionado',
     icon: 'CheckSquare',
-    description: 'Tela simplificada e otimizada para operadores de mÃ¡quina realizarem apontamentos de produÃ§Ã£o em terminais (tablets/monitores).',
+    description: 'Tela simplificada e otimizada para operadores de máquina realizarem apontamentos de produção em terminais (tablets/monitores).',
     steps: [
-      'O operador deve digitar ou bipar o cÃ³digo de barras da OP Fracionada.',
-      'O sistema exibirÃ¡ apenas a operaÃ§Ã£o em que a peÃ§a se encontra atualmente.',
+      'O operador deve digitar ou bipar o código de barras da OP Fracionada.',
+      'O sistema exibirá apenas a operação em que a peça se encontra atualmente.',
       'Informe a Quantidade Produzida, Quantidade Rejeitada (se houver, com motivo), e clique em Registrar.',
-      'O registro Ã© imediato e atualiza o saldo da OP na matriz.'
+      'O registro é imediato e atualiza o saldo da OP na matriz.'
     ],
     tips: [
-      'Esta interface tem fontes maiores e botÃµes expandidos para facilitar o uso com luvas ou telas touch.',
-      'O sistema impede que o operador aponte uma quantidade superior ao saldo liberado pela operaÃ§Ã£o anterior.'
+      'Esta interface tem fontes maiores e botões expandidos para facilitar o uso com luvas ou telas touch.',
+      'O sistema impede que o operador aponte uma quantidade superior ao saldo liberado pela operação anterior.'
     ],
     links: [
-      { path: '/ind-pcp-release', label: 'LiberaÃ§Ã£o PCP' },
-      { path: '/ind-factory-floor', label: 'Painel da FÃ¡brica (Local)' },
+      { path: '/ind-pcp-release', label: 'Liberação PCP' },
+      { path: '/ind-factory-floor', label: 'Painel da Fábrica (Local)' },
     ],
   },
 
@@ -283,41 +319,41 @@ export const HELP_CONTENT = {
     categoryColor: '#ec4899',
     title: 'Buscar Produto (PPAPs)',
     icon: 'Database',
-    description: 'Central de busca de Processos de AprovaÃ§Ã£o de PeÃ§as de ProduÃ§Ã£o (PPAP) associados aos produtos.',
+    description: 'Central de busca de Processos de Aprovação de Peças de Produção (PPAP) associados aos produtos.',
     steps: [
-      'Digite o cÃ³digo do produto ou referÃªncia do cliente.',
-      'O sistema retornarÃ¡ o histÃ³rico de submissÃµes de PPAP para aquele item.',
-      'Visualize o status de aprovaÃ§Ã£o (Aprovado, Reprovado, Aprovado com Desvio) e acesse os documentos atrelados.',
-      'Caso nÃ£o exista um PPAP ativo, inicie uma nova submissÃ£o a partir do botÃ£o Novo PPAP.'
+      'Digite o código do produto ou referência do cliente.',
+      'O sistema retornará o histórico de submissões de PPAP para aquele item.',
+      'Visualize o status de aprovação (Aprovado, Reprovado, Aprovado com Desvio) e acesse os documentos atrelados.',
+      'Caso não exista um PPAP ativo, inicie uma nova submissão a partir do botão Novo PPAP.'
     ],
     tips: [
-      'Produtos que possuem PPAPs expirados ou com desvios vencidos aparecerÃ£o com um alerta em vermelho.'
+      'Produtos que possuem PPAPs expirados ou com desvios vencidos aparecerão com um alerta em vermelho.'
     ],
     links: [
-      { path: '/sgq', label: 'GestÃ£o SGQ' },
-      { path: '/produtos', label: 'CatÃ¡logo de Produtos' },
+      { path: '/sgq', label: 'Gestão SGQ' },
+      { path: '/produtos', label: 'Catálogo de Produtos' },
     ],
   },
 
-  // â”€â”€ GestÃ£o de OPs / Pedidos de Venda â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Gestão de OPs / Pedidos de Venda ———————————————————————————————————————————
   '/comercial/gestao-ops': {
     category: 'Comercial / PCP',
     categoryColor: '#3b82f6',
-    title: 'Pedidos de Venda e GestÃ£o de OPs',
+    title: 'Pedidos de Venda e Gestão de OPs',
     icon: 'List',
-    description: 'Interface principal que conecta as vendas (PVs) ao PCP (OPs). Visualize pedidos de clientes, libere ordens de produÃ§Ã£o, e tenha acesso a todas as opÃ§Ãµes avanÃ§adas de impressÃ£o e planejamento de fÃ¡brica.',
+    description: 'Interface principal que conecta as vendas (PVs) ao PCP (OPs). Visualize pedidos de clientes, libere ordens de produção, e tenha acesso a todas as opções avançadas de impressão e planejamento de fábrica.',
     steps: [
-      'VisÃ£o de Tabela: Explore os pedidos abertos usando os filtros no topo (Pesquisa por NÃºmero, Cliente, ou Status).',
-      'Filtros de Data: Selecione a chave de filtro de data (EmissÃ£o, PrevisÃ£o de OP, ou Entrega) para focar na mÃ©trica que importa para o seu departamento.',
-      'Menu de AÃ§Ãµes (3 Pontinhos): Clique no menu "Mais AÃ§Ãµes" na Ãºltima coluna da tabela para acessar as ferramentas de gestÃ£o e impressÃ£o.',
-      'Aba de ImpressÃµes (OPs): Dentro do Menu de AÃ§Ãµes, o botÃ£o "Imprimir OP..." abre opÃ§Ãµes ricas: "OP Espelho" (apenas capa simples), "OpÃ§Ã£o A: OP + Desenhos Agrupados" (folhas de desenho juntas no final), e "OpÃ§Ã£o B: OP + Desenhos Misturados/Roteirizados" (desenhos intercalados por etapa produtiva).',
-      'ImpressÃ£o do PV (Pedido de Venda): Utilize o botÃ£o "Imprimir PV" no Menu de AÃ§Ãµes para gerar um PDF com todas as informaÃ§Ãµes do pedido focado na visÃ£o comercial.',
-      'Ata Viva (Engenharia): O botÃ£o "Engenharia / RestriÃ§Ãµes" abre a trilha de controle de projetos e desenha pendÃªncias diretamente ligadas ao item.',
-      'Planejamento Sequencial: Clique no Ã­cone de "Planejamento Sequencial" para abrir o Gantt onde vocÃª gerencia as datas e duraÃ§Ãµes produtivas do lote.',
+      'Visão de Tabela: Explore os pedidos abertos usando os filtros no topo (Pesquisa por Número, Cliente, ou Status).',
+      'Filtros de Data: Selecione a chave de filtro de data (Emissão, Previsão de OP, ou Entrega) para focar na métrica que importa para o seu departamento.',
+      'Menu de Ações (3 Pontinhos): Clique no menu "Mais Ações" na última coluna da tabela para acessar as ferramentas de gestão e impressão.',
+      'Aba de Impressões (OPs): Dentro do Menu de Ações, o botão "Imprimir OP..." abre opções ricas: "OP Espelho" (apenas capa simples), "Opção A: OP + Desenhos Agrupados" (folhas de desenho juntas no final), e "Opção B: OP + Desenhos Misturados/Roteirizados" (desenhos intercalados por etapa produtiva).',
+      'Impressão do PV (Pedido de Venda): Utilize o botão "Imprimir PV" no Menu de Ações para gerar um PDF com todas as informações do pedido focado na visão comercial.',
+      'Ata Viva (Engenharia): O botão "Engenharia / Restrições" abre a trilha de controle de projetos e desenha pendências diretamente ligadas ao item.',
+      'Planejamento Sequencial: Clique no ícone de "Planejamento Sequencial" para abrir o Gantt onde você gerencia as datas e durações produtivas do lote.',
     ],
     tips: [
-      'O Menu de AÃ§Ãµes agora Ã© inteligente e nÃ£o fica mais cortado pelo fundo da tabela; se o item estiver muito embaixo, o menu abre para cima automaticamente.',
-      'O Ã­cone da prancheta laranja sinaliza se o pedido jÃ¡ foi recebido no Totvs / PCP, exibindo o status atual do processamento ao passar o mouse.',
+      'O Menu de Ações agora é inteligente e não fica mais cortado pelo fundo da tabela; se o item estiver muito embaixo, o menu abre para cima automaticamente.',
+      'O ícone da prancheta laranja sinaliza se o pedido já foi recebido no Totvs / PCP, exibindo o status atual do processamento ao passar o mouse.',
     ],
     links: [
       { path: '/vendas/itens-faturar', label: 'Monitor de Faturamento' },
@@ -325,26 +361,26 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // â”€â”€ CatÃ¡logo de Produtos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Catálogo de Produtos ——————————————————————————————————————————————————————
   '/produtos': {
     category: 'Engenharia',
     categoryColor: '#14b8a6',
-    title: 'CatÃ¡logo de Produtos',
+    title: 'Catálogo de Produtos',
     icon: 'Package',
-    description: 'Gerencie todos os produtos e matÃ©rias-primas cadastrados. Visualize estruturas, associe documentos e referÃªncias de clientes.',
+    description: 'Gerencie todos os produtos e matérias-primas cadastrados. Visualize estruturas, associe documentos e referências de clientes.',
     steps: [
-      'Use a barra de pesquisa para filtrar por descriÃ§Ã£o ou cÃ³digo do produto.',
+      'Use a barra de pesquisa para filtrar por descrição ou código do produto.',
       'Selecione o tipo (MP, PI, PA) e a unidade de medida nos filtros de topo.',
-      'Clique no Ã­cone de estrutura (camadas) para visualizar a BOM do produto.',
-      'Clique no Ã­cone de documento para abrir os documentos associados.',
-      'Use o botÃ£o EXCEL para exportar a lista filtrada para planilha.',
-      'O botÃ£o XLSX importa produtos em lote a partir de uma planilha.',
-      'O botÃ£o IA auxilia na geraÃ§Ã£o de descriÃ§Ãµes e classificaÃ§Ãµes automÃ¡ticas.',
+      'Clique no ícone de estrutura (camadas) para visualizar a BOM do produto.',
+      'Clique no ícone de documento para abrir os documentos associados.',
+      'Use o botão EXCEL para exportar a lista filtrada para planilha.',
+      'O botão XLSX importa produtos em lote a partir de uma planilha.',
+      'O botão IA auxilia na geração de descrições e classificações automáticas.',
     ],
     tips: [
-      'Produtos com a badge laranja no Ã­cone de documento possuem arquivos nÃ£o visualizados.',
-      'A coluna REF. CLIENTE exibe a referÃªncia do cliente associada ao produto â€” passe o mouse para ver detalhes.',
-      'Use o filtro "Todos (Estoque)" para ver apenas itens com saldo disponÃ­vel.',
+      'Produtos com a badge laranja no ícone de documento possuem arquivos não visualizados.',
+      'A coluna REF. CLIENTE exibe a referência do cliente associada ao produto — passe o mouse para ver detalhes.',
+      'Use o filtro "Todos (Estoque)" para ver apenas itens com saldo disponível.',
     ],
     links: [
       { path: '/estrutura/:codigo', label: 'Estrutura do Produto (BOM)' },
@@ -353,33 +389,33 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // â”€â”€ Estrutura do Produto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Estrutura do Produto ——————————————————————————————————————————————————————
   '/estrutura/:codigo': {
     category: 'Engenharia',
     categoryColor: '#14b8a6',
     title: 'Estrutura do Produto (BOM)',
     icon: 'GitBranch',
-    description: 'Visualize a lista de materiais (BOM) exportada do ERP. Exporte relatÃ³rios em PDF, consulte desenhos e elabore as liberaÃ§Ãµes da engenharia.',
+    description: 'Visualize a lista de materiais (BOM) exportada do ERP. Exporte relatórios em PDF, consulte desenhos e elabore as liberações da engenharia.',
     steps: [
-      'A Ã¡rvore exibe todos os componentes e subconjuntos do produto selecionado.',
-      'Clique em uma linha na tabela para expandir o Roteiro de FabricaÃ§Ã£o (operaÃ§Ãµes, tempos padrÃ£o e de setup).',
-      'O bloco "RelatÃ³rios" agrupa a exportaÃ§Ã£o em PDF: clique em "RelatÃ³rio Completo" para imprimir a Ã¡rvore industrial de todos os nÃ­veis organizadamente.',
-      'Use a funÃ§Ã£o "NÃ­vel 1" para gerar um relatÃ³rio de produÃ§Ã£o compacto focado nas metas primÃ¡rias da montagem.',
-      'Marque a caixa "RestriÃ§Ãµes (Nv.01+)" junto ao "NÃ­vel 1" para imprimir os alertas e restriÃ§Ãµes subjacentes vitais de montagem que nÃ£o estariam visÃ­veis.',
-      'O botÃ£o verde "Desenhos" consolida todos os PDFs tÃ©cnicos cadastrados num Ãºnico arquivo, permitindo impressÃ£o em massa Ã¡gil ao chÃ£o de fÃ¡brica.',
-      'A funÃ§Ã£o "LiberaÃ§Ã£o" permite conferir a revisÃ£o aplicÃ¡vel com o PCP.'
+      'A árvore exibe todos os componentes e subconjuntos do produto selecionado.',
+      'Clique em uma linha na tabela para expandir o Roteiro de Fabricação (operações, tempos padrão e de setup).',
+      'O bloco "Relatórios" agrupa a exportação em PDF: clique em "Relatório Completo" para imprimir a árvore industrial de todos os níveis organizadamente.',
+      'Use a função "Nível 1" para gerar um relatório de produção compacto focado nas metas primárias da montagem.',
+      'Marque a caixa "Restrições (Nv.01+)" junto ao "Nível 1" para imprimir os alertas e restrições subjacentes vitais de montagem que não estariam visíveis.',
+      'O botão verde "Desenhos" consolida todos os PDFs técnicos cadastrados num único arquivo, permitindo impressão em massa ágil ao chão de fábrica.',
+      'A função "Liberação" permite conferir a revisão aplicável com o PCP.'
     ],
     tips: [
-      'Qualquer produto filho (do nÃ­vel 1 em diante) que possua arquivo de desenho tÃ©cnico aparecerÃ¡ com o Ã­cone em vermelho. Basta clicar para visualizar a planta no navegador.',
-      'A coluna laranja com botÃµes de engrenagem e setas no mÃ³dulo indica a expansÃ£o do processo fabril.',
+      'Qualquer produto filho (do nível 1 em diante) que possua arquivo de desenho técnico aparecerá com o ícone em vermelho. Basta clicar para visualizar a planta no navegador.',
+      'A coluna laranja com botões de engrenagem e setas no módulo indica a expansão do processo fabril.',
     ],
     links: [
-      { path: '/produtos', label: 'CatÃ¡logo de Produtos' },
+      { path: '/produtos', label: 'Catálogo de Produtos' },
       { path: '/bom-generator', label: 'Gerador de BOM' },
     ],
   },
 
-  // â”€â”€ Gerador de BOM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Gerador de BOM ————————————————————————————————————————————————————————————
   '/bom-generator': {
     category: 'Engenharia',
     categoryColor: '#14b8a6',
@@ -388,13 +424,13 @@ export const HELP_CONTENT = {
     description: 'Gere listas de materiais (BOM) a partir de modelos ou estruturas existentes. Exporte para Excel ou envie direto ao ERP.',
     steps: [
       'Selecione o produto base pelo campo de busca no topo.',
-      'Defina a quantidade desejada e o tipo de explosÃ£o (1 nÃ­vel ou completa).',
-      'Clique em "Gerar BOM" para calcular os materiais necessÃ¡rios.',
-      'Revise a lista gerada e ajuste quantidades se necessÃ¡rio.',
+      'Defina a quantidade desejada e o tipo de explosão (1 nível ou completa).',
+      'Clique em "Gerar BOM" para calcular os materiais necessários.',
+      'Revise a lista gerada e ajuste quantidades se necessário.',
       'Exporte para Excel ou confirme o envio ao ERP.',
     ],
     tips: [
-      'A explosÃ£o completa calcula o saldo lÃ­quido considerando o estoque atual.',
+      'A explosão completa calcula o saldo líquido considerando o estoque atual.',
     ],
     links: [
       { path: '/estrutura/:codigo', label: 'Estrutura do Produto' },
@@ -402,91 +438,70 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // â”€â”€ ProduÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Produção ——————————————————————————————————————————————————————————————————
   '/producao': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Ordens de ProduÃ§Ã£o',
+    title: 'Ordens de Produção',
     icon: 'Factory',
-    description: 'Gerencie todas as ordens de produÃ§Ã£o abertas e em andamento. Acompanhe status, datas e apontamentos.',
+    description: 'Gerencie todas as ordens de produção abertas e em andamento. Acompanhe status, datas e apontamentos.',
     steps: [
       'Filtre as ordens por status (Abertas, Em andamento, Encerradas) nos filtros de topo.',
-      'Clique no nÃºmero da OP para ver detalhes e componentes da ordem.',
-      'Use o botÃ£o "Apontar" para registrar produÃ§Ã£o parcial ou total.',
+      'Clique no número da OP para ver detalhes e componentes da ordem.',
+      'Use o botão "Apontar" para registrar produção parcial ou total.',
       'Altere a data de entrega prevista clicando no campo de data.',
-      'Exporte a lista de OPs para Excel pelo Ã­cone no canto superior.',
+      'Exporte a lista de OPs para Excel pelo ícone no canto superior.',
     ],
     tips: [
-      'OPs em vermelho estÃ£o atrasadas em relaÃ§Ã£o Ã  data prevista.',
+      'OPs em vermelho estão atrasadas em relação à data prevista.',
       'Use o filtro por cliente para visualizar apenas ordens de um determinado cliente.',
-      'Modos de Apontamento (Livre, SequÃªncia ou Saldo): Observe o indicador no topo. "Livre" permite apontar qualquer etapa sem amarras; "SequÃªncia" trava o inÃ­cio atÃ© que a operaÃ§Ã£o anterior acabe; "Saldo" limita a quantidade mÃ¡xima ao saldo disponÃ­vel da operaÃ§Ã£o anterior.',
+      'Modos de Apontamento (Livre, Sequência ou Saldo): Observe o indicador no topo. "Livre" permite apontar qualquer etapa sem amarras; "Sequência" trava o início até que a operação anterior acabe; "Saldo" limita a quantidade máxima ao saldo disponível da operação anterior.',
     ],
     links: [
       { path: '/producao/op', label: 'Detalhes da OP' },
-      { path: '/controle-producao', label: 'Controle de ProduÃ§Ã£o' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
       { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
     ],
   },
 
-  // â”€â”€ OP Detalhes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— OP Detalhes ————————————————————————————————————————————————————————————————
   '/producao/op': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Detalhes da Ordem de ProduÃ§Ã£o',
+    title: 'Detalhes da Ordem de Produção',
     icon: 'ClipboardList',
-    description: 'Visualize os detalhes completos de uma ordem de produÃ§Ã£o, incluindo operaÃ§Ãµes, componentes e histÃ³rico de apontamentos.',
+    description: 'Visualize os detalhes completos de uma ordem de produção, incluindo operações, componentes e histórico de apontamentos.',
     steps: [
-      'Pesquise pelo nÃºmero da OP no campo de busca.',
-      'Consulte as operaÃ§Ãµes e o status de cada etapa produtiva.',
-      'Verifique os componentes necessÃ¡rios e o saldo disponÃ­vel.',
+      'Pesquise pelo número da OP no campo de busca.',
+      'Consulte as operações e o status de cada etapa produtiva.',
+      'Verifique os componentes necessários e o saldo disponível.',
       'Registre apontamentos parciais ou finais diretamente nesta tela.',
     ],
     tips: [
-      'O histÃ³rico de apontamentos fica disponÃ­vel na aba "HistÃ³rico".',
-      'Modos de Apontamento: O indicador no topo dita a regra da fÃ¡brica. "Livre" = Sem amarras. "SequÃªncia" = Obriga concluir a anterior. "Saldo" = NÃ£o deixa apontar peÃ§as que ainda nÃ£o passaram pela operaÃ§Ã£o anterior.',
+      'O histórico de apontamentos fica disponível na aba "Histórico".',
+      'Modos de Apontamento: O indicador no topo dita a regra da fábrica. "Livre" = Sem amarras. "Sequência" = Obriga concluir a anterior. "Saldo" = Não deixa apontar peças que ainda não passaram pela operação anterior.',
     ],
     links: [
-      { path: '/producao', label: 'Ordens de ProduÃ§Ã£o' },
-      { path: '/controle-producao', label: 'Controle de ProduÃ§Ã£o' },
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
     ],
   },
 
-  // â”€â”€ Controle de ProduÃ§Ã£o e Lote de Planejamento â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————— Controle de Produção e Lote de Planejamento ——————————————————————————————
   '/controle-producao': {
     category: 'PCP',
     categoryColor: '#f59e0b',
-    title: 'Controle de ProduÃ§Ã£o',
+    title: 'Controle de Produção',
     icon: 'LayoutDashboard',
-    description: 'Dashboard principal de PCP para acompanhamento e programaÃ§Ã£o das Ordens de ProduÃ§Ã£o (OPs). Permite filtrar, visualizar o status de cada operaÃ§Ã£o e sequenciar planejamentos em lote com Gantt interativo.',
+    description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo. Inclui geração de Relatório de Impressão no Padrão Corporativo MetalFisa (PDF A4 Paisagem) com sub-paginação por recurso/máquina.',
     steps: [
-      'â”€â”€ FILTROS â”€â”€',
-      'OP: Filtra pelo nÃºmero EXATO da Ordem de ProduÃ§Ã£o (ex: 005473). Para pesquisar vÃ¡rias OPs de uma vez, separe-as por vÃ­rgula.',
-      'Item: Filtra pelo nÃºmero do item dentro da OP (ex: 01). Ãštil quando uma OP possui mÃºltiplos itens de produto.',
-      'Seq: Filtra pelo nÃºmero de sequÃªncia da operaÃ§Ã£o dentro do roteiro da OP (ex: 001, 002). Cada passo do processo de fabricaÃ§Ã£o tem uma sequÃªncia.',
-      'Produto: Filtra pelo cÃ³digo EXATO do produto (ex: MT2-1783). Para garantir o mÃ¡ximo de performance na pesquisa, nÃ£o sÃ£o mais permitidos trechos de descriÃ§Ã£o.',
-      'Pedido: Filtra pelo nÃºmero EXATO do Pedido de Venda (PV) do cliente no Protheus (ex: 003752).',
+      '— FILTROS —',
+      'OP: Filtra pelo número EXATO da Ordem de Produção (ex: 005473). Para pesquisar várias OPs de uma vez, separe-as por vírgula.',
+      'Item: Filtra pelo número do item dentro da OP (ex: 01). Útil quando uma OP possui múltiplos itens de produto.',
+      'Seq: Filtra pelo número de sequência da operação dentro do roteiro da OP (ex: 001, 002). Cada passo do processo de fabricação tem uma sequência.',
+      'Produto: Filtra pelo código EXATO do produto (ex: MT2-1783). Para garantir o máximo de performance na pesquisa, não são mais permitidos trechos de descrição.',
+      'Pedido: Filtra pelo número EXATO do Pedido de Venda (PV) do cliente no Protheus (ex: 003752).',
       'Cliente: Filtra pelo nome do cliente vinculado ao pedido de venda.',
-      'OperaÃ§Ã£o ou Recurso: Campo multiuso que filtra pelo cÃ³digo da operaÃ§Ã£o (ex: 01) OU pelo cÃ³digo do recurso/mÃ¡quina (ex: SOLDA, MO0012). Use para focar em um setor ou equipamento especÃ­fico.',
-      'Planejado (perÃ­odo): Filtra operaÃ§Ãµes cujas datas planejadas de inÃ­cio e fim estejam dentro do intervalo informado. Ãštil para ver o que estÃ¡ programado para esta semana ou mÃªs.',
-      'â”€â”€ FILTROS DE STATUS (PILLS) â”€â”€',
-      'Em Andamento (azul): OperaÃ§Ãµes onde jÃ¡ foi registrado ao menos 1 apontamento de produÃ§Ã£o, mas a quantidade produzida ainda Ã© menor que a planejada. A produÃ§Ã£o estÃ¡ ocorrendo.',
-      'ConcluÃ­dos (verde): OperaÃ§Ãµes onde a quantidade produzida atingiu ou superou a quantidade planejada. O trabalho nesta etapa foi finalizado.',
-      'NÃ£o Iniciados (cinza): OperaÃ§Ãµes que ainda nÃ£o possuem nenhum apontamento registrado. Podem estar planejadas (com datas) ou aguardando (sem datas definidas).',
-      'Atrasadas (vermelho): OperaÃ§Ãµes onde a data de entrega do pedido (prazo de entrega ao cliente) jÃ¡ passou e a produÃ§Ã£o ainda nÃ£o foi concluÃ­da. Indica risco de atraso na entrega.',
-      'Com saldo pendente (Ã­ndigo): Quando ativado, exibe apenas OPs onde a quantidade produzida ainda Ã© menor que a planejada. Remove da lista as operaÃ§Ãµes 100% concluÃ­das, focando no que ainda precisa ser feito.',
-      'â”€â”€ COLUNAS DA TABELA â”€â”€',
-      'Checkbox (primeira coluna): Permite selecionar uma ou mais OPs para sequenciar o planejamento em lote. O checkbox do cabeÃ§alho seleciona/deseleciona todas as OPs visÃ­veis de uma vez.',
-      'Ordem de ProduÃ§Ã£o: Exibe o nÃºmero da OP (ex: 005473) e o Item (ex: Item 01). Linhas com fundo azul claro representam a operaÃ§Ã£o principal (sequÃªncia 001 â€” primeira etapa do roteiro).',
-      'Pedido: NÃºmero do Pedido de Venda (PV) do cliente no Protheus (ex: 003752) e abaixo o nÃºmero do pedido do cliente (ex: 990478225). Permite rastrear qual demanda comercial originou esta OP.',
-      'Cliente: Nome do cliente final para quem o produto serÃ¡ entregue. Truncado com reticÃªncias â€” passe o mouse para ver o nome completo.',
-      'Produto: CÃ³digo do produto (link clicÃ¡vel que abre a Estrutura/BOM) e abaixo a descriÃ§Ã£o do item. Clicar no cÃ³digo abre a Ã¡rvore de componentes do produto.',
-      'PDF (Ã­cone): Indica se hÃ¡ desenho tÃ©cnico (PDF) cadastrado para este produto. Ãcone vermelho = PDF disponÃ­vel, clique para abrir. Ãcone cinza = sem documento cadastrado.',
-      'Recurso: CÃ³digo do recurso/mÃ¡quina (ex: MO0012) em destaque e abaixo a descriÃ§Ã£o do centro de trabalho (ex: EMBALAGEM). Ã‰ o equipamento ou setor onde esta operaÃ§Ã£o serÃ¡ executada.',
-      'Planejamento: Datas planejadas de inÃ­cio (I:) e fim (F:) desta operaÃ§Ã£o, conforme registrado pelo PCP. Exibe "NÃ£o planejado" em cinza quando ainda nÃ£o hÃ¡ datas definidas.',
-      'ProduÃ§Ã£o: Progresso da operaÃ§Ã£o no formato "produzido / planejado" (ex: 0 / 1 ou 6 / 6). Acompanhado de uma barra de progresso visual. Chegando a 100% a barra fica verde.',
-      'Status (badge): Resumo visual do estado atual da operaÃ§Ã£o: "Planejada" (azul â€” tem datas definidas, ainda nÃ£o iniciada), "Em Andamento" (azul escuro â€” produÃ§Ã£o iniciada), "ConcluÃ­da" (verde â€” 100% produzido), "Atrasada" (vermelho â€” prazo ultrapassado).',
-      'AÃ§Ãµes: BotÃµes de acesso rÃ¡pido por linha: ðŸ“„ ImpressÃ£o da OP, â˜° HistÃ³rico de planejamentos, ðŸ“Š Modal de Planejamento Sequencial (Gantt individual da OP).',
-      'â”€â”€ SEQUENCIAMENTO EM LOTE â”€â”€',
       'Selecione mÃºltiplas OPs usando os checkboxes. Geralmente selecione OPs do mesmo Recurso/MÃ¡quina para criar um pacote de trabalho coeso.',
       'Com OPs selecionadas, clique em "Sequenciar Planejamento". O modal Gantt abrirÃ¡ com todas as operaÃ§Ãµes agrupadas por recurso.',
       'No Gantt, defina datas, arraste barras, edite duraÃ§Ãµes e escolha entre cÃ¡lculo progressivo (frente) ou regressivo (trÃ¡s). Ao salvar, todas as operaÃ§Ãµes recebem datas planejadas de uma sÃ³ vez.',

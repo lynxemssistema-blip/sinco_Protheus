@@ -168,7 +168,7 @@ const OrderFiltersBar = ({
                 </div>
 
                 {/* Tipo de Item (Pills) */}
-                <div className="flex flex-col gap-1 md:col-span-2">
+                <div className="flex flex-col gap-1 md:col-span-1 lg:col-span-1">
                     <label className="text-[11px] font-medium text-gray-600 ml-1">Tipo de Item:</label>
                     <div className="flex flex-wrap gap-1">
                         {['PCP', 'Restrição', 'Revisão', 'Novo'].map((tipo) => {
@@ -246,28 +246,57 @@ const OrderFiltersBar = ({
                     </button>
                 </div>
 
-                {/* Apenas Pendentes toggle */}
-                <div className="md:col-span-6 flex flex-col gap-1 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                    <div className="flex items-center gap-2">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={filters.only_active === 'true'}
-                                onChange={(e) =>
-                                    onFilterChange({ target: { name: 'only_active', value: e.target.checked ? 'true' : 'false' } })
-                                }
-                                className="sr-only peer"
-                            />
-                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
-                            <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
-                        </label>
-                        <span className="text-[10px] text-gray-400 italic flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            Desative para uma busca muito mais rápida.
-                        </span>
+                {/* Footer Controls (Apenas Pendentes + Ordenação) */}
+                <div className="md:col-span-8 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
+                    <div className="flex flex-col gap-1 flex-1">
+                        <div className="flex items-center gap-2">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.only_active === 'true'}
+                                    onChange={(e) =>
+                                        onFilterChange({ target: { name: 'only_active', value: e.target.checked ? 'true' : 'false' } })
+                                    }
+                                    className="sr-only peer"
+                                />
+                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+                                <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
+                            </label>
+                            <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex">
+                                <AlertCircle className="h-3 w-3" />
+                                Desative para uma busca muito mais rápida.
+                            </span>
+                        </div>
+                        <div className="text-[10px] text-gray-400 italic">
+                            Datas do filtro = <span className="font-semibold text-gray-500">Entrada/Emissão do pedido</span> (Protheus).
+                        </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 italic">
-                        Datas do filtro = <span className="font-semibold text-gray-500">Entrada/Emissão do pedido</span> (Protheus).
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-gray-600">Ordenar por:</label>
+                        <div className="flex gap-2">
+                            <select 
+                                name="sortBy" 
+                                value={filters.sortBy || 'emissao'} 
+                                onChange={onFilterChange}
+                                className="w-40 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none"
+                            >
+                                <option value="pedido">Pedido/Item</option>
+                                <option value="emissao">Data do Pedido</option>
+                                <option value="entrega">Data de Entrega (Pedido)</option>
+                                <option value="entrega_pcp">Data de Entrega PCP</option>
+                                <option value="prev_fat">Prev. Fat. (Faturamento)</option>
+                            </select>
+                            <select 
+                                name="sortOrder" 
+                                value={filters.sortOrder || 'DESC'} 
+                                onChange={onFilterChange}
+                                className="w-24 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none"
+                            >
+                                <option value="DESC">Recentes</option>
+                                <option value="ASC">Antigos</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </form>

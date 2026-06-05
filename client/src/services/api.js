@@ -163,6 +163,11 @@ export const getEstruturaProduto = async (codigo) => {
     return response.data;
 };
 
+export const getStockBalancesBatch = async (codigos) => {
+    const response = await api.post('/stock/balances-batch', { codigos });
+    return response.data;
+};
+
 export const getProductDocuments = async (codigo) => {
     const encodedCod = encodeURIComponent(codigo);
     const response = await api.get(`/docs/${encodedCod}`);

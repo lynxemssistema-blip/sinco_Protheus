@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Search, CheckCircle, XCircle, Mail, Info, ChevronRight, X, BarChart2, List } from 'lucide-react';
+import { Upload, Search, CheckCircle, XCircle, Mail, ChevronRight, X, BarChart2, List, ShieldCheck, Save, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -19,12 +19,19 @@ export default function AuditoriaPC() {
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
     const [emailData, setEmailData] = useState({ destinatarios: '', assunto: '', corpo: '' });
 
+    const [dbOffline, setDbOffline] = useState(false);
+
     const fetchAuditorias = async () => {
         try {
             const res = await api.get('/auditoria-pc');
-            setAuditorias(res.data);
+            // Backend retorna { data: [...], offline: bool }
+            const payload = res.data;
+            setAuditorias(Array.isArray(payload) ? payload : (payload.data || []));
+            setDbOffline(payload.offline === true);
         } catch (e) {
-            toast.error('Erro ao listar auditorias.');
+            // Só chega aqui se o servidor estiver completamente down (network error)
+            setDbOffline(true);
+            setAuditorias([]);
         }
     };
 
@@ -226,28 +233,28 @@ export default function AuditoriaPC() {
             };
             const res = await api.post('/auditoria-pc', payload);
             toast.success('Auditoria salva com sucesso!');
-            
-            // Prepara template de email caso haja divergencia
-            if (resultado.status === 'Com Divergências') {
-                let corpoHtml = `<h2>Auditoria de Recebimento</h2><p>Foram encontradas divergências entre o XML da NF <b>${xmlData.numero_nf}</b> e o Pedido de Compra <b>${pcNumero}</b>.</p><ul>`;
-                resultado.itens.filter(i => i.status.includes('❌')).forEach(i => {
-                    corpoHtml += `<li><b>Item NF ${i.item_xml} (Cód. Fornecedor: ${i.cprod_xml})</b>: ${i.status} - ${i.detalhe_divergencia}</li>`;
-                });
-                corpoHtml += `</ul><p>Por favor, verificar para liberação ou rejeição.</p>`;
-                
-                setEmailData({
-                    destinatarios: '',
-                    assunto: `Divergência NF ${xmlData.numero_nf} - Fornecedor ${xmlData.emitente_nome}`,
-                    corpo: corpoHtml
-                });
-                setResultado({...resultado, id: res.data.id});
-                setIsEmailModalOpen(true);
-            } else {
-                setView('list');
-            }
+            setResultado({ ...resultado, id: res.data.id });
         } catch (e) {
-            toast.error('Erro ao salvar auditoria.');
+            const msg = e.response?.data?.error || e.response?.data?.message || e.message || 'Erro desconhecido';
+            console.error('[handleSalvar] erro:', e.response?.status, msg);
+            toast.error(`Erro ao salvar: ${msg}`);
         }
+    };
+
+    const handleAbrirEmail = () => {
+        if (!xmlData || !resultado) return;
+        let corpoHtml = `<h2>Auditoria de Recebimento</h2><p>Resultado do confronto da NF <b>${xmlData.numero_nf}</b> com o Pedido de Compra <b>${pcNumero}</b>: <b>${resultado.status}</b>.</p>`;
+        const divs = resultado.itens.filter(i => i.status.includes('X'));
+        if (divs.length > 0) {
+            corpoHtml += `<ul>${divs.map(i => `<li><b>Item ${i.item_xml} (${i.cprod_xml})</b>: ${i.status} — ${i.detalhe_divergencia}</li>`).join('')}</ul>`;
+        }
+        corpoHtml += `<p>Por favor, verificar para liberação ou rejeição.</p>`;
+        setEmailData({
+            destinatarios: '',
+            assunto: `Auditoria NF ${xmlData.numero_nf} - ${xmlData.emitente_nome} - ${resultado.status}`,
+            corpo: corpoHtml
+        });
+        setIsEmailModalOpen(true);
     };
 
     const handleSendEmail = async () => {
@@ -265,87 +272,90 @@ export default function AuditoriaPC() {
         }
     };
 
+
     return (
-        <div className="p-4 sm:p-6 bg-slate-50 min-h-screen">
-            <div className="max-w-7xl mx-auto space-y-6">
-                
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                    <div>
-                        <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                            Auditoria 3-Way Match
-                            <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full border border-indigo-200">PC vs NF</span>
-                        </h1>
-                        <p className="text-sm text-slate-500 mt-1">Confronte Pedidos de Compra com XMLs antes da entrada fiscal.</p>
+        <div className="flex flex-col h-full bg-slate-50 space-y-4">
+            <div className="max-w-7xl mx-auto w-full space-y-4">
+
+                {/* HEADER */}
+                <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                            <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                Auditoria 3-Way Match
+                                <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full border border-indigo-200 font-semibold">PC vs NF</span>
+                            </h1>
+                            <p className="text-sm text-slate-500">Confronte Pedidos de Compra com XMLs antes da entrada fiscal.</p>
+                        </div>
                     </div>
                     <div className="flex gap-2">
-                        {view === 'list' && (
-                            <>
-                                <button onClick={() => setView('kpi')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-900 flex items-center gap-2"><BarChart2 className="w-4 h-4"/> Ver KPIs</button>
-                                <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Nova Auditoria</button>
-                            </>
-                        )}
-                        {view === 'kpi' && (
-                            <>
-                                <button onClick={() => setView('list')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-900 flex items-center gap-2"><List className="w-4 h-4"/> Ver Lista</button>
-                                <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Nova Auditoria</button>
-                            </>
-                        )}
+                        {view === 'list' && (<>
+                            <button onClick={() => setView('kpi')} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition-colors"><BarChart2 className="w-4 h-4" /> KPIs</button>
+                            <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors"><Upload className="w-4 h-4" /> Nova Auditoria</button>
+                        </>)}
+                        {view === 'kpi' && (<>
+                            <button onClick={() => setView('list')} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition-colors"><List className="w-4 h-4" /> Lista</button>
+                            <button onClick={() => { setView('new'); setResultado(null); setPcNumero(''); setXmlFile(null); setXmlData(null); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors"><Upload className="w-4 h-4" /> Nova Auditoria</button>
+                        </>)}
                         {view === 'new' && (
-                            <button onClick={() => setView('list')} className="text-slate-600 font-bold hover:text-slate-900">Voltar à Lista</button>
+                            <button onClick={() => setView('list')} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition-colors">← Voltar à Lista</button>
                         )}
                     </div>
                 </div>
 
+                {/* LISTA */}
                 {view === 'list' && (
                     <div className="space-y-4">
-                        <div className="flex items-center gap-2 bg-white p-3 rounded border border-slate-200 shadow-sm w-full md:w-96">
+                        {dbOffline && (
+                            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm">
+                                <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                                <div><strong>Historico temporariamente indisponivel.</strong> MySQL remoto fora do ar. Novas auditorias ainda funcionam.</div>
+                            </div>
+                        )}
+                        <div className="flex items-center gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full md:w-96">
                             <Search className="w-5 h-5 text-slate-400" />
-                            <input 
-                                type="text" 
-                                placeholder="Filtrar por fornecedor, PC ou NF..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-transparent border-none outline-none text-sm text-slate-700"
-                            />
+                            <input type="text" placeholder="Buscar por pedido, NF ou fornecedor..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-transparent border-none outline-none text-sm text-slate-700" />
                         </div>
-                        <div className="bg-white rounded border border-black overflow-hidden shadow-sm">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                             <div className="max-h-[60vh] overflow-y-auto">
-                                <table className="w-full text-left text-sm relative">
-                                    <thead className="bg-slate-800 text-white border-b border-black sticky top-0 z-10 shadow">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-600 tracking-wider sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="px-4 py-2 border-r border-black w-32">Data</th>
-                                            <th className="px-4 py-2 border-r border-black w-24">Pedido</th>
-                                            <th className="px-4 py-2 border-r border-black w-32">NF</th>
-                                            <th className="px-4 py-2 border-r border-black">Fornecedor</th>
-                                            <th className="px-4 py-2 border-r border-black w-32">Usuário</th>
-                                            <th className="px-4 py-2 w-40 text-center">Status</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">Data</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">Pedido</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">NF</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">Fornecedor</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">Usuario</th>
+                                            <th className="px-4 py-3 font-semibold uppercase text-center">Status</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        {auditorias.filter(aud => 
-                                            (aud.fornecedor_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            (aud.pedido_compra || '').includes(searchTerm) ||
-                                            (aud.numero_nf || '').includes(searchTerm)
+                                    <tbody className="divide-y divide-slate-100">
+                                        {auditorias.filter(a =>
+                                            (a.fornecedor_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            (a.pedido_compra || '').includes(searchTerm) ||
+                                            (a.numero_nf || '').includes(searchTerm)
                                         ).map(aud => (
-                                            <tr key={aud.id} className="border-b border-slate-200 hover:bg-slate-50">
-                                                <td className="px-4 py-2 border-r border-slate-200">{new Date(aud.created_at).toLocaleString('pt-BR')}</td>
-                                                <td className="px-4 py-2 border-r border-slate-200 font-bold font-mono">{aud.pedido_compra}</td>
-                                                <td className="px-4 py-2 border-r border-slate-200 font-bold">{aud.numero_nf}</td>
-                                                <td className="px-4 py-2 border-r border-slate-200 truncate max-w-[200px]">{aud.fornecedor_nome}</td>
-                                                <td className="px-4 py-2 border-r border-slate-200">{aud.usuario}</td>
-                                                <td className="px-4 py-2 text-center">
-                                                    {aud.status === 'Conforme' ? (
-                                                        <span className="bg-green-100 text-green-800 font-bold text-xs px-2 py-1 rounded">✅ Conforme</span>
-                                                    ) : (
-                                                        <span className="bg-red-100 text-red-800 font-bold text-xs px-2 py-1 rounded">❌ Divergência</span>
-                                                    )}
+                                            <tr key={aud.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-3 text-slate-600 text-xs">{new Date(aud.created_at).toLocaleString('pt-BR')}</td>
+                                                <td className="px-4 py-3 font-bold font-mono text-slate-800">{aud.pedido_compra}</td>
+                                                <td className="px-4 py-3 font-semibold text-slate-800">{aud.numero_nf}</td>
+                                                <td className="px-4 py-3 text-slate-700 truncate max-w-[220px]">{aud.fornecedor_nome}</td>
+                                                <td className="px-4 py-3 text-slate-600">{aud.usuario}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    {aud.status === 'Conforme'
+                                                        ? <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 font-bold text-xs px-2.5 py-1 rounded-full">Conforme</span>
+                                                        : <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 font-bold text-xs px-2.5 py-1 rounded-full">Divergencia</span>}
                                                 </td>
                                             </tr>
                                         ))}
                                         {auditorias.length === 0 && (
-                                            <tr>
-                                                <td colSpan="6" className="text-center py-8 text-slate-500">Nenhuma auditoria registrada.</td>
-                                            </tr>
+                                            <tr><td colSpan="6" className="px-4 py-12 text-center text-slate-500">
+                                                <ShieldCheck className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                                                <p className="font-medium">Nenhuma auditoria registrada.</p>
+                                            </td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -354,84 +364,73 @@ export default function AuditoriaPC() {
                     </div>
                 )}
 
-
+                {/* NOVA AUDITORIA */}
                 {view === 'new' && (
-                    <div className="space-y-6">
-                        {/* Passo 1: Configuração */}
+                    <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-white p-5 rounded-lg border border-black shadow-sm">
-                                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Search className="w-5 h-5 text-indigo-600"/> 1. Informar Pedido (Protheus)</h3>
-                                <input 
-                                    type="text" 
-                                    value={pcNumero}
-                                    onChange={(e) => setPcNumero(e.target.value)}
-                                    placeholder="Digite o número do PC..."
-                                    className="w-full p-2 border border-slate-300 rounded font-mono text-center text-lg"
-                                />
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase tracking-wider"><Search className="w-4 h-4 text-indigo-600" /> 1. Pedido de Compra</h3>
+                                <input type="text" value={pcNumero} onChange={(e) => setPcNumero(e.target.value)} placeholder="Ex: 004675" className="w-full px-4 py-3 border border-slate-300 rounded-lg font-mono text-center text-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
                             </div>
-                            
-                            <div className="bg-white p-5 rounded-lg border border-black shadow-sm">
-                                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Upload className="w-5 h-5 text-indigo-600"/> 2. Anexar XML Fornecedor</h3>
-                                <input 
-                                    type="file" 
-                                    accept=".xml" 
-                                    onChange={handleFileUpload}
-                                    className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                                />
-                                {xmlData && (
-                                    <div className="mt-2 text-xs bg-green-50 text-green-800 p-2 rounded font-bold border border-green-200">
-                                        XML LIDO: NF {xmlData.numero_nf} - {xmlData.emitente_nome}
-                                    </div>
-                                )}
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase tracking-wider"><Upload className="w-4 h-4 text-indigo-600" /> 2. XML do Fornecedor</h3>
+                                <input type="file" accept=".xml" onChange={handleFileUpload} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors" />
+                                {xmlData && (<div className="mt-3 text-xs bg-green-50 text-green-800 p-2.5 rounded-lg font-bold border border-green-200">NF {xmlData.numero_nf} carregada</div>)}
                             </div>
                         </div>
-
-                        {/* Passo 2: Executar */}
                         <div className="flex justify-center">
-                            <button onClick={runAuditoria} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-black text-lg hover:bg-indigo-700 shadow-md flex items-center gap-2">
-                                CRUZAR DADOS AGORA <ChevronRight className="w-6 h-6"/>
-                            </button>
+                            <button onClick={runAuditoria} className="flex items-center gap-2 bg-indigo-600 text-white px-10 py-3 rounded-xl font-bold text-base hover:bg-indigo-700 shadow-md transition-colors"><RefreshCw className="w-5 h-5" /> Cruzar Dados Agora</button>
                         </div>
-
-                        {/* Resultado da Auditoria */}
                         {resultado && (
-                            <div className="bg-white rounded-lg border border-black shadow-sm overflow-hidden">
-                                <div className={`p-4 text-white font-black text-lg flex items-center justify-between ${resultado.status === 'Conforme' ? 'bg-green-600' : 'bg-red-600'}`}>
-                                    <div className="flex items-center gap-2">
-                                        {resultado.status === 'Conforme' ? <CheckCircle className="w-6 h-6"/> : <XCircle className="w-6 h-6"/>}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className={`px-5 py-3 flex items-center justify-between border-b ${resultado.status === 'Conforme' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <div className={`flex items-center gap-2 font-bold text-base ${resultado.status === 'Conforme' ? 'text-green-700' : 'text-red-700'}`}>
+                                        {resultado.status === 'Conforme' ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                                         RESULTADO: {resultado.status.toUpperCase()}
+                                        <span className="text-xs font-normal text-slate-500 ml-2">{resultado.itens.length} itens</span>
                                     </div>
-                                    <button onClick={handleSalvar} className="bg-white text-black px-4 py-1 text-sm rounded shadow hover:bg-slate-100">
-                                        Salvar Auditoria no Banco
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleAbrirEmail}
+                                            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg font-medium text-sm transition-colors"
+                                        >
+                                            <Mail className="w-4 h-4" /> Enviar por E-mail
+                                        </button>
+                                        {resultado.id
+                                            ? <span className="text-green-700 font-semibold text-sm flex items-center gap-1 px-4 py-2 bg-green-50 border border-green-200 rounded-lg"><CheckCircle className="w-4 h-4" /> Salvo</span>
+                                            : <button onClick={handleSalvar} className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-sm transition-colors">
+                                                <Save className="w-4 h-4" /> Salvar no Banco
+                                              </button>
+                                        }
+                                    </div>
                                 </div>
-                                <div className="max-h-[60vh] overflow-y-auto">
-                                    <table className="w-full text-left text-sm relative" style={{ fontSize: '11px' }}>
-                                        <thead className="bg-slate-100 border-b border-black text-slate-700 sticky top-0 z-10 shadow">
+                                <div className="max-h-[50vh] overflow-y-auto">
+                                    <table className="w-full text-left" style={{ fontSize: '11px' }}>
+                                        <thead className="bg-slate-100 border-b border-slate-300 text-slate-700 sticky top-0 z-10">
                                             <tr>
-                                                <th className="p-2 border-r border-black text-center w-10">Item XML</th>
-                                                <th className="p-2 border-r border-black w-20">Cód Fornecedor</th>
-                                                <th className="p-2 border-r border-black w-24 text-indigo-700 bg-indigo-50/50">Cód MetalFisa (De/Para)</th>
-                                                <th className="p-2 border-r border-black text-right w-20">Qtd NF</th>
-                                                <th className="p-2 border-r border-black text-right w-20 bg-amber-50">Qtd Pedido (Saldo)</th>
-                                                <th className="p-2 border-r border-black text-right w-20">Vlr NF (R$)</th>
-                                                <th className="p-2 border-r border-black text-right w-20 bg-amber-50">Vlr Pedido (R$)</th>
-                                                <th className="p-2 border-r border-black w-40">Status do Item</th>
-                                                <th className="p-2">Detalhes da Divergência</th>
+                                                <th className="p-2 border-r border-slate-200 text-center w-10">Item</th>
+                                                <th className="p-2 border-r border-slate-200 w-24">Cod Forn.</th>
+                                                <th className="p-2 border-r border-slate-200 w-28 text-indigo-700">Cod MetalFisa</th>
+                                                <th className="p-2 border-r border-slate-200 text-right w-20">Qtd NF</th>
+                                                <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Qtd PC</th>
+                                                <th className="p-2 border-r border-slate-200 text-right w-24">Vlr NF</th>
+                                                <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Vlr PC</th>
+                                                <th className="p-2 border-r border-slate-200 w-44">Status</th>
+                                                <th className="p-2">Detalhes</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {resultado.itens.map((it, idx) => (
-                                                <tr key={idx} className={`border-b border-slate-200 ${it.status.includes('❌') ? 'bg-red-50/30' : ''}`}>
-                                                    <td className="p-2 border-r border-black font-bold text-center">{it.item_xml}</td>
-                                                    <td className="p-2 border-r border-black font-mono">{it.cprod_xml}</td>
-                                                    <td className="p-2 border-r border-black font-mono font-bold text-indigo-700 bg-indigo-50/20">{it.cprod_protheus || '-'}</td>
-                                                    <td className="p-2 border-r border-black text-right font-bold">{it.qtd_xml}</td>
-                                                    <td className="p-2 border-r border-black text-right bg-amber-50/30">{it.qtd_protheus || '-'}</td>
-                                                    <td className="p-2 border-r border-black text-right">{formatMoney(it.vlr_xml)}</td>
-                                                    <td className="p-2 border-r border-black text-right bg-amber-50/30">{it.vlr_protheus ? formatMoney(it.vlr_protheus) : '-'}</td>
-                                                    <td className="p-2 border-r border-black font-bold">
-                                                        {it.status.includes('✅') ? <span className="text-green-600">{it.status}</span> : <span className="text-red-600">{it.status}</span>}
+                                                <tr key={idx} className={`border-b border-slate-100 ${it.status.includes('X') ? 'bg-red-50/30' : ''}`}>
+                                                    <td className="p-2 border-r border-slate-200 font-bold text-center">{it.item_xml}</td>
+                                                    <td className="p-2 border-r border-slate-200 font-mono">{it.cprod_xml}</td>
+                                                    <td className="p-2 border-r border-slate-200 font-mono font-bold text-indigo-700">{it.cprod_protheus || '-'}</td>
+                                                    <td className="p-2 border-r border-slate-200 text-right font-bold">{it.qtd_xml}</td>
+                                                    <td className="p-2 border-r border-slate-200 text-right bg-amber-50/30">{it.qtd_protheus ?? '-'}</td>
+                                                    <td className="p-2 border-r border-slate-200 text-right">{formatMoney(it.vlr_xml)}</td>
+                                                    <td className="p-2 border-r border-slate-200 text-right bg-amber-50/30">{it.vlr_protheus ? formatMoney(it.vlr_protheus) : '-'}</td>
+                                                    <td className="p-2 border-r border-slate-200 font-bold">
+                                                        <span className={it.status.includes('X') ? 'text-red-600' : 'text-green-600'}>{it.status}</span>
                                                     </td>
                                                     <td className="p-2 text-xs font-mono text-slate-600">{it.detalhe_divergencia}</td>
                                                 </tr>
@@ -444,109 +443,92 @@ export default function AuditoriaPC() {
                     </div>
                 )}
 
+                {/* KPIS */}
                 {view === 'kpi' && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                                <p className="text-sm text-slate-500 font-bold uppercase">Total de Fornecedores Auditados</p>
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Fornecedores Auditados</p>
                                 <p className="text-3xl font-black text-slate-800 mt-2">{kpiData.length}</p>
                             </div>
-                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                                <p className="text-sm text-slate-500 font-bold uppercase">Total de NFs Com Divergência</p>
-                                <p className="text-3xl font-black text-red-600 mt-2">{kpiData.reduce((acc, curr) => acc + curr.divergentes, 0)}</p>
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">NFs Com Divergencia</p>
+                                <p className="text-3xl font-black text-red-600 mt-2">{kpiData.reduce((a, c) => a + c.divergentes, 0)}</p>
                             </div>
-                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                                <p className="text-sm text-slate-500 font-bold uppercase">Média Geral de Conformidade</p>
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Media de Conformidade</p>
                                 <p className="text-3xl font-black text-indigo-600 mt-2">
-                                    {kpiData.length > 0 ? Math.round((kpiData.reduce((acc, curr) => acc + curr.conformes, 0) / kpiData.reduce((acc, curr) => acc + curr.total, 0)) * 100) : 0}%
+                                    {kpiData.length > 0 ? Math.round((kpiData.reduce((a, c) => a + c.conformes, 0) / kpiData.reduce((a, c) => a + c.total, 0)) * 100) : 0}%
                                 </p>
                             </div>
                         </div>
-
-                        <div className="bg-white rounded border border-black overflow-hidden shadow-sm">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                             <div className="max-h-[60vh] overflow-y-auto">
-                                <table className="w-full text-left text-sm relative">
-                                    <thead className="bg-slate-800 text-white border-b border-black sticky top-0 z-10 shadow">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-600 tracking-wider sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="px-4 py-3 border-r border-black w-12 text-center">#</th>
-                                        <th className="px-4 py-3 border-r border-black">Fornecedor</th>
-                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Total Itens Aud.</th>
-                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Itens Conformes</th>
-                                        <th className="px-4 py-3 border-r border-black w-32 text-center">Itens Divergentes</th>
-                                        <th className="px-4 py-3 w-40 text-center">Taxa de Sucesso</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {kpiData.map((kpi, idx) => (
-                                        <tr key={idx} className={`border-b border-slate-200 ${kpi.divergentes > 0 ? 'bg-red-50/20' : 'bg-green-50/20'}`}>
-                                            <td className="px-4 py-3 border-r border-slate-200 text-center font-bold text-slate-400">{idx + 1}</td>
-                                            <td className="px-4 py-3 border-r border-slate-200 font-bold truncate max-w-[250px]">{kpi.nome}</td>
-                                            <td className="px-4 py-3 border-r border-slate-200 text-center font-bold">{kpi.total}</td>
-                                            <td className="px-4 py-3 border-r border-slate-200 text-center text-green-600 font-bold">{kpi.conformes}</td>
-                                            <td className="px-4 py-3 border-r border-slate-200 text-center text-red-600 font-bold">{kpi.divergentes}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <div className="w-20 bg-gray-200 rounded-full h-2.5">
-                                                        <div className={`h-2.5 rounded-full ${kpi.percentConforme > 80 ? 'bg-green-600' : kpi.percentConforme > 50 ? 'bg-yellow-500' : 'bg-red-600'}`} style={{ width: `${kpi.percentConforme}%` }}></div>
+                                            <th className="px-4 py-3 font-semibold uppercase w-10 text-center">#</th>
+                                            <th className="px-4 py-3 font-semibold uppercase">Fornecedor</th>
+                                            <th className="px-4 py-3 font-semibold uppercase text-center w-32">Total</th>
+                                            <th className="px-4 py-3 font-semibold uppercase text-center w-32">Conformes</th>
+                                            <th className="px-4 py-3 font-semibold uppercase text-center w-32">Divergentes</th>
+                                            <th className="px-4 py-3 font-semibold uppercase text-center w-40">Taxa</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {kpiData.map((kpi, idx) => (
+                                            <tr key={idx} className={kpi.divergentes > 0 ? 'bg-red-50/20' : 'bg-green-50/20'}>
+                                                <td className="px-4 py-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                                                <td className="px-4 py-3 font-bold truncate max-w-[250px]">{kpi.nome}</td>
+                                                <td className="px-4 py-3 text-center font-bold">{kpi.total}</td>
+                                                <td className="px-4 py-3 text-center text-green-600 font-bold">{kpi.conformes}</td>
+                                                <td className="px-4 py-3 text-center text-red-600 font-bold">{kpi.divergentes}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                                                            <div className={`h-2 rounded-full ${kpi.percentConforme > 80 ? 'bg-green-500' : kpi.percentConforme > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${kpi.percentConforme}%` }} />
+                                                        </div>
+                                                        <span className="font-bold text-xs">{kpi.percentConforme}%</span>
                                                     </div>
-                                                    <span className="font-bold text-xs">{kpi.percentConforme}%</span>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {kpiData.length === 0 && (
-                                        <tr>
-                                            <td colSpan="6" className="text-center py-8 text-slate-500">Nenhum dado para analisar.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {kpiData.length === 0 && (
+                                            <tr><td colSpan="6" className="text-center py-10 text-slate-500">Nenhum dado para analisar.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                </div>
                 )}
+
             </div>
 
-            {/* Email Modal */}
+            {/* EMAIL MODAL */}
             {isEmailModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden border border-black">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden">
                         <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
-                            <h3 className="font-bold flex items-center gap-2"><Mail className="w-5 h-5"/> Enviar Relatório de Divergência</h3>
-                            <button onClick={() => setIsEmailModalOpen(false)}><X className="w-5 h-5"/></button>
+                            <h3 className="font-bold flex items-center gap-2"><Mail className="w-5 h-5" /> Enviar Relatorio de Divergencia</h3>
+                            <button onClick={() => setIsEmailModalOpen(false)}><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Destinatários (separar por vírgula)</label>
-                                <input 
-                                    type="text" 
-                                    value={emailData.destinatarios}
-                                    onChange={(e) => setEmailData({...emailData, destinatarios: e.target.value})}
-                                    placeholder="ex: compras@metalfisa.com.br, pcp@metalfisa.com.br"
-                                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
-                                />
+                                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Destinatarios</label>
+                                <input type="text" value={emailData.destinatarios} onChange={(e) => setEmailData({ ...emailData, destinatarios: e.target.value })} placeholder="ex: compras@metalfisa.com.br" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Assunto</label>
-                                <input 
-                                    type="text" 
-                                    value={emailData.assunto}
-                                    onChange={(e) => setEmailData({...emailData, assunto: e.target.value})}
-                                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 font-bold"
-                                />
+                                <input type="text" value={emailData.assunto} onChange={(e) => setEmailData({ ...emailData, assunto: e.target.value })} className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 font-bold" />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Corpo do E-mail</label>
-                                <div 
-                                    className="w-full p-3 border border-gray-300 rounded bg-gray-50 h-48 overflow-y-auto text-sm html-content-preview"
-                                    dangerouslySetInnerHTML={{ __html: emailData.corpo }}
-                                />
+                                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Corpo</label>
+                                <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 h-48 overflow-y-auto text-sm" dangerouslySetInnerHTML={{ __html: emailData.corpo }} />
                             </div>
-                            <div className="flex gap-2 pt-4">
+                            <div className="flex gap-2 pt-2">
                                 <button onClick={() => setIsEmailModalOpen(false)} className="flex-1 py-2 rounded font-bold border border-gray-300 text-gray-700 hover:bg-gray-50">Cancelar</button>
-                                <button onClick={handleSendEmail} className="flex-1 py-2 rounded font-bold bg-indigo-600 text-white hover:bg-indigo-700 flex items-center justify-center gap-2">
-                                    <Mail className="w-4 h-4"/> Enviar E-mail
-                                </button>
+                                <button onClick={handleSendEmail} className="flex-1 py-2 rounded font-bold bg-indigo-600 text-white hover:bg-indigo-700 flex items-center justify-center gap-2"><Mail className="w-4 h-4" /> Enviar</button>
                             </div>
                         </div>
                     </div>

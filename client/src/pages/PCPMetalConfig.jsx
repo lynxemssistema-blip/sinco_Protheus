@@ -164,6 +164,7 @@ export default function PCPMetalConfig() {
     const [editAgent, setEditAgent] = useState(null); // null = list, object = editing
     const [editSchema, setEditSchema] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [syncing, setSyncing] = useState(false);
     const [expandedHistory, setExpandedHistory] = useState({});
 
     useEffect(() => {
@@ -194,6 +195,20 @@ export default function PCPMetalConfig() {
             const res = await api.get('/pcpmetal/conversas?limit=50');
             setHistorico(res.data || []);
         } finally { setLoading(false); }
+    }
+
+    async function handleSyncSchema() {
+        setSyncing(true);
+        try {
+            const res = await api.post('/pcpmetal/schema/sync');
+            alert(res.data.message || 'Estruturas sincronizadas com sucesso.');
+            loadSchema();
+        } catch (err) {
+            console.error('Erro ao sincronizar estruturas:', err);
+            alert('Falha ao sincronizar estruturas: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setSyncing(false);
+        }
     }
 
     async function saveAgent() {
@@ -429,12 +444,22 @@ export default function PCPMetalConfig() {
                 <div className="space-y-4">
                     <div className="flex items-center justify-between gap-3">
                         <p className="text-sm text-slate-500">Descreva as tabelas para que os agentes entendam a estrutura dos dados. Injetadas automaticamente no contexto de cada agente.</p>
-                        <button
-                            onClick={() => setEditSchema({ banco: 'postgresql', tabela: '', descricao: '', colunas_chave: '', ativo: 1 })}
-                            className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-700 text-white text-sm font-semibold rounded-xl hover:bg-blue-800"
-                        >
-                            <Plus className="w-4 h-4" /> Nova Tabela
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                onClick={handleSyncSchema}
+                                disabled={syncing}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                                {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🔄</span>}
+                                {syncing ? 'Sincronizando...' : 'Atualizar Estruturas'}
+                            </button>
+                            <button
+                                onClick={() => setEditSchema({ banco: 'postgresql', tabela: '', descricao: '', colunas_chave: '', ativo: 1 })}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white text-sm font-semibold rounded-xl hover:bg-blue-800"
+                            >
+                                <Plus className="w-4 h-4" /> Nova Tabela
+                            </button>
+                        </div>
                     </div>
 
                     {/* New / Edit form (shown as a card above the list) */}

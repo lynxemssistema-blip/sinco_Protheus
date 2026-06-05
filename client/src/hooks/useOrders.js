@@ -49,6 +49,8 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
             tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
             op_status: overrides.op_status !== undefined ? overrides.op_status : filters.op_status,
             only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
+            sortBy: overrides.sortBy !== undefined ? overrides.sortBy : filters.sortBy,
+            sortOrder: overrides.sortOrder !== undefined ? overrides.sortOrder : filters.sortOrder,
         };
         const searchPage = overrides.page || page;
         const searchViewMode = overrides.viewMode || viewMode;
