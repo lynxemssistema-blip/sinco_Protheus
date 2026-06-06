@@ -302,36 +302,42 @@ export default function OrdersTimelineTab({ filters }) {
             (target.pedidos || []).forEach(p => {
                 (p.itens || []).forEach(it => {
                     itemsList.push({
-                        pedido:          p.pedido,
-                        produto:         it.produto,
-                        descricao:       it.descricao,
-                        qtd_vendida:     it.qtd_vendida,
-                        qtd_faturada:    it.qtd_faturada,
-                        data_entrega:    formatDate(it.data_entrega),
-                        data_pcp:        formatDate(it.data_entrega_pcp),
-                        data_faturamento: formatDate(it.data_prevista_faturamento),
-                        progresso:       `${getItemProgress(it)}%`,
+                        pedido:              p.pedido,
+                        ped_cliente:         it.pedido_cliente || '-',
+                        cod_prod_cliente:     it.cod_prod_cliente || '-',
+                        produto:             it.produto,
+                        descricao:           it.descricao,
+                        qtd_vendida:         it.qtd_vendida,
+                        qtd_faturada:        it.qtd_faturada,
+                        data_entrega:        formatDate(it.data_entrega),
+                        data_pcp:            formatDate(it.data_entrega_pcp),
+                        data_faturamento:    formatDate(it.data_prevista_faturamento),
+                        progresso:           `${getItemProgress(it)}%`,
                     });
                 });
             });
         } else {
             (target.itens || []).forEach(it => {
                 itemsList.push({
-                    pedido:          target.pedido,
-                    produto:         it.produto,
-                    descricao:       it.descricao,
-                    qtd_vendida:     it.qtd_vendida,
-                    qtd_faturada:    it.qtd_faturada,
-                    data_entrega:    formatDate(it.data_entrega),
-                    data_pcp:        formatDate(it.data_entrega_pcp),
-                    data_faturamento: formatDate(it.data_prevista_faturamento),
-                    progresso:       `${getItemProgress(it)}%`,
+                    pedido:              target.pedido,
+                    ped_cliente:         it.pedido_cliente || '-',
+                    cod_prod_cliente:     it.cod_prod_cliente || '-',
+                    produto:             it.produto,
+                    descricao:           it.descricao,
+                    qtd_vendida:         it.qtd_vendida,
+                    qtd_faturada:        it.qtd_faturada,
+                    data_entrega:        formatDate(it.data_entrega),
+                    data_pcp:            formatDate(it.data_entrega_pcp),
+                    data_faturamento:    formatDate(it.data_prevista_faturamento),
+                    progresso:           `${getItemProgress(it)}%`,
                 });
             });
         }
 
         const columns = [
             { header: 'Pedido',              dataKey: 'pedido' },
+            { header: 'Ped. Cliente',        dataKey: 'ped_cliente' },
+            { header: 'Cód. Prod. Cliente',  dataKey: 'cod_prod_cliente' },
             { header: 'Produto',             dataKey: 'produto' },
             { header: 'Descrição',           dataKey: 'descricao' },
             { header: 'Qtd. Vendida',        dataKey: 'qtd_vendida' },
@@ -351,19 +357,21 @@ export default function OrdersTimelineTab({ filters }) {
                 fillColor: [30, 58, 95],
                 textColor: [255, 255, 255],
                 fontStyle: 'bold',
-                fontSize: 8,
+                fontSize: 7,
                 halign: 'center',
             },
-            bodyStyles: { fontSize: 8, cellPadding: 2, lineColor: [210, 215, 220] },
+            bodyStyles: { fontSize: 7, cellPadding: 2, lineColor: [210, 215, 220] },
             alternateRowStyles: { fillColor: [248, 250, 253] },
             columnStyles: {
-                descricao:       { cellWidth: 52 },
-                data_entrega:    { halign: 'center', cellWidth: 28 },
-                data_pcp:        { halign: 'center', cellWidth: 22 },
-                data_faturamento:{ halign: 'center', cellWidth: 30 },
-                qtd_vendida:     { halign: 'right',  cellWidth: 20 },
-                qtd_faturada:    { halign: 'right',  cellWidth: 22 },
-                progresso:       { fontStyle: 'bold', halign: 'center', cellWidth: 20 },
+                ped_cliente:         { cellWidth: 22, halign: 'center' },
+                cod_prod_cliente:    { cellWidth: 24, halign: 'center' },
+                descricao:           { cellWidth: 44 },
+                data_entrega:        { halign: 'center', cellWidth: 24 },
+                data_pcp:            { halign: 'center', cellWidth: 20 },
+                data_faturamento:    { halign: 'center', cellWidth: 26 },
+                qtd_vendida:         { halign: 'right',  cellWidth: 18 },
+                qtd_faturada:        { halign: 'right',  cellWidth: 18 },
+                progresso:           { fontStyle: 'bold', halign: 'center', cellWidth: 18 },
             },
             margin: { left: 10, right: 10, bottom: 14 },
             didDrawPage: ({ pageNumber }) => {

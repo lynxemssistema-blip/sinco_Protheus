@@ -16,6 +16,10 @@ const TaxaOcupacao = () => {
     const [viewMode, setViewMode] = useState('table'); // 'table' | 'heatmap' | 'gantt'
     const [expandedResources, setExpandedResources] = useState({});
     
+    // Novas variáveis de estado para OPs do Modal
+    const [modalOps, setModalOps] = useState([]);
+    const [loadingOps, setLoadingOps] = useState(false);
+    
     const getRowKey = (opObj) => {
         return `${opObj.pedido}_${opObj.item_pedido}_${opObj.op}_${opObj.item_op}_${opObj.sequen}_${opObj.produto}_${opObj.operacao}`;
     };
@@ -39,10 +43,21 @@ const TaxaOcupacao = () => {
     const [modalTab, setModalTab] = useState('ops'); // 'ops' | 'historico'
     const [historicoData, setHistoricoData] = useState([]);
     const [loadingHistorico, setLoadingHistorico] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState('');
 
     useEffect(() => {
         fetchData();
     }, []);
+
+    const formatLastUpdated = (isoString) => {
+        if (!isoString) return '';
+        try {
+            const date = new Date(isoString);
+            return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return '';
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -55,6 +70,12 @@ const TaxaOcupacao = () => {
             
             const response = await api.get('/pcp-refinado/taxa-ocupacao', { params });
             setData(response.data);
+
+            const updatedHeader = response.headers['x-cache-updated-at'] || response.headers['X-Cache-Updated-At'];
+            if (updatedHeader) {
+                setLastUpdated(updatedHeader);
+            }
+
             setError('');
             
             // Se o modal estiver aberto, atualiza os dados dele também
@@ -71,6 +92,34 @@ const TaxaOcupacao = () => {
             setLoading(false);
         }
     };
+
+    const fetchModalOps = async () => {
+        if (!selectedDetail) return;
+        try {
+            setLoadingOps(true);
+            const params = {
+                data: selectedDetail.data,
+                recurso: selectedDetail.recurso.recurso_codigo,
+                only_active: onlyActive ? 'true' : 'false'
+            };
+            const response = await api.get('/pcp-refinado/taxa-ocupacao/ops', { params });
+            setModalOps(response.data || []);
+        } catch (err) {
+            console.error('Erro ao buscar detalhamento de OPs:', err);
+            alert('Falha ao carregar detalhamento de OPs.');
+        } finally {
+            setLoadingOps(false);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedDetail) {
+            fetchModalOps();
+        } else {
+            setModalOps([]);
+        }
+    }, [selectedDetail]);
+
     const fetchHistorico = async () => {
         try {
             setLoadingHistorico(true);
@@ -88,6 +137,7 @@ const TaxaOcupacao = () => {
             fetchHistorico();
         }
     }, [selectedDetail, modalTab]);
+
     const handleSaveDates = async (opObj) => {
         if (editDates.inicio && editDates.fim) {
             if (editDates.fim < editDates.inicio) {
@@ -107,9 +157,8 @@ const TaxaOcupacao = () => {
             });
 
             // Otimistic UI Update: atualiza a data visualmente na hora!
-            setSelectedDetail(prev => {
-                if (!prev) return prev;
-                const updatedOps = prev.recurso.ops.map(o => {
+            setModalOps(prev => {
+                return prev.map(o => {
                     if (o.op === opObj.op && o.operacao === opObj.operacao && o.item_op === opObj.item_op && o.sequen === opObj.sequen) {
                         return {
                             ...o,
@@ -119,13 +168,13 @@ const TaxaOcupacao = () => {
                     }
                     return o;
                 });
-                return { ...prev, recurso: { ...prev.recurso, ops: updatedOps } };
             });
 
             setEditingOp(null);
             
             // Recarrega em background sem piscar a tela agressivamente
             fetchData();
+            fetchModalOps();
             if (modalTab === 'historico') fetchHistorico();
         } catch (err) {
             alert('Erro ao salvar datas: ' + (err.response?.data?.error || err.message));
@@ -142,12 +191,9 @@ const TaxaOcupacao = () => {
         }
         
         try {
-            // Em produção real, você pode querer criar uma rota de bulk-update no backend.
-            // Para simplificar, faremos requisições em paralelo.
-            
             // Localiza as operacoes completas para enviar o codigo correto
             const opsToUpdate = selectedOps.map(rowKey => {
-                return selectedDetail?.recurso?.ops?.find(o => getRowKey(o) === rowKey) || null;
+                return modalOps.find(o => getRowKey(o) === rowKey) || null;
             }).filter(Boolean);
 
             await Promise.all(opsToUpdate.map(opObj => 
@@ -166,6 +212,7 @@ const TaxaOcupacao = () => {
             setSelectedOps([]);
             setBulkDates({ inicio: '', fim: '' });
             fetchData();
+            fetchModalOps();
             if (modalTab === 'historico') fetchHistorico();
         } catch (err) {
             alert('Erro ao aplicar datas em lote: ' + (err.response?.data?.error || err.message));
@@ -246,9 +293,19 @@ const TaxaOcupacao = () => {
                         <Activity className="text-blue-600" />
                         Taxa de Ocupação Diária
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">
-                        Análise de carga vs capacidade dos recursos (CRP).
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                        <p className="text-slate-500 text-sm">
+                            Análise de carga vs capacidade dos recursos (CRP).
+                        </p>
+                        {lastUpdated && (
+                            <>
+                                <span className="text-slate-300 hidden md:inline">•</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                    Atualizado em: {formatLastUpdated(lastUpdated)}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
@@ -657,7 +714,7 @@ const TaxaOcupacao = () => {
 
             {/* MODAL DETALHAMENTO */}
             {selectedDetail && (() => {
-                const filteredOps = (selectedDetail.recurso.ops || []).filter(o => 
+                const filteredOps = (modalOps || []).filter(o => 
                     o.qtde_pendente > 0 &&
                     o.pedido && o.pedido.trim() !== '' &&
                     (o.op.toLowerCase().includes(modalSearchTerm.toLowerCase()) || 
@@ -776,7 +833,13 @@ const TaxaOcupacao = () => {
                             </div>
                         )}
                         
-                        <div className="p-6 overflow-y-auto flex-1">
+                        <div className="p-6 overflow-y-auto flex-1 relative min-h-[250px]">
+                            {loadingOps && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 z-20 space-y-4">
+                                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                    <p className="text-slate-500 font-medium animate-pulse">Carregando detalhes das ordens...</p>
+                                </div>
+                            )}
                             {modalTab === 'ops' ? (
                             <table className="w-full text-sm text-left text-slate-600">
                                 <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
@@ -912,7 +975,7 @@ const TaxaOcupacao = () => {
                                     <div className="text-center py-8 text-slate-500">Carregando histórico...</div>
                                 ) : (() => {
                                     const filteredHistorico = historicoData.filter(hist => 
-                                        selectedDetail?.recurso?.ops?.some(op => 
+                                        modalOps?.some(op => 
                                             op.op === hist.op_numero && 
                                             op.operacao === hist.operacao_codigo
                                         )

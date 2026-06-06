@@ -18,12 +18,12 @@ export default function VerticalAppointmentPage() {
     const [pageBreakPerGroup, setPageBreakPerGroup] = useState(false);
     const [operations, setOperations] = useState([]);
     const [selectedOp, setSelectedOp] = useStickyState('', '@metalfisa:vert_selectedOp');
-    const [data, setData] = useStickyState([], '@metalfisa:vertical_data');
+    const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
     const [wasSearched, setWasSearched] = useState(false);
     const [page, setPage] = useState(1);
-    const [pagination, setPagination] = useState({ total: 0, totalPages: 0, limit: 100 }); // Distingue "nunca buscou" de "buscou mas não achou"
+    const [pagination, setPagination] = useState({ hasMore: false, total: 0, limit: 200 });
 
     // Filtros rápidos
     const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
@@ -63,7 +63,6 @@ export default function VerticalAppointmentPage() {
     const loadData = async (showLoader = true, targetPage = page) => {
         if (!selectedOp) return;
 
-        // Bloqueio de Performance — sem nenhum filtro, não executa
         const hasFilter = filters.op || filters.pedido || filters.produto || filters.cliente || filters.plan_inicio_de || filters.plan_inicio_ate;
         if (!hasFilter) {
             setData([]);
@@ -72,17 +71,16 @@ export default function VerticalAppointmentPage() {
             return;
         }
 
-        if (showLoader) {
-            setLoading(true);
-            setData([]);
-        }
+        if (showLoader) { setLoading(true); setData([]); }
         setApiError(null);
         try {
-            const params = { ...filters };
+            const params = { ...filters, page: targetPage, limit: 200 };
             Object.keys(params).forEach(key => !params[key] && delete params[key]);
 
             const result = await getVerticalProduction(selectedOp, params);
-            setData(Array.isArray(result) ? result : (result?.data || []));
+            const rows = result?.data ?? (Array.isArray(result) ? result : []);
+            setData(rows);
+            if (result?.pagination) setPagination(result.pagination);
             setWasSearched(true);
             setDraftPlans({});
         } catch (err) {
@@ -95,18 +93,23 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleSearch = () => {
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
-            toast.warning('Por favor, informe ao menos um filtro (ex: OP, Pedido, Cliente, Produto ou Período de Planejamento) para buscar.');
+        if (!selectedOp) {
+            toast.warning('Selecione um Recurso antes de buscar.');
             return;
         }
-        loadData();
+        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_de && !filters.plan_inicio_ate) {
+            toast.warning('Informe ao menos um filtro (OP, Pedido, Cliente, Produto ou Período) para buscar.');
+            return;
+        }
+        setPage(1);
+        loadData(true, 1);
     };
 
-    // Auto-load ao trocar a operação
-    useEffect(() => {
-        if (selectedOp) loadData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedOp]);
+    const handlePageChange = (newPage) => {
+        setPage(newPage);
+        loadData(true, newPage);
+    };
+
 
     const handlePlanChange = (opKey, dateStr) => {
         setDraftPlans(prev => ({ ...prev, [opKey]: dateStr }));
@@ -418,6 +421,8 @@ export default function VerticalAppointmentPage() {
                                 setFilterStatus('ABERTOS');
                                 setData([]);
                                 setWasSearched(false);
+                                setPage(1);
+                                setPagination({ hasMore: false, total: 0, limit: 200 });
                             }}
                             className="px-4 py-2 border rounded text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
                         >
@@ -474,7 +479,17 @@ export default function VerticalAppointmentPage() {
                 <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
                     <div className="animate-pulse text-slate-500 font-medium">Carregando fila de trabalho...</div>
                 </div>
-            ) : data.length === 0 && selectedOp ? (
+            ) : !selectedOp ? (
+                <div className="bg-white rounded-lg shadow-sm border p-8 text-center text-slate-500">
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center">
+                            <List className="w-6 h-6 text-blue-500" />
+                        </div>
+                        <div className="font-semibold text-slate-700 text-base">Selecione um Recurso para começar</div>
+                        <div className="text-sm text-slate-500">Escolha o setor/máquina no campo <strong>Recurso</strong> acima e clique em <strong>Buscar</strong>.</div>
+                    </div>
+                </div>
+            ) : data.length === 0 ? (
                 <div className="bg-white rounded-lg shadow-sm border p-8 text-center text-slate-500">
                     {wasSearched ? (
                         /* Buscou mas não achou nada — mostrar diagnóstico útil */
@@ -735,6 +750,41 @@ export default function VerticalAppointmentPage() {
                                 </tr>
                             </tfoot>
                         </table>
+                    </div>
+                    {/* Paginação */}
+                    <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50 text-sm">
+                        <div className="text-slate-600">
+                            {pagination.hasMore ? (
+                                <span>
+                                    Mostrando <strong>{filteredData.length}</strong> de <strong>200+</strong> resultados (pág. {page})
+                                    <span className="ml-2 text-amber-600 font-medium">— use filtros para refinar</span>
+                                </span>
+                            ) : (
+                                <span>
+                                    {pagination.total != null
+                                        ? <><strong>{filteredData.length}</strong> resultado(s)</>
+                                        : <><strong>{filteredData.length}</strong> resultado(s)</>}
+                                    {page > 1 && <span className="ml-1 text-slate-400">(pág. {page})</span>}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                disabled={page <= 1 || loading}
+                                onClick={() => handlePageChange(page - 1)}
+                                className="px-3 py-1.5 border rounded text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                ← Anterior
+                            </button>
+                            <span className="px-3 py-1.5 bg-white border rounded font-medium text-slate-700">Pág. {page}</span>
+                            <button
+                                disabled={!pagination.hasMore || loading}
+                                onClick={() => handlePageChange(page + 1)}
+                                className="px-3 py-1.5 border rounded text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Próximo →
+                            </button>
+                        </div>
                     </div>
                 </div>
             ) : null)}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Landmark, Plus, Edit2, Trash2, Power, AlertCircle, Loader2,
     CheckCircle, X, Save, Tag, ChevronRight, Link as LinkIcon,
-    ArrowUp, ArrowDown, Users, Search
+    ArrowUp, ArrowDown, Users, Search, Mail, MessageCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -180,6 +180,24 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
         }
     };
 
+    const handleToggleNotify = async (vinculoId, field, currentValue) => {
+        const vinculo = vinculos.find(v => v.vinculo_id === vinculoId);
+        if (!vinculo) return;
+        
+        const payload = {
+            envia_email: vinculo.envia_email,
+            envia_whatsapp: vinculo.envia_whatsapp
+        };
+        payload[field] = !currentValue;
+
+        try {
+            await api.patch(`/pcp-setores/responsaveis/${vinculoId}/notify`, payload);
+            loadData(); // reload locally
+        } catch (err) {
+            toast.error('Erro ao atualizar configurações de notificação.');
+        }
+    };
+
     const vinculosIds = vinculos.map(v => v.usuario_id);
     const availableUsers = usuarios.filter(u => !vinculosIds.includes(u.idUsuario) && u.NomeCompleto.toLowerCase().includes(busca.toLowerCase()));
 
@@ -214,14 +232,32 @@ function ResponsaveisModal({ setor, onClose, onUpdate }) {
                         ) : (
                             <div className="space-y-2">
                                 {vinculos.map(v => (
-                                    <div key={v.vinculo_id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
-                                        <div>
-                                            <p className="text-sm font-bold text-slate-800">{v.NomeCompleto}</p>
-                                            <p className="text-xs text-slate-500">{v.email || 'Sem e-mail'} • {v.telefone || 'Sem telefone'}</p>
+                                    <div key={v.vinculo_id} className="flex flex-col p-3 bg-white border border-slate-200 rounded-xl space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-800">{v.NomeCompleto}</p>
+                                                <p className="text-xs text-slate-500">{v.email || 'Sem e-mail'} • {v.telefone || 'Sem telefone'}</p>
+                                            </div>
+                                            <button onClick={() => handleRemove(v.vinculo_id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0" title="Remover responsável">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
-                                        <button onClick={() => handleRemove(v.vinculo_id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remover responsável">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                                            <button 
+                                                onClick={() => handleToggleNotify(v.vinculo_id, 'envia_email', v.envia_email)}
+                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-colors ${v.envia_email ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                                title="Receber atualizações por E-mail"
+                                            >
+                                                <Mail className="w-3 h-3" /> E-mail {v.envia_email ? 'ON' : 'OFF'}
+                                            </button>
+                                            <button 
+                                                onClick={() => handleToggleNotify(v.vinculo_id, 'envia_whatsapp', v.envia_whatsapp)}
+                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-colors ${v.envia_whatsapp ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                                title="Receber atualizações por WhatsApp"
+                                            >
+                                                <MessageCircle className="w-3 h-3" /> Whats {v.envia_whatsapp ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

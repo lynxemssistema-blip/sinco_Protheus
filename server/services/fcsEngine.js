@@ -9,7 +9,7 @@ const db = require('../db');
  * @param {string} params.usuario - Username trigger the planning
  * @returns {Promise<Object>} Execution summary
  */
-async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inteligente' }) {
+async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inteligente', include_saturday = false }) {
     let pgClient;
     try {
         if (!ops || !ops.length || !data_inicio) {
@@ -22,7 +22,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
         pgClient = await db.connect();
         const agent_logs = [];
-        agent_logs.push(`Iniciando FCS: ${ops.length} OPs selecionadas | Data base: ${data_inicio} | Data efetiva: ${dataBaseEfetiva}`);
+        agent_logs.push(`Iniciando FCS: ${ops.length} OPs selecionadas | Data base: ${data_inicio} | Data efetiva: ${dataBaseEfetiva} | Sábado: ${include_saturday ? 'SIM' : 'NÃO'}`);
         
         // Obter capacidades diárias do MySQL
         agent_logs.push('Obtendo matriz de capacidades diárias por recurso...');
@@ -63,7 +63,6 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         agent_logs.push(`------`);
 
         // Buscar detalhes das OPs selecionadas no Protheus
-        const placeholders = ops.map((_, i) => `$${i+1}`).join(',');
         const pgOpsQuery = `
             SELECT 
                 TRIM(c2.c2_num) AS op_num,
@@ -76,63 +75,19 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 c2.c2_quje AS qtde_feita
             FROM public.sc2010 c2
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-              AND TRIM(c2.c2_num) IN (${placeholders})
+              AND TRIM(c2.c2_num) = ANY($1::text[])
             ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
         `;
-        const opsResult = await pgClient.query(pgOpsQuery, ops);
+        const opsResult = await pgClient.query(pgOpsQuery, [ops]);
         const opsEncontradas = opsResult.rows;
 
-        // ── ETAPA 1.5: VARREDURA DE PLANEJAMENTOS ORFAOS (passado nao executado) ────────────
-        // Busca em app_production_planning: ops com data_planejada_inicio < data_inicio
-        // que nao foram concluidas no Protheus (c2_quje < c2_quant)
-        agent_logs.push(`Varrendo planejamentos nao executados anteriores a ${data_inicio}...`);
+        // ── ETAPA 1.5: VARREDURA DE PLANEJAMENTOS ÓRFÃOS (passado não executado) ─────────────
+        // DESABILITADO: A varredura automática estava puxando milhares de OPs antigas (fantasmas)
+        // do Protheus que nunca foram encerradas, consumindo toda a capacidade produtiva e
+        // jogando os novos planejamentos para 1 ano no futuro.
+        // O planejamento agora foca apenas nas OPs explicitamente selecionadas pelo usuário.
         let opsOrfasCount = 0;
-        try {
-            const opsJaSelecionadas = new Set(ops.map(o => String(o).trim()));
-            const [orphanRows] = await mysqlPool.query(
-                `SELECT DISTINCT op_numero FROM app_production_planning WHERE data_planejada_inicio < ?`,
-                [data_inicio]
-            );
-            const candidatos = orphanRows
-                .map(r => String(r.op_numero).trim())
-                .filter(op => !opsJaSelecionadas.has(op));
-
-            if (candidatos.length > 0) {
-                const opNumsVistos = new Set(opsEncontradas.map(o => o.op_num));
-                const orphanPh = candidatos.map((_, i) => `$${i + 1}`).join(',');
-                const orphanRes = await pgClient.query(`
-                    SELECT
-                        TRIM(c2.c2_num)    AS op_num,
-                        TRIM(c2.c2_item)   AS item_op,
-                        TRIM(c2.c2_sequen) AS sequen,
-                        TRIM(c2.c2_produto) AS produto,
-                        TRIM(c2.c2_pedido)  AS pedido,
-                        TRIM(c2.c2_itempv)  AS itempv,
-                        c2.c2_quant AS qtde,
-                        c2.c2_quje  AS qtde_feita
-                    FROM public.sc2010 c2
-                    WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-                      AND TRIM(c2.c2_num) IN (${orphanPh})
-                      AND (c2.c2_quje IS NULL OR c2.c2_quje < c2.c2_quant)
-                    ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
-                `, candidatos);
-
-                for (const orfa of orphanRes.rows) {
-                    if (!opNumsVistos.has(orfa.op_num)) {
-                        opsEncontradas.push(orfa);
-                        opNumsVistos.add(orfa.op_num);
-                        opsOrfasCount++;
-                    }
-                }
-                agent_logs.push(`${opsOrfasCount} OPs orfas encontradas (planejadas no passado, nao concluidas). Incluidas na fila.`);
-            } else {
-                agent_logs.push(`Nenhum planejamento orfao encontrado antes de ${data_inicio}.`);
-            }
-        } catch (e) {
-            agent_logs.push(`Aviso: varredura de orfaos falhou (${e.message}). Continuando apenas com OPs selecionadas.`);
-        }
-
-        agent_logs.push(`Total na fila: ${opsEncontradas.length} OPs (${ops.length} selecionadas + ${opsOrfasCount} orfas).`);
+        agent_logs.push(`Total na fila: ${opsEncontradas.length} OPs (${ops.length} selecionadas).`);
 
         // Buscar apontamentos específicos por operação no MySQL
         const opNumbers = opsEncontradas.map(op => op.op_num);
@@ -248,13 +203,15 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         const isBusinessDay = (dateStr) => {
             const d = new Date(dateStr + 'T12:00:00');
             const dow = d.getDay();
-            return dow !== 0 && dow !== 6;
+            if (dow === 0) return false; // domingo sempre bloqueado
+            if (dow === 6 && !include_saturday) return false; // sábado bloqueado se não configurado
+            return true;
         };
 
         const addDays = (dateStr, days) => {
             const date = new Date(dateStr + 'T12:00:00');
             date.setDate(date.getDate() + days);
-            while (date.getDay() === 0 || date.getDay() === 6) {
+            while (!isBusinessDay(date.toISOString().split('T')[0])) {
                 date.setDate(date.getDate() + 1);
             }
             return date.toISOString().split('T')[0];
@@ -262,7 +219,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
         const toBusinessDay = (dateStr) => {
             const date = new Date(dateStr + 'T12:00:00');
-            while (date.getDay() === 0 || date.getDay() === 6) {
+            while (!isBusinessDay(date.toISOString().split('T')[0])) {
                 date.setDate(date.getDate() + 1);
             }
             return date.toISOString().split('T')[0];
@@ -411,16 +368,22 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 if (i < roteiros.length - 1) {
                     const proxRecurso = roteiros[i + 1].recurso;
                     if (proxRecurso === rot.recurso) {
+                        // Mesmo recurso: avança sempre para não empilhar na mesma data
                         currentDate = addDays(lastAllocatedDate, 1);
                         agent_logs.push(`    → Mesmo recurso (${rot.recurso}): próxima operação forçada para ${currentDate}.`);
                     } else {
+                        // Recurso diferente: tenta aproveitar o dia corrente primeiro
                         currentDate = lastAllocatedDate;
                         const capProx = getCapacity(currentDate, proxRecurso);
                         if (capProx <= 0) {
-                            currentDate = addDays(lastAllocatedDate, 1);
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}) sem capacidade em ${lastAllocatedDate}. Avançando para ${currentDate}.`);
+                            // Bug fix: avança até encontrar dia com capacidade real
+                            let maxTries = 30;
+                            while (maxTries-- > 0 && getCapacity(currentDate, proxRecurso) <= 0) {
+                                currentDate = addDays(currentDate, 1);
+                            }
+                            agent_logs.push(`    → Recurso diferente (${proxRecurso}) sem capacidade no dia anterior. Avançando para ${currentDate}.`);
                         } else {
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}): ${capProx} min disponíveis in ${currentDate}. Mantendo dia.`);
+                            agent_logs.push(`    → Recurso diferente (${proxRecurso}): ${capProx} min disponíveis em ${currentDate}. Mantendo dia.`);
                         }
                     }
                 }
@@ -430,7 +393,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 forecastUpdates.push({
                     pedido: op.pedido,
                     item: op.itempv,
-                    data_entrega_pcp: lastAllocatedDate,
+                    data_entrega_pcp: op._entrega_pcp || lastAllocatedDate, // Initialize with forecast if NULL
                     data_prevista_faturamento: lastAllocatedDate,
                     quantidade_pcp: finalQtdeRestante,
                     op_protheus: op.op_num
@@ -441,6 +404,22 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         // 3. SALVAR NO MYSQL
         if (newPlans.length > 0) {
             agent_logs.push(`Salvando planejamento consolidado no banco de dados (${newPlans.length} operações).`);
+
+            // Bug fix crítico: APAGAR registros com datas passadas de TODAS as OPs processadas
+            // antes de inserir os novos. Isso elimina a carga histórica da dashboard de carga diária.
+            const opsProcessadasNums = [...new Set(newPlans.map(p => p.op_numero))];
+            agent_logs.push(`  Limpando registros anteriores a hoje (${todayStr}) para ${opsProcessadasNums.length} OP(s) replanejadas...`);
+            const deletePlaceholders = opsProcessadasNums.map(() => '?').join(',');
+            const [deleteResult] = await mysqlPool.query(
+                `DELETE FROM app_production_planning 
+                 WHERE op_numero IN (${deletePlaceholders})
+                   AND data_planejada_inicio < ?`,
+                [...opsProcessadasNums, todayStr]
+            );
+            if (deleteResult.affectedRows > 0) {
+                agent_logs.push(`  ✅ ${deleteResult.affectedRows} registro(s) com datas passadas removidos do banco.`);
+            }
+
             const mysqlValues = newPlans.map(p => [
                 p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo, p.recurso_codigo, p.produto_codigo,
                 p.data_planejada_inicio, p.data_planejada_fim, p.usuario_planejador, p.observacao_lote
@@ -465,10 +444,16 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 const forecastValues = forecastUpdates.map(f => [
                     f.pedido, f.item, f.data_entrega_pcp, f.quantidade_pcp, usuario, 'Automático - Agente FCS', f.op_protheus, f.data_prevista_faturamento
                 ]);
+                // Bug fix: UPSERT para não duplicar forecasts
                 await mysqlPool.query(`
                     INSERT INTO app_pcp_delivery_forecasts 
                         (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, op_protheus, data_prevista_faturamento)
                     VALUES ?
+                    ON DUPLICATE KEY UPDATE
+                        data_prevista_faturamento = VALUES(data_prevista_faturamento),
+                        quantidade_pcp            = VALUES(quantidade_pcp),
+                        usuario                   = VALUES(usuario),
+                        observacao                = VALUES(observacao)
                 `, [forecastValues]);
             }
             
@@ -538,12 +523,27 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             });
         }
 
+        // Deriva carga_diaria a partir do resource_buckets
+        // resource_buckets[date][recurso] = minutos RESTANTES (disponibilidade residual)
+        // Consumido = capDia - restante
+        const carga_diaria = {};
+        for (const [date, recursos] of Object.entries(resource_buckets)) {
+            for (const [recurso, restante] of Object.entries(recursos)) {
+                const capDia = capacidades[recurso] || 480;
+                const consumido = capDia - restante;
+                if (consumido > 0) {
+                    if (!carga_diaria[recurso]) carga_diaria[recurso] = { capDia, dates: {} };
+                    carga_diaria[recurso].dates[date] = consumido;
+                }
+            }
+        }
+
         agent_logs.push(`Fim do processamento.`);
         return {
             success: true,
             plans: newPlans.length,
             agent_logs,
-            report
+            report: { ...report, carga_diaria }
         };
     } catch (error) {
         console.error('❌ Erro no FCS Engine:', error);

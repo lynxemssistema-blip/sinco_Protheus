@@ -7,7 +7,7 @@ const mysql = require('mysql2/promise');
             password: 'jHAzhFG848@yN@U',
             database: 'metalfisa'
         });
-        const [rows] = await pool.query("SHOW CREATE TABLE app_audit_logs");
+        const [rows] = await pool.query("SHOW CREATE TABLE app_recursos_ocupacao_diaria");
         console.log(rows[0]['Create Table']);
         pool.end();
     } catch(e) { console.error(e); }

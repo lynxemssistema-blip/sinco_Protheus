@@ -79,22 +79,16 @@ export default function ProductionControl() {
         setShowSmartPlanMenu(false);
         setLoadingAllOps(true);
         try {
-            // Busca todas as OPs ativas do banco (pending_delivery = com saldo pendente)
-            const res = await getProductionDashboard({ pending_delivery: true, limit: 5000 });
-            const allOps = res.data || [];
+            // Endpoint dedicado: sem LIMIT, sem filtros de tela.
+            // Garante que todas as OPs com saldo a faturar sejam processadas.
+            const res = await api.get('/production/fcs-ops');
+            const allOps = res.data?.data || [];
             if (allOps.length === 0) {
                 toast.info('Nenhuma OP ativa com saldo pendente encontrada no banco.');
                 return;
             }
-            // Deduplica por OP número (o FCS trabalha por OP, não por linha de roteiro)
-            const uniqueOps = Object.values(
-                allOps.reduce((acc, op) => {
-                    if (!acc[op.op]) acc[op.op] = op;
-                    return acc;
-                }, {})
-            );
-            toast.info(`${uniqueOps.length} OPs ativas carregadas do banco.`);
-            setSmartPlannerOps(uniqueOps);
+            toast.info(`${allOps.length} OPs com saldo pendente carregadas para o FCS.`);
+            setSmartPlannerOps(allOps);
             setSmartPlannerOpen(true);
         } catch (err) {
             console.error('Erro ao carregar todas as OPs:', err);
@@ -103,6 +97,7 @@ export default function ProductionControl() {
             setLoadingAllOps(false);
         }
     };
+
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -1089,12 +1084,10 @@ export default function ProductionControl() {
 
             <PlanejamentoInteligenteModal 
                 isOpen={smartPlannerOpen}
-                onClose={() => { setSmartPlannerOpen(false); setSmartPlannerOps([]); }}
+                onClose={() => { setSmartPlannerOpen(false); setSmartPlannerOps([]); setSelectedOps([]); }}
                 selectedOps={smartPlannerOps.length > 0 ? smartPlannerOps : selectedOps}
                 onPlanSuccess={() => {
-                    setSmartPlannerOpen(false);
-                    setSmartPlannerOps([]);
-                    setSelectedOps([]);
+                    // NÃO fecha o modal aqui — usuário deve fechar manualmente via botão
                     loadData();
                 }}
             />

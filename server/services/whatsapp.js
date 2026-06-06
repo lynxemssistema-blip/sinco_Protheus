@@ -11,8 +11,7 @@ try { mysqlPool = require('./mysqlService'); } catch (e) { /* sem db, logs ignor
 (async () => {
     if (!mysqlPool) return;
     try {
-        const conn = await mysqlPool.getConnection();
-        await conn.execute(`
+        await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_whatsapp_logs (
                 id          INT AUTO_INCREMENT PRIMARY KEY,
                 recipient   VARCHAR(30) NOT NULL,
@@ -23,7 +22,6 @@ try { mysqlPool = require('./mysqlService'); } catch (e) { /* sem db, logs ignor
                 sent_at     DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        conn.release();
     } catch (e) { console.warn('[WhatsApp] Tabela de log não criada:', e.message); }
 })();
 

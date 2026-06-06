@@ -5,13 +5,10 @@ const pool = require('../services/mysqlService');
 // Get Company Settings
 router.get('/', async (req, res) => {
     try {
-        console.log('📊 [COMPANY] GET request received');
         const [rows] = await pool.query('SELECT id, cnpj, razao_social, endereco, bairro, cidade, uf, cep, telefone, menu_config, general_config FROM app_company_settings WHERE id = 1');
-        console.log('✅ [COMPANY] Query successful, rows:', rows.length);
         res.json(rows[0] || {});
     } catch (err) {
         console.error('❌ [COMPANY ERROR]', err.message);
-        console.error('[COMPANY ERROR STACK]', err.stack);
         res.status(500).json({ error: err.message });
     }
 });

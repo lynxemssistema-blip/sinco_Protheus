@@ -259,6 +259,9 @@ app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
 // WabTec — Escopos e Engenharia
 app.use('/api/wabtec', require('./routes/wabtec'));
 
+// WabTec — Estrutura de Datas (Solicitações / Forecast)
+app.use('/api/wabtec-datas', require('./routes/wabtec_datas'));
+
 // Expedição e Faturamento
 app.use('/api/faturamento', require('./routes/faturamento'));
 
@@ -503,3 +506,7 @@ function printRoutes(app) {
         console.log('✅ Server routes loaded successfully');
     }
 }
+
+// Trigger nodemon restart
+
+// Trigger nodemon restart 2

@@ -20,6 +20,55 @@ async function executeTask(task) {
         console.error('[HermesScheduler] Erro ao marcar status de início da tarefa:', err.message);
     }
 
+    // Send "Início" Email if configured
+    if (task.alerta_email && task.alerta_email.trim()) {
+        try {
+            const transporter = nodemailer.createTransport({
+                host: 'smtp.task.com.br',
+                port: 587,
+                secure: false,
+                auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+                tls: { rejectUnauthorized: false }
+            });
+
+            const subject = `🚀 [Início] Hermes Agent Task: ${task.nome}`;
+            const body = `
+                <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                    <div style="background-color: #4f46e5; color: white; padding: 24px; text-align: center;">
+                        <h2 style="margin: 0; font-size: 20px; font-weight: bold;">Hermes AI Agent</h2>
+                        <p style="margin: 6px 0 0 0; opacity: 0.85; font-size: 13px;">Início de Execução de Tarefa</p>
+                    </div>
+                    <div style="padding: 24px; color: #334155; line-height: 1.6;">
+                        <h3 style="margin-top: 0; color: #1e1b4b; font-size: 16px;">Tarefa Iniciada: ${task.nome}</h3>
+                        <p style="font-size: 13px; color: #64748b; margin-top: -8px;">${task.descricao || 'Sem descrição'}</p>
+                        
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                        
+                        <p style="font-size: 14px; color: #1e293b;">
+                            O motor de sequenciamento e inteligência artificial do Hermes começou a processar esta tarefa agora.
+                        </p>
+                        <p style="font-size: 13px; color: #4f46e5; font-weight: bold;">
+                            O e-mail com o relatório de análise final será enviado assim que a execução for concluída.
+                        </p>
+                    </div>
+                    <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
+                        Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
+                    </div>
+                </div>
+            `;
+
+            await transporter.sendMail({
+                from: '"MetalFisa Hermes" <sincometal@metalfisa.com.br>',
+                to: task.alerta_email,
+                subject,
+                html: body
+            });
+            console.log(`[HermesScheduler] E-mail de início enviado para: ${task.alerta_email}`);
+        } catch (mailErr) {
+            console.error('[HermesScheduler] Erro ao enviar e-mail de início:', mailErr.message);
+        }
+    }
+
     const steps = [];
     const localEmit = (event) => {
         if (event.type === 'step' || event.type === 'sql') {
@@ -59,10 +108,7 @@ async function executeTask(task) {
                     tls: { rejectUnauthorized: false }
                 });
 
-                const subject = `🤖 Hermes Agent Task: ${task.nome}`;
-                
-                // Formata os logs em lista limpa
-                const stepsList = steps.map(s => `<div style="padding:4px 0; border-bottom:1px solid #312e81; color:#c7d2fe;">${s}</div>`).join('');
+                const subject = `✅ [Concluído] Hermes Agent Task: ${task.nome}`;
                 
                 const body = `
                     <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -76,13 +122,8 @@ async function executeTask(task) {
                             
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
                             
-                            <h4 style="color: #4f46e5; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Resumo das Ações / Conclusão:</h4>
+                            <h4 style="color: #4f46e5; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Resumo das Ações / Análise da IA:</h4>
                             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-size: 13px; color: #1e293b; white-space: pre-wrap; font-family: sans-serif;">${result.answer}</div>
-                            
-                            <h4 style="color: #4f46e5; margin-top: 24px; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Logs de Raciocínio:</h4>
-                            <div style="background-color: #1e1b4b; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; max-height: 250px; overflow-y: auto;">
-                                ${stepsList}
-                            </div>
                         </div>
                         <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
                             Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
@@ -123,6 +164,51 @@ async function executeTask(task) {
         } catch (dbErr) {
             console.error('[HermesScheduler] Erro ao atualizar status de falha no banco:', dbErr.message);
         }
+
+        // Send Failure Email if configured
+        if (task.alerta_email && task.alerta_email.trim()) {
+            try {
+                const transporter = nodemailer.createTransport({
+                    host: 'smtp.task.com.br',
+                    port: 587,
+                    secure: false,
+                    auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
+                    tls: { rejectUnauthorized: false }
+                });
+
+                const subject = `❌ [Falha] Hermes Agent Task: ${task.nome}`;
+                const body = `
+                    <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                        <div style="background-color: #ef4444; color: white; padding: 24px; text-align: center;">
+                            <h2 style="margin: 0; font-size: 20px; font-weight: bold;">Hermes AI Agent</h2>
+                            <p style="margin: 6px 0 0 0; opacity: 0.85; font-size: 13px;">Falha na Execução da Tarefa</p>
+                        </div>
+                        <div style="padding: 24px; color: #334155; line-height: 1.6;">
+                            <h3 style="margin-top: 0; color: #7f1d1d; font-size: 16px;">Tarefa Falhou: ${task.nome}</h3>
+                            <p style="font-size: 13px; color: #64748b; margin-top: -8px;">${task.descricao || 'Sem descrição'}</p>
+                            
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                            
+                            <h4 style="color: #ef4444; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Mensagem de Erro:</h4>
+                            <div style="background-color: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; font-size: 13px; color: #991b1b; font-family: monospace;">${err.message}</div>
+                        </div>
+                        <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
+                            Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
+                        </div>
+                    </div>
+                `;
+
+                await transporter.sendMail({
+                    from: '"MetalFisa Hermes" <sincometal@metalfisa.com.br>',
+                    to: task.alerta_email,
+                    subject,
+                    html: body
+                });
+                console.log(`[HermesScheduler] E-mail de falha enviado para: ${task.alerta_email}`);
+            } catch (mailErr) {
+                console.error('[HermesScheduler] Erro ao enviar e-mail de falha:', mailErr.message);
+            }
+        }
     }
 }
 
@@ -134,6 +220,23 @@ async function startHermesScheduler() {
             scheduleTaskInstance(task);
         }
         console.log(`[HermesScheduler] ${tasks.length} tarefa(s) agendada(s) com sucesso.`);
+
+        // System Task: Rebuild Daily Occupancy Cache every 30 minutes
+        cron.schedule('*/30 * * * *', async () => {
+            console.log('[Scheduler] Executando reconstrução periódica do cache de ocupação diária...');
+            try {
+                const { rebuildDailyOccupancyCache } = require('../occupancyCacheService');
+                await rebuildDailyOccupancyCache();
+            } catch (err) {
+                console.error('[Scheduler] Falha na reconstrução automática do cache:', err.message);
+            }
+        });
+
+        // Run once on startup in background
+        const { rebuildDailyOccupancyCache } = require('../occupancyCacheService');
+        rebuildDailyOccupancyCache().catch(err => {
+            console.error('[Scheduler] Falha no rebuild inicial do cache:', err.message);
+        });
     } catch (err) {
         console.error('[HermesScheduler] Falha ao iniciar agendador:', err.message);
     }

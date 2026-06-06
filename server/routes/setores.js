@@ -37,17 +37,23 @@ async function ensureTables() {
             FOREIGN KEY (setor_id) REFERENCES pcp_setores(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
-
     await mysql.query(`
         CREATE TABLE IF NOT EXISTS pcp_setor_responsaveis (
             id INT AUTO_INCREMENT PRIMARY KEY,
             setor_id INT NOT NULL,
             usuario_id INT NOT NULL,
+            envia_email TINYINT(1) DEFAULT 1,
+            envia_whatsapp TINYINT(1) DEFAULT 0,
             criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_setor_usuario (setor_id, usuario_id),
             FOREIGN KEY (setor_id) REFERENCES pcp_setores(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+
+    try {
+        await mysql.query('ALTER TABLE pcp_setor_responsaveis ADD COLUMN envia_email TINYINT(1) DEFAULT 1');
+        await mysql.query('ALTER TABLE pcp_setor_responsaveis ADD COLUMN envia_whatsapp TINYINT(1) DEFAULT 0');
+    } catch (e) {}
 }
 
 ensureTables().catch(err => console.error('[setores] Erro ao criar tabelas:', err.message));
@@ -284,7 +290,7 @@ router.delete('/recursos/:recursoId', async (req, res) => {
 router.get('/:setorId/responsaveis', async (req, res) => {
     try {
         const [rows] = await mysql.query(`
-            SELECT r.id as vinculo_id, r.setor_id, r.usuario_id, u.NomeCompleto, u.email, u.telefone
+            SELECT r.id as vinculo_id, r.setor_id, r.usuario_id, r.envia_email, r.envia_whatsapp, u.NomeCompleto, u.email, u.telefone
             FROM pcp_setor_responsaveis r
             JOIN usuario u ON u.idUsuario = r.usuario_id
             WHERE r.setor_id = ?
@@ -343,6 +349,20 @@ router.delete('/responsaveis/:vinculoId', async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         console.error('[setores] DELETE /responsaveis/:vinculoId:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/responsaveis/:vinculoId/notify', async (req, res) => {
+    const { envia_email, envia_whatsapp } = req.body;
+    try {
+        await mysql.query(
+            `UPDATE pcp_setor_responsaveis SET envia_email=?, envia_whatsapp=? WHERE id=?`,
+            [envia_email ? 1 : 0, envia_whatsapp ? 1 : 0, req.params.vinculoId]
+        );
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[setores] PATCH /responsaveis/:vinculoId/notify:', err.message);
         res.status(500).json({ error: err.message });
     }
 });

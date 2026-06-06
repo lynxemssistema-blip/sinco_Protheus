@@ -17,15 +17,7 @@ const SMTP_CONFIG = {
     tls: { rejectUnauthorized: false }
 };
 
-(async () => {
-    try {
-        const conn = await mysqlPool.getConnection();
-        // MySQL 5.6 does not support IF NOT EXISTS on ADD COLUMN.
-        // The columns have been added manually.
-        console.log('✅ [Users Service] Migration check skipped (MySQL 5.6 compatibility).');
-        conn.release();
-    } catch (err) { }
-})();
+// Migration check skipped (MySQL 5.6 compatibility).
 
 // LIST USERS (GET /)
 router.get('/', async (req, res) => {

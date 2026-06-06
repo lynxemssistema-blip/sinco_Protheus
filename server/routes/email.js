@@ -41,8 +41,7 @@ const SMTP_CONFIG = {
 // --- MIGRATION (Auto-run) ---
 (async () => {
     try {
-        const conn = await mysqlPool.getConnection();
-        await conn.execute(`
+        await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_emails (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 uid INT NULL,
@@ -64,7 +63,6 @@ const SMTP_CONFIG = {
             )
         `);
         console.log('✅ [Email Service] Tabela de Auditoria app_emails verificada/criada.');
-        conn.release();
     } catch (err) {
         console.error('⚠️ [Email Service] Erro ao criar tabela app_emails:', err.message);
     }

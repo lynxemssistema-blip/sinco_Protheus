@@ -1,7 +1,20 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import api from '../services/api';
 
-const AuthContext = createContext();
+const defaultAuthContext = {
+    signed: false,
+    user: null,
+    login: async () => ({ success: false, message: 'AuthProvider not mounted' }),
+    logout: () => {},
+    loading: true,
+    permissions: {},
+    hasPermission: () => false,
+    reloadPermissions: async () => {},
+    isAdmin: false,
+    customProfiles: [],
+};
+
+const AuthContext = createContext(defaultAuthContext);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -122,8 +135,9 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuth must be used within an AuthProvider');
+    // Durante HMR/reloads, context pode ser o default — sem throw para não crashar
+    if (import.meta.env.DEV && context === defaultAuthContext) {
+        console.warn('[useAuth] Running outside AuthProvider — using safe default context. This is expected during HMR reloads.');
     }
     return context;
 };

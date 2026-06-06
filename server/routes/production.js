@@ -7,16 +7,6 @@ const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
 // GET /api/production/analytics-dashboard - Production Analytics Dashboard
-// DEBUG MIDDLEWARE
-router.use((req, res, next) => {
-    console.log('🎯 [PRODUCTION ROUTER] Hit:', req.method, req.url);
-    next();
-});
-
-// TEST ROUTE
-router.get('/test-route', (req, res) => {
-    res.json({ message: 'Test route working!', timestamp: new Date() });
-});
 
 
 // GET /api/production/analytics/evolution - Daily Production Evolution
@@ -789,6 +779,113 @@ router.get('/debug-doc/:code', async (req, res) => {
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/production/fcs-ops
+// Retorna TODAS as OPs com saldo pendente (c2_quje < c2_quant) vinculadas a
+// pedidos com saldo a faturar (c6_qtdven > c6_qtdent). Usado exclusivamente
+// pelo motor FCS (Planejamento Inteligente) — SEM LIMIT, sem filtros de tela.
+router.get('/fcs-ops', async (req, res) => {
+    let pgClient;
+    try {
+        pgClient = await db.connect();
+        await pgClient.query("SET statement_timeout = '90000'");
+
+        // Pre-fetch inactive pedidos from MySQL to exclude them
+        let inactivePedidosSet = new Set();
+        try {
+            const [settings] = await mysqlPool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'hide_inactive_orders'");
+            const hideInactive = !settings.length || settings[0].setting_value === 'true';
+            if (hideInactive) {
+                const [rows] = await mysqlPool.query("SELECT pedido_numero FROM app_pedidos_inativos");
+                inactivePedidosSet = new Set(rows.map(r => r.pedido_numero.trim()));
+            }
+        } catch (_) {}
+
+        // Query direta no Protheus — sem LIMIT, sem truncamento
+        // Joins SC6 para garantir que só OPs com saldo a faturar entram
+        const result = await pgClient.query(`
+            SELECT DISTINCT
+                TRIM(c2.c2_num)       AS op,
+                TRIM(c2.c2_item)      AS item_op,
+                TRIM(c2.c2_sequen)    AS sequen,
+                TRIM(c2.c2_produto)   AS cod_produto_op,
+                TRIM(COALESCE(sb1.b1_desc, ''))  AS desc_produto,
+                TRIM(COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''), '')) AS pedido_venda,
+                TRIM(COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),''), '')) AS item_pedido,
+                TRIM(COALESCE(a1.a1_nome, ''))   AS nome_cliente,
+                COALESCE(c2.c2_quant, 0)         AS qtd_planejada_op,
+                COALESCE(c2.c2_quje, 0)          AS qtd_apontada_erp
+            FROM public.sc2010 c2
+            LEFT JOIN public.sc2010 root_op
+                ON  root_op.c2_filial  = c2.c2_filial
+                AND root_op.c2_num     = c2.c2_num
+                AND root_op.c2_item    = c2.c2_item
+                AND root_op.c2_sequen  = '001'
+                AND COALESCE(root_op.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sb1010 sb1
+                ON  sb1.b1_cod = c2.c2_produto
+                AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sc6010 c6
+                ON  c6.c6_filial = c2.c2_filial
+                AND c6.c6_num    = COALESCE(NULLIF(c2.c2_pedido,''), root_op.c2_pedido)
+                AND c6.c6_item   = COALESCE(NULLIF(c2.c2_itempv,''), root_op.c2_itempv)
+                AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sc5010 c5
+                ON  c5.c5_num    = COALESCE(NULLIF(c2.c2_pedido,''), root_op.c2_pedido)
+                AND c5.c5_filial = c2.c2_filial
+                AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sa1010 a1
+                ON  a1.a1_cod  = c5.c5_cliente
+                AND a1.a1_loja = c5.c5_lojacli
+                AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+              AND TRIM(c2.c2_num) <> ''
+              AND COALESCE(c2.c2_quant, 0) > 0
+              AND COALESCE(c2.c2_quje, 0) < COALESCE(c2.c2_quant, 0)
+              AND (
+                  -- OPs sem pedido: produção para estoque, sempre incluir
+                  TRIM(COALESCE(c2.c2_pedido, '')) = ''
+                  -- OPs de pedido: apenas se ainda tem saldo a faturar
+                  -- NULLIF+TRIM previne erro de cast em campos Protheus com string vazia
+                  OR COALESCE(NULLIF(TRIM(c6.c6_qtdven::text), '')::numeric, 0)
+                     - COALESCE(NULLIF(TRIM(c6.c6_qtdent::text), '')::numeric, 0) > 0
+              )
+            ORDER BY op DESC, item_op, sequen
+        `);
+
+        // Filtrar pedidos inativos (JS-side para consistência com o dashboard)
+        let rows = result.rows;
+        if (inactivePedidosSet.size > 0) {
+            rows = rows.filter(r => {
+                const pv = (r.pedido_venda || '').trim();
+                return !pv || !inactivePedidosSet.has(pv);
+            });
+        }
+
+        // Deduplicar por OP número (FCS trabalha por OP, não por linha de roteiro)
+        const uniqueOpsMap = {};
+        rows.forEach(r => {
+            if (!uniqueOpsMap[r.op]) uniqueOpsMap[r.op] = r;
+        });
+        const uniqueOps = Object.values(uniqueOpsMap);
+
+        console.log(`✅ [FCS-OPS] ${rows.length} linhas → ${uniqueOps.length} OPs únicas com saldo pendente.`);
+
+        res.json({
+            data: uniqueOps,
+            total: uniqueOps.length,
+            raw_rows: rows.length
+        });
+    } catch (err) {
+        console.error('❌ [FCS-OPS] Erro:', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (pgClient) {
+            pgClient.query('SET statement_timeout = 45000').catch(() => {});
+            pgClient.release();
+        }
     }
 });
 

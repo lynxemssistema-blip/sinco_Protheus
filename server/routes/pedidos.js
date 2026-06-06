@@ -313,10 +313,13 @@ router.get('/flat', async (req, res) => {
         let forecastJson = '[]';
         try {
             const [forecastRows] = await mysqlPool.query(`
-                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, 
+                       MAX(data_entrega_pcp) as data_entrega_pcp, 
+                       MAX(data_prevista_faturamento) as data_prevista_faturamento 
                 FROM app_pcp_delivery_forecasts
                 WHERE pedido IS NOT NULL AND item IS NOT NULL
                   AND (updated_at >= DATE_SUB(NOW(), INTERVAL 180 DAY) OR created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY))
+                GROUP BY TRIM(pedido), TRIM(item)
             `);
             if (forecastRows.length > 0) {
                 forecastJson = JSON.stringify(forecastRows.map(row => ({
@@ -330,9 +333,12 @@ router.get('/flat', async (req, res) => {
             // If date filtering fails (no updated_at column), fall back to unfiltered
             try {
                 const [forecastRows] = await mysqlPool.query(`
-                    SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                    SELECT TRIM(pedido) as pedido, TRIM(item) as item, 
+                           MAX(data_entrega_pcp) as data_entrega_pcp, 
+                           MAX(data_prevista_faturamento) as data_prevista_faturamento 
                     FROM app_pcp_delivery_forecasts
                     WHERE pedido IS NOT NULL AND item IS NOT NULL
+                    GROUP BY TRIM(pedido), TRIM(item)
                     LIMIT 5000
                 `);
                 if (forecastRows.length > 0) {
@@ -635,6 +641,7 @@ router.get('/flat', async (req, res) => {
             LEFT JOIN public.sc2010 c2
                 ON TRIM(c2.c2_pedido) = pi.pedido
                 AND TRIM(c2.c2_itempv) = pi.item
+                AND c2.c2_sequen = '001'
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
             LEFT JOIN LATERAL (
                 SELECT 1 AS produto FROM public.sz0010
@@ -1003,6 +1010,11 @@ router.get('/flat', async (req, res) => {
                     });
                 });
             }
+        }
+
+        if (pedido && String(pedido).trim() === '004002') {
+            console.log('FLAT VIEW RETURNING:', result.rows.length, 'rows for 004002');
+            console.log('Item 01 count:', result.rows.filter(r => r.item === '01').length);
         }
 
         res.json({

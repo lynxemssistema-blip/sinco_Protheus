@@ -171,17 +171,24 @@ router.post('/', async (req, res) => {
     }
 });
 
+// Cache the schema check — run ONCE at startup, not on every request
+let _avisoSchemaHasIdGrupo = null;
+const getAvisoSchemaHasIdGrupo = async () => {
+    if (_avisoSchemaHasIdGrupo !== null) return _avisoSchemaHasIdGrupo;
+    try {
+        const [cols] = await mysqlPool.query("SHOW COLUMNS FROM sistema_avisos LIKE 'idGrupo'");
+        _avisoSchemaHasIdGrupo = cols.length > 0;
+    } catch (_) {
+        _avisoSchemaHasIdGrupo = false;
+    }
+    return _avisoSchemaHasIdGrupo;
+};
+
 // 2. Buscar avisos não concluídos (popups) - Apenas mensagens diretas
 router.get('/nao-concluidos/:idUsuario', async (req, res) => {
     try {
         const { idUsuario } = req.params;
-
-        let hasIdGrupo = false;
-        try {
-            const [cols] = await mysqlPool.query('SHOW COLUMNS FROM sistema_avisos LIKE \'idGrupo\'');
-            hasIdGrupo = cols.length > 0;
-        } catch (_) { }
-
+        const hasIdGrupo = await getAvisoSchemaHasIdGrupo();
         const grupoFilter = hasIdGrupo ? 'AND a.idGrupo IS NULL' : '';
 
         const query = `

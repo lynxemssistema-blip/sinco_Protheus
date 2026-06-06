@@ -7,15 +7,27 @@ const pool = mysql.createPool({
     password: process.env.MYSQL_PASS,
     database: process.env.MYSQL_DB,
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+    connectionLimit: 20,       // Maximum pool size — constrained to 20 per client instance
+    queueLimit: 200,           // Max queued requests before rejecting (prevents infinite hang)
     charset: 'utf8mb4',
     enableKeepAlive: true,
-    keepAliveInitialDelay: 30000,
-    connectTimeout: 10000,   // timeout de conexão por tentativa
-    acquireTimeout: 10000,   // timeout máximo para obter conexão do pool
-    idleTimeout: 60000,
+    keepAliveInitialDelay: 10000,
+    connectTimeout: 10000,
+    idleTimeout: 120000,
 });
+
+// DBA-tuned session variables set on connection initialization (avoids pool configuration warnings)
+pool.on('connection', (connection) => {
+    connection.query(
+        'SET SESSION tmp_table_size = 67108864, max_heap_table_size = 67108864, sort_buffer_size = 4194304, join_buffer_size = 2097152, read_rnd_buffer_size = 1048576',
+        (err) => {
+            if (err) {
+                console.warn('⚠️ Falha ao definir variáveis de sessão na nova conexão:', err.message);
+            }
+        }
+    );
+});
+
 
 // Testar conexão na inicialização
 pool.getConnection()
@@ -27,12 +39,23 @@ pool.getConnection()
         console.error('❌ Erro ao conectar no MySQL Remoto:', err.message);
     });
 
-// Evitar crash do servidor caso o MySQL derrube conexões idle
 pool.on('error', (err) => {
-    console.error('❌ Erro inesperado no MySQL Pool (ECONNRESET/etc):', err.message);
-    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-        console.error('A conexão com o banco de dados foi perdida.');
-    }
+    console.error('❌ Erro inesperado no MySQL Pool:', err.message);
 });
+
+// Wrapper com retry automático para ECONNRESET
+const RETRYABLE = new Set(['ECONNRESET', 'PROTOCOL_CONNECTION_LOST', 'ECONNREFUSED', 'ETIMEDOUT']);
+const originalQuery = pool.query.bind(pool);
+pool.query = async function queryWithRetry(sql, params) {
+    try {
+        return await originalQuery(sql, params);
+    } catch (err) {
+        if (RETRYABLE.has(err.code)) {
+            console.warn(`⚠️ MySQL retry após ${err.code}...`);
+            return await originalQuery(sql, params);
+        }
+        throw err;
+    }
+};
 
 module.exports = pool;

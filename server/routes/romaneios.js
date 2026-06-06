@@ -18,8 +18,9 @@ if (!fs.existsSync(uploadsDir)) {
 
 // --- Migrations: garantir estrutura do BD (MySQL 5.7+) ---
 (async () => {
+    let connection;
     try {
-        const connection = await mysqlPool.getConnection();
+        connection = await mysqlPool.getConnection();
 
         const addColIfMissing = async (table, col, type) => {
             const [rows] = await connection.query(
@@ -73,10 +74,11 @@ if (!fs.existsSync(uploadsDir)) {
         await addColIfMissing('app_romaneio_items', 'peso_unitario', 'DECIMAL(10,3) DEFAULT NULL');
         await addColIfMissing('app_romaneio_items', 'area_pintura_unitario', 'DECIMAL(10,4) DEFAULT NULL');
 
-        connection.release();
         console.log('[Romaneios] Estrutura do banco de dados verificada/atualizada.');
     } catch (e) {
         console.warn('[Romaneios] Erro na verificação da estrutura:', e.message);
+    } finally {
+        if (connection) connection.release();
     }
 })();
 
@@ -220,8 +222,9 @@ router.get('/types', async (req, res) => {
 
 // --- MIGRATION (Auto-run) ---
 (async () => {
+    let conn;
     try {
-        const conn = await mysqlPool.getConnection();
+        conn = await mysqlPool.getConnection();
 
         // Coluna data_liberacao
         try {
@@ -345,9 +348,10 @@ router.get('/types', async (req, res) => {
             console.error('⚠️ [Romaneios] Erro ao trim codigo_produto:', e.message);
         }
 
-        conn.release();
     } catch (err) {
         console.error('⚠️ [Romaneios] Falha geral na migração:', err.message);
+    } finally {
+        if (conn) conn.release();
     }
 })();
 
@@ -641,12 +645,12 @@ router.get('/check-op-item', requirePermission('romaneios', 'read'), async (req,
             SELECT 
                 r.id as romaneio_id, 
                 r.status, 
-                r.data_criacao, 
+                r.created_at as data_criacao, 
                 i.quantidade as qtd_enviada
             FROM app_romaneio_items i
             JOIN app_romaneios r ON i.romaneio_id = r.id
-            WHERE i.op = ? AND i.item_op = ? AND r.status != 'Cancelado'
-            ORDER BY r.data_criacao DESC
+            WHERE i.pedido = ? AND i.item_pedido = ? AND r.status != 'Cancelado'
+            ORDER BY r.created_at DESC
         `, [op, item]);
 
         res.json(rows);

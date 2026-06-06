@@ -452,7 +452,7 @@ export const getTrackingEvolution = (params) => api.get('/production/tracking-ev
 export const getTrackingHistory = (params) => api.get('/production/tracking-history', { params }).then(res => res.data);
 export const getTrackingComparison = (params) => api.get('/production/tracking-comparison', { params }).then(res => res.data);
 export const getProductionAnalyticsDashboard = (params) => api.get('/production/analytics-dashboard', { params }).then(res => res.data);
-export const getVerticalProduction = (operacao, params) => api.get(`/producao/vertical/${encodeURIComponent(operacao)}`, { params }).then(res => res.data);
+export const getVerticalProduction = (operacao, params) => api.get(`/producao/vertical/${encodeURIComponent(operacao)}`, { params, timeout: 120000 }).then(res => res.data);
 export const getVerticalPendencies = (params) => api.get(`/producao/vertical-pendencias`, { params }).then(res => res.data);
 
 export const getStockMainBalances = async (params) => {

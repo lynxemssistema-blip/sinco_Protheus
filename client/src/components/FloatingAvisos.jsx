@@ -48,18 +48,23 @@ const FloatingAvisos = () => {
         // ==== TEMPO REAL (SOCKET.IO) - lazy import para evitar Illegal constructor ====
         let socket = null;
         import('socket.io-client').then(({ io }) => {
-        // In dev, Vite proxies /api → backend:3000, but Socket.io needs a direct
-        // connection to the backend since Vite's dev server doesn't proxy WebSockets.
-        // In production the server serves the React app itself, so window.location is correct.
-        const isDev = window.location.port === '5173' || window.location.port === '5174';
-        const socketUrl = isDev
-            ? `${window.location.protocol}//${window.location.hostname}:3000`
-            : window.location.origin;
-        socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+            // A API usa o mesmo origin (via proxy em dev, direto em prod).
+            // Socket.io também conecta no mesmo origin — sem hardcode de porta.
+            const socketUrl = window.location.origin;
+            socket = io(socketUrl, {
+                transports: ['websocket', 'polling'],
+                // Limita tentativas para não poluir o console quando o backend está offline
+                reconnectionAttempts: 5,
+                reconnectionDelay: 3000,
+                timeout: 10000,
+            });
 
             socket.on('connect', () => {
                 socket.emit('join_user', user.id);
             });
+
+            // Silencia erros de conexão no console — o socket é best-effort
+            socket.on('connect_error', () => { /* offline/dev — sem log */ });
 
             socket.on('novo_aviso', (novoData) => {
                 if (window.location.pathname === '/avisos') return;
@@ -70,7 +75,7 @@ const FloatingAvisos = () => {
                     setAvisos(prev => [...prev, novoData]);
                 }
             });
-        }).catch(err => console.error('Socket.io load error:', err));
+        }).catch(() => { /* socket.io indisponível — continua com polling */ });
 
         return () => {
             clearInterval(intervalId);

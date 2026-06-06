@@ -107,6 +107,7 @@ const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto')
 const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
 const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
 const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
+const WabtecDatasSolicitacaoPage = React.lazy(() => import('./pages/wabtec/WabtecDatasSolicitacaoPage'));
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
@@ -723,6 +724,11 @@ function App() {
                                         <Route path="/wabtec/estrutura" element={
                                             <Layout fullWidth={true}>
                                                 <WabtecEstruturaContainer />
+                                            </Layout>
+                                        } />
+                                        <Route path="/wabtec/datas-solicitacao" element={
+                                            <Layout fullWidth={true}>
+                                                <WabtecDatasSolicitacaoPage />
                                             </Layout>
                                         } />
 
