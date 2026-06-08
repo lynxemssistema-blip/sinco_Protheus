@@ -16,6 +16,7 @@ import { BillingForecastInput } from './BillingForecastInput';
  */
 const FlatItemRow = ({
     item,
+    index,
     locationPathname,
     isSelected,
     printingOrderId,
@@ -65,6 +66,16 @@ const FlatItemRow = ({
 
     const romaneios = item.romaneios || [];
     const totalRomaneio = romaneios.reduce((acc, r) => acc + Number(r.quantidade), 0);
+
+    // Helper to get formatted OP (number + item)
+    const getDisplayOp = (op, itemNumber) => {
+        if (!op || String(op).trim() === '-') return op;
+        let cleanOp = String(op).trim();
+        if (cleanOp.length === 6 && itemNumber && String(itemNumber).trim() !== '-') {
+            return cleanOp + String(itemNumber).trim().padStart(2, '0');
+        }
+        return cleanOp;
+    };
 
     return (
         <tr
@@ -124,7 +135,7 @@ const FlatItemRow = ({
             <td className="px-3 py-2 text-center sticky left-[600px] z-10 bg-inherit min-w-[80px] max-w-[80px] w-[80px]">
                 <div className="flex items-center justify-center gap-1.5">
                     <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
-                        {item.op_num || '-'}
+                        {getDisplayOp(item.op_num, item.item) || '-'}
                     </span>
                     {hasOp && opTypeLabel}
                 </div>
@@ -307,7 +318,7 @@ const FlatItemRow = ({
 
             {/* Status */}
             <td className="px-4 py-2 text-center">
-                <ItemStatusBadge item={item} onNfClick={(nf) => handleNfClick(nf)} />
+                <ItemStatusBadge item={item} onNfClick={(nf) => handleNfClick(nf)} index={index} />
             </td>
 
             {/* Entregue */}

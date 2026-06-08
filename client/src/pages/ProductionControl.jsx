@@ -55,6 +55,7 @@ export default function ProductionControl() {
     const [smartPlannerOps, setSmartPlannerOps] = useState([]);
     const [loadingAllOps, setLoadingAllOps] = useState(false);
     const [showSmartPlanMenu, setShowSmartPlanMenu] = useState(false);
+    const [hermesTaskId, setHermesTaskId] = useState(null);
     const smartPlanMenuRef = useRef(null);
 
     // Fecha o menu ao clicar fora
@@ -64,6 +65,23 @@ export default function ProductionControl() {
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
     }, [showSmartPlanMenu]);
+
+    // Abre o modal automaticamente quando o Hermes inicia o FCS no servidor
+    useEffect(() => {
+        let socket = null;
+        import('socket.io-client').then(({ io }) => {
+            socket = io(window.location.origin, {
+                transports: ['polling', 'websocket'],
+                reconnectionAttempts: 5,
+            });
+            socket.on('hermes_fcs_started', ({ runId }) => {
+                setHermesTaskId(runId);
+                setSmartPlannerOps([]);
+                setSmartPlannerOpen(true);
+            });
+        }).catch(() => {});
+        return () => { if (socket) socket.disconnect(); };
+    }, []);
 
     const handleOpenSmartPlannerWithSelected = () => {
         if (!selectedOps || selectedOps.length === 0) {
@@ -87,7 +105,7 @@ export default function ProductionControl() {
                 toast.info('Nenhuma OP ativa com saldo pendente encontrada no banco.');
                 return;
             }
-            toast.info(`${allOps.length} OPs com saldo pendente carregadas para o FCS.`);
+            toast.info(`${allOps.length} OPs com saldo pendente carregadas para o PCF.`);
             setSmartPlannerOps(allOps);
             setSmartPlannerOpen(true);
         } catch (err) {
@@ -186,10 +204,21 @@ export default function ProductionControl() {
         if (!sortConfig) return opsToSort;
 
         return [...opsToSort].sort((a, b) => {
-            if (a[sortConfig.key] < b[sortConfig.key]) {
+            let valA = a[sortConfig.key];
+            let valB = b[sortConfig.key];
+
+            if (valA === null || valA === undefined) valA = '';
+            if (valB === null || valB === undefined) valB = '';
+
+            if (sortConfig.key === 'data_planejada_inicio' || sortConfig.key === 'data_planejada_fim' || sortConfig.key === 'entrega_pcp') {
+                valA = valA ? new Date(valA).getTime() : 0;
+                valB = valB ? new Date(valB).getTime() : 0;
+            }
+
+            if (valA < valB) {
                 return sortConfig.direction === 'ascending' ? -1 : 1;
             }
-            if (a[sortConfig.key] > b[sortConfig.key]) {
+            if (valA > valB) {
                 return sortConfig.direction === 'ascending' ? 1 : -1;
             }
             return 0;
@@ -514,7 +543,7 @@ export default function ProductionControl() {
                                 onClick={(e) => { e.stopPropagation(); setShowSmartPlanMenu(v => !v); }}
                                 disabled={loadingAllOps}
                                 className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-60"
-                                title="Motor FCS (Capacidade Finita): replaneja OPs não executadas do passado, ordena por data de entrega PCP (mais urgente primeiro) e aloca capacidade a partir da data informada. Itens sem data de entrega vão para o final da fila."
+                                title="Motor PCF (Planejamento de Capacidade Finita): replaneja OPs não executadas do passado, ordena por data de entrega PCP (mais urgente primeiro) e aloca capacidade a partir da data informada. Itens sem data de entrega vão para o final da fila."
                             >
                                 {loadingAllOps
                                     ? <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />Carregando...</>
@@ -558,12 +587,12 @@ export default function ProductionControl() {
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 shrink-0 flex flex-col gap-4">
                     {/* Linha 1: Campos básicos */}
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                        <input type="text" placeholder="OP (Exato, Sep. vírgula)" value={filters.op} onChange={(e) => setFilters({ ...filters, op: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato da OP. Para múltiplas, separe com vírgula." />
-                        <input type="text" placeholder="Pedido (Exato)" value={filters.pedido} onChange={(e) => setFilters({ ...filters, pedido: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato do Pedido." />
-                        <input type="text" placeholder="Item (Sep. vírgula)" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o item do pedido. Para múltiplos, separe com vírgula. Ex: 01,02" />
-                        <input type="text" placeholder="Seq" value={filters.sequencia} onChange={(e) => setFilters({ ...filters, sequencia: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
-                        <input type="text" placeholder="Produto (Exato)" value={filters.produto} onChange={(e) => setFilters({ ...filters, produto: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o código exato do Produto." />
-                        <input type="text" placeholder="Cliente" value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="OP (Exato, Sep. vírgula)" value={filters.op} onChange={(e) => setFilters({ ...filters, op: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato da OP. Para múltiplas, separe com vírgula." />
+                        <input type="text" placeholder="Pedido (Exato)" value={filters.pedido} onChange={(e) => setFilters({ ...filters, pedido: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o número exato do Pedido." />
+                        <input type="text" placeholder="Item (Sep. vírgula)" value={filters.item} onChange={(e) => setFilters({ ...filters, item: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o item do pedido. Para múltiplos, separe com vírgula. Ex: 01,02" />
+                        <input type="text" placeholder="Seq" value={filters.sequencia} onChange={(e) => setFilters({ ...filters, sequencia: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <input type="text" placeholder="Produto (Exato)" value={filters.produto} onChange={(e) => setFilters({ ...filters, produto: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} title="Digite o código exato do Produto." />
+                        <input type="text" placeholder="Cliente" value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value.toUpperCase() })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
                     </div>
 
                     {/* Linha 2: Operação e Planejado */}
@@ -580,7 +609,7 @@ export default function ProductionControl() {
                             </select>
                             <div className="w-2/3 flex gap-2">
                                 <div className="relative flex-1">
-                                    <input type="text" placeholder="Operação ou Recurso (ex: 01, SOLDA)" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value })} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                                    <input type="text" placeholder="Operação ou Recurso (ex: 01, SOLDA)" value={filters.operacao || ''} onChange={(e) => setFilters({ ...filters, operacao: e.target.value.toUpperCase() })} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
                                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                                 </div>
                                 <button onClick={() => setShowLegend(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Ver legenda de processos">
@@ -803,14 +832,44 @@ export default function ProductionControl() {
                                     <th className="p-3 w-10 text-center">
                                         <input type="checkbox" onChange={handleSelectAll} checked={selectedOps.length === ops.length && ops.length > 0} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
                                     </th>
-                                    <th className="p-3">Ordem de Produção</th>
-                                    <th className="p-3">Pedido</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('op')}>
+                                        <div className="flex items-center gap-1">
+                                            Ordem de Produção
+                                            {sortConfig?.key === 'op' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('pedido_venda')}>
+                                        <div className="flex items-center gap-1">
+                                            Pedido
+                                            {sortConfig?.key === 'pedido_venda' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
                                     <th className="p-3">Cliente</th>
-                                    <th className="p-3">Produto</th>
-                                    <th className="p-3 text-center">Entrega PCP</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('cod_produto_op')}>
+                                        <div className="flex items-center gap-1">
+                                            Produto
+                                            {sortConfig?.key === 'cod_produto_op' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('entrega_pcp')}>
+                                        <div className="flex items-center justify-center gap-1">
+                                            Entrega PCP
+                                            {sortConfig?.key === 'entrega_pcp' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
                                     <th className="p-3 text-center w-10">PDF</th>
-                                    <th className="p-3">Recurso</th>
-                                    <th className="p-3 text-center">Planejamento</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('operacao')}>
+                                        <div className="flex items-center gap-1">
+                                            Recurso
+                                            {sortConfig?.key === 'operacao' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('data_planejada_inicio')}>
+                                        <div className="flex items-center justify-center gap-1">
+                                            Planejamento
+                                            {sortConfig?.key === 'data_planejada_inicio' && <ChevronDown className={`w-3 h-3 transition-transform ${sortConfig.direction === 'ascending' ? 'rotate-180' : ''}`} />}
+                                        </div>
+                                    </th>
                                     <th className="p-3 text-center">Produção</th>
                                     <th className="p-3 text-center">Tempos</th>
                                     <th className="p-3 text-center">Status</th>
@@ -904,8 +963,15 @@ export default function ProductionControl() {
                                             </td>
                                             <td className="p-3 text-center">
                                                 {op.data_planejada_inicio ? (
-                                                    <div className="text-xs">
-                                                        <div className="text-green-700 font-medium">I: {new Date(op.data_planejada_inicio).toLocaleDateString()}</div>
+                                                    <div className="text-xs flex flex-col items-center gap-0.5">
+                                                        <div className="text-green-700 font-medium whitespace-nowrap">
+                                                            I: {new Date(op.data_planejada_inicio).toLocaleDateString()}
+                                                        </div>
+                                                        {op.dias_espera > 0 && (
+                                                            <div className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200" title="Dias aguardando entre recursos">
+                                                                Espera: {op.dias_espera}d
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ) : (
                                                     <span className="text-slate-400 italic text-xs">Não planejado</span>
@@ -934,10 +1000,10 @@ export default function ProductionControl() {
                                             <td className="p-3 text-center">
                                                 <div className="flex flex-col items-center justify-center gap-1">
                                                     <div className="text-[10px] text-slate-500 font-bold uppercase" title="Tempo Padrão Unitário">
-                                                        Unid: {op.tempad > 0 ? `${op.tempad.toFixed(2)} min` : '-'}
+                                                        Unid: {op.tempad > 0 ? `${Number(op.tempad).toFixed(3).replace('.', ',')} min` : '-'}
                                                     </div>
                                                     <div className="text-xs text-indigo-700 font-bold" title="Tempo Total Pendente (Unitário x Saldo + Setup)">
-                                                        Total: {op.tempad > 0 ? `${((op.tempad * Math.max(0, Number(op.qtd_planejada_op) - Number(op.qtd_produzida_real))) + (Number(op.qtd_produzida_real) === 0 ? (op.setup || 0) : 0)).toFixed(0)} min` : '-'}
+                                                        Total: {op.tempad > 0 ? `${Number(((op.tempad * Math.max(0, Number(op.qtd_planejada_op) - Number(op.qtd_produzida_real))) + (Number(op.qtd_produzida_real) === 0 ? (op.setup || 0) : 0))).toFixed(2).replace('.', ',')} min` : '-'}
                                                     </div>
                                                 </div>
                                             </td>
@@ -999,7 +1065,9 @@ export default function ProductionControl() {
                         <ResumoPlanejamentoView />
                     </div>
                 ) : activeTab === 'consolidado_produto' ? (
-                    <ConsolidadoView ops={ops} />
+                    <div className="flex-1 min-h-0 flex flex-col">
+                        <ConsolidadoView ops={ops} />
+                    </div>
                 ) : (
                     <CurvaSPedido filters={filters} />
                 ))}
@@ -1082,14 +1150,12 @@ export default function ProductionControl() {
                 <ProductionPrint ops={ops} filters={filters} />
             </div>
 
-            <PlanejamentoInteligenteModal 
+            <PlanejamentoInteligenteModal
                 isOpen={smartPlannerOpen}
-                onClose={() => { setSmartPlannerOpen(false); setSmartPlannerOps([]); setSelectedOps([]); }}
+                onClose={() => { setSmartPlannerOpen(false); setSmartPlannerOps([]); setSelectedOps([]); setHermesTaskId(null); }}
                 selectedOps={smartPlannerOps.length > 0 ? smartPlannerOps : selectedOps}
-                onPlanSuccess={() => {
-                    // NÃO fecha o modal aqui — usuário deve fechar manualmente via botão
-                    loadData();
-                }}
+                onPlanSuccess={() => { loadData(); }}
+                hermesTaskId={hermesTaskId}
             />
         </>
     );

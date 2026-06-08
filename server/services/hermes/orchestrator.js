@@ -50,13 +50,14 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Main Hermes cognitive loop orchestration
  */
-async function orchestrateHermes({ 
-    userMessage, 
-    requestContext = {}, 
-    pageData = null, 
-    userId, 
-    historico = [], 
-    emit, 
+async function orchestrateHermes({
+    userMessage,
+    requestContext = {},
+    pageData = null,
+    userId,
+    historico = [],
+    emit,
+    io = null,
     profileId = null,
     temperature = null,
     autonomia = null
@@ -130,15 +131,17 @@ SELECT ... (ou UPDATE/INSERT/DELETE se o banco for mysql e autonomia estiver ati
 4. Responda detalhadamente em Português do Brasil.
 5. Você tem acesso a uma ferramenta especial para executar o Motor de Sequenciamento FCS (Capacidade Finita) / Planejamento Inteligente.
    Para executá-lo, retorne um bloco formatado em JSON exatamente como a seguir:
-\`\`\`fcs
+\`\`\`pcf
 {
   "data_inicio": "YYYY-MM-DD",
-  "ops": ["numero_op_1", "numero_op_2", ...]
+  "ops": "*"
 }
 \`\`\`
-Sempre que for solicitado a rodar o planejamento, obter o sequenciamento, fazer o planejamento inteligente, ou atualizar o PCP com base nas capacidades:
-a. Primeiro, execute uma consulta SQL no Protheus (postgresql) para encontrar as OPs pendentes (geralmente aquelas onde c2_quant > c2_quje e c2_datare está em branco ou nulo).
-b. Depois de receber os dados do SQL, gere o bloco \`\`\`fcs com a lista dessas OPs e a data de início desejada (se o usuário não especificou ou pediu "a data de hoje/do dia", use a data atual do sistema no formato YYYY-MM-DD).
+   - Use sempre "ops": "*" para planejar TODAS as OPs pendentes (o sistema busca automaticamente no Protheus — NÃO faça SQL para listar OPs).
+   - Se o usuário especificar OPs concretas, use a lista: "ops": ["OP001", "OP002"].
+   - Para a data: se o usuário pediu "hoje", "data de hoje" ou não especificou, use a data atual do sistema no formato YYYY-MM-DD.
+   - NUNCA rode SQL para buscar as OPs antes de gerar o bloco pcf quando o pedido for planejar TODAS as OPs. O motor já faz isso internamente em lotes.
+   - Sempre que for solicitado a rodar o planejamento, sequenciamento, planejamento inteligente ou atualizar o PCP: gere imediatamente o bloco pcf acima e nada mais.
 `;
 
     const fullSystemPrompt = `${system_prompt}${schemaText}${reqCtx}${hermesInstructions}`;
@@ -161,7 +164,7 @@ b. Depois de receber os dados do SQL, gere o bloco \`\`\`fcs com a lista dessas 
 
     function parseFcsFromResponse(responseText) {
         const fcsRequests = [];
-        const regex = /```fcs\s*([\s\S]*?)```/gi;
+        const regex = /```(?:fcs|pcf)\s*([\s\S]*?)```/gi;
         let match;
 
         while ((match = regex.exec(responseText)) !== null) {
@@ -172,7 +175,7 @@ b. Depois de receber os dados do SQL, gere o bloco \`\`\`fcs com a lista dessas 
                     fcsRequests.push(parsed);
                 }
             } catch (e) {
-                console.error('Erro ao fazer o parse do bloco fcs:', e.message);
+                console.error('Erro ao fazer o parse do bloco fcs/pcf:', e.message);
             }
         }
 
@@ -260,7 +263,7 @@ b. Depois de receber os dados do SQL, gere o bloco \`\`\`fcs com a lista dessas 
                             icon: '🔍',
                             message: 'Buscando todas as OPs pendentes no Protheus para o planejamento automático...'
                         });
-                        const db = require('../db'); // postgres client
+                        const db = require('../../db'); // postgres client
                         let pgClient;
                         try {
                             pgClient = await db.connect();
@@ -285,37 +288,106 @@ b. Depois de receber os dados do SQL, gere o bloco \`\`\`fcs com a lista dessas 
                                 icon: '❌',
                                 message: `Erro ao buscar OPs no Protheus: ${pgErr.message}`
                             });
-                            dbResults += `\n\n### Erro ao buscar OPs para o FCS (FCS Request ${i + 1}):\n${pgErr.message}\n`;
+                            dbResults += `\n\n### Erro ao buscar OPs para o PCF (PCF Request ${i + 1}):\n${pgErr.message}\n`;
                             continue;
                         } finally {
                             if (pgClient) pgClient.release();
                         }
                     }
 
+                    const BATCH_SIZE = 100;
+                    const totalLotes = Math.ceil(ops.length / BATCH_SIZE);
+                    const fcsRunId = `fcs_${Date.now()}`;
+
+                    // Avisa todos os browsers conectados para abrir o modal
+                    if (io) io.emit('hermes_fcs_started', {
+                        runId: fcsRunId,
+                        totalOps: ops.length,
+                        totalLotes,
+                        dataInicio: data_inicio
+                    });
+
                     send({
                         type: 'step',
                         icon: '🚀',
-                        message: `Executando Motor de Sequenciamento FCS para ${ops.length} OPs com data início ${data_inicio}...`
+                        message: `Executando Motor FCS para ${ops.length} OPs em ${totalLotes} lote(s) de ${BATCH_SIZE} — data início ${data_inicio}...`
                     });
+
+                    let totalPlansGlobal = 0;
+                    let loteErros = 0;
+                    let resourceChartGlobal = {};
 
                     try {
                         const { runFcsSequencing } = require('../fcsEngine');
-                        const result = await runFcsSequencing({ ops, data_inicio, usuario: 'Hermes Agent' });
-                        
-                        dbResults += `\n\n### Resultado do Motor FCS (FCS Request ${i + 1}):\n`;
-                        if (result.success) {
-                            dbResults += `Sucesso! Planejadas ${result.plans} operações.\n`;
-                            dbResults += `\`\`\`json\n${JSON.stringify(result.report || {}, null, 2).slice(0, 2000)}\n\`\`\`\n`;
-                            send({ type: 'step', icon: '✅', message: `Motor FCS concluído: ${result.plans} operações planejadas.` });
-                        } else {
-                            dbResults += `Erro ao rodar motor FCS: ${result.error}\n`;
-                            if (result.missing_times) {
-                                dbResults += `Tempos em falta:\n\`\`\`json\n${JSON.stringify(result.missing_times, null, 2)}\n\`\`\`\n`;
+
+                        for (let lote = 0; lote < totalLotes; lote++) {
+                            const batch = ops.slice(lote * BATCH_SIZE, (lote + 1) * BATCH_SIZE);
+                            send({
+                                type: 'step',
+                                icon: '⚙️',
+                                message: `Lote ${lote + 1}/${totalLotes}: processando ${batch.length} OPs...`
+                            });
+                            try {
+                                const result = await runFcsSequencing({
+                                    ops: batch,
+                                    data_inicio,
+                                    usuario: 'Hermes Agent',
+                                    include_saturday: false,
+                                    preload_existing: lote > 0
+                                });
+                                if (result.success) {
+                                    totalPlansGlobal += result.plans || 0;
+                                    // Merge carga_diaria no chart global
+                                    const cargaDiaria = result.report?.carga_diaria || {};
+                                    for (const [rec, info] of Object.entries(cargaDiaria)) {
+                                        if (!resourceChartGlobal[rec]) {
+                                            resourceChartGlobal[rec] = { ...info, dates: { ...(info.dates || {}) } };
+                                        } else {
+                                            for (const [d, min] of Object.entries(info.dates || {})) {
+                                                resourceChartGlobal[rec].dates[d] = (resourceChartGlobal[rec].dates[d] || 0) + min;
+                                            }
+                                        }
+                                    }
+                                    send({ type: 'step', icon: '✅', message: `Lote ${lote + 1} OK: ${result.plans} operações planejadas.` });
+                                    // Emite progresso em tempo real para o modal
+                                    if (io) io.emit('hermes_fcs_progress', {
+                                        runId: fcsRunId,
+                                        lote: lote + 1,
+                                        totalLotes,
+                                        agent_logs: result.agent_logs || [],
+                                        carga_diaria: resourceChartGlobal,
+                                        done: false
+                                    });
+                                } else {
+                                    loteErros++;
+                                    send({ type: 'step', icon: '⚠️', message: `Lote ${lote + 1} falhou: ${result.error}` });
+                                    if (io) io.emit('hermes_fcs_progress', {
+                                        runId: fcsRunId, lote: lote + 1, totalLotes,
+                                        agent_logs: [`⚠️ Lote ${lote + 1} falhou: ${result.error}`],
+                                        done: false
+                                    });
+                                }
+                            } catch (batchErr) {
+                                loteErros++;
+                                send({ type: 'step', icon: '❌', message: `Erro no lote ${lote + 1}: ${batchErr.message}` });
                             }
-                            send({ type: 'step', icon: '❌', message: `Falha no Motor FCS: ${result.error}` });
                         }
+
+                        const doneMsg = `FCS concluído: ${totalPlansGlobal} operações planejadas em ${totalLotes} lote(s).${loteErros > 0 ? ` (${loteErros} lote(s) com erro)` : ''}`;
+                        if (io) io.emit('hermes_fcs_progress', {
+                            runId: fcsRunId, done: true,
+                            totalPlans: totalPlansGlobal, message: doneMsg
+                        });
+
+                        dbResults += `\n\n### Resultado do Motor FCS (PCF Request ${i + 1}):\n`;
+                        dbResults += `Total planejado: ${totalPlansGlobal} operações em ${totalLotes} lote(s).`;
+                        if (loteErros > 0) dbResults += ` (${loteErros} lote(s) com erro)`;
+                        dbResults += '\n';
+                        send({ type: 'step', icon: '✅', message: doneMsg });
+
                     } catch (fcsErr) {
-                        dbResults += `\n\n### Erro ao rodar Motor FCS (FCS Request ${i + 1}):\n${fcsErr.message}\n`;
+                        if (io) io.emit('hermes_fcs_progress', { runId: fcsRunId, done: true, message: `Erro: ${fcsErr.message}` });
+                        dbResults += `\n\n### Erro ao rodar Motor FCS (PCF Request ${i + 1}):\n${fcsErr.message}\n`;
                         send({ type: 'step', icon: '❌', message: `Erro ao invocar Motor FCS: ${fcsErr.message}` });
                     }
                 }

@@ -144,6 +144,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
             WHERE recurso_codigo = ? 
               AND data_planejada_inicio <= ? 
               AND data_planejada_fim >= ?
+              AND op_numero != '000000' AND op_numero != '-'
         `;
         const targetDayStart = `${data} 00:00:00`;
         const targetDayEnd = `${data} 23:59:59`;
@@ -204,7 +205,8 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
         const routingMap = {};
         routingRows.forEach(r => {
             if (!routingMap[r.prod]) routingMap[r.prod] = {};
-            routingMap[r.prod][r.operac] = { recurso_codigo: r.recurso, recurso_descri: r.recurso_descri || r.recurso, tempo: parseFloat(r.tempo) || 0 };
+            // g2_tempad é armazenado em minutos no Protheus
+            routingMap[r.prod][r.operac] = { recurso_codigo: r.recurso, recurso_descri: r.recurso_descri || r.recurso, tempo: Math.round((parseFloat(r.tempo) || 0) * 1000) / 1000 };
         });
 
         // Fetch appointments (MySQL)
@@ -697,11 +699,11 @@ router.get('/rastreabilidade', async (req, res) => {
             for (const rot of roteiroResult.rows) {
                 if (!roteiroMap[rot.produto]) roteiroMap[rot.produto] = [];
                 
-                let tempad = Number(rot.g2_tempad) || 0;
+                let tempad = Math.round((Number(rot.g2_tempad) || 0) * 1000) / 1000;
                 // Fallback para o valor configurado na tela de Capacidades se o roteiro vier zerado
-                // A tabela MySQL guarda em minutos, mas o roteiro e o painel somam em horas
+                // Tanto a tabela MySQL quanto o roteiro usam minutos
                 if (tempad === 0 && fallbackCapacidade[rot.recurso]) {
-                    tempad = fallbackCapacidade[rot.recurso] / 60.0;
+                    tempad = fallbackCapacidade[rot.recurso];
                 }
 
                 roteiroMap[rot.produto].push({
@@ -755,7 +757,7 @@ router.get('/rastreabilidade', async (req, res) => {
 
                 const [pRows] = await mysqlPool.query(`
                     SELECT op_numero, op_item, op_sequencia, operacao_codigo,
-                           data_planejada_inicio, data_planejada_fim
+                           data_planejada_inicio, data_planejada_fim, dias_espera
                     FROM app_production_planning
                     WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
                 `, [...uniqueOpCodes, ...uniqueOpCodOperacoes]);
@@ -801,7 +803,8 @@ router.get('/rastreabilidade', async (req, res) => {
                                         tempo_previsto: (r.tempo_padrao * qtd_total) + r.tempo_setup,
                                         status,
                                         planejamento_inicio: p ? p.data_planejada_inicio : null,
-                                        planejamento_fim: p ? p.data_planejada_fim : null
+                                        planejamento_fim: p ? p.data_planejada_fim : null,
+                                        dias_espera: p ? p.dias_espera : 0
                                     };
                                 });
                             }
@@ -1130,7 +1133,7 @@ router.get('/cronograma', async (req, res) => {
                 `, args),
                 mysqlPool.query(`
                     SELECT op_numero, op_item, op_sequencia, operacao_codigo,
-                           data_planejada_inicio, data_planejada_fim
+                           data_planejada_inicio, data_planejada_fim, dias_espera
                     FROM app_production_planning
                     WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
                 `, args)
@@ -1194,7 +1197,8 @@ router.get('/cronograma', async (req, res) => {
                                 qtd_apontada,
                                 status,
                                 planejamento_inicio: p ? p.data_planejada_inicio : null,
-                                planejamento_fim: p ? p.data_planejada_fim : null
+                                planejamento_fim: p ? p.data_planejada_fim : null,
+                                dias_espera: p ? p.dias_espera : 0
                             };
                         });
                     }
@@ -1221,10 +1225,10 @@ router.get('/cronograma', async (req, res) => {
 // ============// ROTA: Planejamento Inteligente (Smart Planner FCS)
 router.post('/smart-plan', async (req, res) => {
     try {
-        const { ops, data_inicio } = req.body;
+        const { ops, data_inicio, include_saturday, preload_existing } = req.body;
         const usuario = req.user?.login || req.user?.username || 'planejamento_inteligente';
-        
-        const result = await runFcsSequencing({ ops, data_inicio, usuario });
+
+        const result = await runFcsSequencing({ ops, data_inicio, usuario, include_saturday: !!include_saturday, preload_existing: !!preload_existing });
         if (!result.success) {
             if (result.missing_times) {
                 return res.status(400).json({
@@ -1235,6 +1239,11 @@ router.post('/smart-plan', async (req, res) => {
             }
             return res.status(500).json({ error: result.error, agent_logs: result.agent_logs });
         }
+
+        // Rebuild occupancy cache in background to update the daily rate dashboard instantly
+        rebuildDailyOccupancyCache().catch(err => {
+            console.error('❌ [SMART PLAN] Error triggering background cache rebuild:', err);
+        });
 
         res.json({
             message: 'Planejamento inteligente concluído com sucesso.',
@@ -1247,6 +1256,146 @@ router.post('/smart-plan', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+/**
+ * GET /api/pcp-refinado/ops-abertas
+ * Retorna OPs abertas paginadas via ?limit=N&offset=M.
+ * O frontend consome página por página e processa cada uma como um lote FCS,
+ * evitando carregar todos os registros de uma só vez.
+ *
+ * Resposta: { ops: string[], total: number, has_more: boolean }
+ */
+router.get('/ops-abertas', async (req, res) => {
+    try {
+        const limit  = Math.min(500, Math.max(1, parseInt(req.query.limit)  || 100));
+        const offset = Math.max(0,              parseInt(req.query.offset) || 0);
+
+        // Conta total de OPs abertas (rápido, usa índice)
+        const countRes = await db.query(`
+            SELECT COUNT(DISTINCT TRIM(c2_num)) AS total
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+              AND (c2_quant - COALESCE(c2_quje, 0)) > 0.001
+        `);
+        const total = parseInt(countRes.rows[0]?.total || 0);
+
+        // Página de OPs
+        const pgRes = await db.query(`
+            SELECT DISTINCT TRIM(c2_num) AS op_num
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+              AND (c2_quant - COALESCE(c2_quje, 0)) > 0.001
+            ORDER BY op_num
+            LIMIT $1 OFFSET $2
+        `, [limit, offset]);
+
+        const ops = pgRes.rows.map(r => r.op_num).filter(Boolean);
+        res.json({ ops, total, has_more: offset + ops.length < total });
+    } catch (error) {
+        console.error('❌ Erro em /ops-abertas:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/pcp-refinado/smart-plan/global
+ * Planejamento automático de TODAS as OPs abertas em lotes sequenciais.
+ * Cada lote pré-carrega alocações dos lotes anteriores para evitar sobreposição de capacidade.
+ */
+router.post('/smart-plan/global', async (req, res) => {
+    try {
+        const { data_inicio, include_saturday, batch_size } = req.body;
+        const usuario = req.user?.login || req.user?.username || 'planejamento_global';
+
+        if (!data_inicio) {
+            return res.status(400).json({ error: 'Data de início obrigatória.' });
+        }
+
+        // 1. Buscar todas as OPs abertas com saldo a produzir no Protheus
+        const pgRes = await db.query(`
+            SELECT DISTINCT TRIM(c2_num) AS op_num
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+              AND (c2_quant - COALESCE(c2_quje, 0)) > 0.001
+            ORDER BY op_num
+        `);
+        const allOpNums = pgRes.rows.map(r => r.op_num).filter(Boolean);
+
+        if (allOpNums.length === 0) {
+            return res.json({
+                message: 'Nenhuma OP aberta com saldo encontrada.',
+                total_ops: 0, plans: 0, daily_slices: 0,
+                agent_logs: ['Nenhuma OP qualificada encontrada no Protheus.']
+            });
+        }
+
+        // 2. Dividir em lotes
+        const BS = Math.max(10, Math.min(500, parseInt(batch_size) || 100));
+        const batches = [];
+        for (let i = 0; i < allOpNums.length; i += BS) {
+            batches.push(allOpNums.slice(i, i + BS));
+        }
+
+        const allLogs = [
+            `🚀 Planejamento Global iniciado: ${allOpNums.length} OPs abertas | ${batches.length} lote(s) de até ${BS} OPs | Data base: ${data_inicio}`
+        ];
+        let totalPlans = 0;
+        let totalSlices = 0;
+        let batchErrors = 0;
+
+        // 3. Processar cada lote sequencialmente (cada lote lê o que o anterior salvou)
+        for (let b = 0; b < batches.length; b++) {
+            const batch = batches[b];
+            allLogs.push(`\n📦 ===== LOTE ${b + 1}/${batches.length} (${batch.length} OPs) =====`);
+
+            try {
+                const result = await runFcsSequencing({
+                    ops: batch,
+                    data_inicio,
+                    usuario,
+                    include_saturday: !!include_saturday,
+                    preload_existing: true,
+                });
+
+                if (result.success) {
+                    totalPlans  += result.plans        || 0;
+                    totalSlices += result.daily_slices || 0;
+                    allLogs.push(...(result.agent_logs || []));
+                    allLogs.push(`✅ Lote ${b + 1} OK: ${result.plans || 0} plano(s) | ${result.daily_slices || 0} fatia(s).`);
+                } else {
+                    batchErrors++;
+                    allLogs.push(`⚠️ Lote ${b + 1} encerrado com alerta: ${result.error || 'Erro desconhecido'}`);
+                    if (result.agent_logs) allLogs.push(...result.agent_logs);
+                }
+            } catch (batchErr) {
+                batchErrors++;
+                allLogs.push(`❌ Lote ${b + 1} falhou: ${batchErr.message}`);
+                console.error(`❌ Erro no lote ${b + 1}:`, batchErr);
+            }
+        }
+
+        allLogs.push(
+            `\n🏁 Planejamento Global finalizado: ${totalPlans} planos | ${totalSlices} fatias diárias | ${batchErrors > 0 ? batchErrors + ' lote(s) com erro' : 'sem erros'}`
+        );
+
+        rebuildDailyOccupancyCache().catch(err =>
+            console.error('❌ Erro no rebuild do cache pós-global:', err)
+        );
+
+        res.json({
+            message: `Planejamento global concluído. ${allOpNums.length} OPs em ${batches.length} lote(s).`,
+            total_ops:    allOpNums.length,
+            batches:      batches.length,
+            plans:        totalPlans,
+            daily_slices: totalSlices,
+            batch_errors: batchErrors,
+            agent_logs:   allLogs,
+        });
+    } catch (error) {
+        console.error('❌ Erro em /smart-plan/global:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 /**
  * POST /api/pcp-refinado/smart-plan/analyze
  * Envia o relatório FCS ao Gemini com contexto histórico rico para análise inteligente.

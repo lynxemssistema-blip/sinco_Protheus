@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     X, HelpCircle, ChevronRight, ArrowRight, Lightbulb,
-    BookOpen, ExternalLink, List, Zap, Pin, PinOff
+    BookOpen, ExternalLink, List, Zap, Pin, PinOff, Layers
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 
@@ -190,6 +190,30 @@ export default function HelpDrawer() {
                                 />
                             ) : (
                                 <>
+                                    {/* Visual Image representation */}
+                                    {content?.image && (
+                                        <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                            <div className="flex items-center gap-2">
+                                                <Layers className="h-4 w-4 text-slate-400" />
+                                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">
+                                                    Visualização do Processo
+                                                </h3>
+                                            </div>
+                                            <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 p-2 flex flex-col items-center">
+                                                <img 
+                                                    src={content.image} 
+                                                    alt={content.imageCaption || "Ajuda visual"} 
+                                                    className="max-h-[200px] w-auto object-contain rounded-lg shadow-sm"
+                                                />
+                                                {content.imageCaption && (
+                                                    <p className="text-[10px] text-slate-500 mt-2 text-center font-medium leading-relaxed">
+                                                        {content.imageCaption}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Steps (Legacy fallback) */}
                                     {content?.steps && Array.isArray(content.steps) && content.steps.length > 0 && (
                                         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">

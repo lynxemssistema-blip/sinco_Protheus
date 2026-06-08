@@ -85,6 +85,23 @@ const initDB = async () => {
         await addCol('midia_url', 'VARCHAR(500) DEFAULT NULL AFTER tipo_midia');
         await addCol('midia_nome', 'VARCHAR(255) DEFAULT NULL AFTER midia_url');
 
+        // Create performance indexes (IF NOT EXISTS pattern via try/catch on ER_DUP_KEYNAME)
+        const createIndex = async (table, name, cols) => {
+            try {
+                await mysqlPool.query(`ALTER TABLE ${table} ADD INDEX ${name} (${cols})`);
+                console.log(`  ✅ Índice ${name} criado em ${table}`);
+            } catch (e) {
+                if (e.code !== 'ER_DUP_KEYNAME') {
+                    console.warn(`  ⚠️ Índice ${name}: ${e.message}`);
+                }
+            }
+        };
+
+        // Critical: eliminates full scan on every polling interval (every 30s per user)
+        await createIndex('sistema_avisos', 'idx_avisos_dest_concluido', 'idDestinatario, concluido');
+        // Critical: eliminates full scan on group membership sub-queries
+        await createIndex('sistema_avisos_grupos_membros', 'idx_membros_usuario', 'idUsuario');
+
         console.log('✅ Tabelas de avisos verificadas/atualizadas.');
     } catch (e) {
         console.error('❌ Erro ao inicializar tabelas de avisos:', e.message);
@@ -171,44 +188,42 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Cache the schema check — run ONCE at startup, not on every request
-let _avisoSchemaHasIdGrupo = null;
-const getAvisoSchemaHasIdGrupo = async () => {
-    if (_avisoSchemaHasIdGrupo !== null) return _avisoSchemaHasIdGrupo;
-    try {
-        const [cols] = await mysqlPool.query("SHOW COLUMNS FROM sistema_avisos LIKE 'idGrupo'");
-        _avisoSchemaHasIdGrupo = cols.length > 0;
-    } catch (_) {
-        _avisoSchemaHasIdGrupo = false;
-    }
-    return _avisoSchemaHasIdGrupo;
-};
-
-// 2. Buscar avisos não concluídos (popups) - Apenas mensagens diretas
+// 2. Buscar avisos não concluídos (popups) — somente mensagens diretas (idGrupo IS NULL).
+// idGrupo é garantida por initDB() — sem checagem dinâmica de esquema na hot path.
 router.get('/nao-concluidos/:idUsuario', async (req, res) => {
     try {
         const { idUsuario } = req.params;
-        const hasIdGrupo = await getAvisoSchemaHasIdGrupo();
-        const grupoFilter = hasIdGrupo ? 'AND a.idGrupo IS NULL' : '';
 
+        // idx_avisos_dest_concluido (idDestinatario, concluido) garante range scan aqui
         const query = `
-            SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente 
+            SELECT a.*, ur.NomeCompleto as nomeRemetente, ur.fotoUsuario as fotoRemetente
             FROM sistema_avisos a
             JOIN usuario ur ON a.idRemetente = ur.idUsuario
-            WHERE a.idDestinatario = ? AND a.concluido = 0 ${grupoFilter}
+            WHERE a.idDestinatario = ? AND a.concluido = 0 AND a.idGrupo IS NULL
             ORDER BY a.data_envio ASC
         `;
-        const [rows] = await mysqlPool.query(query, [idUsuario]);
+
+        // 8s hard timeout — retorna vazio em vez de pendurar o cliente por 60s.
+        // Qualquer erro de MySQL (POOL_TIMEOUT, ETIMEDOUT, ECONNREFUSED, etc.)
+        // é tratado como "sem avisos" para não bloquear o usuário.
+        let rows;
+        try {
+            [rows] = await mysqlPool.query(query, [idUsuario], 8000);
+        } catch (qErr) {
+            console.warn(`⚠️ [Avisos] Erro MySQL para usuário ${idUsuario} (${qErr.code || qErr.message}) — retornando vazio`);
+            return res.json([]);
+        }
 
         if (rows.length > 0) {
             const ids = rows.map(r => r.idAviso);
-            await mysqlPool.query(`UPDATE sistema_avisos SET lido = 1 WHERE idAviso IN (?)`, [ids]);
+            // Fire-and-forget: marca como lido sem bloquear a resposta
+            mysqlPool.query(`UPDATE sistema_avisos SET lido = 1 WHERE idAviso IN (?)`, [ids], 5000)
+                .catch(e => console.warn('⚠️ [Avisos] Falha ao marcar como lido:', e.message));
         }
 
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar avisos ativos:', error);
-        require('fs').writeFileSync(require('path').join(__dirname, '..', 'error_log.txt'), 'ERRO AVISOS:\n' + error.stack);
         res.status(500).json({ error: 'Erro ao buscar avisos', details: error.message });
     }
 });

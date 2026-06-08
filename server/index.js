@@ -73,6 +73,13 @@ io.on('connection', (socket) => {
         console.log(`🟢 [SINCO] Cliente ${socket.id} entrou na sala sinco_formulario`);
     });
 
+    // Sala de log em tempo real de uma tarefa Hermes específica
+    socket.on('join_hermes_task', (taskId) => {
+        if (taskId) {
+            socket.join(`hermes_task_${taskId}`);
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log(`🔴 [Socket.io] Cliente desconectado: ${socket.id}`);
     });
@@ -309,6 +316,7 @@ app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos')
 app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
 app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/romaneios'), { maxAge: '7d' }));
 app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/certificados'), { maxAge: '7d' }));
+app.use('/uploads/sgq_ajuda', express.static(path.join(__dirname, 'uploads/sgq_ajuda'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 
 // Rota de Health Check

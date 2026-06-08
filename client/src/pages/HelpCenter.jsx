@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Search, HelpCircle, ChevronRight, BookOpen, ShoppingCart, Factory,
@@ -35,6 +35,7 @@ const CATEGORY_STYLES = {
     'Administração': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500' },
     'Comunicação': { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
     'Analytics': { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
+    'PCP Refinado': { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
 };
 
 function getStyle(category) {
@@ -48,6 +49,28 @@ export default function HelpCenter() {
     const [selectedId, setSelectedId] = useState(null);
     const [activeCategory, setActiveCategory] = useState('Todos');
     const { allModules, openHelp, loadingHelp } = useHelp();
+    const [activeTabId, setActiveTabId] = useState(null);
+
+    const selectedModule = useMemo(
+        () => allModules.find(m => m.id === selectedId) || null,
+        [allModules, selectedId]
+    );
+
+    useEffect(() => {
+        if (selectedModule?.tabs && Array.isArray(selectedModule.tabs) && selectedModule.tabs.length > 0) {
+            if (!activeTabId || !selectedModule.tabs.some(t => t?.id === activeTabId)) {
+                setActiveTabId(selectedModule.tabs[0].id);
+            }
+        } else {
+            setActiveTabId(null);
+        }
+    }, [selectedModule, activeTabId]);
+
+    const activeTab = useMemo(() => {
+        return selectedModule?.tabs?.find(t => t?.id === activeTabId);
+    }, [selectedModule, activeTabId]);
+
+    const content = activeTab || selectedModule;
 
     const modules = allModules || [];
 
@@ -73,11 +96,6 @@ export default function HelpCenter() {
             mod.tips?.some(t => t.toLowerCase().includes(q))
         );
     }, [allModules, searchTerm]);
-
-    const selectedModule = useMemo(
-        () => allModules.find(m => m.id === selectedId) || null,
-        [allModules, selectedId]
-    );
 
     const handleSelectModule = (id) => {
         setSelectedId(id);
@@ -284,15 +302,66 @@ export default function HelpCenter() {
                                     </button>
                                 </div>
 
+                                {/* Tabs Navigation */}
+                                {selectedModule.tabs && selectedModule.tabs.length > 0 && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 flex gap-2 overflow-x-auto no-scrollbar">
+                                        {selectedModule.tabs.map((tab) => {
+                                            const active = activeTabId === tab.id;
+                                            return (
+                                                <button
+                                                    key={tab.id}
+                                                    onClick={() => setActiveTabId(tab.id)}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+                                                        active 
+                                                            ? 'bg-slate-900 text-white shadow-sm font-black' 
+                                                            : 'text-slate-500 hover:text-slate-950 hover:bg-slate-100'
+                                                    }`}
+                                                >
+                                                    {tab.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* Tab Description (if active tab is selected and has specific description) */}
+                                {activeTab && content?.description && content.description !== selectedModule.description && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
+                                        <p className="text-sm text-slate-700 leading-relaxed font-medium">{content.description}</p>
+                                    </div>
+                                )}
+
+                                {/* Visual Image representation */}
+                                {content?.image && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Layers className="h-4 w-4 text-slate-500" />
+                                            <h3 className="font-black text-slate-800 uppercase tracking-wide text-xs">Visualização do Processo</h3>
+                                        </div>
+                                        <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3">
+                                            <img 
+                                                src={content.image} 
+                                                alt={content.imageCaption || "Ajuda visual"} 
+                                                className="max-h-[480px] w-auto object-contain rounded-lg shadow-sm border border-slate-100 hover:scale-[1.01] transition-transform duration-300"
+                                            />
+                                            {content.imageCaption && (
+                                                <p className="text-xs text-slate-500 mt-3 text-center max-w-2xl font-semibold leading-relaxed">
+                                                    {content.imageCaption}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Steps */}
-                                {selectedModule.steps && selectedModule.steps.length > 0 && (
+                                {content?.steps && content.steps.length > 0 && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6">
                                         <div className="flex items-center gap-2 mb-5">
                                             <List className="h-4 w-4 text-slate-500" />
                                             <h3 className="font-black text-slate-800 uppercase tracking-wide text-xs">Como usar este módulo</h3>
                                         </div>
                                         <ol className="space-y-4">
-                                            {selectedModule.steps.map((step, i) => (
+                                            {content.steps.map((step, i) => (
                                                 <li key={i} className="flex gap-4 items-start">
                                                     <span className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center mt-0.5">
                                                         {i + 1}
@@ -305,14 +374,14 @@ export default function HelpCenter() {
                                 )}
 
                                 {/* Tips */}
-                                {selectedModule.tips && selectedModule.tips.length > 0 && (
+                                {content?.tips && content.tips.length > 0 && (
                                     <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
                                         <div className="flex items-center gap-2 mb-4">
                                             <Lightbulb className="h-4 w-4 text-amber-600" />
                                             <h3 className="font-black text-amber-800 uppercase tracking-wide text-xs">Dicas Pro</h3>
                                         </div>
                                         <ul className="space-y-3">
-                                            {selectedModule.tips.map((tip, i) => (
+                                            {content.tips.map((tip, i) => (
                                                 <li key={i} className="flex gap-3 items-start">
                                                     <Zap className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
                                                     <p className="text-sm text-amber-800 leading-relaxed">{tip}</p>

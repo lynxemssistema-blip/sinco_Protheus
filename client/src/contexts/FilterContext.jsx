@@ -33,6 +33,7 @@ export const FilterProvider = ({ children }) => {
             cliente: '',
             pedido: '',
             produto: '',
+            pedcli: '',
             dataInicial: '',
             dataFinal: '',
             only_active: 'true',

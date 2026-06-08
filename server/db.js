@@ -13,6 +13,12 @@ const pool = new Pool({
     statement_timeout: 45000,
 });
 
+pool.on('connect', (client) => {
+    client.query("SET client_encoding TO 'WIN1252'").catch((err) => {
+        console.error('⚠️ Error setting client_encoding:', err.message);
+    });
+});
+
 pool.on('error', (err) => {
     console.error('⚠️ PG Pool idle client error:', err.message);
     // Don't exit — just log and continue

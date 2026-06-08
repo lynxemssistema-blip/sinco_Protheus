@@ -39,16 +39,36 @@ const SCHEMA_CONTEXT = [
     },
     {
         banco: 'postgresql',
-        tabela: 'sc9010',
-        descricao: 'Ordens de Produção (OP) do Protheus. Contém número da OP (c9_op), produto (c9_produto), quantidade (c9_qty), data prevista (c9_datprf), apontamentos, operações. Liga com SC6 pelo número da OP.',
+        tabela: 'sc2010',
+        descricao: 'Ordens de Produção (OP) do Protheus. Contém número do documento da OP (c2_num), item (c2_item), sequência (c2_sequen), OP completa (c2_op), produto (c2_produto), quantidade prevista (c2_quant), quantidade executada/apontada (c2_quje), data prevista de término (c2_datprf).',
         colunas_chave: JSON.stringify({
-            c9_op: 'Número da OP',
-            c9_filial: 'Filial',
-            c9_produto: 'Código do produto',
-            c9_datprf: 'Data previsão término formato YYYYMMDD',
-            c9_qty: 'Quantidade da OP',
-            c9_quje: 'Quantidade já executada/apontada',
-            c9_obs: 'Observações da OP',
+            c2_num: 'Número base da OP (6 chars)',
+            c2_item: 'Item da OP (2 chars)',
+            c2_sequen: 'Sequência da OP (3 chars)',
+            c2_op: 'Número completo da OP (14 chars, c2_num + c2_item + c2_sequen)',
+            c2_produto: 'Código do produto (FK SB1010)',
+            c2_quant: 'Quantidade total planejada da OP',
+            c2_quje: 'Quantidade já produzida/apontada na OP',
+            c2_datprf: 'Data de previsão de término (formato YYYYMMDD)',
+            c2_status: 'Status da OP: O=Aberta, A=Ativa, F=Finalizada, etc.',
+            d_e_l_e_t_: 'Registro deletado quando preenchido'
+        })
+    },
+    {
+        banco: 'postgresql',
+        tabela: 'sc9010',
+        descricao: 'Liberações de Pedidos de Venda do Protheus (Itens Liberados e Retidos). Contém número do pedido (c9_pedido), item (c9_item), produto (c9_produto), cliente (c9_cliente), loja (c9_loja), quantidade liberada (c9_qtdlib), almoxarifado (c9_local), nota fiscal faturada (c9_nfiscal), bloqueios de estoque (c9_blest) e crédito (c9_blcred).',
+        colunas_chave: JSON.stringify({
+            c9_pedido: 'Número do pedido de venda (6 chars)',
+            c9_item: 'Item do pedido de venda (2 chars)',
+            c9_produto: 'Código do produto (FK SB1010)',
+            c9_cliente: 'Código do cliente (FK SA1010)',
+            c9_loja: 'Loja do cliente',
+            c9_qtdlib: 'Quantidade liberada para faturamento',
+            c9_local: 'Almoxarifado/Armazém',
+            c9_nfiscal: 'Nota Fiscal emitida (preenchido = faturado)',
+            c9_blest: 'Bloqueio de estoque (01 ou 02 = bloqueado, vazio = liberado)',
+            c9_blcred: 'Bloqueio de crédito (01, 04, etc = bloqueado, vazio = liberado)',
             d_e_l_e_t_: 'Registro deletado quando preenchido'
         })
     },

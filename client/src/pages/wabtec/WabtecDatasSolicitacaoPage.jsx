@@ -37,6 +37,16 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
     const [confirm, setConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [updatingSinco, setUpdatingSinco] = useState(null);
     const [fetchingSinco, setFetchingSinco] = useState(null);
+    const [progress, setProgress] = useState({
+        isOpen: false,
+        title: '',
+        status: '', // 'reading' | 'saving' | 'syncing' | 'completed' | 'error'
+        currentStep: 0,
+        totalSteps: 0,
+        percentage: 0,
+        message: '',
+        errors: []
+    });
 
     const handleUpdateSinco = async (pedido, item, dataPlanilha) => {
         if (!pedido || !item || !dataPlanilha) {
@@ -65,11 +75,35 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
         setUpdatingSinco(`bulk-${groupKey}`);
         let successCount = 0;
         let fetchCount = 0;
+        const total = rowsToUpdate.length;
+
+        setProgress({
+            isOpen: true,
+            title: 'Sincronizando com SINCO',
+            status: 'syncing',
+            currentStep: 0,
+            totalSteps: total,
+            percentage: 0,
+            message: `Iniciando sincronização de ${total} itens...`,
+            errors: []
+        });
 
         try {
-            for (let i = 0; i < rowsToUpdate.length; i++) {
+            for (let i = 0; i < total; i++) {
                 const r = rowsToUpdate[i];
-                if (!r.pedido_metal || !r.data_pcp_cliente) continue;
+                const itemNum = i + 1;
+                const pct = Math.round((i / total) * 100);
+
+                setProgress(prev => ({
+                    ...prev,
+                    currentStep: itemNum,
+                    percentage: pct,
+                    message: `[${itemNum}/${total}] Sincronizando: PO ${r.po_number || '-'} | Pedido: ${r.pedido_metal || '-'}`
+                }));
+
+                if (!r.pedido_metal || !r.data_pcp_cliente) {
+                    continue;
+                }
 
                 let currentItem = r.sinco_item;
 
@@ -103,6 +137,14 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                 }
             }
 
+            setProgress(prev => ({
+                ...prev,
+                currentStep: total,
+                status: 'completed',
+                percentage: 100,
+                message: `Sincronização concluída! ${successCount} de ${total} itens sincronizados.`
+            }));
+
             if (successCount > 0) {
                 toast.success(`${successCount} itens enviados ao SINCO com sucesso! (Buscados: ${fetchCount})`);
                 if (selectedLote) fetchData(selectedLote);
@@ -110,6 +152,12 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                 toast.warning('Nenhum item válido foi processado no lote.');
             }
         } catch (err) {
+            setProgress(prev => ({
+                ...prev,
+                status: 'error',
+                message: 'Falha durante o processo de envio em lote.',
+                errors: [err.message || 'Erro desconhecido']
+            }));
             toast.error('Erro geral ao processar lote.');
         } finally {
             setUpdatingSinco(null);
@@ -215,61 +263,105 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
 
     const handleUpload = () => {
         if (!file || !selectedSheet) return;
-        
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            try {
-                const bstr = evt.target.result;
-                const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-                const ws = wb.Sheets[selectedSheet];
-                const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+        setProgress({
+            isOpen: true,
+            title: 'Analisando Planilha',
+            status: 'reading',
+            currentStep: 0,
+            totalSteps: 4,
+            percentage: 10,
+            message: 'Carregando arquivo na memória...',
+            errors: []
+        });
+
+        setTimeout(() => {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                setProgress(prev => ({ ...prev, currentStep: 1, percentage: 30, message: 'Processando estrutura da planilha...' }));
                 
-                if (rawData.length < 2) {
-                    toast.warning('A aba parece estar vazia.');
-                    return;
-                }
+                setTimeout(() => {
+                    try {
+                        const bstr = evt.target.result;
+                        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+                        
+                        setProgress(prev => ({ ...prev, currentStep: 2, percentage: 60, message: `Lendo aba "${selectedSheet}"...` }));
+                        
+                        setTimeout(() => {
+                            const ws = wb.Sheets[selectedSheet];
+                            const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+                            
+                            if (rawData.length < 2) {
+                                setProgress({ isOpen: false });
+                                toast.warning('A aba parece estar vazia.');
+                                return;
+                            }
 
-                const headers = rawData[0];
-                const parsedRows = [];
+                            setProgress(prev => ({ ...prev, currentStep: 3, percentage: 80, message: `Mapeando ${rawData.length - 1} linhas de dados...` }));
 
-                for (let i = 1; i < rawData.length; i++) {
-                    const row = rawData[i];
-                    if (!row || row.length === 0) continue;
-                    const hasData = row.some(cell => cell !== null && cell !== '');
-                    if (!hasData) continue;
+                            setTimeout(() => {
+                                const headers = rawData[0];
+                                const parsedRows = [];
 
-                    const mappedRow = {
-                        po_number: row[1] || '',
-                        pedido_metal: row[2] || '',
-                        cod_produto: row[3] || '',
-                        saldo: row[4] || 0,
-                        item_cliente: row[12] || '',
-                        data_pcp_cliente: row[24] || null,
-                        raw_data: {}
-                    };
+                                for (let i = 1; i < rawData.length; i++) {
+                                    const row = rawData[i];
+                                    if (!row || row.length === 0) continue;
+                                    const hasData = row.some(cell => cell !== null && cell !== '');
+                                    if (!hasData) continue;
 
-                    if (mappedRow.data_pcp_cliente instanceof Date) {
-                        mappedRow.data_pcp_cliente = mappedRow.data_pcp_cliente.toISOString().split('T')[0];
+                                    const mappedRow = {
+                                        po_number: row[1] || '',
+                                        pedido_metal: row[2] || '',
+                                        cod_produto: row[3] || '',
+                                        saldo: row[4] || 0,
+                                        item_cliente: row[12] || '',
+                                        data_pcp_cliente: row[24] || null,
+                                        raw_data: {}
+                                    };
+
+                                    if (mappedRow.data_pcp_cliente instanceof Date) {
+                                        mappedRow.data_pcp_cliente = mappedRow.data_pcp_cliente.toISOString().split('T')[0];
+                                    }
+
+                                    headers.forEach((header, index) => {
+                                        if (header) {
+                                            mappedRow.raw_data[header] = row[index];
+                                        }
+                                    });
+
+                                    parsedRows.push(mappedRow);
+                                }
+
+                                setPreviewData(parsedRows);
+                                setPreviewMode(true);
+                                
+                                setProgress({
+                                    isOpen: true,
+                                    title: 'Planilha Analisada',
+                                    status: 'completed',
+                                    currentStep: 4,
+                                    totalSteps: 4,
+                                    percentage: 100,
+                                    message: `Sucesso! ${parsedRows.length} linhas carregadas para pré-visualização.`,
+                                    errors: []
+                                });
+                                toast.success('Planilha analisada com sucesso!');
+                            }, 300);
+                        }, 300);
+                    } catch (err) {
+                        console.error(err);
+                        setProgress(prev => ({
+                            ...prev,
+                            status: 'error',
+                            message: 'Falha ao processar arquivo.',
+                            errors: [err.message]
+                        }));
+                        toast.error('Erro ao processar planilha.');
                     }
-
-                    headers.forEach((header, index) => {
-                        if (header) {
-                            mappedRow.raw_data[header] = row[index];
-                        }
-                    });
-
-                    parsedRows.push(mappedRow);
-                }
-
-                setPreviewData(parsedRows);
-                setPreviewMode(true);
-                toast.success('Planilha analisada com sucesso!');
-            } catch (err) {
-                console.error(err);
-                toast.error('Erro ao processar planilha.');
-            }
-        };
-        reader.readAsBinaryString(file);
+                }, 300);
+            };
+            reader.readAsBinaryString(file);
+        }, 300);
     };
 
     const handleCancelPreview = () => {
@@ -282,6 +374,18 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
     const handleConfirmSave = async () => {
         if (previewData.length === 0) return;
         setSaving(true);
+        
+        setProgress({
+            isOpen: true,
+            title: 'Salvando Importação',
+            status: 'saving',
+            currentStep: 0,
+            totalSteps: 3,
+            percentage: 20,
+            message: 'Preparando lote de dados...',
+            errors: []
+        });
+
         try {
             const payload = {
                 fileName: file.name,
@@ -290,15 +394,31 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                 importedBy: 'Usuário WabTec'
             };
 
+            setProgress(prev => ({ ...prev, currentStep: 1, percentage: 50, message: 'Enviando ao servidor e gravando registros...' }));
+
             const res = await api.post('/wabtec-datas/import', payload);
             if (res.data.success) {
+                setProgress(prev => ({ 
+                    ...prev, 
+                    currentStep: 3, 
+                    status: 'completed',
+                    percentage: 100, 
+                    message: `Lote gravado com sucesso! ${res.data.message}` 
+                }));
                 toast.success(res.data.message);
                 handleCancelPreview();
                 await fetchLotes();
                 handleSelectLote(res.data.importId); // Select the newly imported batch
             }
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Erro ao gravar os dados.');
+            const errorMsg = err.response?.data?.error || 'Erro ao gravar os dados.';
+            setProgress(prev => ({
+                ...prev,
+                status: 'error',
+                message: 'Falha ao salvar no banco de dados.',
+                errors: [errorMsg]
+            }));
+            toast.error(errorMsg);
         } finally {
             setSaving(false);
         }
@@ -749,6 +869,104 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                     }}
                     onCancel={() => setConfirm({ ...confirm, isOpen: false })}
                 />
+            )}
+
+            {/* Progress Modal */}
+            {progress.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-md w-full p-6 space-y-6 transform transition-all">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                                {progress.status === 'reading' && <FileSpreadsheet className="w-5 h-5 text-indigo-500 animate-pulse" />}
+                                {progress.status === 'saving' && <UploadCloud className="w-5 h-5 text-indigo-500 animate-bounce" />}
+                                {progress.status === 'syncing' && <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />}
+                                {progress.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                                {progress.status === 'error' && <XCircle className="w-5 h-5 text-rose-500" />}
+                                {progress.title}
+                            </h3>
+                            {['completed', 'error'].includes(progress.status) && (
+                                <button 
+                                    onClick={() => setProgress(prev => ({ ...prev, isOpen: false }))} 
+                                    className="text-slate-400 hover:text-slate-600 transition p-1 rounded-lg hover:bg-slate-100"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Progress Body */}
+                        <div className="space-y-4">
+                            {/* Loader or Status Indicator */}
+                            <div className="flex flex-col items-center justify-center py-4 text-center space-y-3">
+                                {['reading', 'saving', 'syncing'].includes(progress.status) ? (
+                                    <div className="relative w-24 h-24 flex items-center justify-center">
+                                        <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                                        <div className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
+                                        <span className="text-sm font-bold font-mono text-slate-700">{progress.percentage}%</span>
+                                    </div>
+                                ) : progress.status === 'completed' ? (
+                                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500">
+                                        <CheckCircle2 className="w-10 h-10" />
+                                    </div>
+                                ) : (
+                                    <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center text-rose-500">
+                                        <XCircle className="w-10 h-10" />
+                                    </div>
+                                )}
+
+                                <div className="space-y-1">
+                                    <p className="text-sm font-medium text-slate-500">{progress.message}</p>
+                                    {progress.totalSteps > 0 && ['reading', 'saving', 'syncing'].includes(progress.status) && (
+                                        <p className="text-xs text-slate-400 font-mono">Etapa {progress.currentStep} de {progress.totalSteps}</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div 
+                                    className={`h-full transition-all duration-300 ${
+                                        progress.status === 'error' 
+                                            ? 'bg-rose-500' 
+                                            : progress.status === 'completed' 
+                                                ? 'bg-emerald-500' 
+                                                : 'bg-indigo-600'
+                                    }`}
+                                    style={{ width: `${progress.percentage}%` }}
+                                />
+                            </div>
+
+                            {/* Error Log */}
+                            {progress.errors.length > 0 && (
+                                <div className="bg-rose-50 text-rose-800 p-3 rounded-lg text-xs space-y-1 border border-rose-100 max-h-32 overflow-y-auto">
+                                    <p className="font-bold flex items-center gap-1">
+                                        <AlertCircle className="w-3.5 h-3.5" /> Erros detectados:
+                                    </p>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        {progress.errors.map((err, idx) => (
+                                            <li key={idx} className="font-mono">{err}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end pt-3 border-t border-slate-100">
+                            {['completed', 'error'].includes(progress.status) ? (
+                                <button 
+                                    onClick={() => setProgress(prev => ({ ...prev, isOpen: false }))}
+                                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold shadow-sm transition"
+                                >
+                                    Fechar
+                                </button>
+                            ) : (
+                                <span className="text-xs text-slate-400 font-medium italic animate-pulse">Aguarde, processando dados...</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

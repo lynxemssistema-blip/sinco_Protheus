@@ -10,7 +10,7 @@ import MonitoringDashboard from '../components/MonitoringDashboard';
 import DBAMonitoringTab from '../components/DBAMonitoringTab';
 import ErrorListTab from '../components/ErrorListTab';
 import WinSCPTab from '../components/WinSCPTab';
-import HermesConfigTab from '../components/HermesConfigTab';
+import LynxConfigTab from '../components/LynxConfigTab';
 
 export default function Settings() {
     const { user, isAdmin } = useAuth();
@@ -33,7 +33,7 @@ export default function Settings() {
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
         { id: 'monitoring', label: 'Monitoramento do Sistema', icon: Activity },
         ...(user?.tipo === 'SA' ? [{ id: 'winscp', label: 'Processo WinSCP', icon: Send }] : []),
-        ...(user?.tipo === 'SA' ? [{ id: 'hermes', label: 'Agente Hermes', icon: Bot }] : []),
+        ...(user?.tipo === 'SA' ? [{ id: 'lynx', label: 'Agente lynx', icon: Bot }] : []),
     ];
 
     const formatPhone = (val) => {
@@ -2287,10 +2287,10 @@ export default function Settings() {
                     </div>
                 )}
 
-                {/* HERMES TAB */}
-                {activeTab === 'hermes' && (
+                {/* lynx TAB */}
+                {activeTab === 'lynx' && (
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                        <HermesConfigTab />
+                        <LynxConfigTab />
                     </div>
                 )}
 

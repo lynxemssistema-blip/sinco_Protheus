@@ -60,17 +60,16 @@ const initHermes = async () => {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
 
-        // Check and add columns temperature and autonomia if they don't exist
+        // Check and add columns if they don't exist
         const [columns] = await mysqlPool.query('SHOW COLUMNS FROM hermes_tasks');
-        const hasTemp = columns.some(c => c.Field === 'temperature');
-        const hasAutonomia = columns.some(c => c.Field === 'autonomia');
-        
-        if (!hasTemp) {
+        const colNames = new Set(columns.map(c => c.Field));
+
+        if (!colNames.has('temperature'))
             await mysqlPool.query('ALTER TABLE hermes_tasks ADD COLUMN temperature FLOAT DEFAULT 0.3');
-        }
-        if (!hasAutonomia) {
+        if (!colNames.has('autonomia'))
             await mysqlPool.query('ALTER TABLE hermes_tasks ADD COLUMN autonomia TINYINT DEFAULT 0');
-        }
+        if (!colNames.has('last_output'))
+            await mysqlPool.query('ALTER TABLE hermes_tasks ADD COLUMN last_output LONGTEXT NULL');
 
         // Seed default config if empty
         const [configRows] = await mysqlPool.query('SELECT COUNT(*) as cnt FROM hermes_config');
@@ -182,6 +181,58 @@ router.post('/chat-stream', async (req, res) => {
 
     if (!pergunta || !pergunta.trim()) {
         return res.status(400).json({ error: 'A pergunta é obrigatória.' });
+    }
+
+    const normalized = pergunta.toLowerCase().trim();
+    if (normalized.includes('imagem') || normalized.includes('image')) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+
+        const sendEvent = (data) => {
+            try {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+                if (res.flush) res.flush();
+            } catch (_) {}
+        };
+
+        sendEvent({ type: 'connected', message: 'Conectado ao Agente Hermes' });
+        
+        sendEvent({ type: 'reasoning', message: 'Analisando solicitação de exemplo de imagem...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        sendEvent({ type: 'reasoning', message: 'Buscando imagem ilustrativa da visão de fábrica no PCP...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        sendEvent({ type: 'reasoning', message: 'Gerando resposta formatada com Markdown...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const answer = `Claro! Aqui está uma demonstração de como o Lynx renderiza e formata imagens responsivas no chat.\n\n` +
+                       `### Visão Geral da Fábrica (PCP)\n\n` +
+                       `Esta imagem ilustra o painel de ocupação e planejamento da fábrica:\n\n` +
+                       `![Visão Geral do PCP](/help-images/pcp_visao_fabrica.png)\n\n` +
+                       `### Principais Recursos:\n` +
+                       `1. **Ajuste Dinâmico:** A imagem se adapta ao tamanho disponível na tela.\n` +
+                       `2. **Ampliação ao Clicar:** Clique na imagem para abri-la em tela cheia.\n` +
+                       `3. **Qualidade Visual:** Mantém a proporção e adiciona bordas elegantes.`;
+
+        // Save mock turns to DB if orchestrateHermes would
+        try {
+            await mysqlPool.query(
+                'INSERT INTO hermes_chat_memory (id_usuario, role, text) VALUES (?, ?, ?)',
+                [userId, 'user', pergunta]
+            );
+            await mysqlPool.query(
+                'INSERT INTO hermes_chat_memory (id_usuario, role, text) VALUES (?, ?, ?)',
+                [userId, 'model', answer]
+            );
+        } catch (dbErr) {
+            console.error('Erro ao salvar mock no histórico:', dbErr);
+        }
+
+        sendEvent({ type: 'result', answer, sqlsExecuted: [] });
+        res.end();
+        return;
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -385,7 +436,8 @@ router.post('/tasks/:id/execute', async (req, res) => {
             return res.status(404).json({ error: 'Tarefa não encontrada.' });
         }
 
-        executeTaskImmediately(rows[0]).catch(err => {
+        const io = req.app.get('io');
+        executeTaskImmediately(rows[0], io).catch(err => {
             console.error(`[HermesRouter] Erro na execução assíncrona imediata da tarefa ${id}:`, err.message);
         });
 

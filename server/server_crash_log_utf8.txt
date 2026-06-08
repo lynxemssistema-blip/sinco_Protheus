@@ -1,0 +1,450 @@
+﻿[dotenv@17.2.3] injecting env (14) from .env -- tip: ÔÜÖ´©Å  write to custom object with { processEnv: myObject }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ­ƒôí add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ÔÜÖ´©Å  enable debug logging with { debug: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ÔÜÖ´©Å  override existing env vars with { override: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ­ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+­ƒöä [DEBUG] Montando rota /api/producao...
+­ƒöä [DEBUG] Carregando arquivo routes/producao.js
+Ô£à [DEBUG] Rota /api/producao montada.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: Ô£à audit secrets and track compliance: https://dotenvx.com/ops
+­ƒÜÇ­ƒÜÇ­ƒÜÇ STOCK.JS FILE LOADED - VERSION 2026-01-20 13:47 ­ƒÜÇ­ƒÜÇ­ƒÜÇ
+­ƒöä [DEBUG] Montando rota /api/materials...
+Ô£à [DEBUG] Rotas de Materiais montadas.
+­ƒöä [DEBUG] Montando rota /api/production...
+­ƒöä [DEBUG] Carregando arquivo routes/production.js
+Ô£à [DEBUG] Rota /api/production montada.
+Ô£à [Reports] Loading Sales Planning Routes...
+­ƒöä [DEBUG] Loading Sinco Routes...
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ÔÜÖ´©Å  specify custom .env file path with { path: '/custom/path/.env' }
+Servidor rodando na porta 3001
+­ƒôí Acesso na rede: http://192.168.1.156:3001
+
+­ƒöì [DEBUG] Rotas Registradas (Updated):
+ÔÜá´©Å Unable to print routes - router not initialized
+Ô£à Conectado ao MySQL Remoto com sucesso!
+Ô£à [DB] Tabela app_engineering_timesheets verificada.
+Ô£à [Email Service] Tabela de Auditoria app_emails verificada/criada.
+Ô£à Tabela produtos_docs verificada/criada no MySQL remoto.
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: 55626HBSHK5xEXucAAAB
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+Ô£à [SINCO APONTAMENTO] Tabela app_os_material_entregas verificada/criada.
+Ô£à Engineering BOM tables initialized
+Ô£à Tabelas de avisos, grupos e m├¡dia verificadas/atualizadas.
+Ô£à Engineering Releases table initialized
+Ô£à PCP Releases table initialized
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: iUnro6MtsdH5NFn9AAAD
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+Ô£à Tabela app_produto_ata verificada/criada.
+Ô£à [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.
+[Romaneios] Estrutura do banco de dados verificada/atualizada.
+Ô£à [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
+Ô£à [Romaneios] Tabela app_romaneio_revisions verificada/criada.
+Ô£à [Romaneios] Tabela app_romaneios_nfs verificada/criada.
+Ô£à [PCPMetal] Tabelas verificadas/criadas com sucesso.
+Ô£à [Romaneios] codigo_produto trimmed nos itens existentes.
+­ƒôí [2026-04-07T15:05:40.221Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:06:10.232Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒö┤ [Socket.io] Cliente desconectado: iUnro6MtsdH5NFn9AAAD
+­ƒö┤ [Socket.io] Cliente desconectado: 55626HBSHK5xEXucAAAB
+­ƒôí [2026-04-07T15:06:38.326Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:06:38.329Z] GET /api/users/my-permissions from 127.0.0.1
+­ƒôí [2026-04-07T15:06:38.548Z] GET /api/users/my-permissions from 127.0.0.1
+­ƒôí [2026-04-07T15:06:38.608Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:06:38.619Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+­ƒôí [2026-04-07T15:06:38.623Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:06:38.626Z] GET /api/pedidos?cliente=&pedido=&produto=&dataInicial=&dataFinal=&dateType=pedido&tipo_item=&only_active=true&page=1&limit=20 from 127.0.0.1
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒôí [2026-04-07T15:06:38.771Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: J61JZ8yAe4FaV_GeAAAG
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: 4sP5b0UfgcrZWWzaAAAH
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+­ƒôí [2026-04-07T15:06:39.013Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:07:08.614Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:07:17.352Z] GET /api/company from 127.0.0.1
+­ƒôí [2026-04-07T15:07:38.488Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:07:43.566Z] POST /api/users/login from 127.0.0.1
+­ƒôí [2026-04-07T15:08:08.483Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:08:30.666Z] GET /api/produtos?search=&code=&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'SCL-0001',  'ARD-10000',
+  'ARD-10003', 'ARD-10004',
+  'ARD-10005', 'ARD3-0001',
+  'ARD3-0004', 'ARD3-0007',
+  'ARD3-0033', 'ARD4-0001',
+  'ARD4-0013', 'ARD4-0015',
+  'ARD4-0017', 'ARD4-0020',
+  'ARD4-0021', 'ARD4-0034',
+  'ARD4-0085', 'ARD4-0086',
+  'ARD4-0088', 'ARD4-0089'
+]
+­ƒôè Documentos encontrados: 1
+­ƒôí [2026-04-07T15:08:31.292Z] GET /api/produtos?search=&code=&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'SCL-0001',  'ARD-10000',
+  'ARD-10003', 'ARD-10004',
+  'ARD-10005', 'ARD3-0001',
+  'ARD3-0004', 'ARD3-0007',
+  'ARD3-0033', 'ARD4-0001',
+  'ARD4-0013', 'ARD4-0015',
+  'ARD4-0017', 'ARD4-0020',
+  'ARD4-0021', 'ARD4-0034',
+  'ARD4-0085', 'ARD4-0086',
+  'ARD4-0088', 'ARD4-0089'
+]
+­ƒôè Documentos encontrados: 1
+­ƒôí [2026-04-07T15:08:33.382Z] GET /api/produtos?search=&code=m&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'COM-0001',  'COM-0002',
+  'COM-0002',  'COM-0002',
+  'COM-0002',  'COM-0003',
+  'COM-0004',  'COM-0005',
+  'COM-10000', 'MCO-0001',
+  'MCO-0002',  'MCO-0003',
+  'MCO-0004',  'MCO-0005',
+  'MCO-0006',  'MCO-0007',
+  'MCO-0008',  'MCO-0009',
+  'MCO-0010',  'MCO-0011'
+]
+­ƒôè Documentos encontrados: 0
+­ƒôí [2026-04-07T15:08:34.463Z] GET /api/produtos?search=&code=mt&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒôí [2026-04-07T15:08:34.678Z] GET /api/produtos?search=&code=mt6&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'MT1-0001', 'MT1-0002',
+  'MT1-0003', 'MT1-0004',
+  'MT1-0005', 'MT1-0006',
+  'MT1-0007', 'MT1-0008',
+  'MT1-0009', 'MT1-0010',
+  'MT1-0011', 'MT1-0012',
+  'MT1-0013', 'MT1-0014',
+  'MT1-0015', 'MT1-0017',
+  'MT1-0018', 'MT1-0019',
+  'MT1-0020', 'MT1-0021'
+]
+­ƒôè Documentos encontrados: 0
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'MT6-0001', 'MT6-0002',
+  'MT6-0003', 'MT6-0004',
+  'MT6-0005', 'MT6-0006',
+  'MT6-0007', 'MT6-0008',
+  'MT6-0009', 'MT6-0010',
+  'MT6-0011', 'MT6-0012',
+  'MT6-0013', 'MT6-0014',
+  'MT6-0015', 'MT6-0016',
+  'MT6-0017', 'MT6-0018',
+  'MT6-0019', 'MT6-0020'
+]
+­ƒôè Documentos encontrados: 5
+­ƒôí [2026-04-07T15:08:36.086Z] GET /api/produtos?search=&code=mt6-&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'MT6-0001', 'MT6-0002',
+  'MT6-0003', 'MT6-0004',
+  'MT6-0005', 'MT6-0006',
+  'MT6-0007', 'MT6-0008',
+  'MT6-0009', 'MT6-0010',
+  'MT6-0011', 'MT6-0012',
+  'MT6-0013', 'MT6-0014',
+  'MT6-0015', 'MT6-0016',
+  'MT6-0017', 'MT6-0018',
+  'MT6-0019', 'MT6-0020'
+]
+­ƒôí [2026-04-07T15:08:36.406Z] GET /api/produtos?search=&code=mt6-1&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒôè Documentos encontrados: 5
+­ƒôí [2026-04-07T15:08:36.621Z] GET /api/produtos?search=&code=mt6-10&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [
+  'MT6-10001', 'MT6-10005',
+  'MT6-10010', 'MT6-10013',
+  'MT6-1637',  'MT6-1638',
+  'MT6-1639',  'MT6-1640',
+  'MT6-1641',  'MT6-1642',
+  'MT6-1643',  'MT6-1644',
+  'MT6-1645',  'MT6-1646',
+  'MT6-1647',  'MT6-1648',
+  'MT6-1649',  'MT6-1650',
+  'MT6-1651',  'MT6-1652'
+]
+­ƒôè Documentos encontrados: 0
+­ƒöì C├│digos sendo buscados no MySQL: [ 'MT6-10001', 'MT6-10005', 'MT6-10010', 'MT6-10013' ]
+­ƒôè Documentos encontrados: 0
+­ƒôí [2026-04-07T15:08:37.258Z] GET /api/produtos?search=&code=mt6-100&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒôí [2026-04-07T15:08:37.461Z] GET /api/produtos?search=&code=mt6-1001&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒöì C├│digos sendo buscados no MySQL: [ 'MT6-10001', 'MT6-10005', 'MT6-10010', 'MT6-10013' ]
+­ƒôí [2026-04-07T15:08:37.662Z] GET /api/produtos?search=&code=mt6-10010&type=&client=&client_code=&file_path=&page=1&limit=20 from 127.0.0.1
+­ƒôè Documentos encontrados: 0
+­ƒöì C├│digos sendo buscados no MySQL: [ 'MT6-10010', 'MT6-10013' ]
+­ƒôè Documentos encontrados: 0
+­ƒöì C├│digos sendo buscados no MySQL: [ 'MT6-10010' ]
+­ƒôí [2026-04-07T15:08:38.481Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôè Documentos encontrados: 0
+­ƒôí [2026-04-07T15:08:42.529Z] GET /api/docs/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:08:42.530Z] GET /api/production/estrutura/MT6-10010 from 127.0.0.1
+­ƒÄ» [PRODUCTION ROUTER] Hit: GET /estrutura/MT6-10010
+­ƒÄ» [PRODUCTION ROUTER] Hit: GET /estrutura/MT6-10010
+­ƒöì[ESTRUTURA] Buscando estrutura para: MT6-10010 (Original: MT6-10010)
+­ƒôí [2026-04-07T15:08:42.672Z] GET /api/docs/MT6-10010 from 127.0.0.1
+Ô£à[ESTRUTURA] Encontrado no Protheus: 40 itens
+­ƒôí [2026-04-07T15:08:43.849Z] GET /api/production/estrutura/MT6-10010 from 127.0.0.1
+­ƒÄ» [PRODUCTION ROUTER] Hit: GET /estrutura/MT6-10010
+­ƒÄ» [PRODUCTION ROUTER] Hit: GET /estrutura/MT6-10010
+­ƒöì[ESTRUTURA] Buscando estrutura para: MT6-10010 (Original: MT6-10010)
+­ƒôí [2026-04-07T15:08:43.855Z] GET /api/stock/MT6-10010/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:43.856Z] GET /api/stock/MMP-0007/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:43.857Z] GET /api/stock/MT3-14265/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:43.865Z] GET /api/stock/MTA-0379/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:43.866Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.063Z] GET /api/stock/MTT-0056/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.099Z] GET /api/stock/MT3-14266/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.106Z] GET /api/stock/MT4-14535/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.107Z] GET /api/stock/MT4-30306/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.108Z] GET /api/stock/MTC-0091/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.132Z] GET /api/stock/MT4-30308/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.199Z] GET /api/stock/MT4-30309/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.264Z] GET /api/stock/MT4-30310/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.284Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.286Z] GET /api/stock/MT3-14267/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.287Z] GET /api/stock/MTA-0298/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.287Z] GET /api/stock/MTA-3733/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.330Z] GET /api/stock/MT3-14268/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.397Z] GET /api/stock/MT4-30307/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.467Z] GET /api/stock/MT5-28760/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.468Z] GET /api/stock/MT5-28761/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.469Z] GET /api/stock/MTA-0086/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.469Z] GET /api/stock/MTA-0407/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.470Z] GET /api/stock/MTA-0445/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.535Z] GET /api/stock/MTA-0593/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.600Z] GET /api/stock/MTA-3542/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.652Z] GET /api/stock/MTI-0339/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.654Z] GET /api/stock/MTA-0379/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.654Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.655Z] GET /api/stock/MTA-3733/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.664Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.729Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.834Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+Ô£à[ESTRUTURA] Encontrado no Protheus: 40 itens
+­ƒôí [2026-04-07T15:08:44.972Z] GET /api/stock/MT6-10010/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.973Z] GET /api/stock/MMP-0007/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.973Z] GET /api/stock/MT3-14265/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.974Z] GET /api/stock/MTA-0379/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:44.975Z] GET /api/stock/MTT-0056/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.017Z] GET /api/stock/MT3-14266/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.043Z] GET /api/stock/MT4-14535/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.111Z] GET /api/stock/MT4-30306/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.156Z] GET /api/stock/MTC-0091/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.157Z] GET /api/stock/MT4-30308/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.157Z] GET /api/stock/MT4-30309/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.158Z] GET /api/stock/MT4-30310/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.178Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.202Z] GET /api/stock/MT3-14267/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.246Z] GET /api/stock/MTA-0298/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.321Z] GET /api/stock/MTA-3733/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.335Z] GET /api/stock/MT3-14268/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.339Z] GET /api/stock/MT4-30307/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.339Z] GET /api/stock/MT5-28760/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.340Z] GET /api/stock/MT5-28761/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.387Z] GET /api/stock/MTA-0086/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.391Z] GET /api/stock/MTA-0407/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.450Z] GET /api/stock/MTA-0445/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.512Z] GET /api/stock/MTA-0593/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.520Z] GET /api/stock/MTA-3542/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.533Z] GET /api/stock/MTA-0379/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.533Z] GET /api/stock/MTI-0339/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.534Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.581Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.582Z] GET /api/stock/MTA-3733/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.662Z] GET /api/stock/MTT-0452/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.714Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.898Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:45.965Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.034Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.105Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.175Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.246Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.317Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.383Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.450Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.520Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.589Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.655Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.720Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.786Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:46.852Z] GET /api/stock/MTC-0020/saldo from 127.0.0.1
+­ƒôí [2026-04-07T15:08:48.295Z] GET /api/produtos/MT6-10010/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 2 opera├º├Áes para produto MT6-10010
+­ƒôí [2026-04-07T15:08:56.539Z] GET /api/produtos/MT3-14265/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 7 opera├º├Áes para produto MT3-14265
+­ƒôí [2026-04-07T15:08:59.532Z] GET /api/produtos/MMP-0007/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MMP-0007
+­ƒôí [2026-04-07T15:09:01.512Z] GET /api/produtos/MTC-0020/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTC-0020
+­ƒôí [2026-04-07T15:09:02.984Z] GET /api/produtos/MTA-0379/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0379
+­ƒôí [2026-04-07T15:09:05.872Z] GET /api/produtos/MT4-14535/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT4-14535
+­ƒôí [2026-04-07T15:09:08.348Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:09:38.351Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:10:08.224Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:10:38.215Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.787Z] GET /api/produtos/MTT-0056/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.792Z] GET /api/produtos/MT3-14266/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.794Z] GET /api/produtos/MT4-30306/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.795Z] GET /api/produtos/MTC-0091/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.796Z] GET /api/produtos/MT4-30308/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:05.797Z] GET /api/produtos/MT4-30309/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTT-0056
+­ƒôí [2026-04-07T15:11:05.868Z] GET /api/produtos/MT4-30310/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTC-0091
+­ƒôí [2026-04-07T15:11:05.876Z] GET /api/produtos/MTT-0452/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTT-0452
+­ƒôí [2026-04-07T15:11:05.914Z] GET /api/produtos/MT3-14267/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 1 opera├º├Áes para produto MT4-30306
+­ƒôí [2026-04-07T15:11:05.953Z] GET /api/produtos/MTA-0298/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT4-30309
+­ƒôí [2026-04-07T15:11:05.986Z] GET /api/produtos/MTA-3733/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0298
+­ƒôí [2026-04-07T15:11:05.994Z] GET /api/produtos/MT3-14268/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT4-30308
+­ƒôí [2026-04-07T15:11:06.003Z] GET /api/produtos/MT4-30307/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-3733
+­ƒôí [2026-04-07T15:11:06.024Z] GET /api/produtos/MT5-28760/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT3-14266
+­ƒôí [2026-04-07T15:11:06.061Z] GET /api/produtos/MT5-28761/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT4-30310
+­ƒôí [2026-04-07T15:11:06.082Z] GET /api/produtos/MTA-0086/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0086
+­ƒôí [2026-04-07T15:11:06.121Z] GET /api/produtos/MTA-0407/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 2 opera├º├Áes para produto MT4-30307
+­ƒôí [2026-04-07T15:11:06.138Z] GET /api/produtos/MTA-0445/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0407
+­ƒôí [2026-04-07T15:11:06.158Z] GET /api/produtos/MTA-0593/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT5-28760
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0445
+­ƒôí [2026-04-07T15:11:06.176Z] GET /api/produtos/MTA-3542/roteiro from 127.0.0.1
+­ƒôí [2026-04-07T15:11:06.178Z] GET /api/produtos/MTI-0339/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 6 opera├º├Áes para produto MT3-14267
+­ƒôí [2026-04-07T15:11:06.186Z] GET /api/produtos/MTT-0452/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-0593
+­ƒôí [2026-04-07T15:11:06.194Z] GET /api/produtos/MTA-3733/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-3542
+­ƒöº [ROTEIRO] 4 opera├º├Áes para produto MT5-28761
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTI-0339
+­ƒöº [ROTEIRO] 5 opera├º├Áes para produto MT3-14268
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTT-0452
+­ƒôí [2026-04-07T15:11:06.229Z] GET /api/produtos/MTT-0452/roteiro from 127.0.0.1
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTA-3733
+­ƒöº [ROTEIRO] 0 opera├º├Áes para produto MTT-0452
+­ƒôí [2026-04-07T15:11:08.121Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: nw2wXEasHLkCYfwmAAAJ
+­ƒƒó [SINCO] Cliente nw2wXEasHLkCYfwmAAAJ entrou na sala sinco_formulario
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: _XlH3Wc5pQtE2jZAAAAL
+­ƒƒó [SINCO] Cliente _XlH3Wc5pQtE2jZAAAAL entrou na sala sinco_formulario
+­ƒôí [2026-04-07T15:11:38.051Z] GET /api/sinco/produto/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:38.112Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:38.244Z] GET /api/sinco/arvore/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:38.245Z] GET /api/sinco/restricoes/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:38.245Z] GET /api/sinco/operacoes/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:11:38.246Z] GET /api/sinco/restricoes-sz0/MT6-10010 from 127.0.0.1
+node : Erro restricoes 
+SZ0: function 
+pg_catalog.btrim(bytea) 
+does not exist
+No linha:1 caractere:1
++ node index.js > 
+server_crash_log.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo        
+  : NotSpecified: (Erro 
+restricoes... does not 
+exist:String)     [], 
+RemoteException
+    + 
+FullyQualifiedErrorId : 
+NativeCommandError
+ 
+­ƒôí [2026-04-07T15:12:08.117Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:12:38.115Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:13:08.114Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:13:28.904Z] GET /api/sinco/restricoes-sz0/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:13:38.121Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:13:38.799Z] POST /api/auth/login from 127.0.0.1
+­ƒôí [2026-04-07T15:14:08.110Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:14:38.116Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:15:08.125Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:15:38.118Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:16:08.124Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:16:38.116Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒö┤ [Socket.io] Cliente desconectado: _XlH3Wc5pQtE2jZAAAAL
+­ƒö┤ [Socket.io] Cliente desconectado: nw2wXEasHLkCYfwmAAAJ
+­ƒö┤ [Socket.io] Cliente desconectado: 4sP5b0UfgcrZWWzaAAAH
+­ƒö┤ [Socket.io] Cliente desconectado: J61JZ8yAe4FaV_GeAAAG
+­ƒôí [2026-04-07T15:16:57.392Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:16:57.397Z] GET /api/users/my-permissions from 127.0.0.1
+­ƒôí [2026-04-07T15:16:57.542Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:16:57.546Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: i_wPLi1IbLokLOt1AAAN
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: a0b5FfzoVxhUW62pAAAP
+­ƒƒó [SINCO] Cliente a0b5FfzoVxhUW62pAAAP entrou na sala sinco_formulario
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: UyHL0Sw_7YtSMvaQAAAR
+­ƒƒó [SINCO] Cliente UyHL0Sw_7YtSMvaQAAAR entrou na sala sinco_formulario
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: D7mn5nUvT3ziveeKAAAT
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+­ƒôí [2026-04-07T15:16:57.732Z] GET /api/users/my-permissions from 127.0.0.1
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒôí [2026-04-07T15:16:57.864Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒôí [2026-04-07T15:16:57.964Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:16:58.011Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:06.392Z] GET /api/sinco/produto/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:06.571Z] GET /api/sinco/arvore/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:06.573Z] GET /api/sinco/restricoes/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:06.575Z] GET /api/sinco/operacoes/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:06.577Z] GET /api/sinco/restricoes-sz0/MT6-10010 from 127.0.0.1
+Erro restricoes SZ0: 
+function 
+pg_catalog.btrim(bytea) 
+does not exist
+­ƒôí [2026-04-07T15:17:27.513Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:17:57.510Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒö┤ [Socket.io] Cliente desconectado: D7mn5nUvT3ziveeKAAAT
+­ƒö┤ [Socket.io] Cliente desconectado: i_wPLi1IbLokLOt1AAAN
+­ƒö┤ [Socket.io] Cliente desconectado: UyHL0Sw_7YtSMvaQAAAR
+­ƒö┤ [Socket.io] Cliente desconectado: a0b5FfzoVxhUW62pAAAP
+­ƒôí [2026-04-07T15:18:09.673Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:18:09.700Z] GET /api/users/my-permissions from 127.0.0.1
+­ƒôí [2026-04-07T15:18:09.780Z] GET /api/users/my-permissions from 127.0.0.1
+­ƒôí [2026-04-07T15:18:09.808Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+­ƒôí [2026-04-07T15:18:09.810Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: h9Oak4z_0q4Kta-VAAAV
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: Tf0ecG0BesDE4f-aAAAX
+­ƒƒó [SINCO] Cliente Tf0ecG0BesDE4f-aAAAX entrou na sala sinco_formulario
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: 7YyYfibv3k10wf01AAAZ
+­ƒƒó Usu├írio 37 entrou na sala do socket.
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒôí [2026-04-07T15:18:09.895Z] GET /api/company from 127.0.0.1
+­ƒôè [COMPANY] GET request received
+­ƒƒó [Socket.io] Nova conex├úo estabelecida: ENJ4jjOnfP__hNdzAAAb
+­ƒƒó [SINCO] Cliente ENJ4jjOnfP__hNdzAAAb entrou na sala sinco_formulario
+Ô£à [COMPANY] Query successful, rows: 1
+­ƒôí [2026-04-07T15:18:10.033Z] GET /api/sgq/processos from 127.0.0.1
+­ƒôí [2026-04-07T15:18:10.090Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:17.933Z] GET /api/sinco/produto/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:18.108Z] GET /api/sinco/arvore/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:18.110Z] GET /api/sinco/restricoes/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:18.112Z] GET /api/sinco/restricoes-sz0/MT6-10010 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:18.113Z] GET /api/sinco/operacoes/MT6-10010 from 127.0.0.1
+Erro restricoes SZ0: 
+function 
+pg_catalog.btrim(bytea) 
+does not exist
+­ƒôí [2026-04-07T15:18:39.809Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:18:41.973Z] POST /api/auth/login from 127.0.0.1
+­ƒôí [2026-04-07T15:19:09.814Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1
+­ƒôí [2026-04-07T15:19:39.807Z] GET /api/avisos/nao-concluidos/37 from 127.0.0.1

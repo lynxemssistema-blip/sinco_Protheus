@@ -1,17 +1,49 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { FileText } from 'lucide-react';
 
-export const NfTooltip = ({ notas_fiscais, unidade, onNfClick }) => {
-    if (!notas_fiscais || notas_fiscais.length === 0) return null;
-    return (
-        <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
+export const NfTooltipPortal = ({ targetRef, notas_fiscais, unidade, onNfClick }) => {
+    if (!notas_fiscais || notas_fiscais.length === 0 || !targetRef.current) return null;
+
+    const rect = targetRef.current.getBoundingClientRect();
+    
+    // Position below the element if there is space, otherwise above.
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const preferBelow = spaceBelow > 200; // if we have 200px below
+    
+    const top = preferBelow 
+        ? rect.bottom + window.scrollY + 8 
+        : rect.top + window.scrollY - 8;
+        
+    const left = rect.left + rect.width / 2 + window.scrollX;
+
+    const style = {
+        position: 'absolute',
+        top: `${top}px`,
+        left: `${left}px`,
+        transform: preferBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+        zIndex: 9999,
+    };
+
+    return createPortal(
+        <div 
+            style={style}
+            className="flex flex-col items-center pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+        >
+            {!preferBelow && (
+                <div className="w-2 h-2 bg-slate-800 rotate-45 -mb-1 border-t border-l border-slate-700 z-10" />
+            )}
             <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px]">
                 <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Notas Fiscais:</div>
                 {notas_fiscais.map((nf, idx) => (
                     <div
                         key={idx}
                         className="py-0.5 flex justify-between gap-3 hover:bg-slate-700/50 cursor-pointer rounded px-1 transition-colors group/nf"
-                        onClick={(e) => { e.stopPropagation(); onNfClick && onNfClick(nf); }}
+                        onClick={(e) => { 
+                            e.stopPropagation(); 
+                            onNfClick && onNfClick(nf); 
+                        }}
                     >
                         <span>
                             <span className="text-slate-400">NF:</span> {nf.nota}{' '}
@@ -29,54 +61,114 @@ export const NfTooltip = ({ notas_fiscais, unidade, onNfClick }) => {
                     </div>
                 ))}
             </div>
-            <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700" />
-        </div>
+            {preferBelow && (
+                <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700" />
+            )}
+        </div>,
+        document.body
     );
 };
 
 /**
- * Renders ENTREGUE / PENDENTE / LIBERADO badge with NF tooltip on hover.
+ * Renders ENTREGUE / PENDENTE / LIBERADO badge with NF tooltip on hover via React Portal.
  * @param {object} item - order item object
  * @param {function} onNfClick - callback(nf) when a NF row is clicked
  */
 const ItemStatusBadge = ({ item, onNfClick }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+    const badgeRef = useRef(null);
+
     const qtdFaturar = parseFloat(item.qtd_faturar || 0);
     const hasNf = item.notas_fiscais && item.notas_fiscais.length > 0;
 
     if (qtdFaturar <= 0) {
         return (
-            <div className="relative group inline-flex justify-center">
+            <div 
+                ref={badgeRef}
+                className="relative inline-flex justify-center"
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+            >
                 <span className="px-2 py-1 text-[10px] font-bold bg-green-100 text-green-700 rounded border border-green-200 cursor-help">
                     ENTREGUE
                 </span>
-                <NfTooltip notas_fiscais={item.notas_fiscais} unidade={item.unidade} onNfClick={onNfClick} />
+                {showTooltip && (
+                    <NfTooltipPortal 
+                        targetRef={badgeRef} 
+                        notas_fiscais={item.notas_fiscais} 
+                        unidade={item.unidade} 
+                        onNfClick={onNfClick} 
+                    />
+                )}
             </div>
         );
     }
 
     if (!item.op_num || item.op_num === '-') {
         return (
-            <div className="relative group inline-flex justify-center">
+            <div 
+                ref={badgeRef}
+                className="relative inline-flex justify-center"
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+            >
                 <span className="px-2 py-1 text-[10px] font-bold bg-red-100 text-red-700 rounded border border-red-200">
                     PENDENTE
                 </span>
-                <div className="absolute z-[60] bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                    <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap">
-                        Aguardando abertura de OP
-                    </div>
-                    <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700" />
-                </div>
+                {showTooltip && createPortal(
+                    (() => {
+                        if (!badgeRef.current) return null;
+                        const rect = badgeRef.current.getBoundingClientRect();
+                        const spaceBelow = window.innerHeight - rect.bottom;
+                        const preferBelow = spaceBelow > 100;
+                        const top = preferBelow 
+                            ? rect.bottom + window.scrollY + 8 
+                            : rect.top + window.scrollY - 8;
+                        const left = rect.left + rect.width / 2 + window.scrollX;
+                        const style = {
+                            position: 'absolute',
+                            top: `${top}px`,
+                            left: `${left}px`,
+                            transform: preferBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+                            zIndex: 9999,
+                        };
+                        return (
+                            <div style={style} className="flex flex-col items-center pointer-events-none">
+                                {!preferBelow && (
+                                    <div className="w-2 h-2 bg-slate-800 rotate-45 -mb-1 border-t border-l border-slate-700 z-10" />
+                                )}
+                                <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap">
+                                    Aguardando abertura de OP
+                                </div>
+                                {preferBelow && (
+                                    <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700" />
+                                )}
+                            </div>
+                        );
+                    })(),
+                    document.body
+                )}
             </div>
         );
     }
 
     return (
-        <div className="relative group inline-flex justify-center">
+        <div 
+            ref={badgeRef}
+            className="relative inline-flex justify-center"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+        >
             <span className={`px-2 py-1 text-[10px] font-bold rounded border ${hasNf ? 'cursor-help' : ''} bg-orange-100 text-orange-700 border-orange-200`}>
                 LIBERADO
             </span>
-            {hasNf && (
-                <NfTooltip notas_fiscais={item.notas_fiscais} unidade={item.unidade} onNfClick={onNfClick} />
+            {showTooltip && hasNf && (
+                <NfTooltipPortal 
+                    targetRef={badgeRef} 
+                    notas_fiscais={item.notas_fiscais} 
+                    unidade={item.unidade} 
+                    onNfClick={onNfClick} 
+                />
             )}
         </div>
     );

@@ -3,6 +3,7 @@ import { X, Calendar, Save, Trash2, Plus, AlertCircle, Package, Pencil, XCircle,
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
+import ConfirmModal from './ConfirmModal';
 
 const EMPTY_FORM = {
     data_entrega_pcp: '',
@@ -14,6 +15,15 @@ const EMPTY_FORM = {
     lote: '',
     numero_lote: '',
     gerar_op_protheus: true
+};
+
+const getDisplayOp = (op, itemNumber) => {
+    if (!op || String(op).trim() === '-') return op;
+    let cleanOp = String(op).trim();
+    if (cleanOp.length === 6 && itemNumber && String(itemNumber).trim() !== '-') {
+        return cleanOp + String(itemNumber).trim().padStart(2, '0');
+    }
+    return cleanOp;
 };
 
 const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, hasOp, canGenerateOp, hideOpSwitch }) => (
@@ -138,6 +148,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const [editForm, setEditForm] = useState(EMPTY_FORM);
     const [localBatchOps, setLocalBatchOps] = useState({}); // Armazena as OPs geradas no lote
     const [processingItems, setProcessingItems] = useState([]); // Lista de chaves pedido_item sendo processadas no momento
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, id: null });
 
     const isBatch = Array.isArray(item);
     const targetItems = isBatch ? item : [item];
@@ -533,10 +544,17 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
         }
     };
 
-    const handleDelete = async (e, id) => {
+    const handleDeleteClick = (e, id) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!window.confirm('Remover esta programação?')) return;
+        setConfirmModal({ isOpen: true, id });
+    };
+
+    const handleConfirmDelete = async () => {
+        const id = confirmModal.id;
+        setConfirmModal({ isOpen: false, id: null });
+        if (!id) return;
+        
         try {
             const res = await api.delete(`/pedidos/pcp-forecasts/${id}`);
             if (res.data?.success) {
@@ -655,7 +673,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                             </span>
                                                         )}
                                                         {localOp && (
-                                                            <span className="text-xs bg-cyan-100 text-cyan-700 font-bold px-2 py-0.5 rounded">OP: {localOp}</span>
+                                                            <span className="text-xs bg-cyan-100 text-cyan-700 font-bold px-2 py-0.5 rounded">OP: {getDisplayOp(localOp, t.item)}</span>
                                                         )}
                                                         {!eligibility.valid && !localOp && (
                                                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
@@ -707,7 +725,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                 </span>
                                                                 {(prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') && (
                                                                     <span className="text-xs bg-cyan-100 text-cyan-700 font-bold px-2 py-0.5 rounded" title="OP Vinculada">
-                                                                        OP: {prog.op_protheus}
+                                                                        OP: {getDisplayOp(prog.op_protheus, itemNum)}
                                                                     </span>
                                                                 )}
                                                             </>
@@ -724,9 +742,9 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                                 <Pencil className="h-3.5 w-3.5" />
                                                             </button>
                                                         )}
-                                                        <button onClick={(e) => handleDelete(e, prog.id)} disabled={editingId === prog.id || (prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-')}
+                                                        <button onClick={(e) => handleDeleteClick(e, prog.id)} disabled={editingId === prog.id}
                                                             className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                                            title={(prog.op_protheus && String(prog.op_protheus).trim().length > 0 && String(prog.op_protheus).trim() !== '-') ? "Não é possível excluir programação com O.P. vinculada" : "Remover programação"}>
+                                                            title="Remover programação">
                                                             <Trash2 className="h-3.5 w-3.5" />
                                                         </button>
                                                     </div>
@@ -785,6 +803,13 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     </button>
                 </div>
             </div>
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                title="Remover Programação PCP"
+                message="Tem certeza que deseja remover esta programação do sistema?"
+                onConfirm={handleConfirmDelete}
+                onCancel={() => setConfirmModal({ isOpen: false, id: null })}
+            />
         </div>
     );
 };

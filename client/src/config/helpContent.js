@@ -493,7 +493,9 @@ export const HELP_CONTENT = {
     categoryColor: '#f59e0b',
     title: 'Controle de Produção',
     icon: 'LayoutDashboard',
+    image: '/help-images/controle_producao.png',
     description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo. Inclui geração de Relatório de Impressão no Padrão Corporativo MetalFisa (PDF A4 Paisagem) com sub-paginação por recurso/máquina.',
+    imageCaption: 'Interface principal do Controle de Produção com filtros avançados e listagem detalhada de OPs e operações pendentes.',
     steps: [
       '— FILTROS —',
       'OP: Filtra pelo número EXATO da Ordem de Produção (ex: 005473). Para pesquisar várias OPs de uma vez, separe-as por vírgula.',
@@ -797,7 +799,9 @@ export const HELP_CONTENT = {
     categoryColor: '#f59e0b',
     title: 'Matriz de ProduÃ§Ã£o',
     icon: 'Grid',
+    image: '/help-images/producao_matrix.png',
     description: 'Visualize a carga de trabalho por mÃ¡quina/centro de custo em formato de matriz. Identifique sobrecarga e capacidade ociosa.',
+    imageCaption: 'Visão matricial distribuindo a carga de OPs ao longo do tempo por recurso produtivo.',
     steps: [
       'Selecione o perÃ­odo desejado.',
       'Analise as cÃ©lulas da matriz: cores indicam % de ocupaÃ§Ã£o.',
@@ -1391,7 +1395,9 @@ export const HELP_CONTENT = {
     categoryColor: '#4f46e5', // indigo-600
     title: 'VisÃ£o Global (FÃ¡brica Inteira)',
     icon: 'Factory',
+    image: '/help-images/pcp_visao_fabrica.png',
     description: 'Painel completo de Business Intelligence reunindo toda a carga fabril agrupada por Quinzenas contendo o futuro (dentro do prazo) e os atrasos (fora do prazo) de produÃ§Ã£o.',
+    imageCaption: 'Dashboard estratégico da fábrica agrupando carga em quinzenas para análise tática e priorização.',
     steps: [
       'Utilize as abas para separar a visÃ£o entre "Entregas Futuras" ou carregamento de "Atrasados".',
       'Abra a aba "Dashboard Financeiro" (se autorizado) para verificar o risco/valor bloqueado na fÃ¡brica.',
@@ -2233,7 +2239,7 @@ export const HELP_CONTENT = {
       { path: '/', label: 'Dashboard Principal' },
     ],
   },
-  
+
   // â”€â”€ MÃ³dulo PCP Independente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   '/ind-pcp-release': {
     category: 'PCP',
@@ -2914,7 +2920,9 @@ export const HELP_CONTENT = {
     categoryColor: '#4f46e5',
     title: 'Planejamento Estratégico (Smart Planner)',
     icon: 'GitMerge',
+    image: '/help-images/pcp_planejador.png',
     description: 'Ferramenta para definição sequencial e encadeada de ordens de produção (Cascata Automática) focada em visibilidade de longo prazo.',
+    imageCaption: 'Módulo do Smart Planner configurando a cascata automática e o encadeamento de datas das operações de uma OP.',
     steps: [
       'Visualização: Utilize a barra de busca para localizar um Pedido de Venda ou OP. A OP será agrupada por recursos.',
       'Ordenação de Filas: Utilize as setas na primeira coluna para reordenar a sequência de recursos conforme sua estratégia de produção. Esta ordem será salva no banco para as próximas sessões.',
@@ -2929,6 +2937,79 @@ export const HELP_CONTENT = {
     ],
     links: [
       { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  // ── PCP Refinado - Capacidade de Recursos ──────────────────────────────────
+  '/pcp-refinado/capacidade': {
+    category: 'PCP Refinado',
+    categoryColor: '#8b5cf6',
+    title: 'Cadastro de Capacidade de Recursos',
+    icon: 'Layers',
+    image: '/help-images/pcp_capacidade.png',
+    description: 'Cadastro dos limites de capacidade diária (em minutos) e tempos padrão dos recursos produtivos para o motor PCF.',
+    imageCaption: 'Painel para configuração das capacidades diárias e tempos de setup/fallback em minutos para cada recurso do chão de fábrica.',
+    steps: [
+      'Visualizar Recursos: A tabela lista todos os recursos ativos integrados a partir do Protheus.',
+      'Configurar Capacidade: Defina a capacidade diária em minutos (ex: 480 min para 8h diárias). Recursos com capacidade 0 são considerados inativos.',
+      'Definir Tempo Padrão (Fallback): Configure o tempo padrão em minutos de processamento por peça para as operações deste recurso.',
+      'Salvar Alterações: Clique no botão Salvar para atualizar as capacidades no banco MySQL.'
+    ],
+    tips: [
+      'Se um recurso não possuir capacidade definida nesta tabela, o motor de Planejamento Inteligente utilizará de forma automática o fallback padrão de 480 minutos/dia.',
+      'Configure com precisão os gargalos conhecidos para obter simulações realistas e prazos confiáveis.'
+    ],
+    links: [
+      { path: '/pcp-refinado/ocupacao', label: 'Taxa de Ocupação' },
+      { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  // ── PCP Refinado - Taxa de Ocupação & Planejamento Inteligente ──────────────────
+  '/pcp-refinado/ocupacao': {
+    category: 'PCP Refinado',
+    categoryColor: '#8b5cf6',
+    title: 'Taxa de Ocupação & Planejamento Inteligente (PCF)',
+    icon: 'BarChart2',
+    image: '/help-images/pcp_ocupacao.png',
+    description: 'Painel para análise da capacidade produtiva versus carga de trabalho planejada e apontamentos executados em tempo real por recurso.',
+    imageCaption: 'Painel de Taxa de Ocupação comparando Capacidade, Carga Planejada e Apontamento Executado lado a lado. Recursos como MO0003 em vermelho indicam sobrecarga e transbordo automático para dias subsequentes.',
+    steps: [
+      'Análise de Ocupação: O gráfico de barras exibe para cada dia a comparação de Capacidade vs Carga vs Apontamento.',
+      'Fila de Sequenciamento (PCF): O motor PCF ordena a fila de OPs a partir da Data de Entrega PCP (mais urgente primeiro) para garantir o atendimento dos prazos.',
+      'Carga das Operações: Calculada como: Carga (minutos) = Quantidade Pendente × Tempo de Engenharia. A quantidade pendente desconta automaticamente tudo o que já foi apontado no chão de fábrica.',
+      'Transbordo de Capacidade (Overflow): Caso a carga supere a capacidade diária do recurso, o excedente transborda para o próximo dia útil subsequente.',
+      'Encadeamento entre Operações: A data de término da operação anterior define o início da próxima. Se usarem o mesmo recurso, a próxima é forçada a começar no dia seguinte para evitar conflitos.'
+    ],
+    tips: [
+      'Bloqueio do Passado: A menor data para planejamento é sempre hoje. Se o usuário escolher uma data retroativa, o sistema ajusta automaticamente para hoje para evitar planejar no passado.',
+      'Desvio de Fins de Semana: O algoritmo ignora domingos e sábados não-trabalhados nas simulações de transbordo e encadeamento.',
+      'Executado do Dia: Toda produção apontada no dia atualiza em tempo real a linha do Executado (Apontamento), permitindo comparar diretamente o planejado com a realidade.'
+    ],
+    links: [
+      { path: '/pcp-refinado/capacidade', label: 'Cadastro de Capacidades' },
+      { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  // ── PCP Refinado - Rastreabilidade de Pedidos ────────────────────────────────────
+  '/pcp-refinado/rastreabilidade': {
+    category: 'PCP Refinado',
+    categoryColor: '#8b5cf6',
+    title: 'Rastreabilidade de Pedidos e Faturamento',
+    icon: 'Network',
+    description: 'Painel para rastreamento de pedidos de venda, ordens de produção vinculadas e evolução física de cada item até o faturamento.',
+    steps: [
+      'Buscar Pedido: Insira o número do pedido de venda ou nome do cliente para listar os itens.',
+      'Acompanhar Evolução: A tabela exibe o percentual produzido e o status atual da OP no roteiro de fabricação.',
+      'Previsão de Entrega: Exibe a comparação entre a data prometida ao cliente e a data estimada pelo motor de planejamento (PCF).'
+    ],
+    tips: [
+      'Clique em expandir na linha de um pedido para detalhar todas as operações do roteiro e identificar em qual máquina a produção está retida.'
+    ],
+    links: [
+      { path: '/pcp-refinado/ocupacao', label: 'Taxa de Ocupação' },
       { path: '/controle-producao', label: 'Controle de Produção' }
     ]
   }

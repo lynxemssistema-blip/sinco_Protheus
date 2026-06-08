@@ -549,7 +549,7 @@ router.get('/:codigo/roteiro', async (req, res) => {
                 TRIM(h1.h1_descri)              AS descricao,
                 TRIM(g2.g2_recurso)             AS recurso,
                 g2.g2_setup                     AS tempo_setup,
-                g2.g2_tempad                    AS tempo_padrao,
+                ROUND(g2.g2_tempad::numeric, 3) AS tempo_padrao,
                 g2.g2_ferram                    AS ferramentas,
                 g2.g2_depto                     AS departamento
             FROM public.sg2010 g2

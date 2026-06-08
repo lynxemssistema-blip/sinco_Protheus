@@ -4,7 +4,7 @@ import api from '../services/api';
 import { toast } from 'react-toastify';
 import SmartPlannerReport from './SmartPlannerReport';
 
-export default function PlanejamentoInteligenteModal({ isOpen, onClose, selectedOps, onPlanSuccess }) {
+export default function PlanejamentoInteligenteModal({ isOpen, onClose, selectedOps, onPlanSuccess, hermesTaskId = null }) {
     const getTodayDate = () => {
         const today = new Date();
         return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -48,6 +48,52 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             setIncludeSaturday(false);
         }
     }, [isOpen]);
+
+    // Modo Hermes: escuta progresso do FCS rodando no servidor via socket.io
+    useEffect(() => {
+        if (!isOpen || !hermesTaskId) return;
+
+        setLoading(true);
+        setAgentLogs([]);
+        setSuccessMessage('');
+        setResourceChart({});
+
+        let socket = null;
+        import('socket.io-client').then(({ io }) => {
+            socket = io(window.location.origin, {
+                transports: ['polling', 'websocket'],
+                reconnectionAttempts: 5,
+            });
+
+            socket.on('hermes_fcs_progress', (data) => {
+                if (data.runId !== hermesTaskId) return;
+
+                // Adiciona logs do lote em tempo real
+                if (data.agent_logs?.length) {
+                    setAgentLogs(prev => [
+                        ...prev,
+                        ...data.agent_logs.map(msg => ({ msg, icon: '⚙️', time: new Date() }))
+                    ]);
+                }
+
+                // Atualiza gráfico de carga por recurso
+                if (data.carga_diaria) {
+                    setResourceChart(data.carga_diaria);
+                }
+
+                // Finaliza quando servidor sinaliza conclusão
+                if (data.done) {
+                    setLoading(false);
+                    setSuccessMessage(data.message || 'Planejamento FCS concluído pelo Hermes (Servidor).');
+                }
+            });
+        }).catch(() => {
+            setLoading(false);
+            setSuccessMessage('Erro ao conectar ao socket do servidor.');
+        });
+
+        return () => { if (socket) socket.disconnect(); };
+    }, [isOpen, hermesTaskId]);
 
     if (!isOpen) return null;
 
@@ -190,6 +236,114 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
         }
     };
 
+    const handlePlanAll = async () => {
+        if (!dataInicio) {
+            toast.warning('Por favor, informe a data de início.');
+            return;
+        }
+        setLoading(true);
+        setMissingTimes([]);
+        setSuccessMessage('');
+        setAgentLogs([]);
+        setResourceChart({});
+
+        const BATCH_SIZE = 100;
+        let totalPlans = 0;
+        let totalOps   = 0;
+        let loteNum    = 0;
+        let totalLotes = '?';
+
+        try {
+            addLog('Consultando OPs abertas no Protheus (em lotes de SQL)...', <Database className="w-4 h-4 text-blue-500" />);
+
+            let offset    = 0;
+            let has_more  = true;
+
+            // Cada página SQL vira um lote FCS — sem carregar tudo na memória
+            while (has_more) {
+                // 1. Buscar próxima página de OPs
+                const pageRes = await api.get('/pcp-refinado/ops-abertas', {
+                    params:  { limit: BATCH_SIZE, offset },
+                    timeout: 30000,
+                });
+                const { ops: batch, total, has_more: more } = pageRes.data;
+
+                if (loteNum === 0) {
+                    totalLotes = Math.ceil(total / BATCH_SIZE);
+                    totalOps   = total;
+                    if (total === 0) {
+                        addLog('Nenhuma OP aberta com saldo encontrada.', <CheckCircle className="w-4 h-4 text-emerald-500" />);
+                        setSuccessMessage('Nenhuma OP aberta encontrada no Protheus.');
+                        return;
+                    }
+                    addLog(`${total} OPs abertas encontradas → ${totalLotes} lote(s) de até ${BATCH_SIZE}. Iniciando...`,
+                        <Cpu className="w-4 h-4 text-indigo-400" />);
+                }
+
+                has_more = more;
+                offset  += batch.length;
+                loteNum++;
+
+                if (batch.length === 0) break;
+
+                addLog(`📦 Lote ${loteNum}/${totalLotes} — ${batch.length} OPs (SQL offset ${offset - batch.length})...`,
+                    <FileText className="w-4 h-4 text-indigo-400" />);
+
+                // 2. Processar lote no FCS (usa preload_existing para não conflitar com lotes anteriores)
+                try {
+                    const res = await api.post('/pcp-refinado/smart-plan', {
+                        ops:              batch,
+                        data_inicio:      dataInicio,
+                        include_saturday: includeSaturday,
+                        preload_existing: true,
+                    }, { timeout: 600000 });
+
+                    totalPlans += res.data.plans || 0;
+
+                    if (res.data.agent_logs?.length > 0) {
+                        for (const log of res.data.agent_logs) {
+                            let icon = <Cpu className="w-4 h-4 text-slate-400" />;
+                            if (log.includes('ESTUDO') || log.includes('Iniciando')) icon = <BrainCircuit className="w-4 h-4 text-indigo-500" />;
+                            else if (log.includes('Salvando') || log.includes('Obtendo') || log.includes('Buscando')) icon = <Database className="w-4 h-4 text-blue-500" />;
+                            else if (log.includes('Alocados') || log.includes('fatia')) icon = <Clock className="w-4 h-4 text-emerald-500" />;
+                            else if (log.includes('⚠️') || log.includes('Sem capacidade')) icon = <AlertTriangle className="w-4 h-4 text-amber-500" />;
+                            addLog(log, icon);
+                        }
+                    }
+
+                    if (res.data.report?.carga_diaria) {
+                        setResourceChart(prev => {
+                            const next = { ...prev };
+                            for (const [rec, info] of Object.entries(res.data.report.carga_diaria)) {
+                                if (!next[rec]) next[rec] = { capDia: info.capDia, dates: {} };
+                                for (const [d, min] of Object.entries(info.dates || {})) {
+                                    next[rec].dates[d] = (next[rec].dates[d] || 0) + min;
+                                }
+                            }
+                            return next;
+                        });
+                    }
+
+                    addLog(`✅ Lote ${loteNum}/${totalLotes} concluído: ${res.data.plans || 0} plano(s).`,
+                        <CheckCircle className="w-4 h-4 text-emerald-500" />);
+                } catch (batchErr) {
+                    const msg = batchErr.response?.data?.error || batchErr.message;
+                    addLog(`❌ Lote ${loteNum} falhou: ${msg}`, <AlertTriangle className="w-4 h-4 text-red-500" />);
+                }
+            }
+
+            setSuccessMessage(`Planejamento global concluído! ${totalOps} OPs | ${totalPlans} planos | ${loteNum} lotes.`);
+            toast.success('Planejamento global aplicado com sucesso!');
+            if (onPlanSuccess) onPlanSuccess();
+
+        } catch (error) {
+            addLog('Falha no planejamento global.', <AlertTriangle className="w-4 h-4 text-red-500" />);
+            toast.error(error.response?.data?.error || 'Erro ao executar planejamento global.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <>
         <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -202,8 +356,19 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                             <Bot className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-800">Agente: Planejamento Inteligente</h2>
-                            <p className="text-sm text-indigo-600 font-medium">Motor de Sequenciamento FCS (Capacidade Finita)</p>
+                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                Agente: Planejamento Inteligente
+                                {hermesTaskId && (
+                                    <span className="text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-full px-2 py-0.5 flex items-center gap-1">
+                                        <Cpu className="w-3 h-3" /> Servidor (Hermes)
+                                    </span>
+                                )}
+                            </h2>
+                            <p className="text-sm text-indigo-600 font-medium">
+                                {hermesTaskId
+                                    ? 'Execução automática no servidor — recursos locais não utilizados'
+                                    : 'Motor de Sequenciamento FCS (Capacidade Finita)'}
+                            </p>
                         </div>
                     </div>
                     {!loading && (
@@ -430,21 +595,40 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
 
                 {/* FOOTER */}
                 {!successMessage && !missingTimes.length && !loading && (
-                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0">
+                    <div className="p-4 border-t border-slate-100 bg-white flex flex-wrap justify-between gap-3 shrink-0">
                         <button onClick={onClose} className="px-5 py-2 text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition-colors text-sm">Cancelar</button>
-                        <button
-                            onClick={handlePlan}
-                            disabled={!dataInicio || selectedOps.length === 0}
-                            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
-                        >
-                            <Play className="w-4 h-4" /> Executar Planejamento
-                        </button>
+                        {!hermesTaskId && (
+                            <div className="flex gap-2 flex-wrap">
+                                <button
+                                    onClick={handlePlanAll}
+                                    disabled={!dataInicio}
+                                    title="Executa o FCS em TODAS as OPs abertas do Protheus, em lotes de 100"
+                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
+                                >
+                                    <Play className="w-4 h-4" /> Planejar Todas as OPs
+                                </button>
+                                <button
+                                    onClick={handlePlan}
+                                    disabled={!dataInicio || selectedOps.length === 0}
+                                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
+                                >
+                                    <Play className="w-4 h-4" /> Executar ({selectedOps.length} OPs)
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
                 {loading && (
-                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
+                    <div className="p-4 border-t border-slate-100 bg-white flex justify-between items-center shrink-0">
+                        {hermesTaskId ? (
+                            <span className="text-sm text-emerald-700 font-medium flex items-center gap-2">
+                                <Cpu className="w-4 h-4" /> Processando no servidor — recursos do browser liberados
+                            </span>
+                        ) : (
+                            <span />
+                        )}
                         <button onClick={onClose} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-lg transition-colors text-sm border border-slate-200">
-                            Cancelar Processamento
+                            {hermesTaskId ? 'Fechar (continua em background)' : 'Cancelar Processamento'}
                         </button>
                     </div>
                 )}

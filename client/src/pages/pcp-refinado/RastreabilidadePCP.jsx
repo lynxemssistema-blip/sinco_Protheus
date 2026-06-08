@@ -201,7 +201,7 @@ const RastreabilidadePCP = () => {
                                                     <div className="flex items-center gap-6">
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); generateAiStrategy(item); }}
-                                                            className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-3 py-1.5 rounded-lg text-sm shadow-sm transition-all active:scale-95"
+                                                            className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white px-3 py-1.5 rounded-lg text-sm shadow-sm transition-all active:scale-95"
                                                             disabled={isGeneratingAi}
                                                         >
                                                             {isGeneratingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -254,7 +254,7 @@ const RastreabilidadePCP = () => {
                                                                     {timeSummaryArray.map(ts => (
                                                                         <div key={ts.recurso} className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded text-xs text-indigo-800">
                                                                             <span className="font-bold">{ts.recurso}:</span>
-                                                                            <span>{ts.tempo.toFixed(1)}h</span>
+                                                                            <span>{ts.tempo.toFixed(1)} min</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
@@ -388,7 +388,7 @@ const RastreabilidadePCP = () => {
             {(aiStrategy || isGeneratingAi || aiError) && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-indigo-100">
-                        <div className="px-6 py-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-purple-50 flex justify-between items-center">
+                        <div className="px-6 py-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50 flex justify-between items-center">
                             <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
                                 {isGeneratingAi ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <Sparkles className="w-6 h-6 text-indigo-600" />}
                                 Estratégia do Diretor Industrial (IA)
@@ -408,7 +408,7 @@ const RastreabilidadePCP = () => {
                                 <div className="flex flex-col items-center justify-center h-48 space-y-4">
                                     <div className="flex items-center gap-3">
                                         <div className="w-3 h-3 bg-indigo-500 rounded-full animate-bounce"></div>
-                                        <div className="w-3 h-3 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                        <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                                         <div className="w-3 h-3 bg-pink-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                     </div>
                                     <p className="text-indigo-700 font-medium">O Agente Gemini 1.5 Pro está analisando a estrutura de produção e o planejamento...</p>

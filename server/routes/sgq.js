@@ -1,16 +1,43 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../services/mysqlService');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// Alter tables to add reposicao_op column
+// Alter tables to add reposicao_op column and image/image_caption columns
 (async () => {
     try {
         await db.query(`ALTER TABLE app_sgq_rncs ADD COLUMN reposicao_op VARCHAR(50) DEFAULT NULL`);
         console.log('✅ Coluna reposicao_op adicionada à tabela app_sgq_rncs com sucesso (ou já existia).');
-    } catch (e) {
-        // Ignora se a coluna já existir
-    }
+    } catch (e) {}
+
+    try {
+        await db.query(`ALTER TABLE app_sgq_processos ADD COLUMN image TEXT DEFAULT NULL`);
+        console.log('✅ Coluna image adicionada à tabela app_sgq_processos.');
+    } catch (e) {}
+
+    try {
+        await db.query(`ALTER TABLE app_sgq_processos ADD COLUMN image_caption VARCHAR(255) DEFAULT NULL`);
+        console.log('✅ Coluna image_caption adicionada à tabela app_sgq_processos.');
+    } catch (e) {}
 })();
+
+// Multer storage configuration for help images
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = path.join(__dirname, '../uploads/sgq_ajuda');
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'ajuda-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage });
 
 // Auxiliar: Parse seguro para Strings tipo JSON Text
 const safeParse = (data) => {
@@ -45,7 +72,8 @@ router.get('/processos', async (req, res) => {
             steps: safeParse(r.steps),
             tips: safeParse(r.tips),
             links: safeParse(r.links),
-            responsables: safeParse(r.responsables)
+            responsables: safeParse(r.responsables),
+            imageCaption: r.image_caption
         }));
 
         res.json(processedRows);
@@ -55,16 +83,29 @@ router.get('/processos', async (req, res) => {
     }
 });
 
+// POST /api/sgq/processos/upload
+// Endpoint de upload para imagens de ajuda de contexto
+router.post('/processos/upload', upload.single('image'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+        const imageUrl = `/uploads/sgq_ajuda/${req.file.filename}`;
+        res.json({ url: imageUrl });
+    } catch (error) {
+        console.error('Erro ao fazer upload da imagem de ajuda:', error);
+        res.status(500).json({ error: 'Erro ao processar imagem.' });
+    }
+});
+
 // PUT /api/sgq/processos/:id
 // Atualiza informações contextuais e de diretoria/papel de uma tela
 router.put('/processos/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, steps, tips, links, responsables, document_id } = req.body;
+        const { title, description, steps, tips, links, responsables, document_id, image, image_caption } = req.body;
 
         await db.query(`
             UPDATE app_sgq_processos 
-            SET title = ?, description = ?, steps = ?, tips = ?, links = ?, responsables = ?, document_id = ?
+            SET title = ?, description = ?, steps = ?, tips = ?, links = ?, responsables = ?, document_id = ?, image = ?, image_caption = ?
             WHERE id = ?
         `, [
             title, 
@@ -74,6 +115,8 @@ router.put('/processos/:id', async (req, res) => {
             JSON.stringify(links || []), 
             JSON.stringify(responsables || []), 
             document_id || null,
+            image || null,
+            image_caption || null,
             id
         ]);
 

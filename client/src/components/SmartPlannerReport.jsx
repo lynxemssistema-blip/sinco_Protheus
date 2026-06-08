@@ -7,6 +7,13 @@ export default function SmartPlannerReport({ report, onClose }) {
     const [aiAnalysis, setAiAnalysis] = useState(null);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
+    const [expandedRows, setExpandedRows] = useState(new Set());
+
+    const toggleRow = (i) => setExpandedRows(prev => {
+        const next = new Set(prev);
+        next.has(i) ? next.delete(i) : next.add(i);
+        return next;
+    });
 
     const handleAiAnalyze = async () => {
         setAiLoading(true);
@@ -108,7 +115,7 @@ export default function SmartPlannerReport({ report, onClose }) {
                         <button
                             onClick={handleAiAnalyze}
                             disabled={aiLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg shadow transition-all active:scale-95"
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg shadow transition-all active:scale-95"
                         >
                             {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                             {aiLoading ? 'Analisando...' : 'Analisar com IA'}
@@ -232,47 +239,78 @@ export default function SmartPlannerReport({ report, onClose }) {
                                         <th className="px-2 py-2">Ocup.</th>
                                         <th className="px-2 py-2 text-center">Início</th>
                                         <th className="px-2 py-2 text-center">Fim</th>
+                                        <th className="px-2 py-2 text-center">Espera (dias)</th>
                                         <th className="px-2 py-2 text-center">Previsão</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {decisoes.map((d, i) => {
                                         const excede = d.excede_capacidade_dia;
+                                        const temFatias = Array.isArray(d.fatias_diarias) && d.fatias_diarias.length > 1;
+                                        const isExpanded = expandedRows.has(i);
                                         const rowBg = excede
                                             ? 'bg-red-50 border-l-4 border-l-red-400'
                                             : i % 2 === 0 ? 'bg-white' : 'bg-slate-50';
                                         return (
-                                            <tr key={i} className={`border-b border-slate-100 ${rowBg}`}>
-                                                <td className="px-2 py-2 font-bold font-mono">{d.op_numero}</td>
-                                                <td className="px-2 py-2 font-mono text-[9px] text-slate-600">{d.produto}</td>
-                                                <td className="px-2 py-2 text-center">{d.operacao}</td>
-                                                <td className="px-2 py-2">
-                                                    <div className={`font-bold ${excede ? 'text-red-700' : ''}`}>{d.recurso}</div>
-                                                    <div className="text-[9px] text-slate-500">{d.desc_recurso || ''}</div>
-                                                </td>
-                                                <td className="px-2 py-2 text-right">{d.tempo_unitario_min} min</td>
-                                                <td className="px-2 py-2 text-right">{d.qtd_pendente}</td>
-                                                <td className={`px-2 py-2 text-right font-bold ${excede ? 'text-red-600' : 'text-indigo-700'}`}>
-                                                    {d.total_minutos_necessarios} min
-                                                </td>
-                                                <td className="px-2 py-2 text-right text-slate-500">{d.capacidade_recurso_min_dia} min</td>
-                                                <td className="px-2 py-2">
-                                                    <CapBar pct={d.capacity_pct} />
-                                                </td>
-                                                <td className="px-2 py-2 text-center">{formatDate(d.data_inicio)}</td>
-                                                <td className="px-2 py-2 text-center">{formatDate(d.data_fim)}</td>
-                                                <td className="px-2 py-2 text-center">
-                                                    {excede ? (
-                                                        <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                            ⚠️ {d.dias_necessarios}d
-                                                        </span>
-                                                    ) : (
-                                                        <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                            ✅ 1 dia
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            </tr>
+                                            <React.Fragment key={i}>
+                                                <tr
+                                                    className={`border-b border-slate-100 ${rowBg} ${temFatias ? 'cursor-pointer hover:brightness-95' : ''}`}
+                                                    onClick={temFatias ? () => toggleRow(i) : undefined}
+                                                    title={temFatias ? 'Clique para ver o fatiamento diário' : undefined}
+                                                >
+                                                    <td className="px-2 py-2 font-bold font-mono">
+                                                        {temFatias && (
+                                                            <span className="mr-1 text-indigo-400">{isExpanded ? '▾' : '▸'}</span>
+                                                        )}
+                                                        {d.op_numero}
+                                                    </td>
+                                                    <td className="px-2 py-2 font-mono text-[9px] text-slate-600">{d.produto}</td>
+                                                    <td className="px-2 py-2 text-center">{d.operacao}</td>
+                                                    <td className="px-2 py-2">
+                                                        <div className={`font-bold ${excede ? 'text-red-700' : ''}`}>{d.recurso}</div>
+                                                        <div className="text-[9px] text-slate-500">{d.desc_recurso || ''}</div>
+                                                    </td>
+                                                    <td className="px-2 py-2 text-right">{d.tempo_unitario_min} min</td>
+                                                    <td className="px-2 py-2 text-right">{d.qtd_pendente}</td>
+                                                    <td className={`px-2 py-2 text-right font-bold ${excede ? 'text-red-600' : 'text-indigo-700'}`}>
+                                                        {d.total_minutos_necessarios} min
+                                                    </td>
+                                                    <td className="px-2 py-2 text-right text-slate-500">{d.capacidade_recurso_min_dia} min</td>
+                                                    <td className="px-2 py-2">
+                                                        <CapBar pct={d.capacity_pct} />
+                                                    </td>
+                                                    <td className="px-2 py-2 text-center">{formatDate(d.data_inicio)}</td>
+                                                    <td className="px-2 py-2 text-center">{formatDate(d.data_fim)}</td>
+                                                    <td className="px-2 py-2 text-center font-bold text-amber-600">{d.dias_espera > 0 ? `${d.dias_espera}d` : '-'}</td>
+                                                    <td className="px-2 py-2 text-center">
+                                                        {excede ? (
+                                                            <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                                ⚠️ {d.dias_necessarios}d
+                                                            </span>
+                                                        ) : (
+                                                            <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                                ✅ 1 dia
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                                {temFatias && isExpanded && (
+                                                    <tr className="bg-indigo-50">
+                                                        <td colSpan={13} className="px-6 py-2">
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {d.fatias_diarias.map((f, fi) => (
+                                                                    <div key={fi} className="flex items-center gap-1 bg-white border border-indigo-200 rounded-md px-2 py-1 text-[10px] shadow-sm">
+                                                                        <span className="font-bold text-indigo-700">{formatDate(f.data)}</span>
+                                                                        <span className="text-slate-500">→</span>
+                                                                        <span className="font-bold text-slate-800">{f.qtd} pcs</span>
+                                                                        <span className="text-slate-400">({f.minutos} min)</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })}
                                 </tbody>
@@ -319,29 +357,29 @@ export default function SmartPlannerReport({ report, onClose }) {
                         )}
 
                         {!aiAnalysis && !aiLoading && (
-                            <div className="mb-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 rounded-xl px-4 py-4 flex items-center justify-between">
+                            <div className="mb-4 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl px-4 py-4 flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <Sparkles className="w-5 h-5 text-violet-500" />
+                                    <Sparkles className="w-5 h-5 text-indigo-500" />
                                     <div>
-                                        <div className="text-sm font-bold text-violet-800">Análise Inteligente com Gemini IA</div>
-                                        <div className="text-xs text-violet-600">Clique em "Analisar com IA" para obter sugestões e diagnósticos avançados baseados no histórico da produção.</div>
+                                        <div className="text-sm font-bold text-indigo-800">Análise Inteligente com Gemini IA</div>
+                                        <div className="text-xs text-indigo-600">Clique em "Analisar com IA" para obter sugestões e diagnósticos avançados baseados no histórico da produção.</div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
                         {aiLoading && (
-                            <div className="mb-4 bg-violet-50 border border-violet-200 rounded-xl px-4 py-6 flex flex-col items-center gap-3">
-                                <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
-                                <div className="text-sm font-bold text-violet-700">Consultando Gemini IA...</div>
-                                <div className="text-xs text-violet-500">Analisando capacidade, histórico de 90 dias e padrões de gargalo.</div>
+                            <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-6 flex flex-col items-center gap-3">
+                                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                                <div className="text-sm font-bold text-indigo-700">Consultando Gemini IA...</div>
+                                <div className="text-xs text-indigo-500">Analisando capacidade, histórico de 90 dias e padrões de gargalo.</div>
                             </div>
                         )}
 
                         {aiAnalysis && (
                             <div className="mb-4 space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <h2 className="text-xs font-bold uppercase tracking-widest text-violet-700 flex items-center gap-2">
+                                    <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-700 flex items-center gap-2">
                                         <Sparkles className="w-4 h-4" /> Análise Inteligente — Gemini IA
                                     </h2>
                                     <div className="flex items-center gap-1.5 text-xs">
@@ -355,8 +393,8 @@ export default function SmartPlannerReport({ report, onClose }) {
                                     </div>
                                 </div>
 
-                                <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-xs text-slate-700 leading-relaxed">
-                                    <p className="font-semibold text-violet-800 mb-1">Resumo Executivo</p>
+                                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-xs text-slate-700 leading-relaxed">
+                                    <p className="font-semibold text-indigo-800 mb-1">Resumo Executivo</p>
                                     <p>{aiAnalysis.resumo_executivo}</p>
                                 </div>
 

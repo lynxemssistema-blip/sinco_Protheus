@@ -1,6 +1,15 @@
 const mysqlPool = require('./mysqlService');
 const db = require('../db');
 
+function sanitizeString(str) {
+    if (!str) return '';
+    // Replace null bytes and replacement character
+    let clean = str.replace(/\0/g, '').replace(/\uFFFD/g, '?');
+    // Keep printable ASCII, Latin-1 supplement (for Portuguese accented characters like ç, ã, á, etc.)
+    clean = clean.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?');
+    return clean.trim();
+}
+
 let isRebuilding = false;
 
 async function rebuildDailyOccupancyCache() {
@@ -30,10 +39,8 @@ async function rebuildDailyOccupancyCache() {
             LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod)=TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
               AND c2.c2_quje < c2.c2_quant
-              AND TRIM(c2.c2_num) <> ''
-              AND COALESCE(TRIM(c2.c2_pedido), '') <> ''
-              AND TRIM(c2.c2_itempv) <> ''
-            ORDER BY c2.c2_num, c2.c2_item LIMIT 10000
+              AND TRIM(c2.c2_num) NOT IN ('', '-', '000000')
+            ORDER BY c2.c2_num, c2.c2_item LIMIT 50000
         `);
         const opRows = pgResult.rows;
         console.timeEnd('Step 1: Fetch OPs from PG');
@@ -60,8 +67,8 @@ async function rebuildDailyOccupancyCache() {
                 if (!routingMap[r.prod]) routingMap[r.prod] = {};
                 routingMap[r.prod][r.operac] = {
                     recurso_codigo: r.recurso,
-                    recurso_descri: r.recurso_descri || r.recurso,
-                    tempo: parseFloat(r.tempo) || 0
+                    recurso_descri: sanitizeString(r.recurso_descri || r.recurso),
+                    tempo: Math.round((parseFloat(r.tempo) || 0) * 1000) / 1000
                 };
             }
         }
@@ -87,18 +94,28 @@ async function rebuildDailyOccupancyCache() {
         // 4. Appointments MySQL
         console.time('Step 4: Fetch appointments from MySQL');
         const apptsMap = {};
+        const dailyApptsMap = {}; // mapping dateStr -> key -> quantity
         if (opNums.length > 0) {
             for (let i = 0; i < opNums.length; i += 500) {
                 const chunk = opNums.slice(i, i + 500);
                 const ph = chunk.map(() => '?').join(',');
                 const [rows] = await mysqlPool.query(`
-                    SELECT op_numero, op_item, operacao_codigo, SUM(quantidade) AS total 
+                    SELECT op_numero, op_item, operacao_codigo, data_fim, quantidade 
                     FROM app_production_appointments 
                     WHERE op_numero IN (${ph}) 
-                    GROUP BY op_numero, op_item, operacao_codigo
                 `, chunk);
                 for (const a of rows) {
-                    apptsMap[`${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.operacao_codigo||'').trim()}`] = Number(a.total) || 0;
+                    const key = `${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.operacao_codigo||'').trim()}`;
+                    apptsMap[key] = (apptsMap[key] || 0) + Number(a.quantidade || 0);
+                    
+                    if (a.data_fim) {
+                        const dateObj = new Date(a.data_fim);
+                        if (!isNaN(dateObj.getTime())) {
+                            const dateStr = `${dateObj.getFullYear()}${String(dateObj.getMonth()+1).padStart(2,'0')}${String(dateObj.getDate()).padStart(2,'0')}`;
+                            if (!dailyApptsMap[dateStr]) dailyApptsMap[dateStr] = {};
+                            dailyApptsMap[dateStr][key] = (dailyApptsMap[dateStr][key] || 0) + Number(a.quantidade || 0);
+                        }
+                    }
                 }
             }
         }
@@ -160,7 +177,12 @@ async function rebuildDailyOccupancyCache() {
             }
         }
 
-        for (const plan of uniquePlans) {
+        // Yield the event loop every 500 items so concurrent API requests are not blocked
+        const yieldLoop = () => new Promise(resolve => setImmediate(resolve));
+
+        for (let planIdx = 0; planIdx < uniquePlans.length; planIdx++) {
+            if (planIdx > 0 && planIdx % 500 === 0) await yieldLoop();
+            const plan = uniquePlans[planIdx];
             const opn  = (plan.op_numero       || '').trim();
             const itn  = (plan.op_item         || '').trim();
             const opcn = (plan.operacao_codigo || '').trim();
@@ -170,6 +192,7 @@ async function rebuildDailyOccupancyCache() {
 
             const opRow = opMap[`${opn}|${itn}`];
             if (!opRow) continue;
+            // Se tiver pedido e estiver na lista de inativos, desconsidera
             if (opRow.pedido && inativosSet.has(opRow.pedido)) continue;
 
             const prodRouting = routingMap[opRow.produto] || {};
@@ -180,7 +203,7 @@ async function rebuildDailyOccupancyCache() {
             if (!resCode) continue;
 
             const conf = configMap[resCode] || {};
-            const g2_minutos = parseFloat(routeEntry.tempo) || 0;
+            const g2_minutos = Math.round((parseFloat(routeEntry.tempo) || 0) * 1000) / 1000;
             let unitTimeMin = g2_minutos > 0 ? g2_minutos : (parseFloat(conf.tempo_padrao_minutos) || 0);
 
             const apptKey = `${opn}|${itn}|${opcn}`;
@@ -200,7 +223,6 @@ async function rebuildDailyOccupancyCache() {
             for (let i = 0; i < bDays.length; i++) {
                 const d = bDays[i];
                 let alloc_totais = (i === bDays.length - 1) ? remaining_totais : Math.min(remaining_totais, capacity);
-                let alloc_exec = (min_totais > 0) ? (alloc_totais / min_totais) * min_exec : 0;
                 let alloc_pend = (min_totais > 0) ? (alloc_totais / min_totais) * min_pend : 0;
 
                 remaining_totais -= alloc_totais;
@@ -214,10 +236,46 @@ async function rebuildDailyOccupancyCache() {
                     };
                 }
                 const bucket = aggregated[d][resCode];
-                bucket.minutos_consumidos += alloc_totais;
+                bucket.minutos_consumidos += alloc_pend;
                 bucket.minutos_totais     += alloc_totais;
-                bucket.minutos_executados += alloc_exec;
                 bucket.minutos_pendentes  += alloc_pend;
+            }
+        }
+
+        // 6.2 Aggregate daily actual execution from appointments
+        for (const [d, apptsOnDate] of Object.entries(dailyApptsMap)) {
+            for (const [key, qty] of Object.entries(apptsOnDate)) {
+                const parts = key.split('|');
+                const opn = parts[0];
+                const itn = parts[1];
+                const opcn = parts[2];
+                
+                const opRow = opMap[`${opn}|${itn}`];
+                if (!opRow) continue;
+                
+                const prodRouting = routingMap[opRow.produto] || {};
+                const routeEntry = prodRouting[opcn];
+                if (!routeEntry) continue;
+                
+                const resCode = routeEntry.recurso_codigo;
+                if (!resCode) continue;
+                
+                const conf = configMap[resCode] || {};
+                const g2_minutos = Math.round((parseFloat(routeEntry.tempo) || 0) * 1000) / 1000;
+                let unitTimeMin = g2_minutos > 0 ? g2_minutos : (parseFloat(conf.tempo_padrao_minutos) || 0);
+                const capacity = conf.capacidade_diaria_minutos || 480;
+                
+                const execMins = qty * unitTimeMin;
+                
+                if (!aggregated[d]) aggregated[d] = {};
+                if (!aggregated[d][resCode]) {
+                    aggregated[d][resCode] = {
+                        recurso_codigo: resCode, recurso_descri: routeEntry.recurso_descri,
+                        minutos_consumidos: 0, minutos_totais: 0, minutos_executados: 0, minutos_pendentes: 0,
+                        capacidade_diaria: capacity
+                    };
+                }
+                aggregated[d][resCode].minutos_executados += execMins;
             }
         }
         console.timeEnd('Step 6: Aggregation');
@@ -240,7 +298,7 @@ async function rebuildDailyOccupancyCache() {
                 ops_json LONGTEXT,
                 ultima_atualizacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY idx_data_recurso (data, recurso_codigo)
-            ) ENGINE=InnoDB
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         `);
 
         // 7.2 Clear table
@@ -259,9 +317,9 @@ async function rebuildDailyOccupancyCache() {
                 const tx = bucket.capacidade_diaria > 0
                     ? (bucket.minutos_consumidos / bucket.capacidade_diaria) * 100
                     : (bucket.minutos_consumidos > 0 ? 999 : 0);
-                const pctExec = bucket.minutos_totais > 0
-                    ? (bucket.minutos_executados / bucket.minutos_totais) * 100
-                    : 0;
+                const pctExec = bucket.capacidade_diaria > 0
+                    ? (bucket.minutos_executados / bucket.capacidade_diaria) * 100
+                    : (bucket.minutos_executados > 0 ? 999 : 0);
 
                 const opsArray = [];
 

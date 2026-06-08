@@ -476,119 +476,201 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         // Header padrão, array
         const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
 
-        if (!jsonData || jsonData.length < 2) {
+        if (!jsonData || jsonData.length < 3) {
             return res.status(400).json({ error: 'Planilha vazia ou sem dados.' });
         }
 
-        const headers = jsonData[0];
-
-        // ── Validação do modelo ──────────────────────────────────────────────
-        const missingCols = [];
-        MODELO_COLUNAS_FIXAS.forEach((expected, i) => {
-            const actual = String(headers[i] || '').trim();
-            if (actual.toLowerCase() !== expected.toLowerCase()) {
-                missingCols.push(`Coluna ${i + 1}: esperado "${expected}", encontrado "${actual || '(vazio)'}"`);
+        // Encontrar a linha de cabeçalho dinamicamente (nas primeiras 10 linhas)
+        let headerRowIdx = -1;
+        let headers = null;
+        for (let i = 0; i < Math.min(10, jsonData.length); i++) {
+            const row = jsonData[i];
+            if (!row) continue;
+            const rowStr = row.map(c => String(c || '').toUpperCase()).join('||');
+            if (rowStr.includes('CÓDIGO') && rowStr.includes('DESCRIÇÃO')) {
+                headerRowIdx = i;
+                headers = row;
+                break;
             }
-        });
-        if (missingCols.length > 0) {
-            return res.status(400).json({
-                error: `Planilha fora do modelo esperado. Baixe o modelo correto e preencha novamente.\n\nDiferenças encontradas:\n• ${missingCols.join('\n• ')}`,
-                modelo_invalido: true
-            });
         }
 
-        // Da coluna F (index 5) em diante são os meses / semanas de demanda
-        const months = headers.slice(5).filter(h => h && h.trim().length > 0);
-        if (months.length === 0) {
-            return res.status(400).json({ error: 'Nenhuma coluna de quantidade/mês detectada a partir da coluna F (Col 6).' });
+        if (headerRowIdx === -1 || !headers) {
+            return res.status(400).json({ error: 'Planilha fora do modelo esperado. Não foi possível encontrar a linha de cabeçalho com CÓDIGO e DESCRIÇÃO.' });
+        }
+
+        const idxCodigo = headers.findIndex(h => h && String(h).toUpperCase() === 'CÓDIGO');
+        const idxDescricao = headers.findIndex(h => h && String(h).toUpperCase() === 'DESCRIÇÃO');
+        const idxEquip = headers.findIndex(h => h && String(h).toUpperCase().includes('EQUIPAMENTOS'));
+        const idxPrioridade = headers.findIndex(h => h && String(h).toUpperCase().includes('PRIORIDADE'));
+
+        if (idxCodigo === -1 || idxDescricao === -1) {
+            return res.status(400).json({ error: 'Planilha sem as colunas CÓDIGO ou DESCRIÇÃO no cabeçalho.' });
+        }
+
+        // Find WK columns (any column that starts with WK)
+        const wkCols = [];
+        headers.forEach((h, i) => {
+            if (h && String(h).toUpperCase().startsWith('WK')) {
+                wkCols.push({ index: i, name: String(h).trim() });
+            }
+        });
+
+        // Find Order columns (after "OC'S METALFISA")
+        const idxOC = headers.findIndex(h => h && String(h).toUpperCase().includes("OC'S METALFISA"));
+        const orderCols = [];
+        if (idxOC !== -1) {
+            for (let i = idxOC + 1; i < headers.length; i++) {
+                if (headers[i] && String(headers[i]).trim() !== '') {
+                    orderCols.push({ index: i, orderNum: String(headers[i]).trim() });
+                }
+            }
         }
 
         const loteId = uuidv4();
         let previewRows = [];
 
-        let lastOrdem = '';
-        let lastPai = '';
-        let lastEquip = '';
-
-        // Ignorando header (0) iterando do 1
-        for (let i = 1; i < jsonData.length; i++) {
+        // Ler dados a partir da linha após o cabeçalho
+        for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
             const row = jsonData[i];
-
             if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-            // Se veio preenchido, salva como o último lido (trata células mescladas)
-            if (row[0] !== undefined && row[0] !== null && String(row[0]).trim() !== '') {
-                lastOrdem = String(row[0]).trim();
-                lastPai = String(row[1] || '').trim();
-                lastEquip = String(row[2] || '').trim();
-            }
+            const prioridade = idxPrioridade !== -1 ? String(row[idxPrioridade] || '').trim() : '';
+            const codigo_produto_cliente = String(row[idxCodigo] || '').trim();
+            const descricao_produto_cliente = String(row[idxDescricao] || '').trim();
+            const descricao_equipamento = idxEquip !== -1 ? String(row[idxEquip] || '').trim() : '';
 
-            // Se ainda não temos uma ordem lida, pula
-            if (!lastOrdem) continue;
-
-            const ordem_compra_cliente = lastOrdem;
-            const produto_pai = lastPai;
-            const descricao_equipamento = lastEquip;
-            const codigo_produto_cliente = String(row[3] || '').trim();
-            const descricao_produto_cliente = String(row[4] || '').trim();
-            const rev_cliente = ''; // Removido pois F (5) agora é o primeiro mês de demanda
-
-            // Pula se for linha vazia ou só título do grupo sem produtos filhos
             if (!codigo_produto_cliente && !descricao_produto_cliente) continue;
 
-            let mesesQtd = {};
-            let hasDemand = false;
+            // Extrair WKs
+            let hasWKDemand = false;
+            const wksData = {};
+            wkCols.forEach(wk => {
+                let val = row[wk.index];
+                if (typeof val === 'string') val = val.replace(/\./g, '').replace(',', '.');
+                const q = Number(val);
+                if (!isNaN(q) && q > 0) {
+                    wksData[wk.name] = q;
+                    hasWKDemand = true;
+                }
+            });
 
-            for (let j = 0; j < months.length; j++) {
-                const mes = String(months[j]).trim();
-                const colIndex = 5 + j; // Ajustade para iniciar da coluna F
-                let rawVal = row[colIndex];
+            // Extrair Orders
+            const itemOrders = [];
+            orderCols.forEach(oc => {
+                let val = row[oc.index];
+                if (typeof val === 'string') val = val.replace(/\./g, '').replace(',', '.');
+                const q = Number(val);
+                if (!isNaN(q) && q > 0) {
+                    itemOrders.push({ order: oc.orderNum, qty: q });
+                }
+            });
 
-                if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
+            if (itemOrders.length === 0) {
+                // Produto sem nenhuma ordem, mas pode ter forecast (WKs)
+                if (hasWKDemand) {
+                    previewRows.push({
+                        prioridade_cliente: prioridade,
+                        ordem_compra_cliente: 'SEM_PEDIDO',
+                        produto_pai: '',
+                        descricao_equipamento,
+                        codigo_produto_cliente,
+                        descricao_produto_cliente,
+                        rev_cliente: '',
+                        meses: wksData
+                    });
+                }
+                continue;
+            }
 
-                if (typeof rawVal === 'string') {
-                    // Aceita "1.234,50" -> "1234.50" e "1,5" -> "1.5"
-                    rawVal = rawVal.replace(/\./g, '').replace(',', '.');
+            // Distribuir as WKs sequencialmente pelas Ordens
+            let wksRemaining = { ...wksData };
+            
+            for (let k = 0; k < itemOrders.length; k++) {
+                const orderData = itemOrders[k];
+                const myWks = {};
+                let orderRemaining = orderData.qty;
+
+                for (const wkName of Object.keys(wksRemaining)) {
+                    if (orderRemaining <= 0) break;
+                    const wkQ = wksRemaining[wkName];
+                    if (wkQ <= 0) continue;
+
+                    const take = Math.min(wkQ, orderRemaining);
+                    myWks[wkName] = take;
+                    orderRemaining -= take;
+                    wksRemaining[wkName] -= take;
                 }
 
-                const qtd = Number(rawVal);
-
-                // Salva apenas se for número e maior que 0
-                if (!isNaN(qtd) && qtd > 0) {
-                    mesesQtd[mes] = qtd;
-                    hasDemand = true;
+                if (Object.keys(myWks).length > 0) {
+                    if (orderRemaining > 0) {
+                        myWks['Saldo OC'] = orderRemaining;
+                    }
+                    previewRows.push({
+                        prioridade_cliente: prioridade,
+                        ordem_compra_cliente: orderData.order,
+                        produto_pai: '',
+                        descricao_equipamento,
+                        codigo_produto_cliente,
+                        descricao_produto_cliente,
+                        rev_cliente: '',
+                        meses: myWks
+                    });
+                } else if (orderData.qty > 0) {
+                    // Sem WK, mas com saldo na OC
+                    previewRows.push({
+                        prioridade_cliente: prioridade,
+                        ordem_compra_cliente: orderData.order,
+                        produto_pai: '',
+                        descricao_equipamento,
+                        codigo_produto_cliente,
+                        descricao_produto_cliente,
+                        rev_cliente: '',
+                        meses: { 'Saldo OC': orderData.qty }
+                    });
                 }
             }
 
-            if (hasDemand) {
+            // Forecast extra
+            const leftoverWks = {};
+            let hasLeftover = false;
+            for (const wkName of Object.keys(wksRemaining)) {
+                if (wksRemaining[wkName] > 0) {
+                    leftoverWks[wkName] = wksRemaining[wkName];
+                    hasLeftover = true;
+                }
+            }
+            if (hasLeftover) {
                 previewRows.push({
-                    ordem_compra_cliente,
-                    produto_pai,
+                    prioridade_cliente: prioridade,
+                    ordem_compra_cliente: 'FORECAST_S_OC',
+                    produto_pai: '',
                     descricao_equipamento,
                     codigo_produto_cliente,
                     descricao_produto_cliente,
-                    rev_cliente,
-                    meses: mesesQtd
+                    rev_cliente: '',
+                    meses: leftoverWks
                 });
             }
         }
 
         if (previewRows.length === 0) {
-            return res.status(400).json({ error: 'Nenhum dado válido para importar. Todas as quantidades numéricas estão zeradas ou arquivo está com formatação errada.' });
+            return res.status(400).json({ error: 'Nenhum dado válido para importar. Todas as quantidades numéricas estão zeradas.' });
         }
+
+        const extractedMonths = [...new Set(previewRows.flatMap(r => Object.keys(r.meses)))];
 
         // Return preview data without DB insertion
         res.json({
             success: true,
-            msg: `Planilha lida com sucesso. Encontradas ${previewRows.length} linhas de demanda no lote de ${months.join(', ')}.`,
+            msg: `Planilha lida com sucesso. Encontradas ${previewRows.length} linhas de demanda com WKs distribuídas.`,
             preview_data: previewRows,
-            meses: months,
+            meses: extractedMonths,
             _import_meta: {
                 nome_arquivo: fileName,
                 hash_conteudo: fileHash,
                 sheet_name: sheetName,
                 total_linhas: previewRows.length,
-                meses: months
+                meses: extractedMonths
             }
         });
 
@@ -624,7 +706,8 @@ router.post('/save-lote', async (req, res) => {
                     r.rev_cliente, // Added rev_cliente
                     mes,
                     qtd,
-                    now // Added created_at
+                    now, // Added created_at
+                    r.prioridade_cliente || null
                 ]);
             }
         });
@@ -635,14 +718,14 @@ router.post('/save-lote', async (req, res) => {
 
         for (let i = 0; i < pushParams.length; i += CHUNK_SIZE) {
             const chunk = pushParams.slice(i, i + CHUNK_SIZE);
-            const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(','); // 10 placeholders
+            const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(','); // 11 placeholders
             const flatParams = chunk.flat();
 
             await mysqlPool.execute(`
                 INSERT INTO app_demanda_vmi (
                     lote_importacao, ordem_compra_cliente, produto_pai, descricao_equipamento,
                     codigo_produto_cliente, descricao_produto_cliente, rev_cliente,
-                    mes_referencia, quantidade, created_at
+                    mes_referencia, quantidade, created_at, prioridade_cliente
                 ) VALUES ${placeholders}
             `, flatParams);
 
@@ -719,7 +802,7 @@ router.get('/demandas', async (req, res) => {
 
         const [rows] = await mysqlPool.query(`
             SELECT
-                id, lote_importacao, ordem_compra_cliente, produto_pai,
+                id, lote_importacao, prioridade_cliente, ordem_compra_cliente, produto_pai,
                 descricao_equipamento, codigo_produto_cliente, descricao_produto_cliente,
                 rev_cliente, mes_referencia, quantidade, created_at
             FROM app_demanda_vmi
@@ -742,6 +825,44 @@ router.get('/demandas', async (req, res) => {
                     
                     const mapeamentoMap = {};
                     mapRows.forEach(m => { mapeamentoMap[m.codigo_produto_cliente] = m.b1_cod; });
+
+                    // 1b. Auto-match para códigos não mapeados, removendo caracteres especiais
+                    const unmappedCodes = codigosCliente.filter(c => !mapeamentoMap[c]);
+                    if (unmappedCodes.length > 0) {
+                        const cleanToOriginal = {};
+                        unmappedCodes.forEach(c => {
+                            const clean = c.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                            if (clean) cleanToOriginal[clean] = c;
+                        });
+
+                        const cleanCodes = Object.keys(cleanToOriginal);
+                        if (cleanCodes.length > 0) {
+                            try {
+                                const autoMatchQuery = `
+                                    SELECT TRIM(b1_cod) as b1_cod
+                                    FROM public.sb1010
+                                    WHERE TRIM(b1_cod) = ANY($1::text[])
+                                    AND COALESCE(d_e_l_e_t_, '') = ''
+                                `;
+                                const autoMatchResult = await db.query(autoMatchQuery, [cleanCodes]);
+                                autoMatchResult.rows.forEach(r => {
+                                    const cleanFound = r.b1_cod.toUpperCase();
+                                    const orig = cleanToOriginal[cleanFound];
+                                    if (orig) mapeamentoMap[orig] = r.b1_cod;
+                                });
+                            } catch (errAuto) {
+                                console.error('Erro no auto-match de b1_cod:', errAuto.message);
+                            }
+                        }
+                    }
+
+                    // Inicialização padrão de status como Restrição para itens não mapeados
+                    rows.forEach(row => {
+                        row.status_tipo_item = 'Restrição';
+                        row.status_tipo_detalhe = 'Produto do cliente sem mapeamento de código Protheus/Metalfisa.';
+                        row.b1_cod = null;
+                        row.b1_desc = null;
+                    });
 
                     const b1Cods = [...new Set(Object.values(mapeamentoMap))];
                     
@@ -855,6 +976,139 @@ router.get('/demandas', async (req, res) => {
                             row.b1_cod_pai = paiMapMySQL[row.produto_pai] || paiMapSB1[row.produto_pai] || null;
                         });
                     }
+                    
+                    // --- 5. Busca Pedido Metalfisa e Qtd Entregue no SC6 ---
+                    const cleanString = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+                    const cleanOrderNumber = (str) => {
+                        if (!str) return '';
+                        let s = String(str).trim();
+                        // Desconsidera o prefixo DMC-9800- globalmente
+                        s = s.replace(/dmc-?9800-?/gi, '');
+                        // Desconsidera as revisões/sufixos comuns
+                        const revRegex = /([-/_.]|(\s+rev\b|\s+revis\w*))+/i;
+                        const match = s.match(revRegex);
+                        if (match && match.index !== undefined) {
+                            s = s.substring(0, match.index);
+                        }
+                        return s.replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+                    };
+                    
+                    const pedidosClienteArray = [...new Set(rows.map(r => cleanOrderNumber(r.ordem_compra_cliente)).filter(Boolean))];
+                    const pedidosClienteLikeArray = pedidosClienteArray.map(p => `%${p}%`);
+                    
+                    if (pedidosClienteArray.length > 0 && b1Cods.length > 0) {
+                        try {
+                            const querySC6 = `
+                                SELECT 
+                                    LTRIM(UPPER(REGEXP_REPLACE(
+                                        REGEXP_REPLACE(
+                                            REGEXP_REPLACE(c6.c6_pedcli, 'dmc-?9800-?', '', 'gi'),
+                                            '[-/_].*|\\s+rev.*|\\s+revis.*', '', 'i'
+                                        ),
+                                        '[^a-zA-Z0-9]', '', 'g'
+                                    )), '0') AS pedcli,
+                                    TRIM(c6.c6_produto) AS b1_cod,
+                                    TRIM(c6.c6_num) AS c6_num,
+                                    SUM(COALESCE(c6.c6_qtdven, 0)) AS qtd_pedido,
+                                    SUM(COALESCE(c6.c6_qtdent, 0)) AS qtd_entregue
+                                FROM public.sc6010 c6
+                                WHERE c6.d_e_l_e_t_ = ''
+                                  AND LTRIM(UPPER(REGEXP_REPLACE(
+                                      REGEXP_REPLACE(
+                                          REGEXP_REPLACE(c6.c6_pedcli, 'dmc-?9800-?', '', 'gi'),
+                                          '[-/_].*|\\s+rev.*|\\s+revis.*', '', 'i'
+                                      ),
+                                      '[^a-zA-Z0-9]', '', 'g'
+                                  )), '0') LIKE ANY($1::text[])
+                                  AND TRIM(c6.c6_produto) = ANY($2::text[])
+                                GROUP BY 1, TRIM(c6.c6_produto), TRIM(c6.c6_num)
+                            `;
+                            const sc6Result = await db.query(querySC6, [pedidosClienteLikeArray, b1Cods]);
+                            
+                            const orderNums = [...new Set(sc6Result.rows.map(r => r.c6_num).filter(Boolean))];
+                            let nfsMap = {};
+                            if (orderNums.length > 0) {
+                                const querySD2 = `
+                                    SELECT 
+                                        TRIM(d2.d2_pedido) AS order_num,
+                                        TRIM(d2.d2_cod) AS b1_cod,
+                                        TRIM(d2.d2_doc) AS nota,
+                                        TRIM(d2.d2_serie) AS serie,
+                                        d2.d2_quant AS qtd,
+                                        TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao), ''), 'YYYYMMDD'), 'DD/MM/YYYY') AS emissao,
+                                        TRIM(d2.d2_cf) AS cfop
+                                    FROM public.sd2010 d2
+                                    JOIN public.sf2010 f2
+                                      ON f2.f2_doc = d2.d2_doc 
+                                     AND f2.f2_serie = d2.d2_serie
+                                     AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                                    WHERE d2.d2_pedido = ANY($1::text[])
+                                      AND TRIM(d2.d2_cod) = ANY($2::text[])
+                                      AND COALESCE(d2.d_e_l_e_t_, '') = ''
+                                `;
+                                const sd2Result = await db.query(querySD2, [orderNums, b1Cods]);
+                                sd2Result.rows.forEach(r => {
+                                    const key = `${r.order_num}_${cleanString(r.b1_cod)}`;
+                                    if (!nfsMap[key]) nfsMap[key] = [];
+                                    nfsMap[key].push({
+                                        nota: r.nota,
+                                        serie: r.serie,
+                                        qtd: Number(r.qtd),
+                                        emissao: r.emissao,
+                                        cfop: r.cfop
+                                    });
+                                });
+                            }
+
+                            const sc6Map = {};
+                            sc6Result.rows.forEach(r => {
+                                const key = `${cleanOrderNumber(r.pedcli)}_${cleanString(r.b1_cod)}`;
+                                if (!sc6Map[key]) sc6Map[key] = [];
+                                
+                                const nfsKey = `${r.c6_num}_${cleanString(r.b1_cod)}`;
+                                const nfs = nfsMap[nfsKey] || [];
+                                
+                                sc6Map[key].push({ 
+                                    num: r.c6_num, 
+                                    qtd: Number(r.qtd_entregue),
+                                    qtdven: Number(r.qtd_pedido),
+                                    notas_fiscais: nfs
+                                });
+                            });
+
+                            rows.forEach(row => {
+                                if (row.b1_cod) {
+                                    const key = `${cleanOrderNumber(row.ordem_compra_cliente)}_${cleanString(row.b1_cod)}`;
+                                    if (sc6Map[key] && sc6Map[key].length > 0) {
+                                        row.pedido_metalfisa = sc6Map[key].map(x => x.num).join(' / ');
+                                        row.qtd_pedido = sc6Map[key].reduce((sum, x) => sum + x.qtdven, 0);
+                                        row.qtd_entregue = sc6Map[key].reduce((sum, x) => sum + x.qtd, 0);
+                                        row.saldo_entregar = Math.max(0, row.qtd_pedido - row.qtd_entregue);
+                                        
+                                        const allNfs = [];
+                                        sc6Map[key].forEach(x => {
+                                            if (x.notas_fiscais) allNfs.push(...x.notas_fiscais);
+                                        });
+                                        row.notas_fiscais = allNfs;
+                                    } else {
+                                        row.pedido_metalfisa = '-';
+                                        row.qtd_pedido = 0;
+                                        row.qtd_entregue = 0;
+                                        row.saldo_entregar = 0;
+                                        row.notas_fiscais = [];
+                                    }
+                                } else {
+                                    row.pedido_metalfisa = '-';
+                                    row.qtd_pedido = 0;
+                                    row.qtd_entregue = 0;
+                                    row.saldo_entregar = 0;
+                                    row.notas_fiscais = [];
+                                }
+                            });
+                        } catch (errSC6) {
+                            console.error('[VMI] Erro ao buscar SC6 (Pedido Metalfisa):', errSC6.message);
+                        }
+                    }
                 }
             } catch (enrichErr) {
                 console.error('Erro no enriquecimento Protheus/VMI:', enrichErr.message);
@@ -869,6 +1123,120 @@ router.get('/demandas', async (req, res) => {
     } catch (err) {
         console.error('Erro ao buscar demandas VMI:', err);
         res.status(500).json({ error: 'Erro ao buscar demandas VMI' });
+    }
+});
+
+// GET /api/vmi/pedidos-protheus
+// Busca especificamente o Pedido Metalfisa e a Qtde Entregue do Protheus SC6
+router.post('/pedidos-protheus', async (req, res) => {
+    try {
+        const { rows } = req.body;
+        if (!rows || !rows.length) return res.json({ success: true, mappings: {} });
+
+        const cleanString = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+        const cleanOrderNumber = (str) => {
+            if (!str) return '';
+            let s = String(str).trim();
+            // Desconsidera o prefixo DMC-9800- globalmente
+            s = s.replace(/dmc-?9800-?/gi, '');
+            // Desconsidera as revisões/sufixos comuns
+            const revRegex = /([-/_.]|(\s+rev\b|\s+revis\w*))+/i;
+            const match = s.match(revRegex);
+            if (match && match.index !== undefined) {
+                s = s.substring(0, match.index);
+            }
+            return s.replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+        };
+        
+        const pedidosClienteArray = [...new Set(rows.map(r => cleanOrderNumber(r.ordem_compra_cliente)).filter(Boolean))];
+        const pedidosClienteLikeArray = pedidosClienteArray.map(p => `%${p}%`);
+        const b1Cods = [...new Set(rows.map(r => String(r.b1_cod || '').trim()).filter(Boolean))];
+
+        const sc6Map = {};
+        
+        if (pedidosClienteArray.length > 0 && b1Cods.length > 0) {
+            const querySC6 = `
+                SELECT 
+                    LTRIM(UPPER(REGEXP_REPLACE(
+                        REGEXP_REPLACE(
+                            REGEXP_REPLACE(c6.c6_pedcli, 'dmc-?9800-?', '', 'gi'),
+                            '[-/_].*|\\s+rev.*|\\s+revis.*', '', 'i'
+                        ),
+                        '[^a-zA-Z0-9]', '', 'g'
+                    )), '0') AS pedcli,
+                    TRIM(c6.c6_produto) AS b1_cod,
+                    TRIM(c6.c6_num) AS c6_num,
+                    SUM(COALESCE(c6.c6_qtdven, 0)) AS qtd_pedido,
+                    SUM(COALESCE(c6.c6_qtdent, 0)) AS qtd_entregue
+                FROM public.sc6010 c6
+                WHERE c6.d_e_l_e_t_ = ''
+                  AND LTRIM(UPPER(REGEXP_REPLACE(
+                      REGEXP_REPLACE(
+                          REGEXP_REPLACE(c6.c6_pedcli, 'dmc-?9800-?', '', 'gi'),
+                          '[-/_].*|\\s+rev.*|\\s+revis.*', '', 'i'
+                      ),
+                      '[^a-zA-Z0-9]', '', 'g'
+                  )), '0') LIKE ANY($1::text[])
+                  AND TRIM(c6.c6_produto) = ANY($2::text[])
+                GROUP BY 1, TRIM(c6.c6_produto), TRIM(c6.c6_num)
+            `;
+            const sc6Result = await db.query(querySC6, [pedidosClienteLikeArray, b1Cods]);
+            
+            const orderNums = [...new Set(sc6Result.rows.map(r => r.c6_num).filter(Boolean))];
+            let nfsMap = {};
+            if (orderNums.length > 0) {
+                const querySD2 = `
+                    SELECT 
+                        TRIM(d2.d2_pedido) AS order_num,
+                        TRIM(d2.d2_cod) AS b1_cod,
+                        TRIM(d2.d2_doc) AS nota,
+                        TRIM(d2.d2_serie) AS serie,
+                        d2.d2_quant AS qtd,
+                        TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao), ''), 'YYYYMMDD'), 'DD/MM/YYYY') AS emissao,
+                        TRIM(d2.d2_cf) AS cfop
+                    FROM public.sd2010 d2
+                    JOIN public.sf2010 f2
+                      ON f2.f2_doc = d2.d2_doc 
+                     AND f2.f2_serie = d2.d2_serie
+                     AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                    WHERE d2.d2_pedido = ANY($1::text[])
+                      AND TRIM(d2.d2_cod) = ANY($2::text[])
+                      AND COALESCE(d2.d_e_l_e_t_, '') = ''
+                `;
+                const sd2Result = await db.query(querySD2, [orderNums, b1Cods]);
+                sd2Result.rows.forEach(r => {
+                    const key = `${r.order_num}_${cleanString(r.b1_cod)}`;
+                    if (!nfsMap[key]) nfsMap[key] = [];
+                    nfsMap[key].push({
+                        nota: r.nota,
+                        serie: r.serie,
+                        qtd: Number(r.qtd),
+                        emissao: r.emissao,
+                        cfop: r.cfop
+                    });
+                });
+            }
+
+            sc6Result.rows.forEach(r => {
+                const key = `${cleanOrderNumber(r.pedcli)}_${cleanString(r.b1_cod)}`;
+                if (!sc6Map[key]) sc6Map[key] = [];
+                
+                const nfsKey = `${r.c6_num}_${cleanString(r.b1_cod)}`;
+                const nfs = nfsMap[nfsKey] || [];
+                
+                sc6Map[key].push({ 
+                    num: r.c6_num, 
+                    qtd: Number(r.qtd_entregue),
+                    qtdven: Number(r.qtd_pedido),
+                    notas_fiscais: nfs
+                });
+            });
+        }
+
+        res.json({ success: true, mappings: sc6Map });
+    } catch (err) {
+        console.error('Erro ao buscar pedidos Protheus (SC6):', err);
+        res.status(500).json({ error: 'Erro ao buscar SC6' });
     }
 });
 
@@ -1281,7 +1649,7 @@ router.get('/op-mirror/:b1cod', async (req, res) => {
                                     ELSE TRIM(h1.h1_descri)
                                 END,
                                 'setup',          g2.g2_setup,
-                                'tempo_padrao',   g2.g2_tempad,
+                                'tempo_padrao',   ROUND(g2.g2_tempad::numeric, 3),
                                 'ferramenta',     TRIM(g2.g2_ferram)
                             ) ORDER BY TRIM(g2.g2_operac)
                         )

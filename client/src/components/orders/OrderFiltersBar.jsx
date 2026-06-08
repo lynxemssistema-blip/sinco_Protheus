@@ -69,9 +69,9 @@ const OrderFiltersBar = ({
                     <span className="ml-auto text-xs text-blue-400 italic">Isso pode levar alguns segundos dependendo dos filtros.</span>
                 </div>
             )}
-            <form onSubmit={onSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-3 items-end">
+            <form onSubmit={onSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-10 gap-y-4 gap-x-3 items-end">
                 {/* Cliente */}
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 lg:col-span-2">
                     <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -96,6 +96,22 @@ const OrderFiltersBar = ({
                             name="pedido"
                             placeholder="Nº Pedido..."
                             value={filters.pedido}
+                            onChange={onFilterChange}
+                            className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                    </div>
+                </div>
+
+                {/* PC (Pedido Cliente) */}
+                <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-medium text-gray-600 ml-1">PC (Ped. Cliente):</label>
+                    <div className="relative">
+                        <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            name="pedcli"
+                            placeholder="PC Cliente..."
+                            value={filters.pedcli || ''}
                             onChange={onFilterChange}
                             className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                         />
@@ -247,7 +263,7 @@ const OrderFiltersBar = ({
                 </div>
 
                 {/* Footer Controls (Apenas Pendentes + Ordenação) */}
-                <div className="md:col-span-8 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
+                <div className="md:col-span-4 lg:col-span-10 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
                     <div className="flex flex-col gap-1 flex-1">
                         <div className="flex items-center gap-2">
                             <label className="relative inline-flex items-center cursor-pointer">

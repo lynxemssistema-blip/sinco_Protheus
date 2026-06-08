@@ -43,6 +43,21 @@ export default function VerticalAppointmentPage() {
 
     // Estado local para datas de planejamento em edição
     const [draftPlans, setDraftPlans] = useState({});
+    const [sortConfig, setSortConfig] = useState({ key: 'planejamento_inicio', direction: 'asc' });
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIcon = (key) => {
+        if (sortConfig.key !== key) return <span className="ml-1 opacity-0 group-hover:opacity-50">↕</span>;
+        if (sortConfig.direction === 'asc') return <span className="ml-1">↑</span>;
+        return <span className="ml-1">↓</span>;
+    };
 
     useEffect(() => {
         loadOperations();
@@ -255,6 +270,35 @@ export default function VerticalAppointmentPage() {
         if (filterStatus === 'ABERTOS' && row.status === 'CONCLUIDO') return false;
         if (filterStatus !== 'ALL' && filterStatus !== 'ABERTOS' && row.status !== filterStatus) return false;
         return true;
+    }).sort((a, b) => {
+        if (sortConfig.key === 'planejamento_inicio') {
+            const dateA = a.planejamento_inicio ? new Date(a.planejamento_inicio).getTime() : (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            const dateB = b.planejamento_inicio ? new Date(b.planejamento_inicio).getTime() : (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            if (dateA !== dateB) return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+            return a.op.localeCompare(b.op);
+        }
+        if (sortConfig.key === 'data_entrega') {
+            const dateA = a.data_entrega ? new Date(a.data_entrega).getTime() : (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            const dateB = b.data_entrega ? new Date(b.data_entrega).getTime() : (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+        }
+
+        let aVal = a[sortConfig.key];
+        let bVal = b[sortConfig.key];
+
+        if (sortConfig.key === 'progresso') {
+            aVal = a.qtd_op > 0 ? (a.qtd_apontada / a.qtd_op) : 0;
+            bVal = b.qtd_op > 0 ? (b.qtd_apontada / b.qtd_op) : 0;
+        }
+
+        if (aVal === bVal) return 0;
+        if (aVal === null || aVal === undefined) return 1;
+        if (bVal === null || bVal === undefined) return -1;
+        
+        if (typeof aVal === 'string') {
+            return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        }
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
     });
 
     return (
@@ -312,7 +356,7 @@ export default function VerticalAppointmentPage() {
                                     type="text"
                                     placeholder="Ex: 001234"
                                     value={filters.op}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, op: e.target.value }))}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, op: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
@@ -323,7 +367,7 @@ export default function VerticalAppointmentPage() {
                                     type="text"
                                     placeholder="PV..."
                                     value={filters.pedido}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, pedido: e.target.value }))}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, pedido: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
@@ -334,7 +378,7 @@ export default function VerticalAppointmentPage() {
                                     type="text"
                                     placeholder="Nome/Código"
                                     value={filters.produto}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, produto: e.target.value }))}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, produto: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
@@ -345,7 +389,7 @@ export default function VerticalAppointmentPage() {
                                     type="text"
                                     placeholder="Razão Social"
                                     value={filters.cliente}
-                                    onChange={(e) => setFilters(prev => ({ ...prev, cliente: e.target.value }))}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, cliente: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm"
                                 />
@@ -525,15 +569,36 @@ export default function VerticalAppointmentPage() {
                 <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex-1 flex flex-col min-h-0">
                     <div className="overflow-auto h-[calc(100vh-320px)]">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 text-slate-600 border-b sticky top-0 z-10 shadow-sm">
-                                <tr>
-                                    <th className="px-4 py-3 font-semibold">OP</th>
-                                    <th className="px-4 py-3 font-semibold">Pedido</th>
-                                    <th className="px-4 py-3 font-semibold">Produto</th>
-                                    <th className="px-4 py-3 font-semibold text-center">Progresso</th>
-                                    <th className="px-4 py-3 font-semibold">Planejamento</th>
-                                    <th className="px-4 py-3 font-semibold">Status</th>
-                                    <th className="px-4 py-3 font-semibold text-right">Ações</th>
+                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                                <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('op')}>
+                                        <div className="flex items-center gap-1">Ordem de Produção {getSortIcon('op')}</div>
+                                    </th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('pedido')}>
+                                        <div className="flex items-center gap-1">Pedido {getSortIcon('pedido')}</div>
+                                    </th>
+                                    <th className="p-3">Cliente</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('produto')}>
+                                        <div className="flex items-center gap-1">Produto {getSortIcon('produto')}</div>
+                                    </th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('data_entrega')}>
+                                        <div className="flex items-center justify-center gap-1">Entrega {getSortIcon('data_entrega')}</div>
+                                    </th>
+                                    <th className="p-3 text-center w-10">PDF</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('recurso_codigo')}>
+                                        <div className="flex items-center gap-1">Recurso {getSortIcon('recurso_codigo')}</div>
+                                    </th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('planejamento_inicio')}>
+                                        <div className="flex items-center justify-center gap-1">Planejamento {getSortIcon('planejamento_inicio')}</div>
+                                    </th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('progresso')}>
+                                        <div className="flex items-center justify-center gap-1">Produção {getSortIcon('progresso')}</div>
+                                    </th>
+                                    <th className="p-3 text-center">Tempos</th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('status')}>
+                                        <div className="flex items-center justify-center gap-1">Status {getSortIcon('status')}</div>
+                                    </th>
+                                    <th className="p-3 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -543,153 +608,164 @@ export default function VerticalAppointmentPage() {
                                     const draftDate = draftPlans[opKey] !== undefined ? draftPlans[opKey] : (row.planejamento_inicio ? row.planejamento_inicio.substring(0, 10) : '');
 
                                     return (
-                                        <tr key={opKey} className={`transition-colors ${row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50/80'}`}>
-
-                                            <td className="px-4 py-3 align-top">
-                                                <div className="font-mono font-bold text-slate-800">{row.op}-{row.item_op} <span className="text-slate-400 font-normal">({row.sequen_op})</span></div>
+                                        <tr key={opKey} className={`border-b border-slate-100 transition-colors ${row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
+                                            {/* 1. Ordem de Produção */}
+                                            <td className="p-3">
+                                                <div className="font-mono text-sm font-bold text-slate-900">{row.op} - Item {row.item_op}</div>
+                                                <div className="text-xs text-slate-400">Seq: {row.sequen_op}</div>
                                             </td>
-                                            <td className="px-4 py-3 align-top">
+                                            {/* 2. Pedido */}
+                                            <td className="p-3">
                                                 {row.pedido ? (
-                                                    <div className="text-xs text-blue-600 font-medium flex items-center gap-1">
-                                                        <span>PV: {row.pedido}</span>
-                                                        {row.item_pedido && <span className="opacity-60">/{row.item_pedido}</span>}
+                                                    <div>
+                                                        <div className="font-semibold text-slate-700">{row.pedido}</div>
+                                                        {row.item_pedido && <div className="text-xs text-slate-500">{row.item_pedido}</div>}
                                                     </div>
                                                 ) : (
                                                     <span className="text-slate-400 text-xs">-</span>
                                                 )}
                                             </td>
-
-                                            <td className="px-4 py-3 max-w-[250px]">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div className="min-w-0">
-                                                        <div className="font-bold text-slate-800 text-xs truncate" title={row.produto}>{row.produto}</div>
-                                                        <div className="text-xs text-slate-500 truncate mt-0.5" title={row.desc_produto}>{row.desc_produto}</div>
-                                                        {row.componente_buscado && (
-                                                            <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" title={`OP encontrada via BOM: contém ${row.componente_buscado} como componente`}>
-                                                                ⤷ {row.componente_buscado}
+                                            {/* 3. Cliente */}
+                                            <td className="p-3">
+                                                <div className="font-medium text-slate-700 max-w-[180px] truncate" title={row.nome_cliente}>{row.nome_cliente || '-'}</div>
+                                            </td>
+                                            {/* 4. Produto */}
+                                            <td className="p-3">
+                                                <div className="font-mono text-xs text-blue-600 font-semibold" title={row.produto}>{row.produto}</div>
+                                                <div className="text-xs text-slate-500 truncate max-w-[220px] mt-0.5" title={row.desc_produto}>{row.desc_produto}</div>
+                                                {row.componente_buscado && (
+                                                    <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                        ⤷ {row.componente_buscado}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            {/* 5. Entrega */}
+                                            <td className="p-3 text-center">
+                                                {row.data_entrega ? (
+                                                    <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded whitespace-nowrap">
+                                                        {new Date(row.data_entrega).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-300 text-xs">—</span>
+                                                )}
+                                            </td>
+                                            {/* 6. PDF */}
+                                            <td className="p-3 text-center">
+                                                {row.tem_arquivos ? (
+                                                    <div className="relative group flex justify-center">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (row.arquivos && row.arquivos.length === 1) {
+                                                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.arquivos[0].url_arquivo)}`), '_blank');
+                                                                } else if (row.primeiro_arquivo && (!row.arquivos || row.arquivos.length === 0)) {
+                                                                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`), '_blank');
+                                                                }
+                                                            }}
+                                                            className="relative p-1 rounded hover:bg-red-50 transition-colors"
+                                                            title={row.arquivos && row.arquivos.length > 1 ? 'Ver Arquivos' : 'Ver Desenho / PDF'}
+                                                        >
+                                                            <FileText className="w-4 h-4 text-red-500" />
+                                                            {row.arquivos && row.arquivos.length > 1 && (
+                                                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full shadow-sm ring-1 ring-white">
+                                                                    {row.arquivos.length}
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                        {row.arquivos && row.arquivos.length > 1 && (
+                                                            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 flex flex-col p-1.5 gap-0.5">
+                                                                <div className="px-2 py-1.5 border-b border-slate-100 mb-1">
+                                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Arquivos do Produto</span>
+                                                                </div>
+                                                                {row.arquivos.filter(arq => arq.url_arquivo && arq.url_arquivo.trim() !== '').map((arq, idx) => {
+                                                                    const extMatch = (arq.url_arquivo || '').match(/\.([a-zA-Z0-9]+)$/);
+                                                                    const ext = extMatch ? extMatch[1].toUpperCase() : 'DOC';
+                                                                    let typeColor = 'bg-slate-100 text-slate-500';
+                                                                    if (ext === 'PDF') typeColor = 'bg-red-100 text-red-600 border-red-200';
+                                                                    else if (ext === 'DXF') typeColor = 'bg-blue-100 text-blue-600 border-blue-200';
+                                                                    else if (ext === 'DWG') typeColor = 'bg-emerald-100 text-emerald-600 border-emerald-200';
+                                                                    else if (ext === 'STEP' || ext === 'STP') typeColor = 'bg-indigo-100 text-indigo-600 border-indigo-200';
+                                                                    const fileName = arq.titulo || `Arquivo ${idx + 1}`;
+                                                                    return (
+                                                                        <button key={idx} onClick={(e) => { e.stopPropagation(); window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(arq.url_arquivo)}`), '_blank'); }} className="text-left px-2 py-1.5 hover:bg-slate-50 rounded-md transition-colors flex flex-col group/item border border-transparent hover:border-slate-200" title={fileName}>
+                                                                            <div className="flex items-center justify-between w-full">
+                                                                                <span className="text-xs font-bold text-slate-700 group-hover/item:text-blue-600">{arq.tipo || 'Desenho'}</span>
+                                                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${typeColor}`}>{ext}</span>
+                                                                            </div>
+                                                                            <span className="text-[10px] text-slate-400 truncate w-full mt-0.5">{fileName}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {row.tem_arquivos ? (
-                                                        <div className="relative group">
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (row.arquivos && row.arquivos.length === 1) {
-                                                                        const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.arquivos[0].url_arquivo)}`);
-                                                                        window.open(viewUrl, '_blank');
-                                                                    } else if (row.primeiro_arquivo && (!row.arquivos || row.arquivos.length === 0)) {
-                                                                        const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(row.primeiro_arquivo)}`);
-                                                                        window.open(viewUrl, '_blank');
-                                                                    }
-                                                                }}
-                                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg flex-shrink-0 transition-colors"
-                                                                title={row.arquivos && row.arquivos.length > 1 ? "Ver Arquivos" : "Ver Desenho / PDF"}
-                                                            >
-                                                                <FileText className="w-4 h-4" />
-                                                                {row.arquivos && row.arquivos.length > 1 && (
-                                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full shadow-sm ring-1 ring-white">
-                                                                        {row.arquivos.length}
-                                                                    </span>
-                                                                )}
-                                                            </button>
-                                                            {row.arquivos && row.arquivos.length > 1 && (
-                                                                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 flex flex-col p-1.5 gap-0.5">
-                                                                    <div className="px-2 py-1.5 border-b border-slate-100 mb-1">
-                                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Arquivos do Produto</span>
-                                                                    </div>
-                                                                    {row.arquivos.filter(arq => arq.url_arquivo && arq.url_arquivo.trim() !== '').map((arq, idx) => {
-                                                                        const docType = arq.tipo || 'Desenho'; // e.g., Desenho, Gabarito
-                                                                        const fileName = arq.titulo || `Arquivo ${idx + 1}`;
-                                                                        
-                                                                        // Extract extension from url_arquivo or titulo
-                                                                        const extMatch = (arq.url_arquivo || fileName).match(/\.([a-zA-Z0-9]+)$/);
-                                                                        const ext = extMatch ? extMatch[1].toUpperCase() : 'DOC';
-
-                                                                        // Definir cores pela extensão ou tipo
-                                                                        let typeColor = 'bg-slate-100 text-slate-500';
-                                                                        if (ext === 'PDF') typeColor = 'bg-red-100 text-red-600 border-red-200';
-                                                                        else if (ext === 'DXF') typeColor = 'bg-blue-100 text-blue-600 border-blue-200';
-                                                                        else if (ext === 'DWG') typeColor = 'bg-emerald-100 text-emerald-600 border-emerald-200';
-                                                                        else if (ext === 'STEP' || ext === 'STP') typeColor = 'bg-indigo-100 text-indigo-600 border-indigo-200';
-
-                                                                        return (
-                                                                            <button
-                                                                                key={idx}
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const viewUrl = getFileUrl(`/api/docs/view?path=${encodeURIComponent(arq.url_arquivo)}`);
-                                                                                    window.open(viewUrl, '_blank');
-                                                                                }}
-                                                                                className="text-left px-2 py-1.5 hover:bg-slate-50 rounded-md transition-colors flex flex-col group/item border border-transparent hover:border-slate-200"
-                                                                                title={fileName}
-                                                                            >
-                                                                                <div className="flex items-center justify-between w-full">
-                                                                                    <span className="text-xs font-bold text-slate-700 group-hover/item:text-blue-600">{docType}</span>
-                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${typeColor}`}>
-                                                                                        {ext}
-                                                                                    </span>
-                                                                                </div>
-                                                                                <span className="text-[10px] text-slate-400 truncate w-full mt-0.5" title={fileName}>{fileName}</span>
-                                                                            </button>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-slate-300 p-1.5 flex-shrink-0" title="Sem arquivos anexados">
-                                                            <FileText className="w-4 h-4" />
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                ) : (
+                                                    <FileText className="w-4 h-4 text-slate-300 mx-auto" title="Sem PDF associado" />
+                                                )}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex flex-col items-center">
-                                                    <div className="text-xs font-bold text-slate-700 mb-1">
-                                                        {row.qtd_apontada} / {parseFloat(row.qtd_op).toFixed(0)} <span className="text-slate-400 font-normal ml-1">({percent}%)</span>
-                                                    </div>
-                                                    <div className="w-32 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                                        <div
-                                                            className={`h-full ${percent === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                                                            style={{ width: `${percent}%` }}
-                                                        />
-                                                    </div>
+                                            {/* 7. Recurso */}
+                                            <td className="p-3">
+                                                <div className="bg-blue-50 text-blue-700 inline-block px-2 py-0.5 rounded text-xs font-bold border border-blue-100 mb-1">
+                                                    {row.recurso_codigo || row.operacao_codigo}
                                                 </div>
+                                                <div className="text-xs text-slate-600 truncate max-w-[140px]" title={row.operacao_desc}>{row.operacao_desc}</div>
                                             </td>
-                                            <td className="px-4 py-3 font-medium text-slate-600">
+                                            {/* 8. Planejamento */}
+                                            <td className="p-3 text-center">
                                                 {row.planejamento_inicio ? (
-                                                    <div className="flex flex-col gap-1">
-                                                        <span className="flex items-center gap-1.5" title="Início Planejado">
-                                                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                                            {row.planejamento_inicio.substring(0, 10).split('-').reverse().join('/')}
-                                                        </span>
-                                                        {row.planejamento_fim && (
-                                                            <span className="flex items-center gap-1.5 text-xs text-slate-500" title="Fim Planejado">
-                                                                <Clock className="w-3 h-3 text-slate-400" />
-                                                                Até {row.planejamento_fim.substring(0, 10).split('-').reverse().join('/')}
-                                                            </span>
+                                                    <div className="text-xs flex flex-col items-center gap-0.5">
+                                                        <div className="text-green-700 font-medium whitespace-nowrap">
+                                                            I: {row.planejamento_inicio.substring(0, 10).split('-').reverse().join('/')}
+                                                        </div>
+                                                        {row.dias_espera > 0 && (
+                                                            <div className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200" title="Dias aguardando entre recursos">
+                                                                Espera: {row.dias_espera}d
+                                                            </div>
                                                         )}
                                                     </div>
                                                 ) : (
-                                                    <span className="text-slate-400">-</span>
+                                                    <span className="text-slate-400 italic text-xs">Não planejado</span>
                                                 )}
-
-                                                {/* Último apontamento inserido aqui embaixo da data planejada */}
                                                 {row.ultima_data_apontamento && (
                                                     <div className="mt-1.5 text-[10px] text-slate-500 leading-tight border-t border-slate-100 pt-1.5">
                                                         <div className="text-slate-400 uppercase tracking-wider mb-0.5" style={{ fontSize: '9px' }}>Último Apontamento:</div>
-                                                        <div className="font-semibold text-slate-600 truncate max-w-[140px]" title={row.usuarios_apontamento}>
+                                                        <div className="font-semibold text-slate-600 truncate max-w-[130px]" title={row.usuarios_apontamento}>
                                                             {row.usuarios_apontamento?.split(',')[0]}
                                                         </div>
-                                                        <div>
-                                                            {new Date(row.ultima_data_apontamento).toLocaleDateString('pt-BR')} às {new Date(row.ultima_data_apontamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                                        </div>
+                                                        <div>{new Date(row.ultima_data_apontamento).toLocaleDateString('pt-BR')} às {new Date(row.ultima_data_apontamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 align-top">
-                                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(row.status)}`}>
+                                            {/* 9. Produção */}
+                                            <td className="p-3 text-center">
+                                                <div className="flex flex-col items-center justify-center">
+                                                    <div
+                                                        className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer mb-1 hover:underline"
+                                                        title="Clique para ver histórico detalhado"
+                                                        onClick={() => handleOpenHistory(row)}
+                                                    >
+                                                        {row.qtd_apontada} / {parseFloat(row.qtd_op).toFixed(0)}
+                                                    </div>
+                                                    <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                                        <div className={`h-full ${percent === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${percent}%` }} />
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">({percent}%)</div>
+                                                </div>
+                                            </td>
+                                            {/* 10. Tempos */}
+                                            <td className="p-3 text-center">
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                    <div className="text-[10px] text-slate-500 font-bold uppercase" title="Tempo Padrão Unitário">
+                                                        Unid: {row.tempad > 0 ? `${Number(row.tempad).toFixed(3).replace('.', ',')} min` : '-'}
+                                                    </div>
+                                                    <div className="text-xs text-indigo-700 font-bold" title="Tempo Total Pendente (Unitário x Saldo + Setup)">
+                                                        Total: {row.tempad > 0 ? `${Number((row.tempad * Math.max(0, parseFloat(row.qtd_op) - row.qtd_apontada)) + (row.qtd_apontada === 0 ? (row.setup || 0) : 0)).toFixed(2).replace('.', ',')} min` : '-'}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            {/* 11. Status */}
+                                            <td className="p-3 text-center">
+                                                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold border ${getStatusColor(row.status)}`}>
                                                     {getStatusIcon(row.status)}
                                                     <span>{row.status}</span>
                                                 </div>
@@ -700,9 +776,9 @@ export default function VerticalAppointmentPage() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-right">
+                                            {/* 12. Ações */}
+                                            <td className="p-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    {/* Histórico sempre visível */}
                                                     <button
                                                         onClick={() => handleOpenHistory(row)}
                                                         className="text-sm font-bold text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 px-2 py-1.5 rounded border border-slate-200 hover:border-indigo-200 transition-colors flex items-center gap-1.5"
@@ -710,7 +786,6 @@ export default function VerticalAppointmentPage() {
                                                     >
                                                         <History className="w-3.5 h-3.5" />
                                                     </button>
-                                                    {/* RNC */}
                                                     <button
                                                         onClick={() => handleOpenRnc(row)}
                                                         className="text-sm font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50 px-2 py-1.5 rounded border border-slate-200 hover:border-amber-200 transition-colors flex items-center gap-1.5"
@@ -718,13 +793,9 @@ export default function VerticalAppointmentPage() {
                                                     >
                                                         <AlertTriangle className="w-3.5 h-3.5" /> RNC
                                                     </button>
-                                                    {/* Apontar — disponível mesmo para CONCLUIDO (apontamento extra) */}
                                                     <button
                                                         onClick={() => handleOpenAppointment(row)}
-                                                        className={`text-sm font-bold px-3 py-1.5 rounded shadow-sm transition-colors flex items-center justify-center gap-1.5 ${row.status === 'CONCLUIDO'
-                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                                                            }`}
+                                                        className={`text-sm font-bold px-3 py-1.5 rounded shadow-sm transition-colors flex items-center justify-center gap-1.5 ${row.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
                                                         style={{ minWidth: '100px' }}
                                                     >
                                                         <Play className="w-3.5 h-3.5 fill-current" />
@@ -738,15 +809,13 @@ export default function VerticalAppointmentPage() {
                             </tbody>
                             <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                                 <tr>
-                                    <td colSpan="4" className="px-4 py-3 text-right font-bold text-slate-700">
+                                    <td colSpan="8" className="px-4 py-3 text-right font-bold text-slate-700">
                                         TOTAL GERAL (Exibidos na Tela):
                                     </td>
                                     <td className="px-4 py-3 font-bold text-slate-800">
-                                        {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_op || 0), 0).toFixed(2)} <span className="text-xs text-slate-500 font-normal">Plan.</span>
+                                        {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_op || 0), 0).toFixed(2)} Plan. / {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_apontada || 0), 0).toFixed(2)} Apont.
                                     </td>
-                                    <td className="px-4 py-3 font-bold text-slate-800" colSpan="2">
-                                        {filteredData.reduce((acc, row) => acc + parseFloat(row.qtd_apontada || 0), 0).toFixed(2)} <span className="text-xs text-slate-500 font-normal">Apont.</span>
-                                    </td>
+                                    <td colSpan="3" />
                                 </tr>
                             </tfoot>
                         </table>

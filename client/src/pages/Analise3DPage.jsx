@@ -754,15 +754,15 @@ export default function Analise3DPage() {
           <div className="flex items-center gap-1">
             {!pdfFile ? (
               <label className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg cursor-pointer text-sm border border-slate-600 transition-colors" title="Anexar desenho técnico em PDF para a IA">
-                <FileText size={16} className="text-purple-400" />
+                <FileText size={16} className="text-indigo-400" />
                 <span>PDF (Opcional)</span>
                 <input type="file" accept=".pdf" className="hidden" onChange={(e) => setPdfFile(e.target.files[0])} />
               </label>
             ) : (
-              <div className="flex items-center gap-2 bg-purple-900/40 text-purple-200 border border-purple-500/50 px-3 py-1.5 rounded-lg text-xs font-mono">
-                <FileText size={14} className="text-purple-400" />
+              <div className="flex items-center gap-2 bg-indigo-900/40 text-indigo-200 border border-indigo-500/50 px-3 py-1.5 rounded-lg text-xs font-mono">
+                <FileText size={14} className="text-indigo-400" />
                 <span className="truncate max-w-[120px]">{pdfFile.name}</span>
-                <button onClick={() => { setPdfFile(null); setViewPdfMode(false); }} className="p-0.5 hover:bg-purple-500/50 rounded-full transition-colors">
+                <button onClick={() => { setPdfFile(null); setViewPdfMode(false); }} className="p-0.5 hover:bg-indigo-500/50 rounded-full transition-colors">
                   <X size={14} />
                 </button>
               </div>
@@ -790,7 +790,7 @@ export default function Analise3DPage() {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all border ${
               !(isCameraActive || fallbackImgSrc)
                 ? 'bg-slate-700 text-slate-500 cursor-not-allowed border-slate-600'
-                : 'bg-purple-600 hover:bg-purple-500 text-white border-purple-500 shadow-lg shadow-purple-500/20'
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500 shadow-lg shadow-indigo-500/20'
             }`}
           >
             {diagnosticLoading ? (
@@ -839,7 +839,7 @@ export default function Analise3DPage() {
                 onClick={() => setViewPdfMode(!viewPdfMode)}
                 className={`flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded border transition-colors shadow-lg ${
                   viewPdfMode 
-                    ? 'bg-purple-600 border-purple-500 text-white shadow-purple-900/50 hover:bg-purple-500' 
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-900/50 hover:bg-indigo-500' 
                     : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
                 }`}
               >
@@ -1057,14 +1057,14 @@ export default function Analise3DPage() {
 
           {/* Resultado do Diagnóstico IA */}
           {diagnosticResult && (
-            <div className="bg-purple-900/30 border border-purple-500/50 rounded-xl p-3 mt-2 shadow-lg shadow-purple-900/20">
-              <div className="text-xs text-purple-200 whitespace-pre-line leading-relaxed">
+            <div className="bg-indigo-900/30 border border-indigo-500/50 rounded-xl p-3 mt-2 shadow-lg shadow-indigo-900/20">
+              <div className="text-xs text-indigo-200 whitespace-pre-line leading-relaxed">
                 {diagnosticResult}
               </div>
               
               {pdfFile && (
-                <div className="mt-3 border border-purple-500/30 rounded overflow-hidden">
-                  <div className="bg-purple-800/50 px-2 py-1 text-[10px] text-purple-200 font-bold flex items-center gap-1">
+                <div className="mt-3 border border-indigo-500/30 rounded overflow-hidden">
+                  <div className="bg-indigo-800/50 px-2 py-1 text-[10px] text-indigo-200 font-bold flex items-center gap-1">
                     <FileText size={12} /> Referência 2D Analisada
                   </div>
                   <iframe 
@@ -1084,7 +1084,7 @@ export default function Analise3DPage() {
                 </button>
                 <button 
                   onClick={() => { setDiagnosticResult(null); setSnapshots(null); }}
-                  className="w-10 py-1.5 bg-purple-800/50 hover:bg-purple-700/50 text-purple-300 rounded flex items-center justify-center transition-colors"
+                  className="w-10 py-1.5 bg-indigo-800/50 hover:bg-indigo-700/50 text-indigo-300 rounded flex items-center justify-center transition-colors"
                   title="Dispensar Relatório"
                 >
                   <X size={14} />
@@ -1171,7 +1171,7 @@ export default function Analise3DPage() {
               {/* Seção 3: IA e Relatório Oficial */}
               <section>
                 <h3 className="text-white font-bold mb-2 border-b border-slate-700 pb-1 flex items-center gap-2">
-                  <Activity size={16} className="text-purple-400" />
+                  <Activity size={16} className="text-indigo-400" />
                   Gerando o Laudo da Inteligência Artificial
                 </h3>
                 <ul className="list-disc pl-5 space-y-2">

@@ -104,10 +104,10 @@ const PcpFilaDependencias = () => {
             const matchSetor = !setorFilt || (op.recurso_referencia || '').toUpperCase().includes(setorFilt) || (op.desc_recurso_referencia || '').toUpperCase().includes(setorFilt);
             
             const pvRaw = (op.pedido_venda || '').toUpperCase().replace(/\s/g, '');
-            const matchPed = pedFilters.length === 0 || pedFilters.includes(pvRaw);
+            const matchPed = pedFilters.length === 0 || pedFilters.some(pf => pvRaw.includes(pf));
             
             const opRaw = (op.op || '').toUpperCase().replace(/\s/g, '');
-            const matchOp = opFilters.length === 0 || opFilters.includes(opRaw);
+            const matchOp = opFilters.length === 0 || opFilters.some(of => opRaw.includes(of));
             
             let matchStatus = true;
             if (filtroStatus !== 'todos') {

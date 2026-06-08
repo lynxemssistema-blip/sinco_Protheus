@@ -48,14 +48,13 @@ const FloatingAvisos = () => {
         // ==== TEMPO REAL (SOCKET.IO) - lazy import para evitar Illegal constructor ====
         let socket = null;
         import('socket.io-client').then(({ io }) => {
-            // A API usa o mesmo origin (via proxy em dev, direto em prod).
-            // Socket.io também conecta no mesmo origin — sem hardcode de porta.
             const socketUrl = window.location.origin;
             socket = io(socketUrl, {
-                transports: ['websocket', 'polling'],
-                // Limita tentativas para não poluir o console quando o backend está offline
-                reconnectionAttempts: 5,
-                reconnectionDelay: 3000,
+                // polling primeiro garante que a conexão sobe imediatamente através de
+                // qualquer proxy (Vite dev ou Nginx prod), depois faz upgrade para WebSocket.
+                transports: ['polling', 'websocket'],
+                reconnectionAttempts: 3,
+                reconnectionDelay: 5000,
                 timeout: 10000,
             });
 
@@ -63,8 +62,7 @@ const FloatingAvisos = () => {
                 socket.emit('join_user', user.id);
             });
 
-            // Silencia erros de conexão no console — o socket é best-effort
-            socket.on('connect_error', () => { /* offline/dev — sem log */ });
+            socket.on('connect_error', () => { /* best-effort — silencioso */ });
 
             socket.on('novo_aviso', (novoData) => {
                 if (window.location.pathname === '/avisos') return;

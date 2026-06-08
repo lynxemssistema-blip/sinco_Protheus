@@ -7,15 +7,24 @@ const { sendText } = require('../whatsapp');
 // Map of currently scheduled jobs: task_id -> cron task instance
 const activeJobs = new Map();
 
-async function executeTask(task) {
+async function executeTask(task, io) {
     console.log(`[HermesScheduler] Iniciando execução da tarefa "${task.nome}" (ID: ${task.id})`);
-    
+    const room = `hermes_task_${task.id}`;
+
+    const emitStep = (step) => {
+        if (io) io.to(room).emit('hermes_task_step', step);
+    };
+    const emitDone = (payload) => {
+        if (io) io.to(room).emit('hermes_task_done', payload);
+    };
+
     // Set status to 'running'
     try {
         await mysqlPool.query(
             'UPDATE hermes_tasks SET status_last_run = ?, last_run = NOW() WHERE id = ?',
             ['running', task.id]
         );
+        emitStep({ type: 'status', icon: '🚀', message: `Tarefa "${task.nome}" iniciada...`, ts: Date.now() });
     } catch (err) {
         console.error('[HermesScheduler] Erro ao marcar status de início da tarefa:', err.message);
     }
@@ -71,8 +80,10 @@ async function executeTask(task) {
 
     const steps = [];
     const localEmit = (event) => {
-        if (event.type === 'step' || event.type === 'sql') {
-            steps.push(`[${event.icon || '▶'}] ${event.message}`);
+        if (event.type === 'step' || event.type === 'sql' || event.type === 'thinking') {
+            const step = { type: event.type, icon: event.icon || '▶', message: event.message, ts: Date.now() };
+            steps.push(`[${step.icon}] ${step.message}`);
+            emitStep(step);
         }
     };
 
@@ -84,16 +95,19 @@ async function executeTask(task) {
             userId: 0, // system
             historico: [],
             emit: localEmit,
+            io,
             profileId: task.perfil_id,
             temperature: task.temperature,
             autonomia: task.autonomia
         });
 
-        // Task succeeded
+        // Task succeeded — persist output and notify UI
+        const outputText = result.answer || '';
         await mysqlPool.query(
-            'UPDATE hermes_tasks SET status_last_run = ?, last_run = NOW() WHERE id = ?',
-            ['success', task.id]
+            'UPDATE hermes_tasks SET status_last_run = ?, last_run = NOW(), last_output = ? WHERE id = ?',
+            ['success', outputText.slice(0, 65000), task.id]
         );
+        emitDone({ status: 'success', answer: outputText, steps });
 
         console.log(`[HermesScheduler] Tarefa "${task.nome}" concluída com sucesso!`);
 
@@ -156,10 +170,11 @@ async function executeTask(task) {
 
     } catch (err) {
         console.error(`[HermesScheduler] Falha na execução da tarefa "${task.nome}":`, err.message);
+        emitDone({ status: 'error', message: err.message, steps });
         try {
             await mysqlPool.query(
-                'UPDATE hermes_tasks SET status_last_run = ?, last_run = NOW() WHERE id = ?',
-                ['failed', task.id]
+                'UPDATE hermes_tasks SET status_last_run = ?, last_run = NOW(), last_output = ? WHERE id = ?',
+                ['failed', `ERRO: ${err.message}`, task.id]
             );
         } catch (dbErr) {
             console.error('[HermesScheduler] Erro ao atualizar status de falha no banco:', dbErr.message);

@@ -131,7 +131,7 @@ export default function ConsolidadoView({ ops = [] }) {
     const naoIniciados  = grouped.filter(g => g.pct === 0).length;
 
     return (
-        <div className="flex flex-col gap-4 p-4 h-full min-h-0 overflow-y-auto">
+        <div className="flex flex-col gap-4 p-4 h-full min-h-0">
 
             {/* ── Título + KPIs ─────────────────────────────────────────── */}
             <div className="flex flex-col gap-3">
@@ -172,7 +172,7 @@ export default function ConsolidadoView({ ops = [] }) {
             </div>
 
             {/* ── Tabela consolidada ───────────────────────────────────── */}
-            <div className="flex-1 rounded-xl border border-slate-200 overflow-hidden bg-white shadow-sm">
+            <div className="flex-1 rounded-xl border border-slate-200 overflow-y-auto bg-white shadow-sm">
                 {sorted.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-12 gap-3 text-slate-400">
                         <Factory className="w-10 h-10" />
@@ -183,7 +183,7 @@ export default function ConsolidadoView({ ops = [] }) {
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                            <tr className="bg-slate-50 border-b border-slate-200 text-left sticky top-0 z-10 shadow-sm">
                                 <th className="p-3 w-8"></th>
                                 <th
                                     className="p-3 font-semibold text-slate-600 text-xs uppercase tracking-wide cursor-pointer select-none hover:text-slate-900"

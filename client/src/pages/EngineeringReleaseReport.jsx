@@ -808,10 +808,10 @@ const NFEReceiptsTab = () => {
         <div className="space-y-5">
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-purple-600" />
+                    <Mail className="w-4 h-4 text-teal-600" />
                     <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Registro de Comunicação (Fiscal / Almoxarifado)</h2>
                 </div>
-                <button onClick={fetchHistory} className="px-4 py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-bold shadow-sm hover:bg-purple-100 transition-all">Atualizar</button>
+                <button onClick={fetchHistory} className="px-4 py-2 bg-teal-50 text-teal-600 rounded-lg text-sm font-bold shadow-sm hover:bg-teal-100 transition-all">Atualizar</button>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
@@ -824,7 +824,7 @@ const NFEReceiptsTab = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                         {loading ? (
-                            <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto" /></td></tr>
+                            <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="w-8 h-8 text-teal-500 animate-spin mx-auto" /></td></tr>
                         ) : history.length === 0 ? (
                             <tr><td colSpan={7} className="py-16 text-center text-slate-400 text-sm"><Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />Nenhum e-mail de NFe encontrado.</td></tr>
                         ) : history.map(row => (
@@ -856,7 +856,7 @@ const EngineeringReleaseReport = () => {
         { id: 'pcp',        label: 'PCP / Lote Aglutinado', icon: Factory,       color: 'green' },
         { id: 'romaneio',   label: 'Controle Romaneio', icon: Package,       color: 'blue' },
         { id: 'rnc_emails', label: 'Controle Envios RNC', icon: Mail,          color: 'indigo' },
-        { id: 'nfe_emails', label: 'Recebimentos Fiscais', icon: FileText,     color: 'purple' },
+        { id: 'nfe_emails', label: 'Recebimentos Fiscais', icon: FileText,     color: 'teal' },
     ];
 
     return (
@@ -883,7 +883,7 @@ const EngineeringReleaseReport = () => {
                         green: { active: 'bg-white text-green-600 shadow-sm border border-green-100', inactive: 'text-slate-500 hover:text-green-500' },
                         blue:  { active: 'bg-white text-blue-600 shadow-sm border border-blue-100',  inactive: 'text-slate-500 hover:text-blue-500' },
                         indigo:{ active: 'bg-white text-indigo-600 shadow-sm border border-indigo-100', inactive: 'text-slate-500 hover:text-indigo-500' },
-                        purple:{ active: 'bg-white text-purple-600 shadow-sm border border-purple-100', inactive: 'text-slate-500 hover:text-purple-500' },
+                        teal:  { active: 'bg-white text-teal-600 shadow-sm border border-teal-100',   inactive: 'text-slate-500 hover:text-teal-500' },
                     };
                     return (
                         <button

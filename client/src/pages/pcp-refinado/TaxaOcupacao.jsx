@@ -6,9 +6,9 @@ import logoMetalfisa from '../../assets/metalfisa-logo.png';
 const TaxaOcupacao = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [dataInicio, setDataInicio] = useState('');
-    const [dataFim, setDataFim] = useState('');
-    const [recursoBusca, setRecursoBusca] = useState('');
+    const [dataInicio, setDataInicio] = useState(() => localStorage.getItem('pcpRefinadoDataInicio') || '');
+    const [dataFim, setDataFim] = useState(() => localStorage.getItem('pcpRefinadoDataFim') || '');
+    const [recursoBusca, setRecursoBusca] = useState(() => localStorage.getItem('pcpRefinadoRecursoBusca') || '');
     const [error, setError] = useState('');
     const [selectedDetail, setSelectedDetail] = useState(null);
     const [editingOp, setEditingOp] = useState(null); // Agora armazena a rowKey única
@@ -33,6 +33,18 @@ const TaxaOcupacao = () => {
     useEffect(() => {
         localStorage.setItem('pcpRefinadoOnlyActive', onlyActive);
     }, [onlyActive]);
+
+    useEffect(() => {
+        localStorage.setItem('pcpRefinadoDataInicio', dataInicio);
+    }, [dataInicio]);
+
+    useEffect(() => {
+        localStorage.setItem('pcpRefinadoDataFim', dataFim);
+    }, [dataFim]);
+
+    useEffect(() => {
+        localStorage.setItem('pcpRefinadoRecursoBusca', recursoBusca);
+    }, [recursoBusca]);
     
     // Novos estados do modal (Filtro e Seleção em Massa)
     const [modalSearchTerm, setModalSearchTerm] = useState('');
@@ -612,11 +624,24 @@ const TaxaOcupacao = () => {
                                                                     <td key={d} className="p-1.5 text-center align-middle">
                                                                         <button 
                                                                             onClick={() => setSelectedDetail({ data: d, recurso: item })}
-                                                                            className={`w-full py-2 px-1 rounded border shadow-sm transition-all text-xs flex flex-col items-center justify-center gap-0.5 ${colorClass}`}
-                                                                            title={`Capacidade: ${Math.round(item.capacidade_diaria)}m | Consumo: ${Math.round(item.minutos_consumidos)}m`}
+                                                                            className={`w-full py-2 px-1.5 rounded border shadow-sm transition-all text-xs flex flex-col items-center justify-center gap-1 ${colorClass}`}
+                                                                            title={`Capacidade: ${Math.round(item.capacidade_diaria)}m | Consumo: ${Math.round(item.minutos_consumidos)}m | Executado: ${Math.round(item.minutos_executados || 0)}m`}
                                                                         >
-                                                                            <span>{percent.toFixed(0)}%</span>
-                                                                            {item.minutos_consumidos > 0 && <span className="text-[9px] opacity-70">{Math.round(item.minutos_consumidos)}m</span>}
+                                                                            <div className="flex flex-col items-center justify-center gap-0.5 w-full">
+                                                                                <div className="flex items-center gap-0.5">
+                                                                                    <span className="text-[9px] opacity-75 font-normal">Pl:</span>
+                                                                                    <span className="font-bold">{percent.toFixed(0)}%</span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-0.5 text-[9px] text-blue-700 font-semibold bg-blue-50/50 px-1 rounded">
+                                                                                    <span>Ex:</span>
+                                                                                    <span>{(item.percentual_executado || 0).toFixed(0)}%</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            {item.minutos_consumidos > 0 && (
+                                                                                <span className="text-[9px] opacity-60 border-t border-current/10 pt-0.5 w-full block text-center">
+                                                                                    {Math.round(item.minutos_consumidos)}m
+                                                                                </span>
+                                                                            )}
                                                                         </button>
                                                                     </td>
                                                                 );
@@ -671,29 +696,50 @@ const TaxaOcupacao = () => {
                                                                 const percent = Math.min(item.taxa_ocupacao, 100);
                                                                 const isOverloaded = item.taxa_ocupacao > 100;
                                                                 return (
-                                                                    <div key={item.data} className="flex items-center gap-4 text-sm">
-                                                                        <div className="w-24 font-medium text-slate-600 shrink-0">
+                                                                    <div key={item.data} className="flex items-start gap-4 text-sm bg-slate-50/50 p-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 transition-colors">
+                                                                        <div className="w-24 font-medium text-slate-600 shrink-0 pt-1">
                                                                             {formatDateBR(item.data)}
                                                                         </div>
-                                                                        <div className="flex-1 flex items-center gap-3">
-                                                                            <div 
-                                                                                className="relative h-6 bg-slate-100 rounded-md overflow-hidden flex-1 cursor-pointer group flex items-center" 
-                                                                                onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
-                                                                            >
+                                                                        <div className="flex-1 flex flex-col gap-2">
+                                                                            {/* PLAN BAR */}
+                                                                            <div className="flex items-center gap-3 w-full">
                                                                                 <div 
-                                                                                    className={`absolute left-0 top-0 bottom-0 ${isOverloaded ? 'bg-red-500' : (percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500')} transition-all group-hover:brightness-110`}
-                                                                                    style={{ width: `${percent}%` }}
-                                                                                />
-                                                                                {isOverloaded && (
+                                                                                    className="relative h-3 bg-slate-100 rounded-full overflow-hidden flex-1 cursor-pointer group" 
+                                                                                    onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
+                                                                                    title={`Capacidade: ${item.capacidade_diaria}m | Consumo: ${item.minutos_consumidos}m`}
+                                                                                >
                                                                                     <div 
-                                                                                        className="absolute top-0 bottom-0 bg-red-700/50"
-                                                                                        style={{ left: '100%', width: `${Math.min(item.taxa_ocupacao - 100, 100)}%` }}
+                                                                                        className={`absolute left-0 top-0 bottom-0 ${isOverloaded ? 'bg-red-500' : (percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500')} transition-all group-hover:brightness-110`}
+                                                                                        style={{ width: `${percent}%` }}
                                                                                     />
-                                                                                )}
+                                                                                    {isOverloaded && (
+                                                                                        <div 
+                                                                                            className="absolute top-0 bottom-0 bg-red-700/50"
+                                                                                            style={{ left: '100%', width: `${Math.min(item.taxa_ocupacao - 100, 100)}%` }}
+                                                                                        />
+                                                                                    )}
+                                                                                </div>
+                                                                                <span className="text-xs font-semibold text-slate-700 w-48 shrink-0">
+                                                                                    Carga: {item.taxa_ocupacao.toFixed(1)}% <span className="text-slate-400 font-normal">({Math.round(item.minutos_consumidos)}m / {item.capacidade_diaria}m)</span>
+                                                                                </span>
                                                                             </div>
-                                                                            <span className="text-xs font-bold text-slate-700 w-40 shrink-0">
-                                                                                {item.taxa_ocupacao.toFixed(1)}% <span className="text-slate-400 font-normal">({item.minutos_consumidos}m / {item.capacidade_diaria}m)</span>
-                                                                            </span>
+                                                                            
+                                                                            {/* EXECUTED BAR */}
+                                                                            <div className="flex items-center gap-3 w-full">
+                                                                                <div 
+                                                                                    className="relative h-3 bg-slate-100 rounded-full overflow-hidden flex-1 cursor-pointer group" 
+                                                                                    onClick={() => setSelectedDetail({ data: item.data, recurso: item })}
+                                                                                    title={`Executado: ${Math.round(item.minutos_executados || 0)}m`}
+                                                                                >
+                                                                                    <div 
+                                                                                        className="absolute left-0 top-0 bottom-0 bg-blue-500 transition-all group-hover:brightness-110"
+                                                                                        style={{ width: `${Math.min(item.percentual_executado || 0, 100)}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                                <span className="text-xs font-semibold text-blue-700 w-48 shrink-0">
+                                                                                    Executado: {(item.percentual_executado || 0).toFixed(1)}% <span className="text-slate-400 font-normal">({Math.round(item.minutos_executados || 0)}m)</span>
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 );
@@ -716,12 +762,14 @@ const TaxaOcupacao = () => {
             {selectedDetail && (() => {
                 const filteredOps = (modalOps || []).filter(o => 
                     o.qtde_pendente > 0 &&
-                    o.pedido && o.pedido.trim() !== '' &&
                     (o.op.toLowerCase().includes(modalSearchTerm.toLowerCase()) || 
                     (o.pedido || '').toLowerCase().includes(modalSearchTerm.toLowerCase()) ||
                     (o.cliente || '').toLowerCase().includes(modalSearchTerm.toLowerCase()) ||
                     (o.produto || '').toLowerCase().includes(modalSearchTerm.toLowerCase()))
                 );
+
+                const totalMinutosEstimados = filteredOps.reduce((acc, curr) => acc + (curr.minutos_estimados || 0), 0);
+                const totalHorasEstimadas = (totalMinutosEstimados / 60).toFixed(1);
 
                 const isAllSelected = filteredOps.length > 0 && selectedOps.length === filteredOps.length;
 
@@ -751,6 +799,9 @@ const TaxaOcupacao = () => {
                                 </h2>
                                 <p className="text-sm text-slate-500">
                                     {selectedDetail.recurso.recurso_descri} ({selectedDetail.recurso.recurso_codigo}) - Data: {formatDateBR(selectedDetail.data)}
+                                </p>
+                                <p className="text-sm font-bold text-blue-600 mt-1">
+                                    Carga Estimada (Visível): {totalMinutosEstimados.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min ({totalHorasEstimadas}h)
                                 </p>
                             </div>
                             
@@ -968,6 +1019,24 @@ const TaxaOcupacao = () => {
                                         </tr>
                                     )}
                                 </tbody>
+                                {filteredOps.length > 0 && (
+                                    <tfoot className="border-t-2 border-slate-300 bg-slate-50 sticky bottom-0">
+                                        <tr>
+                                            <td colSpan="6" className="px-4 py-3 text-right font-bold text-slate-700 text-sm">
+                                                TOTAL ({filteredOps.length} OPs):
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-bold text-blue-700">
+                                                {filteredOps.reduce((acc, o) => acc + (o.qtde_pendente || 0), 0).toLocaleString('pt-BR')}
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-slate-500 text-xs font-bold">—</td>
+                                            <td className="px-4 py-3 text-right font-bold text-blue-700">
+                                                {totalMinutosEstimados.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min
+                                                <span className="block text-xs text-slate-500 font-normal">({totalHorasEstimadas}h)</span>
+                                            </td>
+                                            <td />
+                                        </tr>
+                                    </tfoot>
+                                )}
                             </table>
                             ) : (
                             <div className="space-y-4">

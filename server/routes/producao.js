@@ -725,8 +725,8 @@ router.get('/vertical/:operacao', async (req, res) => {
     // PRE-FILTER BY DATE: get OP list from MySQL planning table
     let opFilterFromMySQL = null;
     if (plan_inicio_de || plan_inicio_ate || plan_fim_de || plan_fim_ate) {
-      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE 1=1`;
-      const mysqlParams = [];
+      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE recurso_codigo = ?`;
+      const mysqlParams = [operacao];
       if (plan_inicio_de) { mysqlQuery += ` AND data_planejada_inicio >= ?`; mysqlParams.push(`${plan_inicio_de} 00:00:00`); }
       if (plan_inicio_ate) { mysqlQuery += ` AND data_planejada_inicio <= ?`; mysqlParams.push(`${plan_inicio_ate} 23:59:59`); }
       if (plan_fim_de)    { mysqlQuery += ` AND data_planejada_fim >= ?`;    mysqlParams.push(`${plan_fim_de} 00:00:00`); }
@@ -800,8 +800,27 @@ router.get('/vertical/:operacao', async (req, res) => {
       }
     }
     if (cliente) {
-      sc2Conditions.push(`(TRIM(a1.a1_nome) ILIKE $${sc2Count} OR TRIM(a1.a1_nreduz) ILIKE $${sc2Count})`);
-      sc2Params.push(`%${cliente.trim()}%`);
+      // PERF-FIX: Busca os pedidos do cliente primeiro para evitar Nested Loop gigante
+      const inactiveSqlCliente = getInactiveFilter('c6.c6_num');
+      const clienteQuery = `
+        SELECT TRIM(c6.c6_num) as pedido
+        FROM public.sc6010 c6
+        INNER JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c6.c6_cli) AND TRIM(a1.a1_loja) = TRIM(c6.c6_loja)
+        WHERE (TRIM(a1.a1_nome) ILIKE $1 OR TRIM(a1.a1_nreduz) ILIKE $1)
+          AND COALESCE(c6.d_e_l_e_t_, '') = ''
+          AND COALESCE(a1.d_e_l_e_t_, '') = ''
+          AND c6.c6_qtdven > c6.c6_qtdent
+          ${inactiveSqlCliente ? `AND ${inactiveSqlCliente.replace(/^\s*AND\s+/i, '')}` : ''}
+      `;
+      const pedsResult = await db.query(clienteQuery, [`%${cliente.trim()}%`]);
+      const pedsClient = pedsResult.rows.map(r => r.pedido).filter(Boolean);
+      
+      if (pedsClient.length === 0) {
+        return res.json({ data: [], pagination: { page, limit, hasMore: false, total: 0 } });
+      }
+
+      sc2Conditions.push(`(TRIM(c2.c2_pedido) = ANY($${sc2Count}) OR TRIM(root_op.c2_pedido) = ANY($${sc2Count}))`);
+      sc2Params.push(pedsClient);
       sc2Count++;
     }
     if (opFilterFromMySQL && opFilterFromMySQL.length > 0) {
@@ -828,7 +847,9 @@ router.get('/vertical/:operacao', async (req, res) => {
           THEN TO_CHAR(TO_DATE(c6.c6_entreg, 'YYYYMMDD'), 'YYYY-MM-DD')
           ELSE NULL END AS data_entrega,
         TRIM(c6.c6_cli)  AS c6_cli,
-        TRIM(a1.a1_nome) AS nome_cliente
+        TRIM(a1.a1_nome) AS nome_cliente,
+        g2_r.g2_tempad   AS g2_tempad,
+        COALESCE(g2_r.g2_setup, 0) AS g2_setup
       FROM public.sc2010 c2
       INNER JOIN public.sg2010 g2_r
         ON TRIM(g2_r.g2_produto) = TRIM(c2.c2_produto)
@@ -888,7 +909,7 @@ router.get('/vertical/:operacao', async (req, res) => {
     let plans = [], appointments = [];
     if (opCodes.length > 0 && opCodOperacoes.length > 0) {
       const [pRows] = await mysqlPool.query(`
-        SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
+        SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim, dias_espera
         FROM app_production_planning
         WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
       `, [...opCodes, ...opCodOperacoes]);
@@ -950,19 +971,42 @@ router.get('/vertical/:operacao', async (req, res) => {
         pedido: rawP || (rawO.match(/^\d+/)?.[0] || ''),
         planejamento_inicio: p ? p.data_planejada_inicio : null,
         planejamento_fim:    p ? p.data_planejada_fim    : null,
+        dias_espera:         p ? (p.dias_espera || 0) : 0,
         qtd_apontada,
         usuarios_apontamento:    a ? a.usuarios   : null,
         ultima_data_apontamento: a ? a.ultima_data : null,
         tem_arquivos:    docs.length > 0,
         primeiro_arquivo: docs.length > 0 ? docs[0].url_arquivo : null,
-        arquivos: docs
+        arquivos: docs,
+        tempad: Math.round((parseFloat(opRow.g2_tempad) || 0) * 1000) / 1000,
+        setup:  parseFloat(opRow.g2_setup) || 0
       };
     });
 
-    const hasMore = enrichedList.length >= limit;
+    // Filtro Final por Datas Planejadas na própria operação (Timezone Safe)
+    const toYMD = (d) => {
+      if (!d) return null;
+      try { return new Date(d).toISOString().substring(0, 10); } catch (e) { return null; }
+    };
+
+    let finalList = enrichedList;
+    if (plan_inicio_de) {
+      finalList = finalList.filter(r => toYMD(r.planejamento_inicio) && toYMD(r.planejamento_inicio) >= String(plan_inicio_de));
+    }
+    if (plan_inicio_ate) {
+      finalList = finalList.filter(r => toYMD(r.planejamento_inicio) && toYMD(r.planejamento_inicio) <= String(plan_inicio_ate));
+    }
+    if (plan_fim_de) {
+      finalList = finalList.filter(r => toYMD(r.planejamento_fim) && toYMD(r.planejamento_fim) >= String(plan_fim_de));
+    }
+    if (plan_fim_ate) {
+      finalList = finalList.filter(r => toYMD(r.planejamento_fim) && toYMD(r.planejamento_fim) <= String(plan_fim_ate));
+    }
+
+    const hasMore = finalList.length >= limit;
     res.json({
-      data: enrichedList,
-      pagination: { page, limit, hasMore, total: hasMore ? null : offset + enrichedList.length }
+      data: finalList,
+      pagination: { page, limit, hasMore, total: hasMore ? null : offset + finalList.length }
     });
 
   } catch (err) {

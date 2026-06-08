@@ -676,7 +676,7 @@ router.get('/integrated-product-view', async (req, res) => {
                 TRIM(h1.h1_descri) AS descricao,
                 g2.g2_recurso AS recurso,
                 g2.g2_setup AS tempo_setup,
-                g2.g2_tempad AS tempo_padrao,
+                ROUND(g2.g2_tempad::numeric, 3) AS tempo_padrao,
                 g2.g2_ferram AS ferramentas,
                 g2.g2_depto AS departamento
             FROM public.sg2010 g2
@@ -985,7 +985,7 @@ router.get('/operacoes/:codigo', async (req, res) => {
                 TRIM(h1.h1_descri)                                          AS descricao,
                 TRIM(g2.g2_recurso)                                         AS recurso,
                 TRIM(h1.h1_descri)                                          AS recurso_descricao,
-                g2.g2_tempad                                                AS tempo,
+                ROUND(g2.g2_tempad::numeric, 3)                             AS tempo,
                 g2.g2_setup                                                 AS setup
             FROM public.sg2010 g2
             LEFT JOIN public.sh1010 h1

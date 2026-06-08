@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
     UploadCloud, FileSpreadsheet, RefreshCw, Layers, Trash2,
-    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, XCircle, FileDown, ClipboardList, FileText
+    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, XCircle, FileDown, ClipboardList, FileText, Filter
 } from 'lucide-react';
 import { api, getFileUrl } from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -13,6 +13,58 @@ const fmtDate = (d) => d
     ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '';
 const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
+
+const cleanOrderNumber = (str) => {
+    if (!str) return '';
+    let s = String(str).trim();
+    // Desconsidera o prefixo DMC-9800- globalmente
+    s = s.replace(/dmc-?9800-?/gi, '');
+    // Desconsidera as revisões/sufixos comuns
+    const revRegex = /([-/_.]|(\s+rev\b|\s+revis\w*))+/i;
+    const match = s.match(revRegex);
+    if (match && match.index !== undefined) {
+        s = s.substring(0, match.index);
+    }
+    return s.replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+};
+
+const NfTooltip = ({ notasFiscais, index }) => {
+    if (!notasFiscais || notasFiscais.length === 0) return null;
+    const isTopRow = typeof index === 'number' && index < 3;
+    return (
+        <div className={`absolute z-50 ${isTopRow ? 'top-full mt-1.5' : 'bottom-full mb-1.5'} left-1/2 -translate-x-1/2 hidden group-hover/nfte:flex flex-col items-center animate-fade-in`}>
+            {isTopRow && (
+                <div className="w-2.5 h-2.5 bg-slate-900 border-t border-l border-slate-800 rotate-45 -mb-1.5 z-10" />
+            )}
+            <div className="bg-slate-900/95 backdrop-blur-md text-slate-100 text-[10px] rounded-lg p-2.5 shadow-2xl border border-slate-800 whitespace-nowrap text-left min-w-[200px]">
+                <div className="font-bold text-indigo-400 mb-1.5 border-b border-slate-800 pb-1 flex items-center justify-between">
+                    <span>Notas Fiscais de Entrega</span>
+                    <span className="text-[9px] text-slate-500 font-normal">{notasFiscais.length} {notasFiscais.length === 1 ? 'NF' : 'NFs'}</span>
+                </div>
+                <div className="max-h-[160px] overflow-y-auto pr-1 custom-scrollbar space-y-1">
+                    {notasFiscais.map((nf, idx) => (
+                        <div
+                            key={idx}
+                            className="py-1 flex justify-between gap-4 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/50 rounded px-1.5 transition-all"
+                        >
+                            <div className="flex flex-col">
+                                <span className="font-bold text-slate-200">NF {nf.nota} <span className="text-slate-500 font-normal">({nf.serie})</span></span>
+                                <span className="text-[9px] text-slate-400">Emissão: {nf.emissao || '-'}</span>
+                            </div>
+                            <div className="flex flex-col items-end justify-center font-mono">
+                                <span className="font-bold text-emerald-400">{fmtNum(nf.qtd)} pçs</span>
+                                <span className="text-[9px] text-slate-500">CFOP {nf.cfop || '-'}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            {!isTopRow && (
+                <div className="w-2.5 h-2.5 bg-slate-900 border-b border-r border-slate-800 rotate-45 -mt-1.5" />
+            )}
+        </div>
+    );
+};
 
 const TypeBadge = ({ type, detail }) => {
     const cfgs = {
@@ -51,6 +103,7 @@ export default function DemandaVMIPage({ isTab = false }) {
 
     // ── View ──────────────────────────────────────────────────────────────────
     const [filterText, setFilterText] = useState('');
+    const [pcFilter, setPcFilter] = useState('');
     const [groupBy, setGroupBy] = useState('flat'); // 'flat' | 'produto_pai' | 'pedido'
     const [expandedGroups, setExpandedGroups] = useState(new Set());
     const [confirm, setConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
@@ -58,6 +111,56 @@ export default function DemandaVMIPage({ isTab = false }) {
     const [bomModalMulti, setBomModalMulti] = useState(null); // modo multi: { produtos: [...], titulo }
     const [openBomDropdown, setOpenBomDropdown] = useState(null); // key do grupo com dropdown aberto
     const [opMirrorModal, setOpMirrorModal] = useState(null); // { b1cod, label, defaultQty }
+
+    // Sorting & Filtering
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+    const [columnFilters, setColumnFilters] = useState({
+        prioridade_cliente: '',
+        ordem_compra_cliente: '',
+        codigo_produto_cliente: '',
+        descricao_produto_cliente: '',
+        status_tipo_item: '',
+        b1_cod: '',
+        pedido_metalfisa: '',
+        qtd_pedido: '',
+        qtd_entregue: '',
+        saldo_entregar: '',
+        descricao_equipamento: '',
+        rev_cliente: '',
+        produto_pai: ''
+    });
+    const [showColumnFilters, setShowColumnFilters] = useState(false);
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+            setSortConfig({ key: null, direction: 'asc' });
+            return;
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const clearColumnFilters = () => {
+        setColumnFilters({
+            prioridade_cliente: '',
+            ordem_compra_cliente: '',
+            codigo_produto_cliente: '',
+            descricao_produto_cliente: '',
+            status_tipo_item: '',
+            b1_cod: '',
+            pedido_metalfisa: '',
+            qtd_pedido: '',
+            qtd_entregue: '',
+            saldo_entregar: '',
+            descricao_equipamento: '',
+            rev_cliente: '',
+            produto_pai: ''
+        });
+    };
+
+    const hasActiveColumnFilters = Object.values(columnFilters).some(v => v !== '');
 
     const showToast = (msg, type = 'ok') => {
         setToast({ msg, type });
@@ -112,6 +215,7 @@ export default function DemandaVMIPage({ isTab = false }) {
     const handleSelectLote = (loteId) => {
         setSelectedLote(loteId);
         setFilterText('');
+        setPcFilter('');
         setGroupBy('flat');
         fetchData(loteId);
         fetchMappings();
@@ -242,6 +346,52 @@ export default function DemandaVMIPage({ isTab = false }) {
         });
     };
 
+    const handleFetchMetalfisa = async () => {
+        if (!data || data.length === 0) return;
+        setConfirm({
+            isOpen: true,
+            title: 'Sincronizar Pedidos Metalfisa',
+            message: 'Deseja buscar o status de faturamento (SC6) dos pedidos no Protheus para os itens mapeados?',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    const res = await api.post('/vmi/pedidos-protheus', { rows: data });
+                    if (res.data.success && res.data.mappings) {
+                        const cleanString = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+
+                        const newData = data.map(d => {
+                            const key = `${cleanOrderNumber(d.ordem_compra_cliente)}_${cleanString(d.b1_cod)}`;
+                            if (mappings[key] && mappings[key].length > 0) {
+                                const qPed = mappings[key].reduce((s, x) => s + x.qtdven, 0);
+                                const qEnt = mappings[key].reduce((s, x) => s + x.qtd, 0);
+                                const allNfs = [];
+                                mappings[key].forEach(x => {
+                                    if (x.notas_fiscais) allNfs.push(...x.notas_fiscais);
+                                });
+                                return {
+                                    ...d,
+                                    pedido_metalfisa: mappings[key].map(x => x.num).join(' / '),
+                                    qtd_pedido: qPed,
+                                    qtd_entregue: qEnt,
+                                    saldo_entregar: Math.max(0, qPed - qEnt),
+                                    notas_fiscais: allNfs
+                                };
+                            }
+                            return d;
+                        });
+                        setData(newData);
+                        showToast('Pedidos Metalfisa atualizados!', 'success');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast('Erro ao buscar pedidos.', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
+    };
+
     // ── Derived data (memoized) ───────────────────────────────────────────────
     const MONTH_ORDER = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const meses = useMemo(() => {
@@ -261,6 +411,7 @@ export default function DemandaVMIPage({ isTab = false }) {
             const key = `${d.ordem_compra_cliente}||${d.codigo_produto_cliente}`;
             if (!map[key]) {
                 map[key] = {
+                    prioridade_cliente: d.prioridade_cliente,
                     ordem_compra_cliente: d.ordem_compra_cliente,
                     produto_pai: d.produto_pai,
                     descricao_equipamento: d.descricao_equipamento,
@@ -272,6 +423,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                     b1_cod: d.b1_cod || null,
                     b1_desc: d.b1_desc || null,
                     b1_cod_pai: d.b1_cod_pai || null,
+                    pedido_metalfisa: d.pedido_metalfisa || '-',
+                    qtd_pedido: d.qtd_pedido || 0,
+                    qtd_entregue: d.qtd_entregue || 0,
+                    saldo_entregar: d.saldo_entregar || 0,
+                    notas_fiscais: d.notas_fiscais || [],
                     meses: {}
                 };
             }
@@ -283,29 +439,100 @@ export default function DemandaVMIPage({ isTab = false }) {
             if (!map[key].b1_cod_pai && d.b1_cod_pai) {
                 map[key].b1_cod_pai = d.b1_cod_pai;
             }
+            if (d.pedido_metalfisa && d.pedido_metalfisa !== '-') {
+                map[key].pedido_metalfisa = d.pedido_metalfisa;
+                map[key].qtd_pedido = d.qtd_pedido;
+                map[key].qtd_entregue = d.qtd_entregue;
+                map[key].saldo_entregar = d.saldo_entregar;
+                map[key].notas_fiscais = d.notas_fiscais || [];
+            }
             map[key].meses[d.mes_referencia] = (map[key].meses[d.mes_referencia] || 0) + Number(d.quantidade);
         });
         return Object.values(map);
     }, [data]);
 
-    // Apply text filter
+    // Apply text filter & column filters
     const filteredRows = useMemo(() => {
-        if (!filterText.trim()) return rows;
-        const s = filterText.toLowerCase();
-        return rows.filter(r =>
-            r.codigo_produto_cliente?.toLowerCase().includes(s) ||
-            r.descricao_produto_cliente?.toLowerCase().includes(s) ||
-            r.ordem_compra_cliente?.toLowerCase().includes(s) ||
-            r.produto_pai?.toLowerCase().includes(s) ||
-            r.descricao_equipamento?.toLowerCase().includes(s)
-        );
-    }, [rows, filterText]);
+        let result = rows;
+
+        // Apply global search
+        if (filterText.trim()) {
+            const s = filterText.toLowerCase();
+            result = result.filter(r =>
+                r.codigo_produto_cliente?.toLowerCase().includes(s) ||
+                r.descricao_produto_cliente?.toLowerCase().includes(s) ||
+                r.ordem_compra_cliente?.toLowerCase().includes(s) ||
+                r.produto_pai?.toLowerCase().includes(s) ||
+                r.descricao_equipamento?.toLowerCase().includes(s) ||
+                r.prioridade_cliente?.toString().toLowerCase().includes(s)
+            );
+        }
+
+        // Apply dedicated PC search (using cleanOrderNumber)
+        if (pcFilter.trim()) {
+            const cleanInput = cleanOrderNumber(pcFilter);
+            result = result.filter(r => {
+                const cleanRowVal = cleanOrderNumber(r.ordem_compra_cliente);
+                return cleanRowVal.includes(cleanInput);
+            });
+        }
+
+        // Apply column-specific search
+        Object.entries(columnFilters).forEach(([key, value]) => {
+            if (value && value.trim()) {
+                const s = value.toLowerCase().trim();
+                result = result.filter(r => {
+                    const val = r[key];
+                    if (val === undefined || val === null) return false;
+                    if (key === 'ordem_compra_cliente') {
+                        return cleanOrderNumber(val).includes(cleanOrderNumber(value));
+                    }
+                    return String(val).toLowerCase().includes(s);
+                });
+            }
+        });
+
+        return result;
+    }, [rows, filterText, pcFilter, columnFilters]);
+
+    // Apply sorting
+    const sortedRows = useMemo(() => {
+        const sortableItems = [...filteredRows];
+        if (sortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                let valA = a[sortConfig.key];
+                let valB = b[sortConfig.key];
+
+                if (valA === undefined || valA === null) valA = '';
+                if (valB === undefined || valB === null) valB = '';
+
+                // Handle numbers
+                const numA = Number(valA);
+                const numB = Number(valB);
+                if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+                    return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+                }
+
+                // Normal string comparison
+                const strA = String(valA).trim().toLowerCase();
+                const strB = String(valB).trim().toLowerCase();
+                if (strA < strB) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (strA > strB) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredRows, sortConfig]);
 
     // Build groups
     const grupos = useMemo(() => {
         if (groupBy === 'flat') return null;
         const map = {};
-        filteredRows.forEach(r => {
+        sortedRows.forEach(r => {
             const key = groupBy === 'produto_pai'
                 ? (r.produto_pai || '—')
                 : r.ordem_compra_cliente;
@@ -413,6 +640,7 @@ export default function DemandaVMIPage({ isTab = false }) {
         const flatRows = rows.map(r => {
             const map = mapeamentos[r.codigo_produto_cliente];
             const row = {
+                'Prioridade':         r.prioridade_cliente || '',
                 'Pedido Cliente':     r.ordem_compra_cliente,
                 'Produto Pai':        r.produto_pai || '',
                 'Equipamento':        r.descricao_equipamento || '',
@@ -423,6 +651,10 @@ export default function DemandaVMIPage({ isTab = false }) {
                 'Cód. Protheus':      r.b1_cod || '',
                 'Status Detalhe':     r.status_tipo_detalhe || '',
                 'Desc. Protheus':     r.b1_desc || '',
+                'Ped. Metalfisa':     r.pedido_metalfisa || '-',
+                'Qtd. Pedido':        r.qtd_pedido || 0,
+                'Qtd. Entregue':      r.qtd_entregue || 0,
+                'Saldo a Entregar':   r.saldo_entregar || 0,
             };
             meses.forEach(m => { row[m] = r.meses[m] || 0; });
             row['TOTAL'] = meses.reduce((s, m) => s + (r.meses[m] || 0), 0);
@@ -441,7 +673,7 @@ export default function DemandaVMIPage({ isTab = false }) {
         });
         Object.entries(grpPai).sort(([a],[b]) => a.localeCompare(b)).forEach(([key, g]) => {
             // Linha de totais do grupo
-            const hdr = { 'Produto Pai': key, 'Equipamento': g.label, 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '' };
+            const hdr = { 'Produto Pai': key, 'Equipamento': g.label, 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Metalfisa': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
             meses.forEach(m => { hdr[m] = g.tot[m] || 0; });
             hdr['TOTAL'] = meses.reduce((s, m) => s + (g.tot[m] || 0), 0);
             sheet2.push(hdr);
@@ -455,7 +687,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                     'Rev.': r.rev_cliente || '', 
                     'Tipo': r.status_tipo_item || 'PCP',
                     'Cód. Protheus': r.b1_cod || '', 
-                    'Desc. Protheus': r.b1_desc || '' 
+                    'Desc. Protheus': r.b1_desc || '',
+                    'Ped. Metalfisa': r.pedido_metalfisa || '-',
+                    'Qtd. Pedido': r.qtd_pedido || 0,
+                    'Qtd. Entregue': r.qtd_entregue || 0,
+                    'Saldo a Entregar': r.saldo_entregar || 0,
                 };
                 meses.forEach(m => { row[m] = r.meses[m] || 0; });
                 row['TOTAL'] = meses.reduce((s, m) => s + (r.meses[m] || 0), 0);
@@ -474,7 +710,7 @@ export default function DemandaVMIPage({ isTab = false }) {
             meses.forEach(m => { grpPed[key].tot[m] = (grpPed[key].tot[m] || 0) + (r.meses[m] || 0); });
         });
         Object.entries(grpPed).sort(([a],[b]) => a.localeCompare(b)).forEach(([key, g]) => {
-            const hdr = { 'Pedido': key, 'Produto Pai': '', 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '' };
+            const hdr = { 'Pedido': key, 'Produto Pai': '', 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Metalfisa': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
             meses.forEach(m => { hdr[m] = g.tot[m] || 0; });
             hdr['TOTAL'] = meses.reduce((s, m) => s + (g.tot[m] || 0), 0);
             sheet3.push(hdr);
@@ -487,7 +723,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                     'Rev.': r.rev_cliente || '', 
                     'Tipo': r.status_tipo_item || 'PCP',
                     'Cód. Protheus': r.b1_cod || '', 
-                    'Desc. Protheus': r.b1_desc || '' 
+                    'Desc. Protheus': r.b1_desc || '',
+                    'Ped. Metalfisa': r.pedido_metalfisa || '-',
+                    'Qtd. Pedido': r.qtd_pedido || 0,
+                    'Qtd. Entregue': r.qtd_entregue || 0,
+                    'Saldo a Entregar': r.saldo_entregar || 0,
                 };
                 meses.forEach(m => { row[m] = r.meses[m] || 0; });
                 row['TOTAL'] = meses.reduce((s, m) => s + (r.meses[m] || 0), 0);
@@ -501,13 +741,14 @@ export default function DemandaVMIPage({ isTab = false }) {
     };
 
     // ── Table row renderers ───────────────────────────────────────────────────
-    const renderFlatRows = () => filteredRows.map((r, i) => {
+    const renderFlatRows = () => sortedRows.map((r, i) => {
         let rowTotal = 0;
         // Pre-compute rowTotal for BOM modal
         meses.forEach(m => { rowTotal += r.meses[m] || 0; });
         let rowTotalCell = 0;
         return (
             <tr key={i} className="hover:bg-indigo-50/30 transition-colors">
+                <td className="px-4 py-2 text-center text-xs font-bold text-orange-600">{r.prioridade_cliente || '-'}</td>
                 <td className="px-4 py-2 font-mono text-xs font-bold text-slate-700">{r.ordem_compra_cliente}</td>
                 <td className="px-4 py-2 font-mono text-xs text-blue-700 font-semibold">{r.codigo_produto_cliente}</td>
                 <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[240px]" title={r.descricao_produto_cliente}>{r.descricao_produto_cliente}</td>
@@ -535,6 +776,19 @@ export default function DemandaVMIPage({ isTab = false }) {
                         )}
                     </div>
                 </td>
+                <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">{r.pedido_metalfisa || '-'}</td>
+                <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">{r.qtd_pedido ? fmtNum(r.qtd_pedido) : '-'}</td>
+                <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">
+                    <div className="relative group/nfte inline-flex justify-center items-center">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${r.qtd_entregue > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 cursor-help' : 'text-slate-400'}`}>
+                            {r.qtd_entregue ? fmtNum(r.qtd_entregue) : '-'}
+                        </span>
+                        {r.qtd_entregue > 0 && r.notas_fiscais && r.notas_fiscais.length > 0 && (
+                            <NfTooltip notasFiscais={r.notas_fiscais} index={i} />
+                        )}
+                    </div>
+                </td>
+                <td className="px-4 py-2 font-mono text-xs text-center font-bold text-blue-600">{r.saldo_entregar ? fmtNum(r.saldo_entregar) : '-'}</td>
                 <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[140px]" title={r.descricao_equipamento}>{r.descricao_equipamento}</td>
                 <td className="px-4 py-2 text-[11px] font-bold text-slate-600">{r.rev_cliente || '-'}</td>
                 <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]" title={r.produto_pai}>{r.produto_pai}</td>
@@ -557,7 +811,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                 <tr
                     className="bg-slate-100 hover:bg-slate-200/80 cursor-pointer select-none"
                     onClick={() => toggleGroup(g.key)}>
-                    <td className="px-3 py-2.5" colSpan={2}>
+                    <td className="px-3 py-2.5" colSpan={3}>
                         <div className="flex items-center gap-2">
                             {isOpen
                                 ? <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />
@@ -568,7 +822,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                             )}
                         </div>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={6}>
+                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={10}>
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className="bg-slate-200 text-slate-600 font-semibold px-2 py-0.5 rounded-full">
                                 {g.rows.length} {g.rows.length === 1 ? 'item' : 'itens'}
@@ -650,6 +904,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                     let rowTotal = 0;
                     return (
                         <tr key={`${g.key}-${i}`} className="hover:bg-indigo-50/20 transition-colors border-l-2 border-indigo-300">
+                            <td className="px-4 py-2 text-center text-xs font-bold text-orange-600">{r.prioridade_cliente || '-'}</td>
                             <td className="px-4 py-2 pl-9 font-mono text-xs text-slate-500">
                                 {groupBy === 'produto_pai' ? r.ordem_compra_cliente : (r.produto_pai || '—')}
                             </td>
@@ -680,6 +935,19 @@ export default function DemandaVMIPage({ isTab = false }) {
                                     })()}
                                 </div>
                             </td>
+                            <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">{r.pedido_metalfisa || '-'}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">{r.qtd_pedido ? fmtNum(r.qtd_pedido) : '-'}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-center text-slate-600">
+                                <div className="relative group/nfte inline-flex justify-center items-center">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${r.qtd_entregue > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 cursor-help' : 'text-slate-400'}`}>
+                                        {r.qtd_entregue ? fmtNum(r.qtd_entregue) : '-'}
+                                    </span>
+                                    {r.qtd_entregue > 0 && r.notas_fiscais && r.notas_fiscais.length > 0 && (
+                                        <NfTooltip notasFiscais={r.notas_fiscais} index={i} />
+                                    )}
+                                </div>
+                            </td>
+                            <td className="px-4 py-2 font-mono text-xs text-center font-bold text-blue-600">{r.saldo_entregar ? fmtNum(r.saldo_entregar) : '-'}</td>
                             <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[140px]" title={r.descricao_equipamento}>{r.descricao_equipamento}</td>
                             <td className="px-4 py-2 text-[11px] font-bold text-slate-600">{r.rev_cliente || '-'}</td>
                             <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]">
@@ -697,6 +965,26 @@ export default function DemandaVMIPage({ isTab = false }) {
             </Fragment>
         );
     });
+
+    const renderHeader = (key, label, extraClass = "") => {
+        const isActive = sortConfig.key === key;
+        const dir = sortConfig.direction;
+        return (
+            <th 
+                className={`px-4 py-3 cursor-pointer hover:bg-slate-200 transition-colors select-none ${extraClass}`}
+                onClick={() => requestSort(key)}
+            >
+                <div className="flex items-center gap-1 justify-between">
+                    <span>{label}</span>
+                    {isActive ? (
+                        dir === 'asc' ? <span className="text-indigo-600 font-extrabold">▲</span> : <span className="text-indigo-600 font-extrabold">▼</span>
+                    ) : (
+                        <span className="text-slate-300 opacity-40 text-[10px]">⇅</span>
+                    )}
+                </div>
+            </th>
+        );
+    };
 
     // ── Toast color ───────────────────────────────────────────────────────────
     const toastBg = { ok: 'bg-slate-900', error: 'bg-red-700', warning: 'bg-amber-600' }[toast.type] || 'bg-slate-900';
@@ -721,6 +1009,12 @@ export default function DemandaVMIPage({ isTab = false }) {
                         className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg flex items-center gap-2 text-sm font-medium transition shadow-sm">
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
                     </button>
+                    {data.length > 0 && (
+                        <button onClick={handleFetchMetalfisa}
+                            className="px-3 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg flex items-center gap-2 text-sm font-medium transition shadow-sm">
+                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Sincronizar Protheus
+                        </button>
+                    )}
                     {rows.length > 0 && (
                         <button onClick={handleExportExcel}
                             className="px-3 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2 text-sm font-medium transition shadow-sm">
@@ -858,6 +1152,22 @@ export default function DemandaVMIPage({ isTab = false }) {
                                 )}
                             </div>
 
+                            {/* Ordem de Compra (PC) filter */}
+                            <div className="relative flex-1 min-w-[150px] max-w-[220px]">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                <input type="text"
+                                    placeholder="Ordem de Compra (PC)..."
+                                    value={pcFilter}
+                                    onChange={e => setPcFilter(e.target.value)}
+                                    className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono" />
+                                {pcFilter && (
+                                    <button onClick={() => setPcFilter('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+
                             {/* Group by toggle */}
                             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
                                 {[
@@ -877,6 +1187,30 @@ export default function DemandaVMIPage({ isTab = false }) {
                                 <button onClick={toggleAllGroups}
                                     className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-600 hover:bg-slate-50 font-medium">
                                     {expandedGroups.size === grupos.length ? 'Recolher tudo' : 'Expandir tudo'}
+                                </button>
+                            )}
+
+                            {/* Column Filters Toggle */}
+                            <button
+                                onClick={() => setShowColumnFilters(!showColumnFilters)}
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition ${
+                                    showColumnFilters || hasActiveColumnFilters
+                                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                }`}
+                                title="Filtrar por colunas específicas"
+                            >
+                                <Filter className="w-3.5 h-3.5" />
+                                {hasActiveColumnFilters ? 'Filtros Ativos' : 'Filtrar Colunas'}
+                            </button>
+
+                            {/* Clear Column Filters */}
+                            {hasActiveColumnFilters && (
+                                <button
+                                    onClick={clearColumnFilters}
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition shadow-sm"
+                                >
+                                    Limpar Filtros
                                 </button>
                             )}
                         </div>
@@ -918,29 +1252,43 @@ export default function DemandaVMIPage({ isTab = false }) {
                     </div>
                 ) : (previewMode && previewData.length === 0) ? (
                     <div className="p-12 flex justify-center text-orange-500 font-bold">Lendo planilha...</div>
-                ) : filteredRows.length === 0 && !previewMode ? (
+                ) : sortedRows.length === 0 && !previewMode ? (
                     <div className="p-8 text-center flex flex-col items-center gap-2 text-slate-400">
                         <AlertCircle className="w-8 h-8 opacity-40" />
-                        <p className="text-sm">Nenhum resultado para "<strong className="text-slate-600">{filterText}</strong>"</p>
-                        <button onClick={() => setFilterText('')} className="text-xs text-indigo-600 underline">
-                            Limpar filtro
-                        </button>
+                        <p className="text-sm">Nenhum resultado encontrado.</p>
+                        {(filterText || hasActiveColumnFilters) && (
+                            <button onClick={() => { setFilterText(''); clearColumnFilters(); }} className="text-xs text-indigo-600 underline">
+                                Limpar todos os filtros
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="overflow-x-auto max-h-[640px] overflow-y-auto">
                         <table className="w-full text-sm text-left whitespace-nowrap">
                             <thead className="bg-slate-100 text-slate-600 text-xs font-bold border-b border-slate-200 sticky top-0 z-10">
                                 <tr>
-                                    <th className="px-4 py-3 min-w-[120px]">
-                                        {groupBy === 'pedido' ? 'Pedido' : 'Ped. Cliente'}
+                                    {renderHeader('prioridade_cliente', 'Prio', 'min-w-[80px]')}
+                                    <th className="px-4 py-3 min-w-[120px] cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => requestSort('ordem_compra_cliente')}>
+                                        <div className="flex items-center gap-1 justify-between">
+                                            <span>{groupBy === 'pedido' ? 'Pedido' : 'Ped. Cliente'}</span>
+                                            {sortConfig.key === 'ordem_compra_cliente' ? (
+                                                sortConfig.direction === 'asc' ? <span className="text-indigo-600 font-extrabold">▲</span> : <span className="text-indigo-600 font-extrabold">▼</span>
+                                            ) : (
+                                                <span className="text-slate-300 opacity-40 text-[10px]">⇅</span>
+                                            )}
+                                        </div>
                                     </th>
-                                    <th className="px-4 py-3 min-w-[150px]">Cód. Produto</th>
-                                    <th className="px-4 py-3 min-w-[240px]">Descrição</th>
-                                    <th className="px-4 py-3 text-center w-20">Tipo</th>
-                                    <th className="px-4 py-3 min-w-[120px]">Cód. Protheus</th>
-                                    <th className="px-4 py-3 min-w-[140px]">Equipamento</th>
-                                    <th className="px-4 py-3 min-w-[60px]">Rev.</th>
-                                    <th className="px-4 py-3 border-r border-slate-200 min-w-[120px]">Produto Pai</th>
+                                    {renderHeader('codigo_produto_cliente', 'Cód. Produto', 'min-w-[150px]')}
+                                    {renderHeader('descricao_produto_cliente', 'Descrição', 'min-w-[240px]')}
+                                    {renderHeader('status_tipo_item', 'Tipo', 'text-center w-20')}
+                                    {renderHeader('b1_cod', 'Cód. Protheus', 'min-w-[120px]')}
+                                    {renderHeader('pedido_metalfisa', 'Ped. Metalfisa', 'min-w-[120px]')}
+                                    {renderHeader('qtd_pedido', 'Qtd. Pedido', 'min-w-[90px] text-center')}
+                                    {renderHeader('qtd_entregue', 'Qtd. Entregue', 'min-w-[90px] text-center')}
+                                    {renderHeader('saldo_entregar', 'Saldo a Entregar', 'min-w-[100px] text-center')}
+                                    {renderHeader('descricao_equipamento', 'Equipamento', 'min-w-[140px]')}
+                                    {renderHeader('rev_cliente', 'Rev.', 'min-w-[60px]')}
+                                    {renderHeader('produto_pai', 'Produto Pai', 'border-r border-slate-200 min-w-[120px]')}
                                     {(previewMode ? previewMeses : meses).map(m => (
                                         <th key={m} className="px-4 py-3 text-center bg-indigo-50 border-r border-white min-w-[80px]">{m}</th>
                                     ))}
@@ -948,14 +1296,42 @@ export default function DemandaVMIPage({ isTab = false }) {
                                         <th className="px-4 py-3 text-center bg-slate-200 font-extrabold text-slate-800 min-w-[70px]">Total</th>
                                     )}
                                 </tr>
+                                {showColumnFilters && !previewMode && (
+                                    <tr className="bg-slate-50 border-b border-slate-200">
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.prioridade_cliente} onChange={e => setColumnFilters({...columnFilters, prioridade_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium" placeholder="Prio..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.ordem_compra_cliente} onChange={e => setColumnFilters({...columnFilters, ordem_compra_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Ped. Cli..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.codigo_produto_cliente} onChange={e => setColumnFilters({...columnFilters, codigo_produto_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Produto..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.descricao_produto_cliente} onChange={e => setColumnFilters({...columnFilters, descricao_produto_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Descrição..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.status_tipo_item} onChange={e => setColumnFilters({...columnFilters, status_tipo_item: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Tipo..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.b1_cod} onChange={e => setColumnFilters({...columnFilters, b1_cod: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Protheus..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.pedido_metalfisa} onChange={e => setColumnFilters({...columnFilters, pedido_metalfisa: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Metalfisa..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.qtd_pedido} onChange={e => setColumnFilters({...columnFilters, qtd_pedido: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Qtd..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.qtd_entregue} onChange={e => setColumnFilters({...columnFilters, qtd_entregue: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Entregue..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.saldo_entregar} onChange={e => setColumnFilters({...columnFilters, saldo_entregar: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Saldo..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.descricao_equipamento} onChange={e => setColumnFilters({...columnFilters, descricao_equipamento: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Equip..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.rev_cliente} onChange={e => setColumnFilters({...columnFilters, rev_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Rev..." /></td>
+                                        <td className="px-2 py-1 border-r border-slate-200"><input type="text" value={columnFilters.produto_pai} onChange={e => setColumnFilters({...columnFilters, produto_pai: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Pai..." /></td>
+                                        {meses.map(m => (
+                                            <td key={m} className="px-4 py-2 border-r border-slate-50" />
+                                        ))}
+                                        <td className="px-4 py-2 bg-slate-50" />
+                                    </tr>
+                                )}
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
                                 {previewMode ? (
                                     previewData.map((r, i) => (
                                         <tr key={i} className="hover:bg-orange-50 transition-colors">
-                                            <td className="px-4 py-2 font-mono text-xs font-bold border-l-4 border-orange-400">{r.ordem_compra_cliente}</td>
+                                            <td className="px-4 py-2 text-center text-xs font-bold text-orange-600 border-l-4 border-orange-400">{r.prioridade_cliente || '-'}</td>
+                                            <td className="px-4 py-2 font-mono text-xs font-bold">{r.ordem_compra_cliente}</td>
                                             <td className="px-4 py-2 font-mono text-xs text-blue-700 font-semibold">{r.codigo_produto_cliente}</td>
                                             <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[240px]">{r.descricao_produto_cliente}</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
+                                            <td className="px-4 py-2 text-center text-slate-300">-</td>
                                             <td className="px-4 py-2 text-[11px] text-slate-500 truncate max-w-[140px]">{r.descricao_equipamento}</td>
                                             <td className="px-4 py-2 text-[11px] font-bold text-slate-600">{r.rev_cliente || '-'}</td>
                                             <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]">{r.produto_pai}</td>

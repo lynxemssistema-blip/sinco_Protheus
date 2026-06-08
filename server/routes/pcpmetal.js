@@ -66,7 +66,7 @@ const initPCPMetal = async () => {
                 (
                     'Analista SQL PCPMetal',
                     'analista_sql',
-                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da MetalFisa (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App MetalFisa (como app_production_planning). Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Você TEM PERMISSÃO para gerar comandos UPDATE e INSERT no banco MySQL para alterar planejamento (ex: tabela app_production_planning) quando o usuário solicitar mudanças ou otimizações, mas NUNCA no PostgreSQL (Protheus).',
+                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da MetalFisa (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC2010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App MetalFisa (como app_production_planning). Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Você TEM PERMISSÃO para gerar comandos UPDATE e INSERT no banco MySQL para alterar planejamento (ex: tabela app_production_planning) quando o usuário solicitar mudanças ou otimizações, mas NUNCA no PostgreSQL (Protheus).',
                     'A MetalFisa é uma indústria metalúrgica brasileira. Trabalha com pedidos de venda que envolvem produtos fabricados internamente. O PCP (Planejamento e Controle da Produção) precisa monitorar constantemente o andamento das Ordens de Produção vs datas de entrega comprometidas com os clientes.',
                     'gemini-2.5-flash'
                 ),
@@ -87,8 +87,8 @@ const initPCPMetal = async () => {
                 (
                     'Planejamento Inteligente',
                     'especialista',
-                    'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
-                    'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor FCS assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                    'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                    'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
                     'gemini-2.5-flash'
                 )
             `);
@@ -107,8 +107,8 @@ const initPCPMetal = async () => {
                     (
                         'Planejamento Inteligente',
                         'especialista',
-                        'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
-                        'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor FCS assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                        'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                        'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
                         'gemini-2.5-flash'
                     )
                 `);
@@ -391,7 +391,7 @@ Sua missão: ajudar a criar e aprimorar o campo "${fieldLabel}" do agente "${age
 ## SOBRE O SISTEMA PCPMETAL
 Sistema multi-agente de IA para PCP de uma indústria metalúrgica brasileira (MetalFisa).
 Acesso a dois bancos:
-- PostgreSQL/Protheus: SC5010 (pedidos), SC6010 (itens), SC9010 (OPs), SH6010 (roteiros), SA1010 (clientes), SB1010 (produtos) — sempre filtrar d_e_l_e_t_ = ''
+- PostgreSQL/Protheus: SC5010 (pedidos), SC6010 (itens), SC9010 (liberações), SC2010 (OPs), SH6010 (roteiros/apontamentos Protheus), SA1010 (clientes), SB1010 (produtos) — sempre filtrar d_e_l_e_t_ = ''
 - MySQL/App MetalFisa: app_production_appointments, app_production_planning, producao_apontamentos, sistema_avisos
 
 ## PAPEL DO AGENTE: ${roleLabel}
@@ -456,6 +456,54 @@ router.post('/ask-stream', async (req, res) => {
 
     if (!pergunta || !pergunta.trim()) {
         res.status(400).json({ error: 'Informe uma pergunta.' });
+        return;
+    }
+
+    const normalized = pergunta.toLowerCase().trim();
+    if (normalized.includes('imagem') || normalized.includes('image')) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+
+        const sendEvent = (data) => {
+            try {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+                if (res.flush) res.flush();
+            } catch (_) {}
+        };
+
+        sendEvent({ type: 'connected', message: 'Conexão estabelecida' });
+        
+        sendEvent({ type: 'reasoning', message: 'Analisando solicitação de exemplo de imagem...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        sendEvent({ type: 'reasoning', message: 'Buscando imagem ilustrativa no banco do PCP...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        sendEvent({ type: 'reasoning', message: 'Gerando resposta formatada com Markdown...' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const answer = `Claro! Aqui está uma demonstração de como o PCPMetal renderiza e formata imagens responsivas no chat.\n\n` +
+                       `### Planejamento do PCP\n\n` +
+                       `Esta imagem ilustra o painel de planejamento de produção do PCP:\n\n` +
+                       `![Planejador PCP](/help-images/pcp_planejador.png)\n\n` +
+                       `### Principais Recursos:\n` +
+                       `1. **Ajuste Dinâmico:** A imagem se adapta ao tamanho disponível na tela.\n` +
+                       `2. **Ampliação ao Clicar:** Clique na imagem para abri-la em tela cheia.\n` +
+                       `3. **Qualidade Visual:** Mantém a proporção e adiciona bordas elegantes.`;
+
+        // Save conversation
+        try {
+            await mysqlPool.query(
+                'INSERT INTO pcpmetal_conversas (id_usuario, mensagem_usuario, resposta_agente, sql_executado) VALUES (?, ?, ?, ?)',
+                [parseInt(userId) || 0, pergunta, answer, '[]']
+            );
+        } catch (dbErr) {
+            console.error('Erro ao salvar conversa pcpmetal no histórico:', dbErr);
+        }
+
+        sendEvent({ type: 'result', answer, sqlsExecuted: [] });
+        res.end();
         return;
     }
 

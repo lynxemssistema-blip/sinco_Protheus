@@ -15,7 +15,7 @@ router.get('/analytics/evolution', async (req, res) => {
         const { startDate, endDate, sector, user } = req.query;
 
         const effectiveStart = startDate || new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
-        const effectiveEnd   = endDate   || new Date().toISOString().split('T')[0];
+        const effectiveEnd = endDate || new Date().toISOString().split('T')[0];
         console.log('📈 [EVOLUTION] Filters:', { startDate: effectiveStart, endDate: effectiveEnd, sector, user });
 
         let whereClauses = [`a.data_fim IS NOT NULL`];
@@ -65,7 +65,7 @@ router.get('/analytics/evolution', async (req, res) => {
                 AND COALESCE(g2.d_e_l_e_t_,'') IN ('', ' ')
             `;
             const pgRes = await db.query(pgQuery, [opNumbers.map(o => String(o).padStart(6, '0'))]);
-            
+
             for (const r of pgRes.rows) {
                 opRoutingMap[`${r.op}_${r.codigo_operacao}`] = r.recurso_codigo;
             }
@@ -74,9 +74,9 @@ router.get('/analytics/evolution', async (req, res) => {
         // 3. Fetch MySQL Sectors Data
         const [setores] = await mysqlPool.query(`SELECT id, nome FROM pcp_setores ORDER BY nome`);
         const [recursos] = await mysqlPool.query(`SELECT setor_id, recurso_codigo FROM pcp_setor_recursos`);
-        
-        const recToSector = {}; 
-        const sectorDict = {}; 
+
+        const recToSector = {};
+        const sectorDict = {};
         for (const s of setores) sectorDict[s.id] = s.nome;
         for (const r of recursos) {
             recToSector[r.recurso_codigo?.trim()?.toUpperCase()] = {
@@ -86,14 +86,14 @@ router.get('/analytics/evolution', async (req, res) => {
         }
 
         // 4. Enrich, Filter and Aggregate
-        const aggregatedByDate = {}; 
-        const aggregatedGrid = {}; 
+        const aggregatedByDate = {};
+        const aggregatedGrid = {};
 
         for (const app of rawApps) {
             const opPad = String(app.op_numero).padStart(6, '0');
             const rec = opRoutingMap[`${opPad}_${app.operacao_codigo}`];
             const sectorObj = rec ? recToSector[rec.toUpperCase()] : null;
-            
+
             const appSetorId = sectorObj ? sectorObj.id : null;
             const appSetorNome = sectorObj ? sectorObj.nome : 'Sem Setor';
 
@@ -514,7 +514,7 @@ router.get('/analytics-dashboard', async (req, res) => {
         // 1B. Fetch Routing Data (sg2010) safely using array lookup
         const productList = [...new Set(rawOps.map(op => op.cod_produto_op))].filter(Boolean);
         let routingMap = {};
-        
+
         if (productList.length > 0) {
             const sgQuery = `
                 SELECT 
@@ -527,7 +527,7 @@ router.get('/analytics-dashboard', async (req, res) => {
                   AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
             `;
             const sgRes = await db.query(sgQuery, [productList]);
-            
+
             sgRes.rows.forEach(r => {
                 if (!routingMap[r.produto]) routingMap[r.produto] = [];
                 routingMap[r.produto].push(r);
@@ -627,7 +627,7 @@ router.get('/analytics-dashboard', async (req, res) => {
                     desc_produto: op.desc_produto, // Product Description
                     cliente: op.nome_cliente,
                     data_entrega: op.data_entrega_item,
-                    pedido: (function() {
+                    pedido: (function () {
                         const parts = (op.raw_pedido_obs || '').split(' ');
                         const ped = parts[0] || '';
                         const obs = parts.slice(1).join(' ') || '';
@@ -801,7 +801,7 @@ router.get('/fcs-ops', async (req, res) => {
                 const [rows] = await mysqlPool.query("SELECT pedido_numero FROM app_pedidos_inativos");
                 inactivePedidosSet = new Set(rows.map(r => r.pedido_numero.trim()));
             }
-        } catch (_) {}
+        } catch (_) { }
 
         // Query direta no Protheus — sem LIMIT, sem truncamento
         // Joins SC6 para garantir que só OPs com saldo a faturar entram
@@ -883,7 +883,7 @@ router.get('/fcs-ops', async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         if (pgClient) {
-            pgClient.query('SET statement_timeout = 45000').catch(() => {});
+            pgClient.query('SET statement_timeout = 45000').catch(() => { });
             pgClient.release();
         }
     }
@@ -904,18 +904,18 @@ router.get('/', async (req, res) => {
             if (req.query.date_filter_type === 'intersection') {
                 if (planned_date_end) {
                     planSql += ` AND data_planejada_inicio <= ?`;
-                    planParams.push(planned_date_end);
+                    planParams.push(planned_date_end + ' 23:59:59');
                 }
                 if (planned_date_start) {
                     planSql += ` AND data_planejada_fim >= ?`;
-                    planParams.push(planned_date_start);
+                    planParams.push(planned_date_start + ' 00:00:00');
                 }
             } else {
                 const dateField = req.query.date_filter_type === 'fim' ? 'data_planejada_fim' : 'data_planejada_inicio';
-                if (planned_date_start) { planSql += ` AND ${dateField} >= ?`; planParams.push(planned_date_start); }
-                if (planned_date_end)   { planSql += ` AND ${dateField} <= ?`; planParams.push(planned_date_end); }
+                if (planned_date_start) { planSql += ` AND ${dateField} >= ?`; planParams.push(planned_date_start + ' 00:00:00'); }
+                if (planned_date_end) { planSql += ` AND ${dateField} <= ?`; planParams.push(planned_date_end + ' 23:59:59'); }
             }
-            const [plannedRows] = await mysqlPool.execute(planSql, planParams);
+            const [plannedRows] = await mysqlPool.execute(planSql, planParams, 5000);
             if (plannedRows.length === 0) return res.json({ data: [], total: 0 });
             plannedOpsFilter = plannedRows;
         }
@@ -929,7 +929,7 @@ router.get('/', async (req, res) => {
                 const [rows] = await mysqlPool.query("SELECT pedido_numero FROM app_pedidos_inativos");
                 inactivePedidosSet = new Set(rows.map(r => r.pedido_numero.trim()));
             }
-        } catch (_) {}
+        } catch (_) { }
 
         // 2. Build Stage 1 conditions (SC2010 + root_op + SB1010 only — no SC5/SA1/SC6)
         const params = [];
@@ -939,14 +939,14 @@ router.get('/', async (req, res) => {
         // Excluir OPs fracionadas
         let fracExclude = '';
         try {
-            const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa');
+            const [fracOps] = await mysqlPool.execute('SELECT op_base FROM app_ind_producao_ativa', [], 5000);
             if (fracOps.length > 0) {
                 const bases = fracOps.map(r => r.op_base);
                 fracExclude = `AND (c2.c2_num || c2.c2_item) <> ALL($${pn})`;
                 params.push(bases);
                 pn++;
             }
-        } catch (_) {}
+        } catch (_) { }
 
         // Date cutoff (18 months) — always applied to keep query bounded
         // c2_datpri is stored as YYYYMMDD (char), safe to compare without TRIM
@@ -981,11 +981,11 @@ router.get('/', async (req, res) => {
                 pn++;
             }
         }
-        if (pedido) { 
+        if (pedido) {
             const paddedPedido = pedido.trim().padStart(6, '0');
-            s1Conds.push(`(TRIM(c2.c2_pedido) = $${pn} OR TRIM(root_op.c2_pedido) = $${pn})`); 
-            params.push(paddedPedido); 
-            pn++; 
+            s1Conds.push(`(TRIM(c2.c2_pedido) = $${pn} OR TRIM(root_op.c2_pedido) = $${pn})`);
+            params.push(paddedPedido);
+            pn++;
         }
         if (item) {
             const itemArr = item.split(',').map(s => s.trim()).filter(Boolean);
@@ -1000,7 +1000,7 @@ router.get('/', async (req, res) => {
                 pn += itemArr.length;
             }
         }
-        if (sequencia){ s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`);params.push(`%${sequencia.trim()}%`); }
+        if (sequencia) { s1Conds.push(`TRIM(c2.c2_sequen) ILIKE $${pn++}`); params.push(`%${sequencia.trim()}%`); }
         if (produto) {
             s1Conds.push(`TRIM(c2.c2_produto) = $${pn}`);
             params.push(produto.trim().toUpperCase());
@@ -1013,7 +1013,7 @@ router.get('/', async (req, res) => {
             const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
             if (setor) {
                 try {
-                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
+                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor], 3000);
                     recursoArray = sectorRecs.length > 0
                         ? sectorRecs.map(r => r.recurso_codigo?.trim()?.toUpperCase()).filter(Boolean)
                         : ['___NO_MATCH___'];
@@ -1181,17 +1181,17 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
             }
             return routing.map((r, idx) => ({
                 ...row,
-                cod_roteiro:         r.cod_roteiro,
-                operacao:            r.operacao,
-                desc_operacao:       r.desc_operacao,
-                recurso:             r.recurso,
-                desc_recurso:        r.desc_recurso,
-                tempad:              parseFloat(r.g2_tempad) || 0,
-                setup:               parseFloat(r.g2_setup) || 0,
-                prev_operacao:       idx > 0 ? routing[idx - 1].operacao : null,
-                next_operacao:       idx < routing.length - 1 ? routing[idx + 1].operacao : null,
-                prev_desc_operacao:  idx > 0 ? routing[idx - 1].desc_operacao : null,
-                next_desc_operacao:  idx < routing.length - 1 ? routing[idx + 1].desc_operacao : null,
+                cod_roteiro: r.cod_roteiro,
+                operacao: r.operacao,
+                desc_operacao: r.desc_operacao,
+                recurso: r.recurso,
+                desc_recurso: r.desc_recurso,
+                tempad: Math.round((parseFloat(r.g2_tempad) || 0) * 1000) / 1000,
+                setup: parseFloat(r.g2_setup) || 0,
+                prev_operacao: idx > 0 ? routing[idx - 1].operacao : null,
+                next_operacao: idx < routing.length - 1 ? routing[idx + 1].operacao : null,
+                prev_desc_operacao: idx > 0 ? routing[idx - 1].desc_operacao : null,
+                next_desc_operacao: idx < routing.length - 1 ? routing[idx + 1].desc_operacao : null,
             }));
         });
 
@@ -1202,16 +1202,16 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         if (operacao || setor) {
             let recursoArray = [];
             const operacaoArray = operacao ? operacao.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
-            
+
             if (setor) {
                 try {
-                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor]);
+                    const [sectorRecs] = await mysqlPool.execute(`SELECT recurso_codigo FROM pcp_setor_recursos WHERE setor_id = ?`, [setor], 3000);
                     if (sectorRecs.length > 0) {
                         recursoArray = sectorRecs.map(r => r.recurso_codigo?.trim()?.toUpperCase()).filter(Boolean);
                     } else {
                         recursoArray = ['___NO_MATCH___'];
                     }
-                } catch(e) { console.error(e); }
+                } catch (e) { console.error(e); }
             }
 
             if (recursoArray.length > 0 || operacaoArray.length > 0) {
@@ -1219,10 +1219,10 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                     const opName = (row.operacao || '').trim().toUpperCase();
                     const recName = (row.recurso || '').trim().toUpperCase();
                     const descName = (row.desc_operacao || '').trim().toUpperCase();
-                    
+
                     let matchRecurso = recursoArray.length === 0 || recursoArray.includes(recName);
-                    
-                    let matchOperacao = operacaoArray.length === 0 || operacaoArray.some(val => 
+
+                    let matchOperacao = operacaoArray.length === 0 || operacaoArray.some(val =>
                         opName.includes(val) || descName.includes(val) || recName.includes(val)
                     );
 
@@ -1241,7 +1241,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
             // MySQL salva op_sequencia='001' (linha base do sc2010), mas os expanded rows
             // podem ter sequen diferente (ex: '010','020') dependendo do c2_sequen.
             // Ignorar sequen garante o match correto pelo código de operação.
-            const plannedSet = new Set(plannedOpsFilter.map(p => `${(p.op_numero||'').trim()}|${(p.op_item||'').trim()}|${(p.operacao_codigo||'').trim()}`));
+            const plannedSet = new Set(plannedOpsFilter.map(p => `${(p.op_numero || '').trim()}|${(p.op_item || '').trim()}|${(p.operacao_codigo || '').trim()}`));
             ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.operacao}`));
         }
 
@@ -1256,7 +1256,7 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                 const [pr] = await mysqlPool.execute(`SELECT * FROM app_production_planning WHERE op_numero IN (${ph})`, chunk);
                 for (const r of pr) plans.push(r);
                 const [ar] = await mysqlPool.execute(`
-                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                    SELECT op_numero, op_item, operacao_codigo,
                            SUM(quantidade) as total_produzido,
                            COUNT(*) as num_apontamentos,
                            SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
@@ -1265,29 +1265,30 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                            MAX(data_fim) as ultimo_apontamento
                     FROM app_production_appointments
                     WHERE op_numero IN (${ph})
-                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                    GROUP BY op_numero, op_item, operacao_codigo
                 `, chunk);
                 for (const a of ar) appointments.push(a);
             }
         }
 
         // 5. Merge Plans & Appointments (O(1) Maps)
-        const mkKey = o => `${o.op_numero}|${o.op_item}|${o.op_sequencia}|${o.operacao_codigo}`;
+        const mkKey = o => `${(o.op_numero || '').trim()}|${(o.op_item || '').trim()}|${(o.operacao_codigo || '').trim()}`;
         const plansMap = new Map(plans.map(p => [mkKey(p), p]));
-        const apptMap  = new Map(appointments.map(a => [mkKey(a), a]));
+        const apptMap = new Map(appointments.map(a => [mkKey(a), a]));
 
         let mergedOps = ops.map(row => {
-            const key = `${row.op}|${row.item_op}|${row.sequen}|${row.operacao}`;
+            const key = `${(row.op || '').trim()}|${(row.item_op || '').trim()}|${(row.operacao || '').trim()}`;
             const plan = plansMap.get(key);
             const prog = apptMap.get(key);
             return {
                 ...row,
                 data_planejada_inicio: plan?.data_planejada_inicio || null,
-                data_planejada_fim:    plan?.data_planejada_fim    || null,
-                qtd_produzida_real:    prog?.total_produzido       || 0,
+                data_planejada_fim: plan?.data_planejada_fim || null,
+                dias_espera: plan?.dias_espera || 0,
+                qtd_produzida_real: prog?.total_produzido || 0,
                 tem_pendencia_conferencia: prog ? prog.pendencias_conferencia > 0 : false,
                 ultimo_apontamento: prog?.ultimo_apontamento || null,
-                data_real_fim:      prog?.data_real_fim     || null,
+                data_real_fim: prog?.data_real_fim || null,
             };
         });
 
@@ -1306,15 +1307,15 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
             const now = new Date();
             mergedOps = mergedOps.filter(op => {
                 const start = op.data_planejada_inicio ? new Date(op.data_planejada_inicio) : null;
-                const end   = op.data_planejada_fim    ? (() => { const d = new Date(op.data_planejada_fim); d.setHours(23,59,59,999); return d; })() : null;
-                const done    = Number(op.qtd_produzida_real) >= Number(op.qtd_planejada_op);
+                const end = op.data_planejada_fim ? (() => { const d = new Date(op.data_planejada_fim); d.setHours(23, 59, 59, 999); return d; })() : null;
+                const done = Number(op.qtd_produzida_real) >= Number(op.qtd_planejada_op);
                 const started = Number(op.qtd_produzida_real) > 0;
                 let cur = 'waiting';
-                if (done)                          cur = 'done';
-                else if (end && now > end)         cur = 'late_delivery';
+                if (done) cur = 'done';
+                else if (end && now > end) cur = 'late_delivery';
                 else if (start && now > start && !started) cur = 'late_start';
-                else if (started)                  cur = 'in_progress';
-                else if (start && end)             cur = 'planned';
+                else if (started) cur = 'in_progress';
+                else if (start && end) cur = 'planned';
                 return statusArray.includes(cur);
             });
         }
@@ -1374,14 +1375,14 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
             let entregaFallback = null;
             const rawComercial = String(op.data_entrega_comercial || '').trim();
             if (rawComercial.length === 8) {
-                entregaFallback = `${rawComercial.slice(0,4)}-${rawComercial.slice(4,6)}-${rawComercial.slice(6,8)}`;
+                entregaFallback = `${rawComercial.slice(0, 4)}-${rawComercial.slice(4, 6)}-${rawComercial.slice(6, 8)}`;
             }
             return {
                 ...op,
-                doc_url:          doc?.url || null,
-                tem_arquivos:     !!doc?.url,
-                area_pintura:     doc?.area || null,
-                operacao_doc:     doc?.operacao || null,
+                doc_url: doc?.url || null,
+                tem_arquivos: !!doc?.url,
+                area_pintura: doc?.area || null,
+                operacao_doc: doc?.operacao || null,
                 data_entrega_pcp: pcpForecastMap[fcKey] || entregaFallback || null,
             };
         });
@@ -1609,14 +1610,14 @@ router.get('/matrix', async (req, res) => {
 
                 // Fetch Appointments
                 const [a] = await mysqlPool.query(
-                    `SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                    `SELECT op_numero, op_item, operacao_codigo,
             SUM(quantidade) as total_produzido,
             SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
             MIN(data_inicio) as data_real_inicio,
             MAX(data_fim) as data_real_fim
                      FROM app_production_appointments
                      WHERE op_numero IN(${mysqlPlaceholders})
-                     GROUP BY op_numero, op_item, op_sequencia, operacao_codigo`,
+                     GROUP BY op_numero, op_item, operacao_codigo`,
                     uniqueOps
                 );
                 appointments = a;
@@ -1682,14 +1683,12 @@ router.get('/matrix', async (req, res) => {
                     let plan = plans.find(p =>
                         p.op_numero === matchingRoute.op.trim() &&
                         p.op_item == matchingRoute.item_op.trim() &&
-                        p.op_sequencia === matchingRoute.sequen &&
                         p.operacao_codigo === realOpCode // CRÍTICO: Usa o código numérico (ex: 10)
                     );
 
                     let appt = appointments.find(a =>
                         a.op_numero === matchingRoute.op.trim() &&
                         a.op_item == matchingRoute.item_op.trim() &&
-                        a.op_sequencia === matchingRoute.sequen &&
                         a.operacao_codigo === realOpCode // CRÍTICO: Usa o código numérico (ex: 10)
                     );
 
@@ -2002,7 +2001,7 @@ router.delete('/clear-planning-by-pedido', async (req, res) => {
 router.post('/cascade-preview', async (req, res) => {
     try {
         const { ops, start_date, incluiSabado } = req.body;
-        
+
         if (!Array.isArray(ops) || ops.length === 0) {
             return res.status(400).json({ error: 'Nenhuma OP fornecida para a cascata.' });
         }
@@ -2012,15 +2011,15 @@ router.post('/cascade-preview', async (req, res) => {
         const capMap = {};
         mysqlCaps.forEach(c => {
             capMap[c.recurso_codigo.trim().toUpperCase()] = {
-                cap_dia_min:   parseFloat(c.capacidade_diaria_minutos) || 528,  // minutos/dia disponíveis
-                tempo_padrao:  parseFloat(c.tempo_padrao_minutos) || 1         // minutos/peça padrão (fallback)
+                cap_dia_min: parseFloat(c.capacidade_diaria_minutos) || 528,  // minutos/dia disponíveis
+                tempo_padrao: parseFloat(c.tempo_padrao_minutos) || 1         // minutos/peça padrão (fallback)
             };
         });
 
         // 2. Obter tempos padrão do Protheus (SG2010)
         const productCodes = [...new Set(ops.map(o => (o.cod_produto_op || o.produto || '').trim().toUpperCase()))].filter(Boolean);
         let sgMap = {};
-        
+
         if (productCodes.length > 0) {
             const ph = productCodes.map((_, i) => `$${i + 1}`).join(',');
             const sgRes = await db.query(`
@@ -2029,11 +2028,11 @@ router.post('/cascade-preview', async (req, res) => {
                 FROM public.sg2010
                 WHERE TRIM(g2_produto) IN (${ph}) AND COALESCE(d_e_l_e_t_,'') IN ('', ' ')
             `, productCodes);
-            
+
             sgRes.rows.forEach(r => {
                 const key = `${r.produto}_${r.operacao}`;
                 sgMap[key] = {
-                    tempad: parseFloat(r.g2_tempad) || 0,
+                    tempad: Math.round((parseFloat(r.g2_tempad) || 0) * 1000) / 1000,
                     setup: parseFloat(r.g2_setup) || 0,
                     recurso: r.recurso
                 };
@@ -2044,7 +2043,7 @@ router.post('/cascade-preview', async (req, res) => {
         ops.sort((a, b) => {
             // Se vier prioridade manual, tem precedência máxima
             if (a.prioridade !== b.prioridade) return (a.prioridade || 99) - (b.prioridade || 99);
-            
+
             // Ordenar por data de entrega comercial (ascendente - mais cedo primeiro)
             // c6_entreg no protheus vem como YYYYMMDD, ordenação lexicográfica funciona bem.
             const dA = (a.data_entrega_comercial || '99999999').trim();
@@ -2054,116 +2053,130 @@ router.post('/cascade-preview', async (req, res) => {
             // Agrupar pela mesma OP e Item OP para itens que entregam no mesmo dia
             if (a.op !== b.op) return (a.op || '').localeCompare(b.op || '');
             if (a.item_op !== b.item_op) return (a.item_op || '').localeCompare(b.item_op || '');
-            
+
             // Por fim, ordenar pela sequencia para garantir N+1 apos N na mesma OP
             return (a.sequen || '').localeCompare(b.sequen || '');
         });
 
-        // 4. Lógica de Sequenciamento
+        // Lógica de Sequenciamento
         // resourceCalendar guarda quantos minutos já foram usados de cada recurso por dia (YYYY-MM-DD)
         let resourceCalendar = {};
-        // opFinish guarda quando a sequência anterior da mesma OP terminou
+        // opFinish e opStart guardam quando a sequência anterior da mesma OP iniciou e terminou
         let opFinish = {};
-        
+        let opStartCache = {};
+
         let globalStart = start_date ? new Date(start_date) : new Date();
-        // Zera as horas para a data global (usaremos meio-dia para evitar problemas de fuso)
-        globalStart.setHours(12, 0, 0, 0);
-        
+        // Zera as horas para a data global (usaremos 08:00 para alinhamento)
+        globalStart.setHours(8, 0, 0, 0);
+
         const results = ops.map(op => {
             const produto = (op.cod_produto_op || op.produto || '').trim().toUpperCase();
             const operacao = (op.operacao || '').trim().toUpperCase();
             const recurso = (op.recurso || '').trim().toUpperCase();
-            
+
             const planejado = parseFloat(op.qtd_planejada_op) || parseFloat(op.qtd) || 0;
             const produzido = parseFloat(op.qtd_produzida_real) || 0;
             const qtd = Math.max(0, planejado - produzido);
-            
+
             const sgData = sgMap[`${produto}_${operacao}`] || {};
-            // Fallback de capacidade: tenta recurso da OP, depois recurso da SG2, depois default 528 min/dia
             const capData = capMap[recurso] || capMap[(sgData?.recurso || '').toUpperCase()] || { cap_dia_min: 528, tempo_padrao: 1 };
-            
-            // g2_tempad e tempo_padrao_minutos já estão em MINUTOS/peça — usar direto.
-            const g2_tempo_min = parseFloat(sgData.tempad) || 0;
-            const tempoUnitarioMinutos = g2_tempo_min > 0.001
-                ? g2_tempo_min              // Protheus: minutos/peça
-                : capData.tempo_padrao;     // MySQL fallback: minutos/peça
-            
-            // Setup em horas (padrão Protheus) → minutos
+
+            const g2_tempo_min = Math.round((parseFloat(sgData.tempad) || 0) * 1000) / 1000;
+            const tempoUnitarioMinutos = g2_tempo_min > 0.001 ? g2_tempo_min : capData.tempo_padrao;
             const setupMinutos = (sgData.setup || 0) * 60;
-            
-            // Tempo total: só calcula se há saldo pendente
-            let tempoTotalMinutos = qtd > 0
-                ? setupMinutos + (qtd * tempoUnitarioMinutos)
-                : 0;
-            
-            const capacidadeDiariaMinutos = capData.cap_dia_min; // já em minutos — sem conversão!
-            const diasNecessariosFloat = capacidadeDiariaMinutos > 0
-                ? tempoTotalMinutos / capacidadeDiariaMinutos
-                : 0;
-            
-            // FIX: inclui sequen na chave para encadear corretamente operações 010→020→030
-            // A operação N só começa quando a operação N-1 da mesma OP/item terminar.
+
+            let tempoTotalMinutos = qtd > 0 ? setupMinutos + (qtd * tempoUnitarioMinutos) : 0;
+            const capacidadeDiariaMinutos = capData.cap_dia_min;
+            const diasNecessariosFloat = capacidadeDiariaMinutos > 0 ? tempoTotalMinutos / capacidadeDiariaMinutos : 0;
+
             const opKey = `${op.op}_${op.item_op}`;
             const opSeqKey = `${op.op}_${op.item_op}_${op.sequen}`;
-            
+
             let startDate = new Date(globalStart);
-            if (opFinish[opKey] && opFinish[opKey] > startDate) {
+
+            // Lógica de Sobreposição (Máx 180 min)
+            if (opStartCache[opKey]) {
+                // A próxima operação pode começar 180 minutos de trabalho APÓS o início da anterior
+                // Para simplificar no calendário de dias, adicionamos 3 horas reais de relógio.
+                let overlapStart = new Date(opStartCache[opKey].getTime() + (180 * 60000));
+
+                // Mas se a operação anterior foi rápida e acabou antes desses 180 min, usamos o Finish real
+                if (opFinish[opKey] && opFinish[opKey] < overlapStart) {
+                    overlapStart = new Date(opFinish[opKey]);
+                }
+
+                if (overlapStart > startDate) {
+                    startDate = new Date(overlapStart);
+                }
+            } else if (opFinish[opKey] && opFinish[opKey] > startDate) {
+                // Fallback de segurança
                 startDate = new Date(opFinish[opKey]);
             }
-            
+
             // Pula domingos, e pula sábados APENAS se incluiSabado for falso
             while (startDate.getDay() === 0 || (!incluiSabado && startDate.getDay() === 6)) {
                 startDate.setDate(startDate.getDate() + 1);
+                startDate.setHours(8, 0, 0, 0); // Reseta a hora ao pular dia
             }
-            
+
             if (!resourceCalendar[recurso]) resourceCalendar[recurso] = {};
-            
+
             let currentDate = new Date(startDate);
             let actualStartDate = null;
             let tempoRestante = tempoTotalMinutos;
-            
+
             if (tempoRestante <= 0) {
                 actualStartDate = new Date(currentDate);
             }
-            
+
             while (tempoRestante > 0) {
                 let dateKey = currentDate.toISOString().split('T')[0];
                 let usedToday = resourceCalendar[recurso][dateKey] || 0;
                 let availableToday = capacidadeDiariaMinutos - usedToday;
-                
+
                 if (availableToday <= 0) {
                     currentDate.setDate(currentDate.getDate() + 1);
+                    currentDate.setHours(8, 0, 0, 0);
                     while (currentDate.getDay() === 0 || (!incluiSabado && currentDate.getDay() === 6)) {
                         currentDate.setDate(currentDate.getDate() + 1);
                     }
                     continue;
                 }
-                
+
                 if (!actualStartDate) {
+                    // Guarda o dia exato que começou a processar
                     actualStartDate = new Date(currentDate);
                 }
-                
+
                 if (tempoRestante <= availableToday) {
                     resourceCalendar[recurso][dateKey] = usedToday + tempoRestante;
+
+                    // Ajusta o currentDate para adicionar as horas gastas hoje
+                    // (Regra de três para manter o offset do relógio em um turno de 9 horas, ~540 min reais)
+                    // Exemplo: se usou 120 min de capacidade, adiciona 2h no relógio.
+                    currentDate.setTime(currentDate.getTime() + (tempoRestante * 60000));
+
                     tempoRestante = 0;
                 } else {
                     resourceCalendar[recurso][dateKey] = capacidadeDiariaMinutos;
                     tempoRestante -= availableToday;
+
                     currentDate.setDate(currentDate.getDate() + 1);
+                    currentDate.setHours(8, 0, 0, 0);
                     while (currentDate.getDay() === 0 || (!incluiSabado && currentDate.getDay() === 6)) {
                         currentDate.setDate(currentDate.getDate() + 1);
                     }
                 }
             }
-            
+
             const endDate = new Date(currentDate);
-            // Atualiza a chave geral da OP (para a próxima sequência saber quando esta terminou)
+
+            if (!actualStartDate) actualStartDate = new Date(endDate);
+
+            opStartCache[opKey] = new Date(actualStartDate);
             opFinish[opKey] = new Date(endDate);
             opFinish[opSeqKey] = new Date(endDate);
-            
-            // FIX: garante que actualStartDate nunca seja null (evita crash em TypeError)
-            if (!actualStartDate) actualStartDate = new Date(endDate);
-            
+
             return {
                 ...op,
                 data_inicio_calc: actualStartDate.toISOString().split('T')[0] + 'T08:00:00',
@@ -2193,7 +2206,7 @@ router.post('/plan-batch', async (req, res) => {
 
         // Captura identidade do usuário autenticado (padrão do projeto)
         const usuario = req.user?.login || req.user?.Login || req.user?.username ||
-                        req.user?.name || req.user?.email || 'planejador';
+            req.user?.name || req.user?.email || 'planejador';
 
         // Gera lote_id único no backend para evitar colisão entre usuários simultâneos
         const tsHex = Date.now().toString(16).toUpperCase();
@@ -2207,7 +2220,7 @@ router.post('/plan-batch', async (req, res) => {
         // Normaliza nomes de campo: aceita data_inicio ou data_planejada_inicio
         for (const p of plans) {
             p.data_inicio = p.data_inicio || p.data_planejada_inicio || null;
-            p.data_fim    = p.data_fim    || p.data_planejada_fim    || null;
+            p.data_fim = p.data_fim || p.data_planejada_fim || null;
 
             if (!p.data_inicio || !p.data_fim) {
                 return res.status(400).json({
@@ -2224,7 +2237,7 @@ router.post('/plan-batch', async (req, res) => {
             if (s > e) {
                 return res.status(400).json({
                     error: `Data de início posterior à data de fim na operação ${p.operacao_codigo} ` +
-                           `(${p.data_inicio} > ${p.data_fim})`
+                        `(${p.data_inicio} > ${p.data_fim})`
                 });
             }
         }
@@ -2286,8 +2299,8 @@ router.post('/plan-batch', async (req, res) => {
                 chunk.forEach(p => {
                     values.push(
                         p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo,
-                        p.recurso_codigo  || null,
-                        p.produto_codigo  || null,
+                        p.recurso_codigo || null,
+                        p.produto_codigo || null,
                         p.data_inicio, p.data_fim,
                         lote_id, usuario, observacao || null,
                         p.duracao_dias || null,
@@ -2301,7 +2314,7 @@ router.post('/plan-batch', async (req, res) => {
             // Apenas inserir no histórico se houver MUDANÇA real nas datas ou observação
             const opsToFetch = plans.map(p => p.op_numero);
             let currentPlansMap = {};
-            
+
             if (opsToFetch.length > 0) {
                 const placeholders = opsToFetch.map(() => '?').join(',');
                 const [currentRows] = await connection.query(`
@@ -2309,7 +2322,7 @@ router.post('/plan-batch', async (req, res) => {
                     FROM app_production_planning 
                     WHERE op_numero IN (${placeholders})
                 `, opsToFetch);
-                
+
                 currentRows.forEach(row => {
                     const key = `${row.op_numero}_${row.op_item}_${row.op_sequencia}_${row.operacao_codigo}`;
                     currentPlansMap[key] = row;
@@ -2320,7 +2333,7 @@ router.post('/plan-batch', async (req, res) => {
                 const key = `${p.op_numero}_${p.op_item}_${p.op_sequencia}_${p.operacao_codigo}`;
                 const curr = currentPlansMap[key];
                 if (!curr) return true; // Novo planejamento, deve ir pro histórico
-                
+
                 // Compare values
                 const currentStart = new Date(curr.data_planejada_inicio).getTime();
                 const currentEnd = new Date(curr.data_planejada_fim).getTime();
@@ -2379,7 +2392,7 @@ router.post('/plan-batch', async (req, res) => {
                     };
                     const mudouDe = curr ? `Início: ${formatDbDate(curr.data_planejada_inicio)} - Fim: ${formatDbDate(curr.data_planejada_fim)}` : 'N/A';
                     const mudouPara = `Início: ${p.data_inicio.split('T')[0]} - Fim: ${p.data_fim.split('T')[0]}`;
-                    
+
                     pcpHistValues.push([
                         p.op_numero,
                         p.operacao_codigo,
@@ -2430,7 +2443,7 @@ router.get('/planning-audit', async (req, res) => {
         const { usuario, data_inicio, data_fim, op, pedido } = req.query;
         let where = '1=1';
         let params = [];
-        
+
         if (usuario) {
             where += ' AND h.usuario_planejador LIKE ?';
             params.push(`%${usuario}%`);
@@ -2451,7 +2464,7 @@ router.get('/planning-audit', async (req, res) => {
             where += ' AND h.pedido_venda LIKE ?';
             params.push(`%${pedido}%`);
         }
-        
+
         const [rows] = await mysqlPool.query(`
             SELECT 
                 h.id, h.lote_id, h.op_numero, h.op_item, h.op_sequencia, h.operacao_codigo, 
@@ -2465,7 +2478,7 @@ router.get('/planning-audit', async (req, res) => {
             ORDER BY h.criado_em DESC
             LIMIT 500
         `, params);
-        
+
         res.json(rows);
     } catch (err) {
         console.error('[PLANNING-AUDIT ERROR]', err.message);
@@ -2515,19 +2528,19 @@ router.get('/planning-history/:op', async (req, res) => {
 
         // Combina tudo
         const result = lotes.map((lote, idx) => ({
-            lote_id:       lote.lote_id,
-            op_numero:     lote.op_numero,
-            usuario:       lote.usuario,
-            observacao:    lote.observacao,
-            modo_calculo:  lote.modo_calculo,
-            dias_modo:     lote.dias_modo,
+            lote_id: lote.lote_id,
+            op_numero: lote.op_numero,
+            usuario: lote.usuario,
+            observacao: lote.observacao,
+            modo_calculo: lote.modo_calculo,
+            dias_modo: lote.dias_modo,
             inclui_sabado: !!lote.inclui_sabado,
             inclui_domingo: !!lote.inclui_domingo,
-            inclui_st:     !!lote.inclui_st,
+            inclui_st: !!lote.inclui_st,
             ordem_recursos: lote.ordem_recursos ? JSON.parse(lote.ordem_recursos) : null,
-            criado_em:     lote.criado_em,
-            revisao:       lotes.length - idx,
-            operacoes:     opsByLote[lote.lote_id] || []
+            criado_em: lote.criado_em,
+            revisao: lotes.length - idx,
+            operacoes: opsByLote[lote.lote_id] || []
         }));
 
         res.json(result);
@@ -2554,13 +2567,13 @@ router.get('/planning-prefs/:op', async (req, res) => {
         if (rows.length === 0) return res.json(null);
         const r = rows[0];
         res.json({
-            diasModo:      r.dias_modo || 'calendar',
-            incluiSabado:  !!r.inclui_sabado,
+            diasModo: r.dias_modo || 'calendar',
+            incluiSabado: !!r.inclui_sabado,
             incluiDomingo: !!r.inclui_domingo,
-            incluiST:      !!r.inclui_st,
+            incluiST: !!r.inclui_st,
             ordemRecursos: r.ordem_recursos ? JSON.parse(r.ordem_recursos) : null,
-            usuario:       r.usuario,
-            criado_em:     r.criado_em
+            usuario: r.usuario,
+            criado_em: r.criado_em
         });
     } catch (err) {
         console.error('[PLANNING-PREFS]', err.message);
@@ -2745,12 +2758,12 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     } catch (err) {
         console.error('[APPOINT ERROR]', err);
         if (connection) await connection.rollback();
-        
+
         if (err.isCascataError) {
             await sendCascataErrorEmail(req.body.usuario, req.body.op_numero, err.cascataItems || [], err.message);
             return res.status(400).json({ error: 'Falha no Apontamento em Cascata. Um email foi enviado com os detalhes.', details: err.message });
         }
-        
+
         res.status(500).json({ error: err.message });
     } finally {
         if (connection) connection.release();
@@ -3015,7 +3028,7 @@ router.get('/pendentes', async (req, res) => {
 
                 const [scRes, [planRows]] = await Promise.all([
                     opNums.length ? db.query(
-                    `SELECT TRIM(c2.c2_num) as op_numero,
+                        `SELECT TRIM(c2.c2_num) as op_numero,
                             TRIM(c2.c2_item) as item_op,
                             TRIM(c2.c2_sequen) as op_sequencia,
                             TRIM(c2.c2_produto) as produto_codigo,
@@ -3059,7 +3072,7 @@ router.get('/pendentes', async (req, res) => {
                 const routingMap = {};
                 scRes.rows.forEach(r => {
                     const cleanOp = r.op_numero.replace(/^0+/, '');
-                    
+
                     // Specific key for exact Item/Sequence matching
                     const fullKey = `${cleanOp}_${r.item_op || ''}_${r.op_sequencia || ''}`;
                     scMap[fullKey] = r;
@@ -3103,19 +3116,19 @@ router.get('/pendentes', async (req, res) => {
                 rows.forEach(r => {
                     const cleanOp = (r.op_numero || '').replace(/^0+/, '');
                     const fullKey = `${cleanOp}_${r.op_item || ''}_${r.op_sequencia || ''}`;
-                    
+
                     // Match by Full Key > Generic Key
                     const sc = scMap[fullKey] || scMap[cleanOp];
-                    
+
                     // Fallback to parents
                     const scItemHead = scMap[`${cleanOp}_${r.op_item || ''}_001`];
                     const scOpHead = scMap[`${cleanOp}_01_001`] || scMap[`${cleanOp}_001`];
-                    
+
                     const best_pedido = sc?.pedido_venda || scItemHead?.pedido_venda || scOpHead?.pedido_venda || '';
                     const best_obs = sc?.obs_venda || scItemHead?.obs_venda || scOpHead?.obs_venda || '';
                     const best_nome = sc?.nome_cliente || scItemHead?.nome_cliente || scOpHead?.nome_cliente || null;
                     const best_prod = sc?.produto_codigo || scItemHead?.produto_codigo || scOpHead?.produto_codigo || null;
-                    
+
                     r.produto_codigo = best_prod || r.produto_codigo || null;
                     const raw_ped = best_pedido || '';
                     const raw_obs = best_obs || '';
@@ -3138,7 +3151,7 @@ router.get('/pendentes', async (req, res) => {
                     // Match operation description (from Matrix or Vertical)
                     const routeKey = `${cleanOp}_${r.op_item || '01'}`; // Default to 01 if missing
                     const routes = routingMap[routeKey] || [];
-                    
+
                     // Priority 1: Match exactly by operacao_codigo (desc_operacao)
                     // Priority 2: Fallback to resource (master_desc_recurso)
                     const exactRoute = routes.find(route =>
@@ -3211,13 +3224,13 @@ const PROCESSES_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // Fallback estático caso o PG esteja indisponível (recursos conhecidos do roteiro)
 const FALLBACK_RESOURCES = [
-  { codigo: 'MO0001', descricao: 'FABRICAÇÃO' },
-  { codigo: 'MO0002', descricao: 'MONTAGEM' },
-  { codigo: 'MO0003', descricao: 'USINAGEM' },
-  { codigo: 'MO0004', descricao: 'SOLDA' },
-  { codigo: 'MO0005', descricao: 'PINTURA' },
-  { codigo: 'MO0006', descricao: 'EXPEDIÇÃO' },
-  { codigo: 'MO0013', descricao: 'LASER' },
+    { codigo: 'MO0001', descricao: 'FABRICAÇÃO' },
+    { codigo: 'MO0002', descricao: 'MONTAGEM' },
+    { codigo: 'MO0003', descricao: 'USINAGEM' },
+    { codigo: 'MO0004', descricao: 'SOLDA' },
+    { codigo: 'MO0005', descricao: 'PINTURA' },
+    { codigo: 'MO0006', descricao: 'EXPEDIÇÃO' },
+    { codigo: 'MO0013', descricao: 'LASER' },
 ];
 
 router.get('/processes', async (req, res) => {
@@ -3472,7 +3485,7 @@ SUM(quantidade) as total_produzido,
         const pedidoItems = rows
             .filter(r => (r.pedido || '').trim() && (r.item || '').trim())
             .map(r => `('${r.pedido.trim()}', '${r.item.trim()}')`);
-            
+
         if (pedidoItems.length > 0) {
             const uniquePedidoItems = [...new Set(pedidoItems)].join(',');
             const [forecastRows] = await mysqlPool.query(`
@@ -3494,7 +3507,7 @@ SUM(quantidade) as total_produzido,
 
         rows.forEach(row => {
             const pedidoNum = row.pedido;
-            
+
             const emissaoRaw = row.data_emissao ? String(row.data_emissao).trim() : '';
             const emissaoFormatada = emissaoRaw.length === 8 ? `${emissaoRaw.substring(0, 4)}-${emissaoRaw.substring(4, 6)}-${emissaoRaw.substring(6, 8)}` : emissaoRaw;
 
@@ -3516,7 +3529,7 @@ SUM(quantidade) as total_produzido,
             // Initialize item if exists and not added yet
             if (row.item && !pedidosMap[pedidoNum].itens[row.item]) {
                 const pcpData = pcpForecastMap[`${pedidoNum.trim()}_${row.item.trim()}`];
-                
+
                 const entregaRaw = row.data_entrega ? String(row.data_entrega).trim() : '';
                 const entregaFormatada = entregaRaw.length === 8 ? `${entregaRaw.substring(0, 4)}-${entregaRaw.substring(4, 6)}-${entregaRaw.substring(6, 8)}` : entregaRaw;
 
@@ -4594,7 +4607,7 @@ UPPER(TRIM(usuario)),
 async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, usuario_original, data_inicio, data_fim, initialStatus) {
     // DESABILITADO TEMPORARIAMENTE A PEDIDO DO USUÁRIO (05/05/2026)
     return;
-    
+
     let cascataItems = [];
     try {
         const pgRes = await db.query(
@@ -4604,9 +4617,9 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
              AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
             [op_numero, op_item, op_sequencia]
         );
-        
+
         if (pgRes.rows.length === 0) return;
-        
+
         const produtoPai = pgRes.rows[0].produto_pai;
 
         // 1. Obter a Quantidade TOTAL já apontada para a operação gatilho do Produto Pai
@@ -4633,16 +4646,16 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                 FROM app_production_appointments
                 WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
             `, [op_numero, op_item, op_sequencia, popRow.operacao]);
-            
+
             const apontadoPai = Number(pAppRows[0].total_apontado);
             const faltantePai = quantidade_total_pai - apontadoPai;
 
             if (faltantePai > 0) {
                 cascataItems.push({ componente: produtoPai, operacao: popRow.operacao, faltante: faltantePai });
-                
+
                 const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
                 const obsFantasma = `Apontamento automático (Mesmo Produto). Ref: Operação Pendente`;
-                
+
                 await connection.execute(`
                     INSERT INTO app_production_appointments
                     (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
@@ -4650,7 +4663,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                 `, [op_numero, op_item, op_sequencia, popRow.operacao, fantasmaUser, faltantePai, data_inicio, data_fim, obsFantasma, initialStatus]);
             }
         }
-        
+
         // 2. Explosão de Estrutura (BOM) recursiva
         const bomRes = await db.query(`
             WITH RECURSIVE bom_tree AS (
@@ -4683,7 +4696,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
 
         for (const row of bomRes.rows) {
             const qtdRequeridaTotal = Number(row.qtde_necessaria) * quantidade_total_pai;
-            
+
             const opRes = await db.query(`
                 SELECT 
                     TRIM(c2.c2_item) as item_op, 
@@ -4698,23 +4711,23 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
             if (opRes.rows.length === 0) continue;
 
             for (const opRow of opRes.rows) {
-                if (!opRow.operacao) continue; 
+                if (!opRow.operacao) continue;
 
                 const [appRows] = await connection.execute(`
                     SELECT COALESCE(SUM(quantidade), 0) as total_apontado
                     FROM app_production_appointments
                     WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
                 `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao]);
-                
+
                 const apontado = Number(appRows[0].total_apontado);
                 const faltante = qtdRequeridaTotal - apontado;
-                
+
                 if (faltante > 0) {
                     cascataItems.push({ componente: row.componente, operacao: opRow.operacao, faltante });
-                    
+
                     const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
                     const obsFantasma = `Apontamento automático (Cascata). Ref: Produto Pai ${produtoPai}`;
-                    
+
                     await connection.execute(`
                         INSERT INTO app_production_appointments
                         (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
@@ -4723,7 +4736,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                 }
             }
         }
-    } catch(err) {
+    } catch (err) {
         console.error('[CASCATA] Erro interno de execução:', err);
         err.isCascataError = true;
         err.cascataItems = cascataItems;
@@ -4777,7 +4790,7 @@ async function sendCascataErrorEmail(usuario, op_numero, missingDetails, errorMs
             subject: `⚠️ ERRO: Baixa Automática Cascata - OP ${op_numero}`,
             html: getCorporateEmailTemplate ? getCorporateEmailTemplate(html) : html
         });
-    } catch(err) {
+    } catch (err) {
         console.error('[CASCATA EMAIL ERROR]', err);
     }
 }
@@ -4850,37 +4863,37 @@ router.get('/resumo-pedidos', async (req, res) => {
             'SELECT recurso_codigo, capacidade_diaria_minutos FROM app_recursos_capacidade'
         );
         const capMap = {};
-        caps.forEach(c => { capMap[(c.recurso_codigo||'').trim().toUpperCase()] = parseFloat(c.capacidade_diaria_minutos)||528; });
+        caps.forEach(c => { capMap[(c.recurso_codigo || '').trim().toUpperCase()] = parseFloat(c.capacidade_diaria_minutos) || 528; });
 
         // 4. Monta resultado final com minutos calculados por dias
         const result = rows.map(r => {
-            const opTrimmed  = (r.op_numero||'').trim();
-            const recurso    = (r.recurso_codigo||'').trim().toUpperCase();
-            const capDia     = capMap[recurso] || 528;
-            const totalDias  = parseFloat(r.total_dias) || 1;
-            const totalMin   = totalDias * capDia;
+            const opTrimmed = (r.op_numero || '').trim();
+            const recurso = (r.recurso_codigo || '').trim().toUpperCase();
+            const capDia = capMap[recurso] || 528;
+            const totalDias = parseFloat(r.total_dias) || 1;
+            const totalMin = totalDias * capDia;
 
             const dtInicio = r.data_inicio ? new Date(r.data_inicio) : null;
-            const dtFim    = r.data_fim    ? new Date(r.data_fim)    : null;
+            const dtFim = r.data_fim ? new Date(r.data_fim) : null;
             // Dias corridos reais entre inicio e fim
             const diasCorridos = (dtInicio && dtFim)
                 ? Math.ceil((dtFim - dtInicio) / (1000 * 60 * 60 * 24)) + 1
                 : totalDias;
 
             return {
-                pedido_venda:   opPedidoMap[opTrimmed] || opTrimmed,
-                op_numero:      opTrimmed,
+                pedido_venda: opPedidoMap[opTrimmed] || opTrimmed,
+                op_numero: opTrimmed,
                 recurso_codigo: recurso,
-                produto_codigo: (r.produto_codigo||'').trim(),
-                data_inicio:    dtInicio ? dtInicio.toISOString().split('T')[0] : null,
-                data_fim:       dtFim    ? dtFim.toISOString().split('T')[0]    : null,
+                produto_codigo: (r.produto_codigo || '').trim(),
+                data_inicio: dtInicio ? dtInicio.toISOString().split('T')[0] : null,
+                data_fim: dtFim ? dtFim.toISOString().split('T')[0] : null,
                 total_dias_planejados: totalDias,
-                dias_corridos:  diasCorridos,
-                total_minutos:  Math.round(totalMin),
-                total_horas:    parseFloat((totalMin / 60).toFixed(1)),
+                dias_corridos: diasCorridos,
+                total_minutos: Math.round(totalMin),
+                total_horas: parseFloat((totalMin / 60).toFixed(1)),
                 capacidade_dia_min: capDia,
-                total_ops:      parseInt(r.total_ops)||0,
-                operacoes:      r.operacoes || ''
+                total_ops: parseInt(r.total_ops) || 0,
+                operacoes: r.operacoes || ''
             };
         });
 
@@ -4890,6 +4903,70 @@ router.get('/resumo-pedidos', async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         if (pgClient) pgClient.release();
+    }
+});
+
+// GET /api/production/daily-schedule
+// Retorna fatias diárias de alocação por peça por operação
+// Parâmetros query: ops (csv), recurso, data_inicio, data_fim
+router.get('/daily-schedule', async (req, res) => {
+    try {
+        const { ops, recurso, data_inicio, data_fim } = req.query;
+
+        const conditions = [];
+        const params = [];
+
+        if (ops) {
+            const opList = ops.split(',').map(o => o.trim()).filter(Boolean);
+            if (opList.length > 0) {
+                conditions.push(`op_numero IN (${opList.map(() => '?').join(',')})`);
+                params.push(...opList);
+            }
+        }
+        if (recurso) {
+            conditions.push('recurso_codigo = ?');
+            params.push(recurso);
+        }
+        if (data_inicio) {
+            conditions.push('data_alocacao >= ?');
+            params.push(data_inicio);
+        }
+        if (data_fim) {
+            conditions.push('data_alocacao <= ?');
+            params.push(data_fim);
+        }
+
+        const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const [rows] = await mysqlPool.query(
+            `SELECT op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo,
+                    data_alocacao, qtd_alocada, minutos_alocados, usuario_planejador, criado_em
+             FROM app_production_planning_diario
+             ${where}
+             ORDER BY data_alocacao ASC, recurso_codigo ASC, op_numero ASC`,
+            params
+        );
+
+        // Agrupar por data > recurso para facilitar visualização no chão de fábrica
+        const byDate = {};
+        for (const row of rows) {
+            const d = row.data_alocacao instanceof Date
+                ? row.data_alocacao.toISOString().split('T')[0]
+                : String(row.data_alocacao).split('T')[0];
+            if (!byDate[d]) byDate[d] = {};
+            if (!byDate[d][row.recurso_codigo]) byDate[d][row.recurso_codigo] = [];
+            byDate[d][row.recurso_codigo].push({
+                op_numero: row.op_numero,
+                operacao_codigo: row.operacao_codigo,
+                produto_codigo: row.produto_codigo,
+                qtd_alocada: row.qtd_alocada,
+                minutos_alocados: row.minutos_alocados,
+            });
+        }
+
+        res.json({ success: true, total: rows.length, by_date: byDate, rows });
+    } catch (err) {
+        console.error('[DAILY-SCHEDULE ERROR]', err);
+        res.status(500).json({ error: err.message });
     }
 });
 

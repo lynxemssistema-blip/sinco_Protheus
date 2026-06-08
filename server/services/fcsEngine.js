@@ -9,8 +9,9 @@ const db = require('../db');
  * @param {string} params.usuario - Username trigger the planning
  * @returns {Promise<Object>} Execution summary
  */
-async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inteligente', include_saturday = false }) {
+async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inteligente', include_saturday = false, preload_existing = false }) {
     let pgClient;
+    const agent_logs = [];
     try {
         if (!ops || !ops.length || !data_inicio) {
             throw new Error('Lista de OPs e data de início são obrigatórios.');
@@ -21,9 +22,27 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         const dataBaseEfetiva = data_inicio < todayStr ? todayStr : data_inicio;
 
         pgClient = await db.connect();
-        const agent_logs = [];
         agent_logs.push(`Iniciando FCS: ${ops.length} OPs selecionadas | Data base: ${data_inicio} | Data efetiva: ${dataBaseEfetiva} | Sábado: ${include_saturday ? 'SIM' : 'NÃO'}`);
-        
+
+        // Garantir que a tabela de fatias diárias existe
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_production_planning_diario (
+                id                 INT AUTO_INCREMENT PRIMARY KEY,
+                op_numero          VARCHAR(20)  NOT NULL,
+                op_item            VARCHAR(10)  NOT NULL,
+                op_sequencia       VARCHAR(10)  NOT NULL,
+                operacao_codigo    VARCHAR(10)  NOT NULL,
+                recurso_codigo     VARCHAR(30),
+                produto_codigo     VARCHAR(50),
+                data_alocacao      DATE         NOT NULL,
+                qtd_alocada        INT          NOT NULL DEFAULT 0,
+                minutos_alocados   INT          NOT NULL DEFAULT 0,
+                usuario_planejador VARCHAR(100),
+                criado_em          DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_daily_slice (op_numero, op_item, op_sequencia, operacao_codigo, data_alocacao)
+            )
+        `);
+
         // Obter capacidades diárias do MySQL
         agent_logs.push('Obtendo matriz de capacidades diárias por recurso...');
         const [capRows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
@@ -64,29 +83,77 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
         // Buscar detalhes das OPs selecionadas no Protheus
         const pgOpsQuery = `
+            WITH RECURSIVE ParentOPs AS (
+                SELECT 
+                    TRIM(c2_num) AS op_num,
+                    TRIM(c2_pedido) AS pedido,
+                    TRIM(c2_itempv) AS itempv
+                FROM public.sc2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND c2_sequen = '001'
+                  AND TRIM(c2_pedido) <> ''
+                
+                UNION
+                
+                SELECT 
+                    TRIM(child.c2_num) AS op_num,
+                    p.pedido,
+                    p.itempv
+                FROM public.sc2010 child
+                INNER JOIN ParentOPs p 
+                    ON TRIM(child.c2_obs) LIKE '%' || p.op_num || '%'
+                WHERE COALESCE(child.d_e_l_e_t_, '') IN ('', ' ')
+                  AND child.c2_sequen = '001'
+                  AND TRIM(child.c2_pedido) = ''
+            )
             SELECT 
                 TRIM(c2.c2_num) AS op_num,
                 TRIM(c2.c2_item) AS item_op,
                 TRIM(c2.c2_sequen) AS sequen,
                 TRIM(c2.c2_produto) AS produto,
-                TRIM(c2.c2_pedido) AS pedido,
-                TRIM(c2.c2_itempv) AS itempv,
+                COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), parent.pedido) AS pedido,
+                COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), parent.itempv) AS itempv,
                 c2.c2_quant AS qtde,
                 c2.c2_quje AS qtde_feita
             FROM public.sc2010 c2
+            LEFT JOIN ParentOPs parent ON parent.op_num = TRIM(c2.c2_num)
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
               AND TRIM(c2.c2_num) = ANY($1::text[])
             ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
         `;
         const opsResult = await pgClient.query(pgOpsQuery, [ops]);
-        const opsEncontradas = opsResult.rows;
+        let opsEncontradas = opsResult.rows;
+
+        // ETAPA EXTRA: Desconsiderar OPs associadas a pedidos inativos e sem OP/Pedido válido
+        try {
+            const [inativosResult] = await mysqlPool.query('SELECT pedido_numero FROM app_pedidos_inativos');
+            const inativosSet = new Set(inativosResult.map(r => String(r.pedido_numero).trim()));
+            const opsFiltradas = [];
+            for (const op of opsEncontradas) {
+                const isValidOpNum = op.op_num && op.op_num.trim() !== '' && op.op_num.trim() !== '-';
+                const hasPedido = op.pedido && op.pedido.trim() !== '';
+
+                if (!hasPedido || !isValidOpNum) {
+                    agent_logs.push(`⚠️ OP ${op.op_num || '(sem numero)'} desconsiderada do FCS pois não possui pedido ou número de OP válido (Produto: ${op.produto}).`);
+                    continue;
+                }
+
+                if (inativosSet.has(op.pedido)) {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada do FCS pois o pedido ${op.pedido} está inativo/faturado.`);
+                } else {
+                    opsFiltradas.push(op);
+                }
+            }
+            opsEncontradas = opsFiltradas;
+        } catch (e) {
+            console.warn('⚠️ Não foi possível filtrar pedidos inativos no MySQL:', e.message);
+        }
 
         // ── ETAPA 1.5: VARREDURA DE PLANEJAMENTOS ÓRFÃOS (passado não executado) ─────────────
         // DESABILITADO: A varredura automática estava puxando milhares de OPs antigas (fantasmas)
         // do Protheus que nunca foram encerradas, consumindo toda a capacidade produtiva e
         // jogando os novos planejamentos para 1 ano no futuro.
         // O planejamento agora foca apenas nas OPs explicitamente selecionadas pelo usuário.
-        let opsOrfasCount = 0;
         agent_logs.push(`Total na fila: ${opsEncontradas.length} OPs (${ops.length} selecionadas).`);
 
         // Buscar apontamentos específicos por operação no MySQL
@@ -122,10 +189,10 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     TRIM(g2.g2_produto) AS produto,
                     TRIM(g2.g2_operac) AS operac,
                     TRIM(g2.g2_recurso) AS recurso,
-                    g2.g2_tempad AS tempo_horas
+                    g2.g2_tempad AS tempo_minutos
                 FROM public.sg2010 g2
                 WHERE COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-                  AND TRIM(g2.g2_produto) IN (${pPlaceholders})
+                AND TRIM(g2.g2_produto) IN (${pPlaceholders})
                 ORDER BY g2.g2_operac ASC
             `;
             const routingResult = await pgClient.query(pgRoutingQuery, arrayProdutos);
@@ -133,7 +200,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             for (const r of routingResult.rows) {
                 if (!roteiroMap[r.produto]) roteiroMap[r.produto] = [];
                 
-                let tempoMinutos = Number(r.tempo_horas) || 0;
+                let tempoMinutos = Math.round((Number(r.tempo_minutos) || 0) * 1000) / 1000;
                 
                 if (tempoMinutos <= 0 && fallbackCapacidade[r.recurso]) {
                     tempoMinutos = fallbackCapacidade[r.recurso];
@@ -178,14 +245,18 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         agent_logs.push(`--- PRÉ-ANÁLISE DE GARGALOS DE CAPACIDADE ---`);
         const demandaPorRecurso = {};
         for (const op of opsEncontradas) {
-            const qtdPend = Math.max(0, op.qtde - op.qtde_feita);
             for (const rot of (roteiroMap[op.produto] || [])) {
+                // Usa mesma lógica da alocação real: max(qtde_feita_protheus, apontamentos_locais)
+                const keyApt = `${op.op_num}-${rot.operac}`;
+                const qtdeApontada = apontamentosMap[keyApt] || 0;
+                const qtdeFeita = Math.max(Number(op.qtde_feita) || 0, qtdeApontada);
+                const qtdPend = Math.max(0, op.qtde - qtdeFeita);
                 if (!demandaPorRecurso[rot.recurso]) demandaPorRecurso[rot.recurso] = 0;
                 demandaPorRecurso[rot.recurso] += qtdPend * rot.tempoMinutos;
             }
         }
         for (const [rec, demandaTotal] of Object.entries(demandaPorRecurso)) {
-            const capDia = capacidades[rec] || 480;
+            const capDia = (capacidades[rec] > 0) ? capacidades[rec] : 480;
             const diasNec = Math.ceil(demandaTotal / capDia);
             const pct = capDia > 0 ? ((demandaTotal / capDia) * 100).toFixed(0) : '??';
             const desc = descRecursoMap[rec] || rec;
@@ -199,6 +270,36 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
         // 2. ALGORITMO FCS (Sequenciamento de Capacidade Finita)
         const resource_buckets = {};
+        const dailySlices = [];
+
+        // Pré-carrega capacidade já alocada por OPs FORA deste lote para que lotes
+        // consecutivos nunca se sobreponham no mesmo recurso/dia.
+        if (preload_existing && ops.length > 0) {
+            try {
+                const excPh = ops.map(() => '?').join(',');
+                const [existingSlices] = await mysqlPool.query(`
+                    SELECT recurso_codigo, data_alocacao, SUM(minutos_alocados) AS minutos_used
+                    FROM app_production_planning_diario
+                    WHERE op_numero NOT IN (${excPh})
+                      AND data_alocacao >= ?
+                      AND recurso_codigo IS NOT NULL
+                    GROUP BY recurso_codigo, data_alocacao
+                `, [...ops, dataBaseEfetiva]);
+
+                for (const row of existingSlices) {
+                    const dateStr = typeof row.data_alocacao === 'string'
+                        ? row.data_alocacao.substring(0, 10)
+                        : new Date(row.data_alocacao).toISOString().split('T')[0];
+                    const recurso = row.recurso_codigo;
+                    if (!resource_buckets[dateStr]) resource_buckets[dateStr] = {};
+                    const capDia = (capacidades[recurso] > 0) ? capacidades[recurso] : 480;
+                    resource_buckets[dateStr][recurso] = Math.max(0, capDia - Number(row.minutos_used));
+                }
+                agent_logs.push(`📊 Pré-carga: ${existingSlices.length} alocações existentes consumidas (outros lotes não serão sobrepostos).`);
+            } catch (e) {
+                agent_logs.push(`⚠️ Pré-carga de capacidade falhou: ${e.message}. Prosseguindo sem histórico.`);
+            }
+        }
 
         const isBusinessDay = (dateStr) => {
             const d = new Date(dateStr + 'T12:00:00');
@@ -231,21 +332,9 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             if (!isBusinessDay(dateStr)) return 0;
             if (!resource_buckets[dateStr]) resource_buckets[dateStr] = {};
             if (resource_buckets[dateStr][recurso] === undefined) {
-                resource_buckets[dateStr][recurso] = capacidades[recurso] || 480;
+                resource_buckets[dateStr][recurso] = (capacidades[recurso] > 0) ? capacidades[recurso] : 480;
             }
             return resource_buckets[dateStr][recurso];
-        };
-
-        const consumeCapacity = (dateStr, recurso, minNeeded) => {
-            if (!isBusinessDay(dateStr)) return { allocated: 0, remaining: minNeeded };
-            let available = getCapacity(dateStr, recurso);
-            if (available >= minNeeded) {
-                resource_buckets[dateStr][recurso] -= minNeeded;
-                return { allocated: minNeeded, remaining: 0 };
-            } else {
-                resource_buckets[dateStr][recurso] = 0;
-                return { allocated: available, remaining: minNeeded - available };
-            }
         };
 
         const newPlans = [];
@@ -313,6 +402,8 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             
             agent_logs.push(`[ESTUDO] Analisando OP ${op.op_num} (Qtd: ${op.qtde} | Produto: ${op.produto})`);
 
+            let prevOpEndDate = null;
+
             for (let i = 0; i < roteiros.length; i++) {
                 const rot = roteiros[i];
                 const keyApontamento = `${op.op_num}-${rot.operac}`;
@@ -324,33 +415,129 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     finalQtdeRestante = qtdeRestante;
                 }
                 
-                let minNeeded = qtdeRestante * rot.tempoMinutos;
-                
-                if (minNeeded <= 0) {
+                if (qtdeRestante <= 0) {
                     agent_logs.push(` ↳ Operação ${rot.operac}: Quantidade concluída (Apontado: ${qtdeJaFeita}/${op.qtde}), ignorando.`);
-                    continue; 
+                    continue;
                 }
 
-                agent_logs.push(` ↳ Operação ${rot.operac} (${rot.recurso}): Faltam ${qtdeRestante} peças. Requer ${minNeeded.toFixed(0)} min. Cap/dia = ${capacidades[rot.recurso]||480} min.`);
+                const minNecessarios = qtdeRestante * rot.tempoMinutos;
+                agent_logs.push(` ↳ Operação ${rot.operac} (${rot.recurso}): Faltam ${qtdeRestante} peças. Requer ${minNecessarios.toFixed(0)} min. Cap/dia = ${(capacidades[rot.recurso] > 0) ? capacidades[rot.recurso] : 480} min.`);
 
-                let dataPlanejadaInicio = currentDate;
+                let dataPlanejadaInicio = null;
                 lastAllocatedDate = currentDate;
                 let logsLocais = { alocados: 0, diasAvancados: 0 };
+                let first180MinDate = null;
+                let cumAllocated = 0;
 
-                while (minNeeded > 0) {
-                    const { allocated, remaining } = consumeCapacity(currentDate, rot.recurso, minNeeded);
-                    if (allocated > 0) {
-                        lastAllocatedDate = currentDate;
-                        logsLocais.alocados += allocated;
+                // Alocação contínua: NUNCA pula dia útil com capacidade disponível.
+                // Peças que excedem a capacidade diária se estendem por múltiplos dias.
+                // tempoRestanteNaPeca rastreia quanto falta para concluir a peça em andamento.
+                const slicesDoDia = [];
+                let qtdPendente = qtdeRestante;
+                let tempoRestanteNaPeca = rot.tempoMinutos;
+                // diasSemCapacidade conta apenas dias CONSECUTIVOS com 0 disponibilidade.
+                // Dias produtivos (available > 0) não contribuem — o loop sempre termina nesses.
+                // Protege somente contra loop infinito por recurso permanentemente bloqueado.
+                let diasSemCapacidade = 0;
+
+                while (qtdPendente > 0) {
+                    const available = getCapacity(currentDate, rot.recurso);
+
+                    if (available <= 0) {
+                        if (++diasSemCapacidade > 730) {
+                            agent_logs.push(`⛔ ABORT: OP ${op.op_num} Op ${rot.operac} — recurso ${rot.recurso} sem capacidade por ${diasSemCapacidade} dias consecutivos. Verifique a configuração.`);
+                            break;
+                        }
+                        currentDate = addDays(currentDate, 1);
+                        logsLocais.diasAvancados++;
+                        continue;
                     }
-                    if (remaining > 0) {
+
+                    diasSemCapacidade = 0; // reseta ao encontrar capacidade
+
+                    // Consumir TODA a capacidade disponível hoje:
+                    // completa peças e/ou avança a peça em progresso sem desperdiçar minutos.
+                    let capRestante = available;
+                    let minutosHoje = 0;
+                    let pecasCompletasHoje = 0;
+
+                    while (capRestante > 0 && pecasCompletasHoje < qtdPendente) {
+                        if (tempoRestanteNaPeca <= capRestante) {
+                            // Conclui a peça em andamento com capacidade sobrando
+                            capRestante -= tempoRestanteNaPeca;
+                            minutosHoje += tempoRestanteNaPeca;
+                            pecasCompletasHoje++;
+                            tempoRestanteNaPeca = rot.tempoMinutos; // reinicia para a próxima peça
+                        } else {
+                            // Capacidade do dia se esgota no meio da peça — usa tudo e continua amanhã
+                            minutosHoje += capRestante;
+                            tempoRestanteNaPeca -= capRestante;
+                            capRestante = 0;
+                        }
+                    }
+
+                    resource_buckets[currentDate][rot.recurso] -= minutosHoje;
+
+                    if (!dataPlanejadaInicio) dataPlanejadaInicio = currentDate;
+                    lastAllocatedDate = currentDate;
+                    logsLocais.alocados += minutosHoje;
+
+                    cumAllocated += minutosHoje;
+                    if (!first180MinDate && cumAllocated >= 180) first180MinDate = currentDate;
+
+                    slicesDoDia.push({
+                        data_alocacao:    currentDate,
+                        qtd_alocada:      pecasCompletasHoje,  // 0 = dia parcial (peça em progresso)
+                        minutos_alocados: minutosHoje,
+                    });
+
+                    qtdPendente -= pecasCompletasHoje;
+                    if (qtdPendente > 0) {
                         currentDate = addDays(currentDate, 1);
                         logsLocais.diasAvancados++;
                     }
-                    minNeeded = remaining;
                 }
 
-                agent_logs.push(`    → Alocação concluída: de ${dataPlanejadaInicio} até ${lastAllocatedDate} (avanço de ${logsLocais.diasAvancados} dia(s)).`);
+                if (!dataPlanejadaInicio) {
+                    // Abort disparou antes de qualquer alocação: sincroniza lastAllocatedDate
+                    // com o currentDate final para evitar data_fim < data_inicio no plano.
+                    dataPlanejadaInicio = currentDate;
+                    lastAllocatedDate = currentDate;
+                }
+                if (!first180MinDate) {
+                    first180MinDate = lastAllocatedDate;
+                }
+
+                // Calcular dias de espera
+                let diasEspera = 0;
+                if (prevOpEndDate && dataPlanejadaInicio > prevOpEndDate) {
+                    let tempDate = new Date(prevOpEndDate + 'T12:00:00');
+                    const endD = new Date(dataPlanejadaInicio + 'T12:00:00');
+                    while (tempDate < endD) {
+                        tempDate.setDate(tempDate.getDate() + 1);
+                        if (isBusinessDay(tempDate.toISOString().split('T')[0])) {
+                            diasEspera++;
+                        }
+                    }
+                }
+
+                agent_logs.push(`    → Alocação concluída: de ${dataPlanejadaInicio} até ${lastAllocatedDate} em ${slicesDoDia.length} fatia(s) diária(s) (${logsLocais.diasAvancados} dia(s) avançado(s)). Espera: ${diasEspera} dias.`);
+
+                // Registrar fatias diárias no array global para persistência
+                slicesDoDia.forEach(s => {
+                    dailySlices.push({
+                        op_numero:          op.op_num,
+                        op_item:            op.item_op,
+                        op_sequencia:       op.sequen,
+                        operacao_codigo:    rot.operac,
+                        recurso_codigo:     rot.recurso,
+                        produto_codigo:     op.produto,
+                        data_alocacao:      s.data_alocacao,
+                        qtd_alocada:        s.qtd_alocada,
+                        minutos_alocados:   s.minutos_alocados,
+                        usuario_planejador: usuario,
+                    });
+                });
 
                 newPlans.push({
                     op_numero: op.op_num,
@@ -361,9 +548,13 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     produto_codigo: op.produto,
                     data_planejada_inicio: dataPlanejadaInicio,
                     data_planejada_fim: lastAllocatedDate,
+                    dias_espera: diasEspera,
                     usuario_planejador: usuario,
-                    observacao_lote: `Planejamento Inteligente - Gerado em ${hoje.toLocaleDateString('pt-BR')} ${hoje.toLocaleTimeString('pt-BR')}`
+                    observacao_lote: `Planejamento Inteligente - Gerado em ${hoje.toLocaleDateString('pt-BR')} ${hoje.toLocaleTimeString('pt-BR')}`,
+                    fatias_diarias: slicesDoDia,
                 });
+
+                prevOpEndDate = lastAllocatedDate;
 
                 if (i < roteiros.length - 1) {
                     const proxRecurso = roteiros[i + 1].recurso;
@@ -372,19 +563,13 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                         currentDate = addDays(lastAllocatedDate, 1);
                         agent_logs.push(`    → Mesmo recurso (${rot.recurso}): próxima operação forçada para ${currentDate}.`);
                     } else {
-                        // Recurso diferente: tenta aproveitar o dia corrente primeiro
-                        currentDate = lastAllocatedDate;
-                        const capProx = getCapacity(currentDate, proxRecurso);
-                        if (capProx <= 0) {
-                            // Bug fix: avança até encontrar dia com capacidade real
-                            let maxTries = 30;
-                            while (maxTries-- > 0 && getCapacity(currentDate, proxRecurso) <= 0) {
-                                currentDate = addDays(currentDate, 1);
-                            }
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}) sem capacidade no dia anterior. Avançando para ${currentDate}.`);
-                        } else {
-                            agent_logs.push(`    → Recurso diferente (${proxRecurso}): ${capProx} min disponíveis em ${currentDate}. Mantendo dia.`);
+                        // Recurso diferente: pode iniciar com sobreposição (pós 180 min do recurso anterior)
+                        currentDate = first180MinDate;
+                        let maxTries = 30;
+                        while (maxTries-- > 0 && getCapacity(currentDate, proxRecurso) <= 0) {
+                            currentDate = addDays(currentDate, 1);
                         }
+                        agent_logs.push(`    → Recurso diferente (${proxRecurso}): Aplicada sobreposição de 180min. Próxima operação busca vaga a partir de ${currentDate}.`);
                     }
                 }
             }
@@ -393,7 +578,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 forecastUpdates.push({
                     pedido: op.pedido,
                     item: op.itempv,
-                    data_entrega_pcp: op._entrega_pcp || lastAllocatedDate, // Initialize with forecast if NULL
+                    data_entrega_pcp: op._entrega_pcp, // NUNCA sobrescreve a data PCP. O Agente não preenche mais a Data PCP.
                     data_prevista_faturamento: lastAllocatedDate,
                     quantidade_pcp: finalQtdeRestante,
                     op_protheus: op.op_num
@@ -405,30 +590,34 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         if (newPlans.length > 0) {
             agent_logs.push(`Salvando planejamento consolidado no banco de dados (${newPlans.length} operações).`);
 
-            // Bug fix crítico: APAGAR registros com datas passadas de TODAS as OPs processadas
-            // antes de inserir os novos. Isso elimina a carga histórica da dashboard de carga diária.
+            // Bug fix crítico: APAGAR tudos os registros antigos das OPs processadas
+            // antes de inserir os novos. Isso garante que o replanejamento seja limpo.
             const opsProcessadasNums = [...new Set(newPlans.map(p => p.op_numero))];
-            agent_logs.push(`  Limpando registros anteriores a hoje (${todayStr}) para ${opsProcessadasNums.length} OP(s) replanejadas...`);
+            agent_logs.push(`  Limpando todo o histórico de planejamento para as ${opsProcessadasNums.length} OP(s) replanejadas...`);
             const deletePlaceholders = opsProcessadasNums.map(() => '?').join(',');
             const [deleteResult] = await mysqlPool.query(
-                `DELETE FROM app_production_planning 
-                 WHERE op_numero IN (${deletePlaceholders})
-                   AND data_planejada_inicio < ?`,
-                [...opsProcessadasNums, todayStr]
+                `DELETE FROM app_production_planning
+                 WHERE op_numero IN (${deletePlaceholders})`,
+                [...opsProcessadasNums]
+            );
+            await mysqlPool.query(
+                `DELETE FROM app_production_planning_diario
+                 WHERE op_numero IN (${deletePlaceholders})`,
+                [...opsProcessadasNums]
             );
             if (deleteResult.affectedRows > 0) {
-                agent_logs.push(`  ✅ ${deleteResult.affectedRows} registro(s) com datas passadas removidos do banco.`);
+                agent_logs.push(`  ✅ ${deleteResult.affectedRows} registro(s) antigos removidos do banco antes do replanejamento.`);
             }
 
             const mysqlValues = newPlans.map(p => [
                 p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo, p.recurso_codigo, p.produto_codigo,
-                p.data_planejada_inicio, p.data_planejada_fim, p.usuario_planejador, p.observacao_lote
+                p.data_planejada_inicio, p.data_planejada_fim, p.usuario_planejador, p.observacao_lote, p.dias_espera || 0
             ]);
 
             await mysqlPool.query(`
                 INSERT INTO app_production_planning
                     (op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo,
-                     data_planejada_inicio, data_planejada_fim, usuario_planejador, observacao_lote)
+                     data_planejada_inicio, data_planejada_fim, usuario_planejador, observacao_lote, dias_espera)
                 VALUES ?
                 ON DUPLICATE KEY UPDATE
                     recurso_codigo        = VALUES(recurso_codigo),
@@ -436,12 +625,42 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     data_planejada_inicio = VALUES(data_planejada_inicio),
                     data_planejada_fim    = VALUES(data_planejada_fim),
                     usuario_planejador    = VALUES(usuario_planejador),
-                    observacao_lote       = VALUES(observacao_lote)
+                    observacao_lote       = VALUES(observacao_lote),
+                    dias_espera           = VALUES(dias_espera)
             `, [mysqlValues]);
 
+            // Persistir fatias diárias por peça
+            if (dailySlices.length > 0) {
+                const sliceValues = dailySlices.map(s => [
+                    s.op_numero, s.op_item, s.op_sequencia, s.operacao_codigo,
+                    s.recurso_codigo, s.produto_codigo, s.data_alocacao,
+                    s.qtd_alocada, s.minutos_alocados, s.usuario_planejador
+                ]);
+                await mysqlPool.query(`
+                    INSERT INTO app_production_planning_diario
+                        (op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo,
+                         produto_codigo, data_alocacao, qtd_alocada, minutos_alocados, usuario_planejador)
+                    VALUES ?
+                    ON DUPLICATE KEY UPDATE
+                        qtd_alocada      = VALUES(qtd_alocada),
+                        minutos_alocados = VALUES(minutos_alocados)
+                `, [sliceValues]);
+                agent_logs.push(`✅ ${dailySlices.length} fatia(s) diária(s) salvas em app_production_planning_diario.`);
+            }
+
             if (forecastUpdates.length > 0) {
-                agent_logs.push(`Atualizando previsão de entrega PCP para ${forecastUpdates.length} pedido(s) associado(s).`);
-                const forecastValues = forecastUpdates.map(f => [
+                // Deduplicar por (pedido, item): manter MAX data_prevista_faturamento para refletir
+                // quando TODAS as OPs do item estarão prontas (a que termina por último é a que manda)
+                const forecastByKey = {};
+                for (const f of forecastUpdates) {
+                    const k = `${f.pedido}|${f.item}`;
+                    if (!forecastByKey[k] || f.data_prevista_faturamento > forecastByKey[k].data_prevista_faturamento) {
+                        forecastByKey[k] = f;
+                    }
+                }
+                const dedupedForecasts = Object.values(forecastByKey);
+                agent_logs.push(`Atualizando previsão de entrega PCP para ${dedupedForecasts.length} pedido(s) associado(s).`);
+                const forecastValues = dedupedForecasts.map(f => [
                     f.pedido, f.item, f.data_entrega_pcp, f.quantidade_pcp, usuario, 'Automático - Agente FCS', f.op_protheus, f.data_prevista_faturamento
                 ]);
                 // Bug fix: UPSERT para não duplicar forecasts
@@ -464,9 +683,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             ]);
             
             await mysqlPool.query(`CREATE TABLE IF NOT EXISTS app_pcp_historico_revisao (id INT AUTO_INCREMENT PRIMARY KEY, op_numero VARCHAR(50), operacao_codigo VARCHAR(50), usuario VARCHAR(100), data_alteracao DATETIME, mudou_de TEXT, mudou_para TEXT, origem VARCHAR(100))`);
-            if (historicoValues.length > 0) {
-                await mysqlPool.query(`INSERT INTO app_pcp_historico_revisao (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem) VALUES ?`, [historicoValues]);
-            }
+            await mysqlPool.query(`INSERT INTO app_pcp_historico_revisao (op_numero, operacao_codigo, usuario, data_alteracao, mudou_de, mudou_para, origem) VALUES ?`, [historicoValues]);
         }
 
         // 4. GERAR RELATÓRIO ESTRUTURADO
@@ -480,12 +697,27 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             decisoes: []
         };
 
+        // Indexar fatias por "op_numero|operacao_codigo" para evitar O(n²) no loop de relatório
+        const slicesByKey = {};
+        for (const s of dailySlices) {
+            const k = `${s.op_numero}|${s.operacao_codigo}`;
+            if (!slicesByKey[k]) slicesByKey[k] = [];
+            slicesByKey[k].push(s);
+        }
+
+        // Indexar OPs por op_num para lookup O(1) no loop de relatório
+        const opsByNum = {};
+        for (const o of opsEncontradas) opsByNum[o.op_num] = o;
+
         for (const plan of newPlans) {
-            const op = opsEncontradas.find(o => o.op_num === plan.op_numero);
+            const op = opsByNum[plan.op_numero];
             const rot = (roteiroMap[plan.produto_codigo] || []).find(r => r.operac === plan.operacao_codigo);
-            const qtdPendente = op ? Math.max(0, op.qtde - op.qtde_feita) : 0;
+            const keyApt = `${plan.op_numero}-${plan.operacao_codigo}`;
+            const qtdeApontadaRel = apontamentosMap[keyApt] || 0;
+            const qtdeJaFeitaRel = op ? Math.max(Number(op.qtde_feita) || 0, qtdeApontadaRel) : 0;
+            const qtdPendente = op ? Math.max(0, op.qtde - qtdeJaFeitaRel) : 0;
             const minTotais = rot ? Math.round(qtdPendente * rot.tempoMinutos) : 0;
-            const capDia = capacidades[plan.recurso_codigo] || 480;
+            const capDia = (capacidades[plan.recurso_codigo] > 0) ? capacidades[plan.recurso_codigo] : 480;
             const diasNecessarios = capDia > 0 ? Math.ceil(minTotais / capDia) : 1;
             const dataDif = plan.data_planejada_inicio !== plan.data_planejada_fim;
 
@@ -498,7 +730,10 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     total_operacoes: 0
                 };
             }
-            report.resumo_recursos[plan.recurso_codigo].total_minutos_alocados += minTotais;
+            const fatiasDestaOp = slicesByKey[`${plan.op_numero}|${plan.operacao_codigo}`] || [];
+
+            const minutosReaisAlocados = fatiasDestaOp.reduce((sum, s) => sum + s.minutos_alocados, 0);
+            report.resumo_recursos[plan.recurso_codigo].total_minutos_alocados += minutosReaisAlocados || minTotais;
             report.resumo_recursos[plan.recurso_codigo].total_operacoes += 1;
 
             report.decisoes.push({
@@ -516,10 +751,18 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 dias_necessarios: diasNecessarios,
                 data_inicio: plan.data_planejada_inicio,
                 data_fim: plan.data_planejada_fim,
+                dias_espera: plan.dias_espera || 0,
                 span_multiplos_dias: dataDif,
-                justificativa: dataDif
+                justificativa: minTotais > capDia
                     ? `Carga de ${minTotais} min excede capacidade diária de ${capDia} min do recurso ${plan.recurso_codigo}. Distribuída em ${diasNecessarios} dia(s).`
-                    : `Carga de ${minTotais} min dentro da capacidade diária de ${capDia} min. Alocada em ${plan.data_planejada_inicio}.`
+                    : dataDif
+                        ? `Carga de ${minTotais} min cabe em um dia, mas o recurso ${plan.recurso_codigo} estava parcialmente ocupado. Distribuída por ${fatiasDestaOp.length} fatia(s).`
+                        : `Carga de ${minTotais} min dentro da capacidade diária de ${capDia} min. Alocada em ${plan.data_planejada_inicio}.`,
+                fatias_diarias: fatiasDestaOp.map(s => ({
+                    data:    s.data_alocacao,
+                    qtd:     s.qtd_alocada,
+                    minutos: s.minutos_alocados,
+                })),
             });
         }
 
@@ -529,7 +772,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         const carga_diaria = {};
         for (const [date, recursos] of Object.entries(resource_buckets)) {
             for (const [recurso, restante] of Object.entries(recursos)) {
-                const capDia = capacidades[recurso] || 480;
+                const capDia = (capacidades[recurso] > 0) ? capacidades[recurso] : 480;
                 const consumido = capDia - restante;
                 if (consumido > 0) {
                     if (!carga_diaria[recurso]) carga_diaria[recurso] = { capDia, dates: {} };
@@ -542,6 +785,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         return {
             success: true,
             plans: newPlans.length,
+            daily_slices: dailySlices.length,
             agent_logs,
             report: { ...report, carga_diaria }
         };
@@ -550,7 +794,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         return {
             success: false,
             error: error.message,
-            agent_logs: []
+            agent_logs
         };
     } finally {
         if (pgClient) pgClient.release();

@@ -52,7 +52,7 @@ async function analisarRelatorioFCS(report) {
 
     // Configurações padrão de fallback
     let systemPrompt = `Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para uma empresa metalúrgica de médio porte chamada MetalFisa.
-Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo FCS (Finite Capacity Scheduling) e fornecer uma análise técnica aprofundada.`;
+Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada.`;
     let contextoNegocio = `=== CONTEXTO DA EMPRESA ===
 - Empresa: MetalFisa (metalurgia, produção sob encomenda e para estoque)
 - Todos os tempos são em MINUTOS

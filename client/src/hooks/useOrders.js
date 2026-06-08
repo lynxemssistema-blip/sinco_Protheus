@@ -43,6 +43,7 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
             cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
             pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
             produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
+            pedcli: overrides.pedcli !== undefined ? overrides.pedcli : filters.pedcli,
             dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
             dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
             dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,

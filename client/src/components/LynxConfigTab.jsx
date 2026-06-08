@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Save, Trash2, ShieldAlert, ToggleLeft, ToggleRight, Sparkles, Loader2, Database, HelpCircle, Code, ArrowRight, Send, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Calendar, User, Plus, Edit2, Play, Mail, Phone, Trash } from 'lucide-react';
+import { Bot, Save, Trash2, ShieldAlert, ToggleLeft, ToggleRight, Sparkles, Loader2, Database, HelpCircle, Code, ArrowRight, Send, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Calendar, User, Plus, Edit2, Play, Mail, Phone, Trash, X, Terminal } from 'lucide-react';
 import api from '../services/api';
 import DOMPurify from 'dompurify';
 
@@ -20,6 +20,7 @@ const CRON_TEMPLATES = [
 function renderInline(text) {
     if (!text) return '';
     return text
+        .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="lynx-chat-img max-w-full max-h-[350px] h-auto object-contain rounded-lg border border-slate-200 shadow-sm my-2 cursor-zoom-in hover:border-indigo-300 hover:shadow-md transition-all duration-200" />')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/`(.+?)`/g, '<code class="bg-slate-100 px-1 py-0.5 rounded text-[11px] font-mono text-indigo-700">$1</code>');
@@ -35,12 +36,12 @@ function RenderMarkdown({ text }) {
                 if (line.startsWith('## ')) return <h2 key={i} className="text-sm font-bold text-indigo-900 mt-3 mb-1 border-b border-indigo-50 pb-0.5">{line.slice(3)}</h2>;
                 if (line.startsWith('# ')) return <h1 key={i} className="text-base font-bold text-indigo-950 mt-3 mb-1.5">{line.slice(2)}</h1>;
                 if (line.startsWith('- ') || line.startsWith('* '))
-                    return <div key={i} className="flex gap-1.5 text-xs"><span className="text-indigo-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2))) }} /></div>;
+                    return <div key={i} className="flex gap-1.5 text-xs"><span className="text-indigo-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2)), { ADD_ATTR: ['class'] }) }} /></div>;
                 if (/^\d+\./.test(line))
-                    return <div key={i} className="flex gap-1.5 text-xs"><span className="text-indigo-500 font-bold min-w-[14px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, ''))) }} /></div>;
+                    return <div key={i} className="flex gap-1.5 text-xs"><span className="text-indigo-500 font-bold min-w-[14px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, '')), { ADD_ATTR: ['class'] }) }} /></div>;
                 if (line.startsWith('```')) return null;
                 if (!line.trim()) return <div key={i} className="h-0.5" />;
-                return <p key={i} className="text-xs leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line)) }} />;
+                return <p key={i} className="text-xs leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line), { ADD_ATTR: ['class'] }) }} />;
             })}
         </div>
     );
@@ -73,7 +74,7 @@ function ReasoningPanel({ steps }) {
                     <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin shrink-0" />
                 )}
                 <span className={`flex-1 font-semibold ${isDone ? 'text-emerald-800' : hasError ? 'text-red-800' : 'text-indigo-800'}`}>
-                    {isDone ? 'Processamento concluído' : hasError ? 'Erro no raciocínio' : 'Hermes Raciocinando...'}
+                    {isDone ? 'Processamento concluído' : hasError ? 'Erro no raciocínio' : 'Lynx Raciocinando...'}
                 </span>
                 <span className="text-slate-400 text-[9px]">{steps.length} etapa(s)</span>
                 {expanded ? <ChevronUp className="w-3 h-3 text-slate-400" /> : <ChevronDown className="w-3 h-3 text-slate-400" />}
@@ -85,7 +86,7 @@ function ReasoningPanel({ steps }) {
                         <div key={i} className="flex items-start gap-1.5 px-2.5 py-1">
                             <span className="shrink-0 mt-0.5 leading-none">{step.icon || '▶'}</span>
                             <span className="text-slate-600 flex-1 leading-normal"
-                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(step.message || '')) }} />
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(step.message || ''), { ADD_ATTR: ['class'] }) }} />
                         </div>
                     ))}
                     {!isDone && !hasError && (
@@ -100,7 +101,7 @@ function ReasoningPanel({ steps }) {
     );
 }
 
-export default function HermesConfigTab() {
+export default function LynxConfigTab() {
     // Sub-tab Navigation: 'geral', 'perfis', 'tarefas'
     const [activeSubTab, setActiveSubTab] = useState('geral');
 
@@ -118,6 +119,7 @@ export default function HermesConfigTab() {
 
     // State 2: Interactive Chat
     const [messages, setMessages] = useState([]);
+    const [lightboxImage, setLightboxImage] = useState(null);
     const [input, setInput] = useState('');
     const [chatLoading, setChatLoading] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
@@ -145,6 +147,11 @@ export default function HermesConfigTab() {
         temperature: 0.3,
         autonomia: 0
     });
+
+    // State 5: Live task execution log
+    const [liveLog, setLiveLog] = useState(null); // { taskId, taskName, steps: [], status: 'running'|'success'|'error', answer: '' }
+    const liveLogRef = useRef(null);
+    const liveSocketRef = useRef(null);
 
     const messagesEndRef = useRef(null);
 
@@ -235,7 +242,7 @@ export default function HermesConfigTab() {
         setSuccessMsg('');
         try {
             await api.put('/hermes/config', config);
-            setSuccessMsg('Configurações padrão do Hermes salvas com sucesso!');
+            setSuccessMsg('Configurações padrão do Lynx salvas com sucesso!');
             setTimeout(() => setSuccessMsg(''), 4000);
         } catch (err) {
             console.error(err);
@@ -340,7 +347,7 @@ export default function HermesConfigTab() {
                 }
             }
         } catch (err) {
-            console.error('Erro no stream do Hermes:', err);
+            console.error('Erro no stream do Lynx:', err);
             setMessages(prev => [
                 ...prev.filter(m => m.id !== thinkMsgId),
                 { id: `err-${Date.now()}`, role: 'error', text: `❌ Conexão perdida: ${err.message}`, criado_em: new Date().toISOString() }
@@ -350,7 +357,7 @@ export default function HermesConfigTab() {
     }
 
     async function handleClearHistory() {
-        if (!window.confirm('Deseja limpar todo o histórico de chat do Hermes do banco de dados?')) return;
+        if (!window.confirm('Deseja limpar todo o histórico de chat do Lynx do banco de dados?')) return;
         setClearing(true);
         try {
             await api.post('/hermes/chat/clear');
@@ -421,17 +428,10 @@ export default function HermesConfigTab() {
                 setSuccessMsg('Tarefa de agendamento criada!');
             }
             
-            // Execute task immediately
+            // Execute task immediately (reuse handleExecuteTask to also open live log)
             if (taskId) {
-                setTaskExecuting(prev => ({ ...prev, [taskId]: true }));
-                try {
-                    await api.post(`/hermes/tasks/${taskId}/execute`);
-                    alert('Tarefa salva e execução iniciada em segundo plano!');
-                } catch (err) {
-                    alert('Falha ao acionar a tarefa após salvar.');
-                } finally {
-                    setTaskExecuting(prev => ({ ...prev, [taskId]: false }));
-                }
+                await loadTasks();
+                await handleExecuteTask(taskId);
             }
 
             setTaskForm({ 
@@ -476,16 +476,63 @@ export default function HermesConfigTab() {
     }
 
     async function handleExecuteTask(id) {
+        const task = tasks.find(t => t.id === id);
         setTaskExecuting(prev => ({ ...prev, [id]: true }));
+
+        // Open live log panel
+        setLiveLog({ taskId: id, taskName: task?.nome || `Tarefa #${id}`, steps: [], status: 'running', answer: '' });
+
+        // Connect socket for live updates
+        if (liveSocketRef.current) {
+            liveSocketRef.current.disconnect();
+            liveSocketRef.current = null;
+        }
+
+        import('socket.io-client').then(({ io }) => {
+            const socket = io(window.location.origin, {
+                transports: ['polling', 'websocket'],
+                reconnectionAttempts: 2,
+            });
+            liveSocketRef.current = socket;
+
+            socket.on('connect', () => {
+                socket.emit('join_hermes_task', id);
+            });
+
+            socket.on('hermes_task_step', (step) => {
+                setLiveLog(prev => prev ? { ...prev, steps: [...prev.steps, step] } : prev);
+                // Auto-scroll log
+                setTimeout(() => liveLogRef.current?.scrollTo({ top: liveLogRef.current.scrollHeight, behavior: 'smooth' }), 50);
+            });
+
+            socket.on('hermes_task_done', (payload) => {
+                setLiveLog(prev => prev ? {
+                    ...prev,
+                    status: payload.status,
+                    answer: payload.answer || payload.message || '',
+                } : prev);
+                setTaskExecuting(prev => ({ ...prev, [id]: false }));
+                loadTasks();
+                socket.disconnect();
+            });
+
+            socket.on('connect_error', () => {});
+        }).catch(() => {});
+
         try {
             await api.post(`/hermes/tasks/${id}/execute`);
-            alert('Execução da tarefa iniciada em segundo plano pelo Hermes.');
-            setTimeout(loadTasks, 5000); // recarrega status daqui a pouco
         } catch (err) {
-            alert('Falha ao acionar a tarefa.');
-        } finally {
+            setLiveLog(prev => prev ? { ...prev, status: 'error', answer: 'Falha ao acionar a tarefa no servidor.' } : prev);
             setTaskExecuting(prev => ({ ...prev, [id]: false }));
         }
+    }
+
+    function closeLiveLog() {
+        if (liveSocketRef.current) {
+            liveSocketRef.current.disconnect();
+            liveSocketRef.current = null;
+        }
+        setLiveLog(null);
     }
 
     function startEditTask(task) {
@@ -510,6 +557,78 @@ export default function HermesConfigTab() {
 
     return (
         <div className="space-y-8 animate-fadeIn max-w-5xl">
+
+            {/* ── Live Execution Log Modal ───────────────────────────────────── */}
+            {liveLog && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[80vh] overflow-hidden">
+                        {/* Modal header */}
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Terminal className="w-4 h-4 text-indigo-400" />
+                                <span className="text-sm font-bold text-white">{liveLog.taskName}</span>
+                                {liveLog.status === 'running' && (
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-900/60 px-2 py-0.5 rounded-full border border-indigo-700">
+                                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Executando...
+                                    </span>
+                                )}
+                                {liveLog.status === 'success' && (
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-900/40 px-2 py-0.5 rounded-full border border-emerald-700">
+                                        <CheckCircle2 className="w-2.5 h-2.5" /> Concluído
+                                    </span>
+                                )}
+                                {liveLog.status === 'error' && (
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-900/40 px-2 py-0.5 rounded-full border border-red-700">
+                                        <AlertCircle className="w-2.5 h-2.5" /> Erro
+                                    </span>
+                                )}
+                            </div>
+                            <button onClick={closeLiveLog} className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Steps log */}
+                        <div ref={liveLogRef} className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-slate-950/60">
+                            {liveLog.steps.length === 0 && liveLog.status === 'running' && (
+                                <div className="text-slate-500 animate-pulse">Aguardando o agente iniciar...</div>
+                            )}
+                            {liveLog.steps.map((step, i) => (
+                                <div key={i} className={`flex gap-2 leading-relaxed ${
+                                    step.type === 'sql' ? 'text-cyan-400' :
+                                    step.type === 'thinking' ? 'text-yellow-400/80' :
+                                    step.type === 'status' ? 'text-indigo-400' :
+                                    'text-slate-300'
+                                }`}>
+                                    <span className="shrink-0 opacity-60">{step.icon || '▶'}</span>
+                                    <span>{step.message}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Final answer */}
+                        {liveLog.answer && (
+                            <div className="border-t border-slate-700 p-4 shrink-0 max-h-48 overflow-y-auto">
+                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Resposta do Agente</div>
+                                <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{liveLog.answer}</div>
+                            </div>
+                        )}
+
+                        {/* Footer */}
+                        {liveLog.status !== 'running' && (
+                            <div className="border-t border-slate-700 px-5 py-3 flex justify-end shrink-0">
+                                <button
+                                    onClick={closeLiveLog}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Header banner */}
             <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-lg relative overflow-hidden border border-indigo-900/50">
                 <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
@@ -519,7 +638,7 @@ export default function HermesConfigTab() {
                             <Bot className="w-8 h-8 text-indigo-400" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-extrabold tracking-tight">Agente Hermes</h1>
+                            <h1 className="text-xl font-extrabold tracking-tight">Agente Lynx</h1>
                             <p className="text-slate-300 text-xs mt-1 max-w-xl leading-relaxed">
                                 Painel de controle corporativo do agente de IA autônomo. Configure parâmetros, crie perfis
                                 dedicados de agentes e gerencie tarefas agendadas em segundo plano.
@@ -585,7 +704,7 @@ export default function HermesConfigTab() {
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                             <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                 <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                    ⚙️ Parâmetros Fundamentais do Hermes
+                                    ⚙️ Parâmetros Fundamentais do Lynx
                                 </span>
                             </div>
                             <div className="p-6 space-y-5">
@@ -593,13 +712,13 @@ export default function HermesConfigTab() {
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                                         System Prompt Padrão (Diretrizes de Raciocínio)
-                                        <HelpCircle className="w-3.5 h-3.5 text-slate-400 cursor-help" title="Define a identidade, regras e conhecimentos que o Hermes usará na conversa padrão." />
+                                        <HelpCircle className="w-3.5 h-3.5 text-slate-400 cursor-help" title="Define a identidade, regras e conhecimentos que o Lynx usará na conversa padrão." />
                                     </label>
                                     <textarea
                                         className="w-full min-h-[220px] p-3 border border-slate-200 rounded-xl bg-slate-50/30 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-mono leading-relaxed resize-y"
                                         value={config.system_prompt}
                                         onChange={(e) => setConfig(prev => ({ ...prev, system_prompt: e.target.value }))}
-                                        placeholder="Digite as instruções fundamentais do Hermes..."
+                                        placeholder="Digite as instruções fundamentais do Lynx..."
                                     />
                                 </div>
 
@@ -719,7 +838,14 @@ export default function HermesConfigTab() {
                             </div>
 
                             {/* Chat Messages */}
-                            <div className="p-4 overflow-y-auto flex-1 space-y-4 bg-slate-50/30">
+                            <div 
+                                className="p-4 overflow-y-auto flex-1 space-y-4 bg-slate-50/30"
+                                onClick={(e) => {
+                                    if (e.target.tagName === 'IMG' && e.target.classList.contains('lynx-chat-img')) {
+                                        setLightboxImage({ src: e.target.src, alt: e.target.alt });
+                                    }
+                                }}
+                            >
                                 {historyLoading ? (
                                     <div className="flex justify-center items-center h-full">
                                         <Loader2 className="w-6 h-6 animate-spin text-slate-350 text-slate-350" />
@@ -727,7 +853,7 @@ export default function HermesConfigTab() {
                                 ) : messages.length === 0 ? (
                                     <div className="text-center py-16 text-slate-400 space-y-2 h-full flex flex-col justify-center">
                                         <Bot className="w-10 h-10 mx-auto opacity-35 text-indigo-400 animate-pulse" />
-                                        <p className="text-xs font-semibold text-slate-500">Nenhum diálogo recente com o Hermes.</p>
+                                        <p className="text-xs font-semibold text-slate-500">Nenhum diálogo recente com o Lynx.</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -760,7 +886,7 @@ export default function HermesConfigTab() {
                                                         <div className={`flex justify-between items-center text-[9px] gap-4 font-bold uppercase tracking-wider mb-0.5 ${
                                                             isUser ? 'text-indigo-200' : 'text-slate-400'
                                                         }`}>
-                                                            <span>{isUser ? 'Usuário' : 'Hermes'}</span>
+                                                            <span>{isUser ? 'Usuário' : 'Lynx'}</span>
                                                             {msg.criado_em && (
                                                                 <span>
                                                                     {new Date(msg.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -819,7 +945,7 @@ export default function HermesConfigTab() {
                                     disabled={chatLoading || historyLoading}
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
-                                    placeholder={chatLoading ? 'Hermes está raciocinando...' : 'Digite sua pergunta de teste...'}
+                                    placeholder={chatLoading ? 'Lynx está raciocinando...' : 'Digite sua pergunta de teste...'}
                                     className="flex-1 px-3 py-2 border border-slate-250 border-slate-200 rounded-xl bg-white text-xs text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                                 />
                                 <button
@@ -955,7 +1081,7 @@ export default function HermesConfigTab() {
                                         value={taskForm.prompt_execucao}
                                         onChange={(e) => setTaskForm(t => ({ ...t, prompt_execucao: e.target.value }))}
                                         className="w-full min-h-[140px] p-2.5 border border-slate-200 rounded-lg text-xs font-mono text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                        placeholder="O prompt que o Hermes executará ao iniciar a rotina (Ex: Analise as OPs atrasadas no MySQL e liste-as...)"
+                                        placeholder="O prompt que o Lynx executará ao iniciar a rotina (Ex: Analise as OPs atrasadas no MySQL e liste-as...)"
                                     />
                                 </div>
 
@@ -1138,14 +1264,14 @@ export default function HermesConfigTab() {
                                         </div>
 
                                         <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="text-slate-400">Última execução:</span>
                                                 <span className="font-semibold text-slate-700">
                                                     {task.last_run ? new Date(task.last_run).toLocaleString('pt-BR') : 'Nunca executada'}
                                                 </span>
                                                 {task.status_last_run && (
                                                     <span className={`font-bold px-2 py-0.5 rounded-full text-[9px] uppercase border ${
-                                                        task.status_last_run === 'success' 
+                                                        task.status_last_run === 'success'
                                                             ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
                                                             : task.status_last_run === 'running'
                                                             ? 'text-indigo-750 bg-indigo-50 border-indigo-100 animate-pulse'
@@ -1153,6 +1279,22 @@ export default function HermesConfigTab() {
                                                     }`}>
                                                         {task.status_last_run}
                                                     </span>
+                                                )}
+                                                {task.last_output && (
+                                                    <button
+                                                        onClick={() => setLiveLog({
+                                                            taskId: task.id,
+                                                            taskName: task.nome,
+                                                            steps: [],
+                                                            status: task.status_last_run === 'success' ? 'success' : 'error',
+                                                            answer: task.last_output
+                                                        })}
+                                                        className="flex items-center gap-1 text-[9px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-100 transition-colors"
+                                                        title="Ver resultado da última execução"
+                                                    >
+                                                        <Terminal className="w-2.5 h-2.5" />
+                                                        Ver Resultado
+                                                    </button>
                                                 )}
                                             </div>
 
@@ -1177,6 +1319,34 @@ export default function HermesConfigTab() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Lightbox Modal */}
+            {lightboxImage && (
+                <div 
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md transition-all duration-300 animate-fadeIn cursor-zoom-out"
+                    onClick={() => setLightboxImage(null)}
+                >
+                    <button 
+                        className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors outline-none cursor-pointer"
+                        onClick={() => setLightboxImage(null)}
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                    <div className="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                        <img 
+                            src={lightboxImage.src} 
+                            alt={lightboxImage.alt || 'Imagem ampliada'} 
+                            className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/15 animate-zoomIn cursor-zoom-out"
+                            onClick={() => setLightboxImage(null)}
+                        />
+                        {lightboxImage.alt && (
+                            <p className="text-white/80 text-xs font-semibold bg-slate-900/60 px-4 py-1.5 rounded-full backdrop-blur-sm border border-white/5">
+                                {lightboxImage.alt}
+                            </p>
+                        )}
                     </div>
                 </div>
             )}

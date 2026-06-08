@@ -13,7 +13,7 @@ const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
@@ -82,6 +82,18 @@ router.get('/', async (req, res) => {
                 AND COALESCE(c6_filter.d_e_l_e_t_, '') = ''
             )`;
             params.push(produto);
+            paramCount++;
+        }
+
+        if (pedcli) {
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM public.sc6010 c6_filter 
+                WHERE c6_filter.c6_num = c5.c5_num 
+                AND c6_filter.c6_filial = c5.c5_filial 
+                AND c6_filter.c6_pedcli ILIKE '%' || $${paramCount} || '%'
+                AND COALESCE(c6_filter.d_e_l_e_t_, '') = ''
+            )`;
+            params.push(pedcli);
             paramCount++;
         }
 
@@ -304,7 +316,7 @@ router.get('/flat', async (req, res) => {
     let paramsCount = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -391,6 +403,12 @@ router.get('/flat', async (req, res) => {
         if (produto) {
             whereClause += ` AND c6.c6_produto ILIKE '%' || $${paramCount} || '%'`;
             params.push(produto);
+            paramCount++;
+        }
+
+        if (pedcli) {
+            whereClause += ` AND c6.c6_pedcli ILIKE '%' || $${paramCount} || '%'`;
+            params.push(pedcli);
             paramCount++;
         }
 
@@ -2272,10 +2290,7 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
 router.delete('/pcp-forecasts/:id', async (req, res) => {
     try {
         const [rows] = await mysqlPool.query('SELECT op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
-        const opVal = rows.length > 0 ? rows[0].op_protheus : null;
-        if (opVal && String(opVal).trim().length > 0 && String(opVal).trim() !== '-') {
-            return res.status(400).json({ error: 'Não é possível remover uma programação que já possui Ordem de Produção (O.P.) vinculada.' });
-        }
+
         await mysqlPool.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
@@ -2479,7 +2494,7 @@ router.get('/op-mirror/:id', async (req, res) => {
                             'recurso',       TRIM(g2.g2_recurso),
                             'desc_operacao', TRIM(h1.h1_descri),
                             'setup',         g2.g2_setup,
-                            'tempo_padrao',  g2.g2_tempad,
+                            'tempo_padrao',  ROUND(g2.g2_tempad::numeric, 3),
                             'ferramenta',    TRIM(g2.g2_ferram)
                         ) ORDER BY TRIM(g2.g2_operac)
                     ) AS operacoes

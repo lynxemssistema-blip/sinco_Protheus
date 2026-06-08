@@ -7,13 +7,13 @@ const pool = mysql.createPool({
     password: process.env.MYSQL_PASS,
     database: process.env.MYSQL_DB,
     waitForConnections: true,
-    connectionLimit: 20,       // Maximum pool size — constrained to 20 per client instance
-    queueLimit: 200,           // Max queued requests before rejecting (prevents infinite hang)
+    connectionLimit: 15,
+    queueLimit: 100,
     charset: 'utf8mb4',
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
     connectTimeout: 10000,
-    idleTimeout: 120000,
+    idleTimeout: 60000,
 });
 
 // DBA-tuned session variables set on connection initialization (avoids pool configuration warnings)
@@ -43,19 +43,43 @@ pool.on('error', (err) => {
     console.error('❌ Erro inesperado no MySQL Pool:', err.message);
 });
 
-// Wrapper com retry automático para ECONNRESET
 const RETRYABLE = new Set(['ECONNRESET', 'PROTOCOL_CONNECTION_LOST', 'ECONNREFUSED', 'ETIMEDOUT']);
-const originalQuery = pool.query.bind(pool);
-pool.query = async function queryWithRetry(sql, params) {
+const originalQuery   = pool.query.bind(pool);
+const originalExecute = pool.execute.bind(pool);
+
+// Wraps a mysql2 pool call in a hard timeout so indefinite hangs (queue waits,
+// silent TCP drops, slow networks) never block the Node.js event loop forever.
+function makeWithTimeout(acquireTimeoutMs) {
+    return (promise) => {
+        let timer;
+        return Promise.race([
+            promise.finally(() => clearTimeout(timer)),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    const e = new Error('MySQL pool acquire/execute timeout');
+                    e.code = 'POOL_TIMEOUT';
+                    reject(e);
+                }, acquireTimeoutMs);
+            })
+        ]);
+    };
+}
+
+async function wrappedCall(originalFn, sql, params, acquireTimeoutMs) {
+    const withTimeout = makeWithTimeout(acquireTimeoutMs);
     try {
-        return await originalQuery(sql, params);
+        return await withTimeout(originalFn(sql, params));
     } catch (err) {
         if (RETRYABLE.has(err.code)) {
             console.warn(`⚠️ MySQL retry após ${err.code}...`);
-            return await originalQuery(sql, params);
+            return await withTimeout(originalFn(sql, params));
         }
         throw err;
     }
-};
+}
+
+// Default: 20s — enough for bulk inserts but fast enough to fail light queries early.
+pool.query   = (sql, params, acquireTimeoutMs = 20000) => wrappedCall(originalQuery,   sql, params, acquireTimeoutMs);
+pool.execute = (sql, params, acquireTimeoutMs = 20000) => wrappedCall(originalExecute, sql, params, acquireTimeoutMs);
 
 module.exports = pool;

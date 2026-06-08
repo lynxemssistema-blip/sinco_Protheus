@@ -26,6 +26,7 @@ import { BillingForecastInput } from './orders/BillingForecastInput';
 // Sub-components
 import OrderFiltersBar from './orders/OrderFiltersBar';
 import FlatItemRow from './orders/FlatItemRow';
+import ItemStatusBadge from './orders/ItemStatusBadge';
 import TableSkeletonRows from './orders/TableSkeletonRows';
 import RetryToast from './orders/RetryToast';
 import { useOrders } from '../hooks/useOrders';
@@ -107,6 +108,7 @@ const OrdersTable = () => {
         cliente: orderFilters.cliente,
         pedido: orderFilters.pedido,
         produto: orderFilters.produto,
+        pedcli: orderFilters.pedcli || '',
         dataInicial: orderFilters.dataInicial,
         dataFinal: orderFilters.dataFinal,
         dateType: orderFilters.dateType,
@@ -116,7 +118,7 @@ const OrdersTable = () => {
         sortBy: orderFilters.sortBy,
         sortOrder: orderFilters.sortOrder
     }), [
-        orderFilters.cliente, orderFilters.pedido, orderFilters.produto,
+        orderFilters.cliente, orderFilters.pedido, orderFilters.produto, orderFilters.pedcli,
         orderFilters.dataInicial, orderFilters.dataFinal, orderFilters.dateType,
         orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active,
         orderFilters.sortBy, orderFilters.sortOrder
@@ -178,7 +180,7 @@ const OrdersTable = () => {
     useEffect(() => { setSelectedItems([]); }, [orders, viewMode]);
 
     const hasAnyFilter = () => {
-        return !!(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
+        return !!(filters.cliente || filters.pedido || filters.produto || filters.pedcli || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
     };
 
     // Fetch on page/viewMode/active/sort filter change
@@ -696,7 +698,7 @@ const OrdersTable = () => {
                         <span className="ml-auto text-xs text-blue-400 italic">Isso pode levar alguns segundos dependendo dos filtros.</span>
                     </div>
                 )}
-                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-3 items-end">
+                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-10 gap-y-4 gap-x-3 items-end">
                     <div className="flex flex-col gap-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
                         <div className="relative">
@@ -721,6 +723,21 @@ const OrdersTable = () => {
                                 name="pedido"
                                 placeholder="Nº Pedido..."
                                 value={filters.pedido}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">Ordem Compra:</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="pedcli"
+                                placeholder="PC..."
+                                value={filters.pedcli || ''}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                             />
@@ -897,7 +914,7 @@ const OrdersTable = () => {
                         </button>
                     </div>
 
-                    <div className="md:col-span-8 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
+                    <div className="md:col-span-10 lg:col-span-10 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
                         <div className="flex flex-col gap-1 flex-1">
                             <div className="flex items-center gap-2">
                                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1493,77 +1510,14 @@ const OrdersTable = () => {
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2">{item.descricao}</td>
                                                                                                     <td className="px-4 py-2 text-center">
-                                                                                                        {parseFloat(item.qtd_faturar || 0) <= 0 ? (
-                                                                                                            <div className="relative group inline-flex justify-center">
-                                                                                                                <span className="px-2 py-1 text-[10px] font-bold bg-green-100 text-green-700 rounded border border-green-200 cursor-help">ENTREGUE</span>
-                                                                                                                {item.notas_fiscais && item.notas_fiscais.length > 0 && (
-                                                                                                                    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                                                                                                                        <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px]">
-                                                                                                                            <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Notas Fiscais Emitidas:</div>
-                                                                                                                            {item.notas_fiscais.map((nf, nfIdx) => (
-                                                                                                                                <div
-                                                                                                                                    key={nfIdx}
-                                                                                                                                    className="py-0.5 flex justify-between gap-3 hover:bg-slate-700/50 cursor-pointer rounded px-1 transition-colors group/nf"
-                                                                                                                                    onClick={(e) => {
-                                                                                                                                        e.stopPropagation();
-                                                                                                                                        setSelectedInvoice(nf);
-                                                                                                                                        setInvoiceModalItem(item);
-                                                                                                                                    }}
-                                                                                                                                >
-                                                                                                                                    <span><span className="text-slate-400">NF:</span> {nf.nota} <span className="text-slate-500">({nf.serie})</span> <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span></span>
-                                                                                                                                    <span><span className="text-slate-400">Emissão:</span> {nf.emissao} <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span></span>
-                                                                                                                                    <span className="font-semibold text-blue-300 ml-2 flex items-center gap-1">
-                                                                                                                                        {nf.qtd} {item.unidade}
-                                                                                                                                        <FileText className="h-3 w-3 opacity-0 group-hover/nf:opacity-100 transition-opacity" />
-                                                                                                                                    </span>
-                                                                                                                                </div>
-                                                                                                                            ))}
-                                                                                                                        </div>
-                                                                                                                        <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                                                                    </div>
-                                                                                                                )}
-                                                                                                            </div>
-                                                                                                        ) : !item.op_num || item.op_num === '-' ? (
-                                                                                                            <div className="relative group inline-flex justify-center">
-                                                                                                                <span className="px-2 py-1 text-[10px] font-bold bg-red-100 text-red-700 rounded border border-red-200">PENDENTE</span>
-                                                                                                                <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                                                                                                                    <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap">
-                                                                                                                        Aguardando abertura de OP
-                                                                                                                    </div>
-                                                                                                                    <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                                                                </div>
-                                                                                                            </div>
-                                                                                                        ) : (
-                                                                                                            <div className="relative group inline-flex justify-center">
-                                                                                                                <span className={`px-2 py-1 text-[10px] font-bold rounded border ${item.notas_fiscais && item.notas_fiscais.length > 0 ? 'cursor-help' : ''} bg-orange-100 text-orange-700 border-orange-200`}>LIBERADO</span>
-                                                                                                                {item.notas_fiscais && item.notas_fiscais.length > 0 && (
-                                                                                                                    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
-                                                                                                                        <div className="bg-slate-800 text-slate-100 text-[10px] rounded p-2 shadow-xl border border-slate-700 whitespace-nowrap text-left min-w-[150px]">
-                                                                                                                            <div className="font-bold text-white mb-1 border-b border-slate-600 pb-1">Notas Fiscais Emitidas (Parciais):</div>
-                                                                                                                            {item.notas_fiscais.map((nf, nfIdx) => (
-                                                                                                                                <div
-                                                                                                                                    key={nfIdx}
-                                                                                                                                    className="py-0.5 flex justify-between gap-3 hover:bg-slate-700/50 cursor-pointer rounded px-1 transition-colors group/nf"
-                                                                                                                                    onClick={(e) => {
-                                                                                                                                        e.stopPropagation();
-                                                                                                                                        setSelectedInvoice(nf);
-                                                                                                                                        setInvoiceModalItem(item);
-                                                                                                                                    }}
-                                                                                                                                >
-                                                                                                                                    <span><span className="text-slate-400">NF:</span> {nf.nota} <span className="text-slate-500">({nf.serie})</span> <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span></span>
-                                                                                                                                    <span><span className="text-slate-400">Emissão:</span> {nf.emissao} <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span></span>
-                                                                                                                                    <span className="font-semibold text-blue-300 ml-2 flex items-center gap-1">
-                                                                                                                                        {nf.qtd} {item.unidade}
-                                                                                                                                        <FileText className="h-3 w-3 opacity-0 group-hover/nf:opacity-100 transition-opacity" />
-                                                                                                                                    </span>
-                                                                                                                                </div>
-                                                                                                                            ))}
-                                                                                                                        </div>
-                                                                                                                        <div className="w-2 h-2 bg-slate-800 rotate-45 -mt-1 border-b border-r border-slate-700"></div>
-                                                                                                                    </div>
-                                                                                                                )}
-                                                                                                            </div>
-                                                                                                        )}
+                                                                                                        <ItemStatusBadge
+                                                                                                            item={item}
+                                                                                                            onNfClick={(nf) => {
+                                                                                                                setSelectedInvoice(nf);
+                                                                                                                setInvoiceModalItem(item);
+                                                                                                            }}
+                                                                                                            index={i}
+                                                                                                        />
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-center text-xs text-gray-600">
                                                                                                         {item.engineering_start_date ? new Date(item.engineering_start_date).toLocaleDateString('pt-BR') : '-'}

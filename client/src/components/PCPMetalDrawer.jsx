@@ -4,7 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 import DOMPurify from 'dompurify';
 // ── Inline Markdown renderer ──────────────────────────────────────────────────
 function renderInline(text) {
+    if (!text) return '';
     return text
+        .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="lynx-chat-img max-w-full max-h-[350px] h-auto object-contain rounded-lg border border-slate-200 shadow-sm my-2 cursor-zoom-in hover:border-slate-350 hover:shadow-md transition-all duration-200" />')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/`(.+?)`/g, '<code class="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono text-blue-700">$1</code>');
@@ -20,12 +22,12 @@ function RenderMarkdown({ text }) {
                 if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-blue-800 mt-4 mb-1 border-b border-blue-100 pb-1">{line.slice(3)}</h2>;
                 if (line.startsWith('# ')) return <h1 key={i} className="text-lg font-bold text-blue-900 mt-4 mb-2">{line.slice(2)}</h1>;
                 if (line.startsWith('- ') || line.startsWith('* '))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2))) }} /></div>;
+                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2)), { ADD_ATTR: ['class'] }) }} /></div>;
                 if (/^\d+\./.test(line))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, ''))) }} /></div>;
+                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, '')), { ADD_ATTR: ['class'] }) }} /></div>;
                 if (line.startsWith('```')) return null;
                 if (!line.trim()) return <div key={i} className="h-1" />;
-                return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line)) }} />;
+                return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line), { ADD_ATTR: ['class'] }) }} />;
             })}
         </div>
     );
@@ -65,7 +67,7 @@ function ReasoningPanel({ steps }) {
                         <div key={i} className="flex items-start gap-2 px-3 py-1.5">
                             <span className="shrink-0 mt-0.5 text-base leading-none">{step.icon || '▶'}</span>
                             <span className="text-slate-700 flex-1"
-                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(step.message || '')) }} />
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(step.message || ''), { ADD_ATTR: ['class'] }) }} />
                         </div>
                     ))}
                     {!isDone && !hasError && (
@@ -114,6 +116,7 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
     // historico = lightweight [{role:'user'|'agent', text}] for Gemini context
     const [historico, setHistorico] = useState([]);
     const [input, setInput] = useState('');
+    const [lightboxImage, setLightboxImage] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showSQL, setShowSQL] = useState({});
     const bottomRef = useRef(null);
@@ -341,7 +344,14 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                <div 
+                    className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50"
+                    onClick={(e) => {
+                        if (e.target.tagName === 'IMG' && e.target.classList.contains('lynx-chat-img')) {
+                            setLightboxImage({ src: e.target.src, alt: e.target.alt });
+                        }
+                    }}
+                >
                     {messages.map((msg, idx) => (
                         <div key={msg.id || idx}>
 
@@ -454,6 +464,34 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
                     </p>
                 </div>
             </div>
+
+            {/* Lightbox Modal */}
+            {lightboxImage && (
+                <div 
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md transition-all duration-300 animate-fadeIn cursor-zoom-out"
+                    onClick={() => setLightboxImage(null)}
+                >
+                    <button 
+                        className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors outline-none cursor-pointer"
+                        onClick={() => setLightboxImage(null)}
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                    <div className="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                        <img 
+                            src={lightboxImage.src} 
+                            alt={lightboxImage.alt || 'Imagem ampliada'} 
+                            className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/15 animate-zoomIn cursor-zoom-out"
+                            onClick={() => setLightboxImage(null)}
+                        />
+                        {lightboxImage.alt && (
+                            <p className="text-white/80 text-xs font-semibold bg-slate-900/60 px-4 py-1.5 rounded-full backdrop-blur-sm border border-white/5">
+                                {lightboxImage.alt}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

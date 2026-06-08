@@ -211,7 +211,7 @@ export default function PlanningAuditPanel() {
                                             <td className="p-3 text-center">
                                                 <button 
                                                     onClick={() => toggleRow(log)}
-                                                    className="flex items-center justify-center gap-1 mx-auto bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold px-2 py-1 rounded text-xs transition-colors"
+                                                    className="flex items-center justify-center gap-1 mx-auto bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold px-2 py-1 rounded text-xs transition-colors"
                                                     title="Ver histórico desta operação"
                                                 >
                                                     Rev {log.revisao}
@@ -238,24 +238,24 @@ export default function PlanningAuditPanel() {
                                         {isExpanded && (
                                             <tr className="bg-slate-50 border-b border-slate-200">
                                                 <td colSpan="8" className="p-4 px-8">
-                                                    <div className="bg-white rounded border border-purple-200 shadow-inner p-4">
+                                                    <div className="bg-white rounded border border-indigo-200 shadow-inner p-4">
                                                         <h4 className="font-bold text-slate-700 text-sm mb-3 flex items-center gap-2">
-                                                            <History className="w-4 h-4 text-purple-600" />
+                                                            <History className="w-4 h-4 text-indigo-600" />
                                                             Histórico de Planejamento (OP: {log.op_numero} - Recurso: {rec})
                                                         </h4>
                                                         
                                                         {isHistoryLoading ? (
                                                             <div className="flex justify-center p-4">
-                                                                <RefreshCw className="w-5 h-5 text-purple-500 animate-spin" />
+                                                                <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
                                                             </div>
                                                         ) : historyData.length === 0 ? (
                                                             <p className="text-sm text-slate-500">Nenhum histórico encontrado.</p>
                                                         ) : (
                                                             <div className="space-y-2">
                                                                 {historyData.map(h => (
-                                                                    <div key={h.id} className={`flex flex-wrap items-center justify-between p-3 rounded border text-sm ${h.id === log.id ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100'}`}>
+                                                                    <div key={h.id} className={`flex flex-wrap items-center justify-between p-3 rounded border text-sm ${h.id === log.id ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100'}`}>
                                                                         <div className="flex items-center gap-3">
-                                                                            <span className={`font-bold px-2 py-0.5 rounded text-xs ${h.id === log.id ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                                                            <span className={`font-bold px-2 py-0.5 rounded text-xs ${h.id === log.id ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
                                                                                 Rev {h.revisao}
                                                                             </span>
                                                                             <span className="text-slate-600 font-medium w-32">{new Date(h.criado_em).toLocaleString('pt-BR')}</span>
@@ -271,7 +271,7 @@ export default function PlanningAuditPanel() {
                                                                                 "{h.observacao}"
                                                                             </div>
                                                                         )}
-                                                                        {h.id === log.id && <span className="text-xs font-bold text-purple-600 ml-2">(Atual na tabela)</span>}
+                                                                        {h.id === log.id && <span className="text-xs font-bold text-indigo-600 ml-2">(Atual na tabela)</span>}
                                                                     </div>
                                                                 ))}
                                                             </div>
