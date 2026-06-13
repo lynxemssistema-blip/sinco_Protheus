@@ -549,9 +549,21 @@ router.get('/vertical-pendencias', async (req, res) => {
       paramsArr.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      conditions.push(`(c2.c2_pedido = $${pCount} OR root_op.c2_pedido = $${pCount})`);
-      paramsArr.push(String(pedido).trim().padStart(6, '0'));
-      pCount++;
+      const pedidoList = String(pedido).split(',')
+        .map(p => p.trim())
+        .filter(p => p.length > 0)
+        .map(p => p.padStart(6, '0'));
+
+      if (pedidoList.length === 1) {
+        conditions.push(`(c2.c2_pedido = $${pCount} OR root_op.c2_pedido = $${pCount})`);
+        paramsArr.push(pedidoList[0]);
+        pCount++;
+      } else if (pedidoList.length > 1) {
+        const placeholders = pedidoList.map((_, i) => `$${pCount + i}`).join(', ');
+        conditions.push(`(c2.c2_pedido IN (${placeholders}) OR root_op.c2_pedido IN (${placeholders}))`);
+        paramsArr.push(...pedidoList);
+        pCount += pedidoList.length;
+      }
     }
     if (produto) {
       conditions.push(`(TRIM(c2.c2_produto) ILIKE $${pCount} OR TRIM(b1.b1_desc) ILIKE $${pCount})`);
@@ -773,9 +785,21 @@ router.get('/vertical/:operacao', async (req, res) => {
       sc2Params.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
-      sc2Conditions.push(`(c2.c2_pedido = $${sc2Count} OR root_op.c2_pedido = $${sc2Count})`);
-      sc2Params.push(String(pedido).trim().padStart(6, '0'));
-      sc2Count++;
+      const pedidoList = String(pedido).split(',')
+        .map(p => p.trim())
+        .filter(p => p.length > 0)
+        .map(p => p.padStart(6, '0'));
+
+      if (pedidoList.length === 1) {
+        sc2Conditions.push(`(c2.c2_pedido = $${sc2Count} OR root_op.c2_pedido = $${sc2Count})`);
+        sc2Params.push(pedidoList[0]);
+        sc2Count++;
+      } else if (pedidoList.length > 1) {
+        const placeholders = pedidoList.map((_, i) => `$${sc2Count + i}`).join(', ');
+        sc2Conditions.push(`(c2.c2_pedido IN (${placeholders}) OR root_op.c2_pedido IN (${placeholders}))`);
+        sc2Params.push(...pedidoList);
+        sc2Count += pedidoList.length;
+      }
     }
     if (produto) {
       const produtoTrimmed = produto.trim().toUpperCase();

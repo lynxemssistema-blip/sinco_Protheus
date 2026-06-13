@@ -221,7 +221,7 @@ export default function VerticalAppointmentPage() {
         setRncTarget(buildOpObj(row));
     };
 
-    const handleAppointmentSave = async (payload) => {
+    const handleAppointmentSave = async (dataPayload) => {
         // API chamada movida para dentro do Modal
         setAppointingOp(null);
         loadData(false);

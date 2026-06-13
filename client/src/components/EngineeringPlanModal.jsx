@@ -3,7 +3,7 @@ import { X, Calendar, Save, History, ChevronDown, ChevronUp } from 'lucide-react
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
-const EngineeringPlanModal = ({ isOpen, onClose, pedido, item, currentDate, currentObs, onSave }) => {
+const EngineeringPlanModal = ({ isOpen, onClose, pedido, item, currentDate, currentObs, onSave, batchItems }) => {
     const { user } = useAuth();
     const [date, setDate] = useState('');
     const [obs, setObs] = useState('');
@@ -49,11 +49,27 @@ const EngineeringPlanModal = ({ isOpen, onClose, pedido, item, currentDate, curr
         if (!date) return alert('Informe a data planejada.');
         setSaving(true);
         try {
-            await api.post(`/pedidos/${pedido}/items/${item}/notes`, {
-                pcp_planned_eng_date: date,
-                pcp_planned_eng_obs: obs,
-            });
-            if (onSave) onSave({ pcp_planned_eng_date: date, pcp_planned_eng_obs: obs });
+            if (batchItems && batchItems.length > 0) {
+                const res = await api.post('/pedidos/batch/items/notes', {
+                    items: batchItems,
+                    formData: {
+                        pcp_planned_eng_date: date,
+                        pcp_planned_eng_obs: obs,
+                    }
+                });
+                const { errors: batchErrors } = res.data;
+                if (batchErrors && batchErrors.length > 0) {
+                    console.error('Batch errors:', batchErrors);
+                    alert(`Salvo com ${batchErrors.length} erro(s). Verifique o console.`);
+                }
+                if (onSave) onSave({ pcp_planned_eng_date: date, pcp_planned_eng_obs: obs }, true);
+            } else {
+                await api.post(`/pedidos/${pedido}/items/${item}/notes`, {
+                    pcp_planned_eng_date: date,
+                    pcp_planned_eng_obs: obs,
+                });
+                if (onSave) onSave({ pcp_planned_eng_date: date, pcp_planned_eng_obs: obs }, false);
+            }
             onClose();
         } catch (err) {
             alert('Erro ao salvar: ' + (err.response?.data?.error || err.message));
@@ -89,10 +105,13 @@ const EngineeringPlanModal = ({ isOpen, onClose, pedido, item, currentDate, curr
                 <div className="bg-indigo-50 px-5 py-4 border-b border-indigo-100 flex justify-between items-start">
                     <div>
                         <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
-                            <Calendar className="w-4 h-4" /> Data Planejada — Engenharia
+                            <Calendar className="w-4 h-4" /> Data Planejada — Engenharia {batchItems && batchItems.length > 0 && '(Em Lote)'}
                         </h3>
                         <p className="text-xs text-indigo-600 mt-0.5">
-                            Pedido: <span className="font-mono font-bold">{pedido}</span> · Item: <span className="font-mono font-bold">{item}</span>
+                            {batchItems && batchItems.length > 0 
+                                ? `Aplicando a ${batchItems.length} itens selecionados`
+                                : <>Pedido: <span className="font-mono font-bold">{pedido}</span> · Item: <span className="font-mono font-bold">{item}</span></>
+                            }
                         </p>
                     </div>
                     <button onClick={onClose} className="p-1 hover:bg-indigo-200 rounded-full transition-colors">
@@ -191,7 +210,7 @@ const EngineeringPlanModal = ({ isOpen, onClose, pedido, item, currentDate, curr
                         className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70"
                     >
                         <Save className="w-4 h-4" />
-                        {saving ? 'Salvando...' : 'Salvar'}
+                        {saving ? 'Salvando...' : (batchItems && batchItems.length > 0 ? `Aplicar em ${batchItems.length} itens` : 'Salvar')}
                     </button>
                 </div>
             </div>

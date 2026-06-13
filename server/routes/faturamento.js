@@ -324,7 +324,7 @@ router.post('/solicitacoes', async (req, res) => {
                                 <ul style="list-style-type: none; padding-left: 0; background-color: #f8fafc; padding: 15px; border-radius: 5px;">
                                     <li><strong>Nº da Solicitação:</strong> <span style="font-size: 16px; font-weight: bold;">${numero_solicitacao}</span></li>
                                     <li><strong>Solicitante:</strong> ${usuario || 'Sistema'}</li>
-                                    <li><strong>Data e Hora:</strong> ${new Date().toLocaleString('pt-BR')}</li>
+                                    <li><strong>Data e Hora:</strong> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</li>
                                     <li><strong>Observações:</strong> ${observacao || 'Nenhuma observação adicional.'}</li>
                                 </ul>
                                 <h3 style="color: #334155; margin-top: 20px;">Itens da Solicitação</h3>
@@ -776,7 +776,7 @@ router.post('/enviar-email-lote', async (req, res) => {
                 <div style="margin-bottom: 30px; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; background-color: #fafbfc;">
                     <h3 style="color: #0f172a; margin-top: 0; margin-bottom: 5px;">Solicitação: ${sol.numero_solicitacao}</h3>
                     <p style="margin: 0; font-size: 13px; color: #475569;"><strong>Solicitante:</strong> ${sol.usuario}</p>
-                    <p style="margin: 0 0 15px 0; font-size: 13px; color: #475569;"><strong>Data:</strong> ${new Date(sol.created_at).toLocaleString('pt-BR')}</p>
+                    <p style="margin: 0 0 15px 0; font-size: 13px; color: #475569;"><strong>Data:</strong> ${new Date(sol.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                     
                     <table style="width: 100%; border-collapse: collapse;">
                         <thead style="background-color: #f1f5f9; text-align: left;">
@@ -945,13 +945,16 @@ router.get('/dashboard', async (req, res) => {
             cliente:        "COALESCE(NULLIF(TRIM(i.nome_cliente), ''), 'Não identificado')",
             produto:        "COALESCE(NULLIF(TRIM(i.codigo_produto), ''), 'Não identificado')",
             usuario:        "COALESCE(NULLIF(TRIM(s.usuario), ''), 'Não identificado')",
+            dia:            "DATE_FORMAT(s.created_at, '%Y-%m-%d')",
+            semana:         "DATE_FORMAT(DATE_SUB(s.created_at, INTERVAL WEEKDAY(s.created_at) DAY), '%Y-%m-%d')",
             mes:            "DATE_FORMAT(s.created_at, '%Y-%m')",
             status:         "s.status",
             pedido_cliente: "COALESCE(NULLIF(TRIM(i.pedido_cliente), ''), 'Sem PC')",
         };
         const groupLabels = {
             cliente: 'Cliente', produto: 'Produto', usuario: 'Usuário',
-            mes: 'Mês', status: 'Status', pedido_cliente: 'Pedido Cliente'
+            dia: 'Dia', semana: 'Semana', mes: 'Mês',
+            status: 'Status', pedido_cliente: 'Pedido Cliente'
         };
         const groupField = groupMap[groupBy] || groupMap.cliente;
         const groupLabel = groupLabels[groupBy] || 'Cliente';
@@ -962,13 +965,14 @@ router.get('/dashboard', async (req, res) => {
                 COUNT(DISTINCT s.id)       AS qtd_solicitacoes,
                 COUNT(i.id)                AS qtd_itens,
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
-                COALESCE(SUM(i.valor_total), 0)           AS valor_total
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total,
+                COALESCE(SUM(CASE WHEN s.status = 'Atendido' THEN i.valor_total ELSE 0 END), 0) AS valor_faturado
             FROM app_faturamento_solicitacoes s
             LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
             WHERE ${whereSQL}
             GROUP BY label
-            ORDER BY valor_total DESC
-            LIMIT 20
+            ORDER BY ${['dia', 'semana', 'mes'].includes(groupBy) ? 'label ASC' : 'valor_total DESC'}
+            LIMIT 100
         `, params);
 
         // 4. Top produtos (independente do groupBy)

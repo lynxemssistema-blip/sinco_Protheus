@@ -1610,14 +1610,14 @@ router.get('/matrix', async (req, res) => {
 
                 // Fetch Appointments
                 const [a] = await mysqlPool.query(
-                    `SELECT op_numero, op_item, operacao_codigo,
+                    `SELECT op_numero, op_item, op_sequencia, operacao_codigo,
             SUM(quantidade) as total_produzido,
             SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
             MIN(data_inicio) as data_real_inicio,
             MAX(data_fim) as data_real_fim
                      FROM app_production_appointments
                      WHERE op_numero IN(${mysqlPlaceholders})
-                     GROUP BY op_numero, op_item, operacao_codigo`,
+                     GROUP BY op_numero, op_item, op_sequencia, operacao_codigo`,
                     uniqueOps
                 );
                 appointments = a;
@@ -1668,44 +1668,59 @@ router.get('/matrix', async (req, res) => {
             operations.forEach(op => {
                 const targetResource = op.code; // Agora é o RECURSO (ex: MO0001)
 
-                // Encontrar a rota que corresponde a este RECURSO
-                // NOTA: Se houver 2 operações no mesmo recurso para o mesmo item, pegamos a primeira (limitação aceita p/ visão matricial simplificada)
-                // Ou poderíamos somar? Por enquanto, `find` retorna a primeira ocorrência no roteiro.
-                const matchingRoute = itemRouting.find(r => r.recurso && r.recurso.trim() === targetResource);
+                // Encontrar TODAS as rotas que correspondem a este RECURSO
+                const matchingRoutes = itemRouting.filter(r => r.recurso && r.recurso.trim() === targetResource);
 
-                if (matchingRoute) {
-                    const realOpCode = matchingRoute.operacao ? matchingRoute.operacao.trim() : ''; // O código numérico real (01, 10) para buscar no MySQL
-
-                    let totalPlanejada = Number(matchingRoute.qtd_planejada || 0);
+                if (matchingRoutes.length > 0) {
+                    let totalPlanejada = 0;
                     let totalProduzida = 0;
-
-                    // Dados transacionais (Planning & Appt) continuam usando o código numérico da operação + sequência
-                    let plan = plans.find(p =>
-                        p.op_numero === matchingRoute.op.trim() &&
-                        p.op_item == matchingRoute.item_op.trim() &&
-                        p.operacao_codigo === realOpCode // CRÍTICO: Usa o código numérico (ex: 10)
-                    );
-
-                    let appt = appointments.find(a =>
-                        a.op_numero === matchingRoute.op.trim() &&
-                        a.op_item == matchingRoute.item_op.trim() &&
-                        a.operacao_codigo === realOpCode // CRÍTICO: Usa o código numérico (ex: 10)
-                    );
-
                     let minRealStart = null;
                     let maxRealEnd = null;
+                    let planStart = null;
+                    let planEnd = null;
                     let tem_pendencia = false;
+                    let realOpCodes = [];
 
-                    if (appt) {
-                        totalProduzida = Number(appt.total_produzido || 0);
-                        if (appt.data_real_inicio) minRealStart = new Date(appt.data_real_inicio);
-                        if (appt.data_real_fim) maxRealEnd = new Date(appt.data_real_fim);
-                        tem_pendencia = appt.pendencias_conferencia > 0;
-                    }
+                    matchingRoutes.forEach(route => {
+                        const realOpCode = route.operacao ? route.operacao.trim() : '';
+                        realOpCodes.push(realOpCode);
+                        
+                        totalPlanejada += Number(route.qtd_planejada || 0);
 
-                    // Datas Planejadas (MySQL priority > ERP fallback)
-                    let start = plan?.data_planejada_inicio ? new Date(plan.data_planejada_inicio) : (matchingRoute.data_inicio_erp ? new Date(matchingRoute.data_inicio_erp) : null);
-                    let end = plan?.data_planejada_fim ? new Date(plan.data_planejada_fim) : (matchingRoute.data_fim_erp ? new Date(matchingRoute.data_fim_erp) : null);
+                        let plan = plans.find(p =>
+                            String(p.op_numero).trim() === route.op.trim() &&
+                            String(p.op_item).trim() === route.item_op.trim() &&
+                            String(p.op_sequencia).trim() === route.sequen.trim() &&
+                            String(p.operacao_codigo).trim() === realOpCode
+                        );
+
+                        let appt = appointments.find(a =>
+                            String(a.op_numero).trim() === route.op.trim() &&
+                            String(a.op_item).trim() === route.item_op.trim() &&
+                            String(a.op_sequencia).trim() === route.sequen.trim() &&
+                            String(a.operacao_codigo).trim() === realOpCode
+                        );
+
+                        if (appt) {
+                            totalProduzida += Number(appt.total_produzido || 0);
+                            if (appt.data_real_inicio) {
+                                const d = new Date(appt.data_real_inicio);
+                                if (!minRealStart || d < minRealStart) minRealStart = d;
+                            }
+                            if (appt.data_real_fim) {
+                                const d = new Date(appt.data_real_fim);
+                                if (!maxRealEnd || d > maxRealEnd) maxRealEnd = d;
+                            }
+                            if (appt.pendencias_conferencia > 0) tem_pendencia = true;
+                        }
+
+                        // Dates
+                        let s = plan?.data_planejada_inicio ? new Date(plan.data_planejada_inicio) : (route.data_inicio_erp ? new Date(route.data_inicio_erp) : null);
+                        let e = plan?.data_planejada_fim ? new Date(plan.data_planejada_fim) : (route.data_fim_erp ? new Date(route.data_fim_erp) : null);
+
+                        if (s && (!planStart || s < planStart)) planStart = s;
+                        if (e && (!planEnd || e > planEnd)) planEnd = e;
+                    });
 
                     const percentual = totalPlanejada > 0
                         ? Math.min(100, Math.round((totalProduzida / totalPlanejada) * 100))
@@ -1714,24 +1729,23 @@ router.get('/matrix', async (req, res) => {
                     let status = 'waiting';
                     const now = new Date();
                     if (percentual >= 100) status = 'done';
-                    else if (end && now > end && percentual < 100) status = 'late';
+                    else if (planEnd && now > planEnd && percentual < 100) status = 'late';
                     else if (percentual > 0) status = 'in_progress';
-                    else if (start && now > start) status = 'late_start';
-
+                    else if (planStart && now > planStart) status = 'late_start';
 
                     itemOps[targetResource] = {
-                        code: targetResource, // Key da coluna é o recurso
+                        code: targetResource,
                         recurso: targetResource,
-                        sequen: matchingRoute.sequen,
-                        operacao_real: realOpCode, // Guardar o código real para referência
+                        sequen: matchingRoutes[0].sequen,
+                        operacao_real: realOpCodes.join(', '), // Pode ser "10, 30"
                         qtd_planejada: totalPlanejada,
                         qtd_produzida: totalProduzida,
                         percentual,
                         status,
                         tem_pendencia,
                         dates: {
-                            plan_start: start,
-                            plan_end: end,
+                            plan_start: planStart,
+                            plan_end: planEnd,
                             real_start: minRealStart,
                             real_end: maxRealEnd
                         }
@@ -2639,35 +2653,34 @@ router.post('/appoint', async (req, res) => {
             enableVerification = !!cfg.enable_production_verification;
         }
 
-        // --- VALIDAÇÃO DE SALDO (modos: balance, sequence) ---
+        // --- VALIDAÇÃO DE SALDO (Sempre ativa, independente do modo configurado) ---
         let qtdPlanejada = 0;
-        if (appointmentMode === 'balance' || appointmentMode === 'sequence') {
-            const pgRes = await db.query(
-                `SELECT c2.c2_quant::numeric AS qtd_planejada
-                 FROM public.sc2010 c2
-                 WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
-                 AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`,
-                [op_numero, op_item, op_sequencia]
-            );
+        const pgRes = await db.query(
+            `SELECT c2.c2_quant::numeric AS qtd_planejada
+             FROM public.sc2010 c2
+             WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
+             AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`,
+            [op_numero, op_item, op_sequencia]
+        );
 
-            if (pgRes.rows.length > 0) {
-                qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
-                if (qtdPlanejada > 0) {
-                    const [appRows] = await connection.execute(
-                        `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                         WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
-                        [op_numero, op_item, op_sequencia, operacao_codigo]
-                    );
-                    const produzido = Number(appRows[0].total) || 0;
-                    if (produzido + qtyNum > qtdPlanejada + 0.001) {
-                        await connection.rollback();
-                        return res.status(400).json({
-                            error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
-                        });
-                    }
+        if (pgRes.rows.length > 0) {
+            qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
+            if (qtdPlanejada > 0) {
+                const [appRows] = await connection.execute(
+                    `SELECT SUM(quantidade) AS total FROM app_production_appointments
+                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                     [op_numero, op_item, op_sequencia, operacao_codigo]
+                );
+                const produzido = Number(appRows[0].total) || 0;
+                if (produzido + qtyNum > qtdPlanejada + 0.001) {
+                    await connection.rollback();
+                    return res.status(400).json({
+                        error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
+                    });
                 }
             }
         }
+
 
         // --- VALIDAÇÃO DE SEQUÊNCIA (modo: sequence) ---
         if (appointmentMode === 'sequence') {
@@ -2717,7 +2730,15 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
 
         // CASCATA (Baixa Automática) - Recursive BOM Explosion and Appointment
-        await processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_codigo, usuario, data_inicio, data_fim, initialStatus);
+        await processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_codigo, qtyNum, usuario, data_inicio, data_fim, initialStatus);
+
+        // Atualizar status do Lote de Corte se a OP fizer parte de algum lote de corte (Engenharia/PCP)
+        const concatenatedOp = String(op_numero).trim() + String(op_item).trim() + String(op_sequencia).trim();
+        await connection.execute(`
+            UPDATE app_lotes_corte_itens
+            SET status = 'Concluído'
+            WHERE op_numero = ?
+        `, [concatenatedOp]);
 
         // Se houver op_fracionada, grava na tabela de rastreio de lote fracionado
         if (req.body.op_fracionada) {
@@ -4604,9 +4625,10 @@ UPPER(TRIM(usuario)),
 // FUNÇÕES AUXILIARES DE CASCATA
 // ==========================================
 
-async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, usuario_original, data_inicio, data_fim, initialStatus) {
-    // DESABILITADO TEMPORARIAMENTE A PEDIDO DO USUÁRIO (05/05/2026)
-    return;
+async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, quantidade_apontada, usuario_original, data_inicio, data_fim, initialStatus) {
+    if (op_sequencia !== '001') {
+        return; // Apenas inicia a baixa em cascata se for apontamento do produto pai (sequencia '001')
+    }
 
     let cascataItems = [];
     try {
@@ -4622,14 +4644,6 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
 
         const produtoPai = pgRes.rows[0].produto_pai;
 
-        // 1. Obter a Quantidade TOTAL já apontada para a operação gatilho do Produto Pai
-        const [gatilhoRows] = await connection.execute(`
-            SELECT COALESCE(SUM(quantidade), 0) as total_apontado
-            FROM app_production_appointments
-            WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
-        `, [op_numero, op_item, op_sequencia, operacao_gatilho]);
-        const quantidade_total_pai = Number(gatilhoRows[0].total_apontado);
-
         // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai
         const parentOpsRes = await db.query(`
             SELECT TRIM(g2.g2_operac) as operacao
@@ -4638,8 +4652,18 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
             AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
         `, [produtoPai]);
 
+        // Buscamos a quantidade planejada do pai para segurança de saldo
+        const parentPlanRes = await db.query(
+            `SELECT c2_quant::numeric AS qtd_planejada
+             FROM public.sc2010
+             WHERE c2_num = $1 AND c2_item = $2 AND c2_sequen = $3
+             AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
+            [op_numero, op_item, op_sequencia]
+        );
+        const parentPlan = parentPlanRes.rows.length > 0 ? Number(parentPlanRes.rows[0].qtd_planejada) || 0 : 0;
+
         for (const popRow of parentOpsRes.rows) {
-            if (!popRow.operacao) continue;
+            if (!popRow.operacao || popRow.operacao === operacao_gatilho) continue;
 
             const [pAppRows] = await connection.execute(`
                 SELECT COALESCE(SUM(quantidade), 0) as total_apontado
@@ -4648,10 +4672,11 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
             `, [op_numero, op_item, op_sequencia, popRow.operacao]);
 
             const apontadoPai = Number(pAppRows[0].total_apontado);
-            const faltantePai = quantidade_total_pai - apontadoPai;
+            const maxPermitidoPai = parentPlan > 0 ? parentPlan - apontadoPai : quantidade_apontada;
+            const qtdEfetivaPai = Math.min(quantidade_apontada, maxPermitidoPai);
 
-            if (faltantePai > 0) {
-                cascataItems.push({ componente: produtoPai, operacao: popRow.operacao, faltante: faltantePai });
+            if (qtdEfetivaPai > 0) {
+                cascataItems.push({ componente: produtoPai, operacao: popRow.operacao, faltante: qtdEfetivaPai });
 
                 const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
                 const obsFantasma = `Apontamento automático (Mesmo Produto). Ref: Operação Pendente`;
@@ -4660,7 +4685,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                     INSERT INTO app_production_appointments
                     (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-                `, [op_numero, op_item, op_sequencia, popRow.operacao, fantasmaUser, faltantePai, data_inicio, data_fim, obsFantasma, initialStatus]);
+                `, [op_numero, op_item, op_sequencia, popRow.operacao, fantasmaUser, qtdEfetivaPai, data_inicio, data_fim, obsFantasma, initialStatus]);
             }
         }
 
@@ -4695,18 +4720,19 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
         if (bomRes.rows.length === 0) return;
 
         for (const row of bomRes.rows) {
-            const qtdRequeridaTotal = Number(row.qtde_necessaria) * quantidade_total_pai;
+            const qtdRequeridaPorBOM = Number(row.qtde_necessaria) * quantidade_apontada;
 
             const opRes = await db.query(`
                 SELECT 
                     TRIM(c2.c2_item) as item_op, 
                     TRIM(c2.c2_sequen) as sequen_op,
-                    TRIM(g2.g2_operac) as operacao
+                    TRIM(g2.g2_operac) as operacao,
+                    c2.c2_quant::numeric AS qtd_planejada
                 FROM public.sc2010 c2
                 LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-                WHERE c2.c2_num = $1 AND TRIM(c2.c2_produto) = $2
+                WHERE c2.c2_num = $1 AND TRIM(c2.c2_produto) = $2 AND c2.c2_item = $3
                 AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-            `, [op_numero, row.componente]);
+            `, [op_numero, row.componente, op_item]);
 
             if (opRes.rows.length === 0) continue;
 
@@ -4720,10 +4746,14 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                 `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao]);
 
                 const apontado = Number(appRows[0].total_apontado);
-                const faltante = qtdRequeridaTotal - apontado;
+                const childPlan = Number(opRow.qtd_planejada) || 0;
+                
+                // Garantimos que a soma total apontada após a cascata nunca excede a quantidade planejada da OP filha
+                const maxPermitido = childPlan > 0 ? childPlan - apontado : qtdRequeridaPorBOM;
+                const qtdEfetiva = Math.min(qtdRequeridaPorBOM, maxPermitido);
 
-                if (faltante > 0) {
-                    cascataItems.push({ componente: row.componente, operacao: opRow.operacao, faltante });
+                if (qtdEfetiva > 0) {
+                    cascataItems.push({ componente: row.componente, operacao: opRow.operacao, faltante: qtdEfetiva });
 
                     const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
                     const obsFantasma = `Apontamento automático (Cascata). Ref: Produto Pai ${produtoPai}`;
@@ -4732,7 +4762,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                         INSERT INTO app_production_appointments
                         (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-                    `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao, fantasmaUser, faltante, data_inicio, data_fim, obsFantasma, initialStatus]);
+                    `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao, fantasmaUser, qtdEfetiva, data_inicio, data_fim, obsFantasma, initialStatus]);
                 }
             }
         }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
-export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Excluir', cancelText = 'Cancelar', danger = true }) {
+export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', danger = true }) {
     if (!isOpen) return null;
 
     return (
@@ -13,7 +13,7 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title, messag
             <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
                 <div className="p-5">
                     <div className="flex items-start gap-4">
-                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${danger ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${danger ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
                             <AlertTriangle className="w-5 h-5" />
                         </div>
                         <div className="flex-1 pt-1">
@@ -30,9 +30,9 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title, messag
                     <button 
                         onClick={() => { onConfirm(); onClose(); }}
                         className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all active:scale-95 ${
-                            danger 
-                            ? 'bg-red-600 text-white hover:bg-red-700 hover:shadow-red-200' 
-                            : 'bg-amber-600 text-white hover:bg-amber-700 hover:shadow-amber-200'
+                            danger
+                            ? 'bg-red-600 text-white hover:bg-red-700 hover:shadow-red-200'
+                            : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200'
                         }`}
                     >
                         {confirmText}

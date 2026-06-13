@@ -1,0 +1,42 @@
+[
+  {
+    "AllowMultiple": "false",
+    "Description": "\"Update query in GET /demandas to left join the app_demanda_vmi_datas table to return original and revised dates.\"",
+    "EndLine": "825",
+    "Instruction": "\"Update query in GET /demandas to left join the app_demanda_vmi_datas table.\"",
+    "ReplacementContent": "\"        const [rows] = await mysqlPool.query(`\\n            SELECT\\n                v.id, v.lote_importacao, v.prioridade_cliente, v.ordem_compra_cliente, v.produto_pai,\\n                v.descricao_equipamento, v.codigo_produto_cliente, v.descricao_produ\n<truncated 535 bytes>",
+    "StartLine": "817",
+    "TargetContent": "\"        const [rows] = await mysqlPool.query(`\\n            SELECT\\n                id, lote_importacao, prioridade_cliente, ordem_compra_cliente, produto_pai,\\n                descricao_equipamento, codigo_produto_cliente, descricao_produto_cliente,\\n   \n<truncated 265 bytes>",
+    "TargetFile": "\"c:\\\\Users\\\\adm\\\\Desktop\\\\MetalFisa Anty\\\\server\\\\routes\\\\vmi.js\""
+  },
+  {
+    "AllowMultiple": "false",
+    "Description": "\"Adicionando endpoints /data-entrega e /comparacao-diaria\"",
+    "EndLine": "2241",
+    "Instruction": "\"Adicionar novos endpoints no final do arquivo\"",
+    "ReplacementContent": "\"// ── PUT /api/vmi/data-entrega ──\\nrouter.put('/data-entrega', async (req, res) => {\\n    const { ordem_compra_cliente, codigo_produto_cliente, produto_pai, data_original, data_revisada } = req.body;\\n    \\n    if (!ordem_compra_cliente || !codig\n<truncated 3303 bytes>",
+    "StartLine": "2241",
+    "TargetContent": "\"module.exports = router;\"",
+    "TargetFile": "\"c:\\\\Users\\\\adm\\\\Desktop\\\\MetalFisa Anty\\\\server\\\\routes\\\\vmi.js\""
+  },
+  {
+    "AllowMultiple": "false",
+    "Description": "\"Adiciona endpoint POST /snapshot para gravar as quantidades entregues no log diário.\"",
+    "EndLine": "2326",
+    "Instruction": "\"Adiciona o endpoint POST /snapshot.\"",
+    "ReplacementContent": "\"// ── POST /api/vmi/snapshot ──\\nrouter.post('/snapshot', async (req, res) => {\\n    try {\\n        const { rows } = req.body;\\n        if (!rows || rows.length === 0) return res.json({ success: true });\\n\\n        // Usa data local BR para evitar\n<truncated 2085 bytes>",
+    "StartLine": "2326",
+    "TargetContent": "\"module.exports = router;\"",
+    "TargetFile": "\"c:\\\\Users\\\\adm\\\\Desktop\\\\MetalFisa Anty\\\\server\\\\routes\\\\vmi.js\""
+  },
+  {
+    "AllowMultiple": "false",
+    "Description": "\"Parse notas_fiscais as JSON if it's a string from MySQL cache.\"",
+    "EndLine": "900",
+    "Instruction": "\"In GET /demandas, when returning `rows`, parse `notas_fiscais` from string to JSON array.\"",
+    "ReplacementContent": "\"                    // 5. Build final array\\n                    const data = rows.map(r => {\\n                        let nfParsed = [];\\n                        if (r.notas_fiscais) {\\n                            try {\\n                                n\n<truncated 2560 bytes>",
+    "StartLine": "891",
+    "TargetContent": "\"                    // 5. Build final array\\n                    const data = rows.map(r => {\\n                        const b1Cod = mapeamentoMap[r.codigo_produto_cliente];\\n                        if (b1Cod && statusMap[b1Cod]) {\\n                      \n<truncated 1942 bytes>",
+    "TargetFile": "\"c:\\\\Users\\\\adm\\\\Desktop\\\\MetalFisa Anty\\\\server\\\\routes\\\\vmi.js\""
+  }
+]

@@ -567,7 +567,7 @@ router.get('/exportar-bom/:lote_id', async (req, res) => {
         const sheetCompleta = workbook.addWorksheet('Estrutura Completa');
         const sheetResumida = workbook.addWorksheet('Resumo de Materiais');
 
-        const dataHora = new Date().toLocaleString('pt-BR');
+        const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
         // Header builder for both sheets
         const addHeader = (sheet, columns) => {

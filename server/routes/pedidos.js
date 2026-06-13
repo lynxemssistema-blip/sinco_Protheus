@@ -68,9 +68,21 @@ router.get('/', async (req, res) => {
         }
 
         if (pedido) {
-            whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(String(pedido).trim().padStart(6, '0'));
-            paramCount++;
+            const pedidoList = String(pedido).split(',')
+                .map(p => p.trim())
+                .filter(p => p.length > 0)
+                .map(p => p.padStart(6, '0'));
+
+            if (pedidoList.length === 1) {
+                whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+                params.push(pedidoList[0]);
+                paramCount++;
+            } else if (pedidoList.length > 1) {
+                const placeholders = pedidoList.map((_, i) => `$${paramCount + i}`).join(', ');
+                whereClause += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
+                params.push(...pedidoList);
+                paramCount += pedidoList.length;
+            }
         }
 
         if (produto) {
@@ -366,50 +378,77 @@ router.get('/flat', async (req, res) => {
             }
         }
 
-        params = [forecastJson];
-        let paramCount = 2;
+        params = [];
+        let paramCount = 1;
+        let countParams = [];
+        let countParamCount = 1;
 
         // Base Filter Logic
         const getInactiveFilter = await getInactiveOrdersFilter();
-        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + getInactiveFilter('c5.c5_num');
+        const inactiveFilterSql = getInactiveFilter('c5.c5_num');
+        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
+        let countWhereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
 
         if (only_active === 'true') {
-            whereClause += ` AND (
-                COALESCE(c5.c5_nota, '') = '' 
-                OR EXISTS (
-                    SELECT 1 FROM public.sc6010 c6_ex 
-                    WHERE c6_ex.c6_num = c5.c5_num 
-                    AND c6_ex.c6_filial = c5.c5_filial 
-                    AND COALESCE(c6_ex.d_e_l_e_t_, '') = ''
-                    AND ((c6_ex.c6_qtdven - c6_ex.c6_qtdent) > 0 OR c6_ex.c6_qtdlib > 0)
-                )
-            )`;
-            // Filtro a nível de item para a lista plana
-            whereClause += ` AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)`;
+            // Keep only the direct item-level saldo filter — fast index scan on c6 columns.
+            // The old order-level EXISTS subquery was redundant and caused full table scans.
+            const activeItemFilter = ` AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)`;
+            whereClause += activeItemFilter;
+            countWhereClause += activeItemFilter;
         }
 
         if (cliente) {
             whereClause += ` AND sa1.a1_nome ILIKE '%' || $${paramCount} || '%'`;
             params.push(cliente);
             paramCount++;
+            countWhereClause += ` AND sa1.a1_nome ILIKE '%' || $${countParamCount} || '%'`;
+            countParams.push(cliente);
+            countParamCount++;
         }
 
         if (pedido) {
-            whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(String(pedido).trim().padStart(6, '0'));
-            paramCount++;
+            // Support multiple comma-separated order numbers: "4002,4618,5000"
+            const pedidoList = String(pedido).split(',')
+                .map(p => p.trim())
+                .filter(p => p.length > 0)
+                .map(p => p.padStart(6, '0'));
+
+            if (pedidoList.length === 1) {
+                whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+                params.push(pedidoList[0]);
+                paramCount++;
+                countWhereClause += ` AND TRIM(c5.c5_num) = $${countParamCount}`;
+                countParams.push(pedidoList[0]);
+                countParamCount++;
+            } else {
+                const placeholders = pedidoList.map((_, i) => `$${paramCount + i}`).join(', ');
+                whereClause += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
+                params.push(...pedidoList);
+                paramCount += pedidoList.length;
+
+                const countPlaceholders = pedidoList.map((_, i) => `$${countParamCount + i}`).join(', ');
+                countWhereClause += ` AND TRIM(c5.c5_num) IN (${countPlaceholders})`;
+                countParams.push(...pedidoList);
+                countParamCount += pedidoList.length;
+            }
         }
 
         if (produto) {
             whereClause += ` AND c6.c6_produto ILIKE '%' || $${paramCount} || '%'`;
             params.push(produto);
             paramCount++;
+            countWhereClause += ` AND c6.c6_produto ILIKE '%' || $${countParamCount} || '%'`;
+            countParams.push(produto);
+            countParamCount++;
         }
 
         if (pedcli) {
             whereClause += ` AND c6.c6_pedcli ILIKE '%' || $${paramCount} || '%'`;
             params.push(pedcli);
             paramCount++;
+            countWhereClause += ` AND c6.c6_pedcli ILIKE '%' || $${countParamCount} || '%'`;
+            countParams.push(pedcli);
+            countParamCount++;
         }
 
         // --- Novo Filtro de Tipo de Item (Múltipla Seleção) ---
@@ -475,66 +514,100 @@ router.get('/flat', async (req, res) => {
                 }
                 
                 if (tipoConditions.length > 0) {
-                    whereClause += ` AND (${tipoConditions.join(' OR ')})`;
+                    const tipoFilter = ` AND (${tipoConditions.join(' OR ')})`;
+                    whereClause += tipoFilter;
+                    countWhereClause += tipoFilter;
                 }
             }
         }
 
         // --- Filtro de Status da OP ---
         if (op_status === 'com_op') {
-            whereClause += ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            const opFilter = ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            whereClause += opFilter;
+            countWhereClause += opFilter;
         } else if (op_status === 'sem_op') {
-            whereClause += ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            const opFilter = ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+            whereClause += opFilter;
+            countWhereClause += opFilter;
         }
 
         if (dataInicial || dataFinal) {
             if (dateType === 'nf') {
-                let nfFilter = `EXISTS (
+                const nfBase = `EXISTS (
                     SELECT 1 FROM public.sd2010 d2_ex
-                    JOIN public.sf2010 f2_ex 
-                        ON f2_ex.f2_doc = d2_ex.d2_doc 
-                        AND f2_ex.f2_serie = d2_ex.d2_serie 
+                    JOIN public.sf2010 f2_ex
+                        ON f2_ex.f2_doc = d2_ex.d2_doc
+                        AND f2_ex.f2_serie = d2_ex.d2_serie
                         AND COALESCE(f2_ex.d_e_l_e_t_, '') = ''
-                    WHERE d2_ex.d2_pedido = c5.c5_num 
-                      AND d2_ex.d2_itempv = c6.c6_item 
+                    WHERE d2_ex.d2_pedido = c5.c5_num
+                      AND d2_ex.d2_itempv = c6.c6_item
                       AND COALESCE(d2_ex.d_e_l_e_t_, '') = ''
                 `;
+                let nfFilter = nfBase;
+                let countNfFilter = nfBase;
 
                 if (dataInicial) {
+                    const val = dataInicial.replace(/-/g, '');
                     nfFilter += ` AND f2_ex.f2_emissao >= $${paramCount}`;
-                    params.push(dataInicial.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countNfFilter += ` AND f2_ex.f2_emissao >= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
                 if (dataFinal) {
+                    const val = dataFinal.replace(/-/g, '');
                     nfFilter += ` AND f2_ex.f2_emissao <= $${paramCount}`;
-                    params.push(dataFinal.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countNfFilter += ` AND f2_ex.f2_emissao <= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
 
                 nfFilter += `)`;
+                countNfFilter += `)`;
                 whereClause += ` AND ${nfFilter}`;
+                countWhereClause += ` AND ${countNfFilter}`;
 
             } else if (dateType === 'entrega') {
                 if (dataInicial) {
+                    const val = dataInicial.replace(/-/g, '');
                     whereClause += ` AND c6.c6_entreg >= $${paramCount}`;
-                    params.push(dataInicial.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countWhereClause += ` AND c6.c6_entreg >= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
                 if (dataFinal) {
+                    const val = dataFinal.replace(/-/g, '');
                     whereClause += ` AND c6.c6_entreg <= $${paramCount}`;
-                    params.push(dataFinal.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countWhereClause += ` AND c6.c6_entreg <= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
             } else {
                 if (dataInicial) {
+                    const val = dataInicial.replace(/-/g, '');
                     whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
-                    params.push(dataInicial.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countWhereClause += ` AND c5.c5_emissao >= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
                 if (dataFinal) {
+                    const val = dataFinal.replace(/-/g, '');
                     whereClause += ` AND c5.c5_emissao <= $${paramCount}`;
-                    params.push(dataFinal.replace(/-/g, ''));
+                    params.push(val);
                     paramCount++;
+                    countWhereClause += ` AND c5.c5_emissao <= $${countParamCount}`;
+                    countParams.push(val);
+                    countParamCount++;
                 }
             }
         }
@@ -590,10 +663,29 @@ router.get('/flat', async (req, res) => {
             orderClauseOuter = `ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         }
 
+        // Only include the jsonb forecast join when sorting by those columns —
+        // avoids parsing a large JSON blob on every unfiltered page load.
+        const needsFcJoin = sortBy === 'entrega_pcp' || sortBy === 'prev_fat';
+
+        // If the fc JOIN is needed, prepend forecastJson as $1 and shift all
+        // subsequent positional params by 1 (they were numbered from 1 without it).
+        if (needsFcJoin) {
+            params.unshift(forecastJson);       // becomes $1
+            countParams; // countQuery never uses forecastJson
+        }
+
+        const fcParamRef = needsFcJoin ? '$1::jsonb' : null;
+        const fcJoin = needsFcJoin
+            ? `LEFT JOIN jsonb_to_recordset($1::jsonb) AS fc(pedido varchar, item varchar, data_entrega_pcp varchar, data_prevista_faturamento varchar)
+                    ON fc.pedido = TRIM(c5.c5_num) AND fc.item = TRIM(c6.c6_item)`
+            : '';
+        const fcSelect = needsFcJoin
+            ? 'fc.data_entrega_pcp,\n                    fc.data_prevista_faturamento'
+            : 'NULL::varchar AS data_entrega_pcp,\n                    NULL::varchar AS data_prevista_faturamento';
+
         query = `
             WITH paged_items AS (
                 SELECT
-                    COUNT(*) OVER() AS full_count,
                     TRIM(c5.c5_num) as pedido,
                     TRIM(c5.c5_cliente) as cod_cliente,
                     TRIM(c5.c5_lojacli) as loja_cliente,
@@ -602,7 +694,9 @@ router.get('/flat', async (req, res) => {
                     c5.c5_emissao as emissao,
                     c5.c5_orcres as orcamento,
                     TRIM(c6.c6_item) as item,
+                    c6.c6_item as item_raw,
                     TRIM(c6.c6_produto) as codigo,
+                    c6.c6_produto as codigo_raw,
                     TRIM(c6.c6_xrevm) as rev_codigo,
                     TRIM(c6.c6_xrevc) as c6_rev_cliente,
                     sb1.b1_desc as descricao,
@@ -613,11 +707,11 @@ router.get('/flat', async (req, res) => {
                     (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
                     c6.c6_prcven::numeric(18,2) as valor_unitario,
                     c6.c6_valor::numeric(18,2) as valor_total,
+                    COALESCE(sb1.b1_prv1, 0)::numeric(18,2) as preco_cadastro,
                     TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
                     c6.c6_pedcli as ped_cliente,
                     c5.c5_liberok as status_cor,
-                    fc.data_entrega_pcp,
-                    fc.data_prevista_faturamento
+                    ${fcSelect}
                 FROM public.sc5010 c5
                 JOIN public.sc6010 c6
                     ON COALESCE(c6.d_e_l_e_t_, '') = ''
@@ -630,27 +724,16 @@ router.get('/flat', async (req, res) => {
                 LEFT JOIN public.sb1010 sb1
                     ON sb1.b1_cod = c6.c6_produto
                     AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-                LEFT JOIN jsonb_to_recordset($1::jsonb) AS fc(pedido varchar, item varchar, data_entrega_pcp varchar, data_prevista_faturamento varchar)
-                    ON fc.pedido = TRIM(c5.c5_num) AND fc.item = TRIM(c6.c6_item)
+                ${fcJoin}
                 ${whereClause}
                 ${orderClauseInner}
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
             )
             SELECT
                 pi.*,
-                CASE
-                    WHEN pi.b1_msblql IN ('1','S','T','Y') OR sz0_agg.produto IS NOT NULL THEN 'Restrição'
-                    WHEN COALESCE(pi.rev_codigo, '') <> COALESCE(pi.c6_rev_cliente, '') THEN 'Revisão'
-                    WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Novo'
-                    ELSE 'PCP'
-                END AS status_tipo_item,
-                CASE
-                    WHEN pi.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql). Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
-                    WHEN sz0_agg.produto IS NOT NULL THEN 'Restrição pendente no cadastro (SZ0 status=P). Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
-                    WHEN COALESCE(pi.rev_codigo, '') <> COALESCE(pi.c6_rev_cliente, '') THEN 'Diferença de revisão detectada. Rev. MF: ' || COALESCE(TRIM(pi.rev_codigo), '-') || ' / Rev. Cli: ' || COALESCE(TRIM(pi.c6_rev_cliente), '-')
-                    WHEN sg1_agg.produto IS NULL AND sg2_agg.produto IS NULL THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
-                    ELSE 'Item com estrutura existente, liberado para PCP.'
-                END AS status_tipo_detalhe,
+                -- status_tipo_item computed in JS enrichment after batch lookup
+                NULL::varchar AS status_tipo_item,
+                NULL::varchar AS status_tipo_detalhe,
                 TRIM(c2.c2_num) AS op_num,
                 TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen) AS op_num_completa,
                 TRIM(c2.c2_tpop) AS op_tipo,
@@ -661,51 +744,54 @@ router.get('/flat', async (req, res) => {
                 AND TRIM(c2.c2_itempv) = pi.item
                 AND c2.c2_sequen = '001'
                 AND COALESCE(c2.d_e_l_e_t_, '') = ''
-            LEFT JOIN LATERAL (
-                SELECT 1 AS produto FROM public.sz0010
-                WHERE TRIM(z0_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
-                LIMIT 1
-            ) sz0_agg ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 AS produto FROM public.sg1010
-                WHERE TRIM(g1_cod) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
-                LIMIT 1
-            ) sg1_agg ON true
-            LEFT JOIN LATERAL (
-                SELECT 1 AS produto FROM public.sg2010
-                WHERE TRIM(g2_produto) = TRIM(pi.codigo) AND COALESCE(d_e_l_e_t_, '') <> '*'
-                LIMIT 1
-            ) sg2_agg ON true
             ${orderClauseOuter}
         `;
 
         params.push(limitParsed, offset);
 
-        // Count query (mesma estrutura, sem LATERAL — não afeta o count)
+        // Lightweight count query — no jsonb join, no sb1, no LATERAL.
+        // Runs in parallel with the data query so it adds no wall-clock latency.
+        countQuery = `
+            SELECT COUNT(*) as total
+            FROM public.sc5010 c5
+            JOIN public.sc6010 c6
+                ON COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND c6.c6_filial = c5.c5_filial
+                AND c6.c6_num = c5.c5_num
+            LEFT JOIN public.sa1010 sa1
+                ON sa1.a1_cod = c5.c5_cliente
+                AND sa1.a1_loja = c5.c5_lojacli
+                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+            ${countWhereClause}
+        `;
+
         errorStep = 'pg_main_query';
-        // ── MAIN QUERY (com COUNT(*) OVER() integrado) ─────────────────────────────────────
-        // Usa client dedicado para aumentar timeout desta query pesada (CTE + LATERAL joins)
+        // Usa client dedicado para aumentar timeout desta query pesada (CTE + LATERAL joins).
+        // A count query leve roda em paralelo pelo pool normal.
         const pgClient = await db.connect();
-        let result;
+        let result, countResult;
         try {
-            await pgClient.query("SET LOCAL statement_timeout = '120000'");
-            result = await pgClient.query(query, params);
+            // Tuning: increase work_mem for sort/hash operations; extend timeout to 5min
+            await pgClient.query("SET LOCAL statement_timeout = '300000'; SET LOCAL work_mem = '64MB'; SET LOCAL enable_seqscan = off;");
+            [result, countResult] = await Promise.all([
+                pgClient.query(query, params),
+                db.query(countQuery, countParams)
+            ]);
         } finally {
             pgClient.release();
         }
-        
+
         if (req.query.minimal === 'true') {
             return res.json({
                 data: result.rows,
                 meta: {
-                    total: result.rows.length > 0 ? parseInt(result.rows[0].full_count, 10) : 0,
+                    total: countResult.rows.length > 0 ? parseInt(countResult.rows[0].total, 10) : 0,
                     page: pageParsed,
                     limit: limitParsed
                 }
             });
         }
-        
-        const countResult = { rows: [{ total: result.rows.length > 0 ? result.rows[0].full_count : 0 }] };
+
         errorStep = 'enrichment';
 
         // ── ENRICHMENT em paralelo ─────────────────────────────────────────────
@@ -855,6 +941,18 @@ router.get('/flat', async (req, res) => {
                 // 8. Saldo Produzido (MySQL)
                 saldoProduzidoEnrichment
             ]);
+
+            // ── Batch status lookup (sg1/sg2/sz0) — replaces per-row LATERAL JOINs ──
+            const statusEnrichment = productCodes.length > 0 ? db.query(`
+                SELECT 'sg1' as src, TRIM(g1_cod) as cod FROM public.sg1010
+                    WHERE g1_cod = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                UNION ALL
+                SELECT 'sg2' as src, TRIM(g2_produto) as cod FROM public.sg2010
+                    WHERE g2_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                UNION ALL
+                SELECT 'sz0' as src, TRIM(z0_produto) as cod FROM public.sz0010
+                    WHERE z0_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+            `, [productCodes]) : Promise.resolve({ rows: [] });
 
             // Map Last Ops
             const lastOpMap = {};
@@ -1013,6 +1111,39 @@ router.get('/flat', async (req, res) => {
                     row.rev_cliente = entry ? entry.rev_cliente : null;
                 });
             } else { console.error('Error sz1 batch:', sz1Result.reason?.message); }
+
+            // ── Compute status_tipo_item from batch lookup (replaces SQL LATERAL JOINs) ──
+            try {
+                const statusRows = await statusEnrichment;
+                const sg1Set = new Set(), sg2Set = new Set(), sz0Set = new Set();
+                statusRows.rows.forEach(r => {
+                    if (r.src === 'sg1') sg1Set.add(r.cod.trim());
+                    if (r.src === 'sg2') sg2Set.add(r.cod.trim());
+                    if (r.src === 'sz0') sz0Set.add(r.cod.trim());
+                });
+                result.rows.forEach(row => {
+                    const cod = String(row.codigo || '').trim();
+                    const isBlocked = ['1','S','T','Y'].includes(row.b1_msblql);
+                    const hasRestriction = sz0Set.has(cod);
+                    const revDiff = (row.rev_codigo || '').trim() !== (row.c6_rev_cliente || '').trim();
+                    const isNew = !sg1Set.has(cod) && !sg2Set.has(cod);
+                    if (isBlocked || hasRestriction) {
+                        row.status_tipo_item = 'Restrição';
+                        row.status_tipo_detalhe = `${isBlocked ? 'Produto bloqueado (SB1).' : 'Restrição SZ0.'} Rev. MF: ${row.rev_codigo || '-'} / Rev. Cli: ${row.c6_rev_cliente || '-'}`;
+                    } else if (revDiff) {
+                        row.status_tipo_item = 'Revisão';
+                        row.status_tipo_detalhe = `Diferença de revisão. Rev. MF: ${row.rev_codigo || '-'} / Rev. Cli: ${row.c6_rev_cliente || '-'}`;
+                    } else if (isNew) {
+                        row.status_tipo_item = 'Novo';
+                        row.status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
+                    } else {
+                        row.status_tipo_item = 'PCP';
+                        row.status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+                    }
+                });
+            } catch (e) {
+                console.error('Erro batch status lookup:', e.message);
+            }
 
             // Filtro por Data PCP (pós-enriquecimento)
             if (pcpDataInicial || pcpDataFinal) {
@@ -1340,6 +1471,109 @@ router.get('/:id/item-status', async (req, res) => {
     }
 });
 
+// GET /api/pedidos/:id/pdf-data  ── Lean endpoint for PDF generation only
+// Returns only what orderPdfGenerator.js needs: PG core fields + MySQL notes
+// Avoids the 8 enrichment queries of /:id/itens, preventing MySQL connection exhaustion
+router.get('/:id/pdf-data', async (req, res) => {
+    try {
+        const id = String(req.params.id || '').trim();
+        if (!id) return res.status(400).json({ error: 'Parâmetro pedido inválido.' });
+
+        // ── Query 1: Core PG data (only fields used by PDF) ──
+        const pgResult = await db.query(`
+            SELECT
+                TRIM(c5.c5_num)                                         AS pedido,
+                TRIM(c5.c5_cliente)                                      AS cod_cliente,
+                TRIM(sa1.a1_nome)                                        AS nome_cliente,
+                c5.c5_emissao                                            AS emissao,
+                TRIM(c6.c6_item)                                         AS item,
+                TRIM(c6.c6_produto)                                      AS codigo,
+                TRIM(c6.c6_xrevm)                                        AS rev_codigo,
+                TRIM(c6.c6_xrevc)                                        AS c6_rev_cliente,
+                sb1.b1_desc                                              AS descricao,
+                c6.c6_um                                                 AS unidade,
+                COALESCE(c6.c6_qtdven, 0)::numeric(18,2)                AS qtd,
+                COALESCE(c6.c6_qtdent, 0)::numeric(18,2)                AS qtd_entreg,
+                (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0))::numeric(18,2) AS qtd_faturar,
+                TRIM(COALESCE(c6.c6_entreg, ''))                        AS entrega,
+                TRIM(COALESCE(c6.c6_entreg, ''))                        AS c6_entreg,
+                TRIM(c6.c6_pedcli)                                       AS ped_cliente,
+                TRIM(c2.c2_num)                                          AS op_num,
+                TRIM(c2.c2_tpop)                                         AS op_tipo,
+                c2.c2_quant::numeric(18,2)                               AS op_qtd,
+                NULLIF(TRIM(COALESCE(c5.c5_mennota,'') || ' ' || COALESCE(c5.c5_zobs,'')), '') AS observacoes_gerais
+            FROM public.sc5010 c5
+            JOIN public.sc6010 c6
+                ON COALESCE(c6.d_e_l_e_t_, '') = ''
+                AND c6.c6_filial = c5.c5_filial
+                AND c6.c6_num = c5.c5_num
+            LEFT JOIN public.sa1010 sa1
+                ON sa1.a1_cod = c5.c5_cliente
+                AND sa1.a1_loja = c5.c5_lojacli
+                AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sb1010 sb1
+                ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
+                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sc2010 c2
+                ON TRIM(c2.c2_pedido) = TRIM(c5.c5_num)
+                AND c2.c2_itempv = c6.c6_item
+                AND c2.c2_sequen = '001'
+                AND COALESCE(c2.d_e_l_e_t_, '') = ''
+            WHERE c5.c5_num = $1
+              AND COALESCE(c5.d_e_l_e_t_, '') = ''
+              AND c5.c5_tipo <> 'B'
+            ORDER BY c6.c6_item ASC
+        `, [id]);
+
+        if (pgResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Pedido não encontrado.' });
+        }
+
+        // ── Query 2: Notes/Ata from MySQL (only pcp_notes for footer obs) ──
+        let notes = [];
+        try {
+            const [noteRows] = await mysqlPool.execute(
+                `SELECT TRIM(pedido) AS pedido, TRIM(item) AS item_number,
+                        pcp_notes, designer_notes
+                 FROM app_sales_order_item_notes
+                 WHERE TRIM(pedido) = ?`,
+                [id.replace(/^0+/, '')]
+            );
+            notes = noteRows || [];
+        } catch (mysqlErr) {
+            console.warn(`[pdf-data/${id}] MySQL notes unavailable:`, mysqlErr.message);
+            // Non-fatal: PDF still generates without notes
+        }
+
+        // Attach pcp_notes to items
+        const notesMap = {};
+        notes.forEach(n => { notesMap[n.item_number] = n; });
+        const itens = pgResult.rows.map(row => ({
+            ...row,
+            pcp_notes: notesMap[String(Number(row.item) || row.item)]?.pcp_notes || '',
+            status_tipo_item: 'PCP', // simplified for PDF display
+        }));
+
+        // Build capa from first row
+        const first = pgResult.rows[0];
+        const capa = {
+            pedido:           first.pedido,
+            cod_cliente:      first.cod_cliente,
+            nome_cliente:     first.nome_cliente || '',
+            emissao:          first.emissao || '',
+            pedido_cliente:   first.ped_cliente || '',
+            entrega:          first.entrega || '',
+            observacoes_gerais: first.observacoes_gerais || '',
+        };
+
+        return res.json({ capa, itens });
+
+    } catch (err) {
+        console.error(`[pdf-data] ❌`, err.message);
+        return res.status(500).json({ error: 'Erro ao gerar dados do PDF.', details: err.message });
+    }
+});
+
 // GET /api/pedidos/:id/itens
 router.get('/:id/itens', async (req, res) => {
     try {
@@ -1369,7 +1603,6 @@ router.get('/:id/itens', async (req, res) => {
                 TRIM(c2.c2_tpop) AS op_tipo,
                 c2.c2_quant   AS op_qtd,
                 COALESCE(c6.c6_qtdent, 0)::numeric(18,6) AS qtd_entreg,
-                (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) AS qtd_faturar,
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) AS qtd_faturar,
                 sb1.b1_msblql
             FROM public.sc5010 c5
@@ -1657,6 +1890,7 @@ router.get('/:id/itens', async (req, res) => {
         res.json(items);
 
     } catch (err) {
+        require('fs').writeFileSync('error_itens_log.txt', `[${new Date().toISOString()}] pedido=${req.params.id}\n${err.stack}`);
         console.error(`Erro SQL ao buscar itens pedido ${req.params.id}: `, err.message);
         res.status(500).json({ error: 'Erro ao buscar itens do pedido.', details: err.message });
     }
@@ -2808,6 +3042,75 @@ router.get('/op-mirror/:id/export-laser', async (req, res) => {
         if (!res.headersSent) {
             res.status(500).json({ error: 'Erro ao gerar exportação laser', details: err.message });
         }
+    }
+});
+
+// ─── PCP LOTES (LIBERAÇÃO PARA PRODUÇÃO) ──────────────────────────────────
+
+// POST /api/pedidos/pcp-lotes
+// Cria um novo lote de produção com os itens selecionados
+router.post('/pcp-lotes', async (req, res) => {
+    try {
+        const { itens, observacao, criador } = req.body;
+        if (!itens || itens.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item selecionado para o lote.' });
+        }
+
+        // Generate Lote Ref (e.g. LOTE-YYYYMMDD-HHMMSS)
+        const dateStr = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const loteRef = `LOTE-${dateStr}-${randomStr}`;
+
+        // Iniciar transação no MySQL
+        const connection = await mysqlPool.getConnection();
+        try {
+            await connection.beginTransaction();
+
+            // Inserir a capa do Lote
+            const [loteResult] = await connection.query(
+                `INSERT INTO app_pcp_lotes (lote_ref, created_by, observacao, status) VALUES (?, ?, ?, 'ABERTO')`,
+                [loteRef, criador || 'PCP', observacao || '']
+            );
+            const loteId = loteResult.insertId;
+
+            // Inserir os itens do Lote
+            for (const item of itens) {
+                await connection.query(
+                    `INSERT INTO app_pcp_lote_itens (lote_id, pedido, item, codigo, qtd_liberada) VALUES (?, ?, ?, ?, ?)`,
+                    [loteId, item.pedido, item.item, item.codigo, item.quantidade || 0]
+                );
+            }
+
+            await connection.commit();
+            res.json({ success: true, lote_id: loteId, lote_ref: loteRef });
+        } catch (err) {
+            await connection.rollback();
+            throw err;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[PCP Lotes Error]', error);
+        res.status(500).json({ error: 'Erro ao criar lote de produção', details: error.message });
+    }
+});
+
+// GET /api/pedidos/pcp-lotes
+// Lista os lotes criados
+router.get('/pcp-lotes', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(`
+            SELECT l.*, COUNT(i.id) as total_itens 
+            FROM app_pcp_lotes l
+            LEFT JOIN app_pcp_lote_itens i ON i.lote_id = l.id
+            GROUP BY l.id
+            ORDER BY l.created_at DESC
+            LIMIT 50
+        `);
+        res.json(rows);
+    } catch (error) {
+        console.error('[PCP Lotes List Error]', error);
+        res.status(500).json({ error: 'Erro ao buscar lotes', details: error.message });
     }
 });
 

@@ -10,6 +10,7 @@ function walkDir(dir) {
     if (!fs.existsSync(dir)) return;
     const files = fs.readdirSync(dir);
     for (const file of files) {
+        if (file === 'node_modules' || file === '.git' || file === 'dist' || file === 'build') continue;
         const fullPath = path.join(dir, file);
         const stat = fs.statSync(fullPath);
         if (stat.isDirectory()) {
@@ -38,6 +39,7 @@ allFiles.forEach(file => {
     // Find imports
     const importRegex = /import\s+.*?\s+from\s+['"](.*?)['"]/g;
     const requireRegex = /require\(['"](.*?)['"]\)/g;
+    const dynamicImportRegex = /import\(['"](.*?)['"]\)/g;
     
     let match;
     while ((match = importRegex.exec(content)) !== null) {
@@ -55,6 +57,15 @@ allFiles.forEach(file => {
             const resolvedPath = path.resolve(path.dirname(file), reqPath);
             fileImports.add(resolvedPath.toLowerCase());
             fileImports.add(resolvedPath.toLowerCase() + '.js');
+        }
+    }
+    while ((match = dynamicImportRegex.exec(content)) !== null) {
+        const dynPath = match[1];
+        if (dynPath.startsWith('.')) {
+            const resolvedPath = path.resolve(path.dirname(file), dynPath);
+            fileImports.add(resolvedPath.toLowerCase());
+            fileImports.add(resolvedPath.toLowerCase() + '.js');
+            fileImports.add(resolvedPath.toLowerCase() + '.jsx');
         }
     }
 });

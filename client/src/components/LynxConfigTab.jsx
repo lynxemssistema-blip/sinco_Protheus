@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Trash2, ShieldAlert, ToggleLeft, ToggleRight, Sparkles, Loader2, Database, HelpCircle, Code, ArrowRight, Send, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Calendar, User, Plus, Edit2, Play, Mail, Phone, Trash, X, Terminal } from 'lucide-react';
 import api from '../services/api';
 import DOMPurify from 'dompurify';
+import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
 
 const MODELOS = [
     { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Rápido, Estável)' },
@@ -148,10 +149,9 @@ export default function LynxConfigTab() {
         autonomia: 0
     });
 
-    // State 5: Live task execution log
-    const [liveLog, setLiveLog] = useState(null); // { taskId, taskName, steps: [], status: 'running'|'success'|'error', answer: '' }
-    const liveLogRef = useRef(null);
-    const liveSocketRef = useRef(null);
+    // State 5: Unified Smart Planner modal
+    const [smartPlannerOpen, setSmartPlannerOpen] = useState(false);
+    const [hermesTaskId, setHermesTaskId] = useState(null);
 
     const messagesEndRef = useRef(null);
 
@@ -476,63 +476,17 @@ export default function LynxConfigTab() {
     }
 
     async function handleExecuteTask(id) {
-        const task = tasks.find(t => t.id === id);
+        if (taskExecuting[id]) return; // Atomic lock
         setTaskExecuting(prev => ({ ...prev, [id]: true }));
-
-        // Open live log panel
-        setLiveLog({ taskId: id, taskName: task?.nome || `Tarefa #${id}`, steps: [], status: 'running', answer: '' });
-
-        // Connect socket for live updates
-        if (liveSocketRef.current) {
-            liveSocketRef.current.disconnect();
-            liveSocketRef.current = null;
-        }
-
-        import('socket.io-client').then(({ io }) => {
-            const socket = io(window.location.origin, {
-                transports: ['polling', 'websocket'],
-                reconnectionAttempts: 2,
-            });
-            liveSocketRef.current = socket;
-
-            socket.on('connect', () => {
-                socket.emit('join_hermes_task', id);
-            });
-
-            socket.on('hermes_task_step', (step) => {
-                setLiveLog(prev => prev ? { ...prev, steps: [...prev.steps, step] } : prev);
-                // Auto-scroll log
-                setTimeout(() => liveLogRef.current?.scrollTo({ top: liveLogRef.current.scrollHeight, behavior: 'smooth' }), 50);
-            });
-
-            socket.on('hermes_task_done', (payload) => {
-                setLiveLog(prev => prev ? {
-                    ...prev,
-                    status: payload.status,
-                    answer: payload.answer || payload.message || '',
-                } : prev);
-                setTaskExecuting(prev => ({ ...prev, [id]: false }));
-                loadTasks();
-                socket.disconnect();
-            });
-
-            socket.on('connect_error', () => {});
-        }).catch(() => {});
-
-        try {
-            await api.post(`/hermes/tasks/${id}/execute`);
-        } catch (err) {
-            setLiveLog(prev => prev ? { ...prev, status: 'error', answer: 'Falha ao acionar a tarefa no servidor.' } : prev);
-            setTaskExecuting(prev => ({ ...prev, [id]: false }));
-        }
+        setHermesTaskId(id);
+        setSmartPlannerOpen(true);
     }
 
-    function closeLiveLog() {
-        if (liveSocketRef.current) {
-            liveSocketRef.current.disconnect();
-            liveSocketRef.current = null;
-        }
-        setLiveLog(null);
+    function handlePlannerClose() {
+        setSmartPlannerOpen(false);
+        setHermesTaskId(null);
+        setTaskExecuting({});
+        loadTasks();
     }
 
     function startEditTask(task) {
@@ -558,76 +512,13 @@ export default function LynxConfigTab() {
     return (
         <div className="space-y-8 animate-fadeIn max-w-5xl">
 
-            {/* ── Live Execution Log Modal ───────────────────────────────────── */}
-            {liveLog && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[80vh] overflow-hidden">
-                        {/* Modal header */}
-                        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-                            <div className="flex items-center gap-2">
-                                <Terminal className="w-4 h-4 text-indigo-400" />
-                                <span className="text-sm font-bold text-white">{liveLog.taskName}</span>
-                                {liveLog.status === 'running' && (
-                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-900/60 px-2 py-0.5 rounded-full border border-indigo-700">
-                                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Executando...
-                                    </span>
-                                )}
-                                {liveLog.status === 'success' && (
-                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-900/40 px-2 py-0.5 rounded-full border border-emerald-700">
-                                        <CheckCircle2 className="w-2.5 h-2.5" /> Concluído
-                                    </span>
-                                )}
-                                {liveLog.status === 'error' && (
-                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-900/40 px-2 py-0.5 rounded-full border border-red-700">
-                                        <AlertCircle className="w-2.5 h-2.5" /> Erro
-                                    </span>
-                                )}
-                            </div>
-                            <button onClick={closeLiveLog} className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700">
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Steps log */}
-                        <div ref={liveLogRef} className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-slate-950/60">
-                            {liveLog.steps.length === 0 && liveLog.status === 'running' && (
-                                <div className="text-slate-500 animate-pulse">Aguardando o agente iniciar...</div>
-                            )}
-                            {liveLog.steps.map((step, i) => (
-                                <div key={i} className={`flex gap-2 leading-relaxed ${
-                                    step.type === 'sql' ? 'text-cyan-400' :
-                                    step.type === 'thinking' ? 'text-yellow-400/80' :
-                                    step.type === 'status' ? 'text-indigo-400' :
-                                    'text-slate-300'
-                                }`}>
-                                    <span className="shrink-0 opacity-60">{step.icon || '▶'}</span>
-                                    <span>{step.message}</span>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Final answer */}
-                        {liveLog.answer && (
-                            <div className="border-t border-slate-700 p-4 shrink-0 max-h-48 overflow-y-auto">
-                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Resposta do Agente</div>
-                                <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{liveLog.answer}</div>
-                            </div>
-                        )}
-
-                        {/* Footer */}
-                        {liveLog.status !== 'running' && (
-                            <div className="border-t border-slate-700 px-5 py-3 flex justify-end shrink-0">
-                                <button
-                                    onClick={closeLiveLog}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors"
-                                >
-                                    Fechar
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* ── Planejamento Inteligente Modal ───────────────────────────────── */}
+            <PlanejamentoInteligenteModal
+                isOpen={smartPlannerOpen}
+                onClose={handlePlannerClose}
+                hermesTaskId={hermesTaskId}
+                selectedOps={[]}
+            />
 
             {/* Header banner */}
             <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-lg relative overflow-hidden border border-indigo-900/50">

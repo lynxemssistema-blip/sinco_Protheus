@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical } from 'lucide-react';
-import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors } from 'lucide-react';
+import CorteForecastModal from './CorteForecastModal';
+import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
@@ -73,6 +74,7 @@ const OrdersTable = () => {
     const [isGlobalReport, setIsGlobalReport] = useState(false);
     const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
+    const [corteForecastTarget, setCorteForecastTarget] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
 
@@ -334,31 +336,18 @@ const OrdersTable = () => {
     };
 
     const handlePrintOrder = async (e, orderId) => {
-        e.stopPropagation(); // Prevenir expansão da linha
+        e.stopPropagation();
         if (printingOrderId === orderId) return;
-
         setPrintingOrderId(orderId);
         try {
-            // Fetch complete order details (capa + itens) and Notes (Ata)
-            const [capaResult, itensResult, notesResult] = await Promise.all([
-                getPedidos({ pedido: orderId, limit: 1 }), // Pega a capa
-                getItensPedido(orderId), // Pega os itens
-                getSalesNotes([orderId]) // Pega Ata
-            ]);
-
-            const capa = capaResult.data && capaResult.data.length > 0 ? capaResult.data[0] : null;
-            if (!capa) {
-                alert('Número do pedido não encontrado ou sem permissão.');
+            // Use lean /pdf-data endpoint: only 1 PG query + 1 MySQL notes query
+            // Avoids the 8 enrichments of /itens that exhaust MySQL connection pool
+            const pdfData = await getPedidoPdfData(orderId);
+            if (!pdfData || !pdfData.itens || pdfData.itens.length === 0) {
+                alert('Pedido não encontrado ou sem itens.');
                 return;
             }
-
-            const orderData = {
-                capa,
-                itens: itensResult || [],
-                notes: Array.isArray(notesResult) ? notesResult : []
-            };
-
-            await generateOrderPDF(orderData);
+            await generateOrderPDF(pdfData);
         } catch (err) {
             console.error('Erro ao imprimir pedido:', err);
             alert('Falha ao gerar o PDF do pedido: ' + err.message);
@@ -585,12 +574,12 @@ const OrdersTable = () => {
     // Callback when Engineering Modal saves data
     const handleSaveEngineeringControl = (pedido, itemCode, newData) => {
         // Update local state to reflect changes immediately
-        setOrderItems(prev => ({
-            ...prev,
-            [pedido]: prev[pedido].map(i =>
+        if (orderItems[pedido]) {
+            const newItems = orderItems[pedido].map(i =>
                 i.item === itemCode ? { ...i, ...newData } : i
-            )
-        }));
+            );
+            updateOrderItemsForPedido(pedido, newItems);
+        }
     };
 
     const getAIContext = (item = {}) => {
@@ -618,6 +607,13 @@ const OrdersTable = () => {
             }
         };
     };
+
+    const handleScroll = useCallback((e) => {
+        const { scrollTop, scrollHeight, clientHeight } = e.target;
+        if (scrollHeight - scrollTop <= clientHeight * 1.5 && !loading && page < totalPages) {
+            setPage(page + 1);
+        }
+    }, [loading, page, totalPages]);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
@@ -1018,13 +1014,20 @@ const OrdersTable = () => {
                 
                 {/* Lote Actions */}
                 {selectedItems.length > 0 && viewMode === 'flat' && (
-                    <div className="px-4">
+                    <div className="px-4 flex items-center gap-2">
                         <button
                             onClick={() => setPcpForecastTarget(selectedItems)}
                             className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow text-sm font-medium transition-colors"
                         >
                             <Package className="w-4 h-4" />
                             Gerar Lote de O.P. ({selectedItems.length})
+                        </button>
+                        <button
+                            onClick={() => setCorteForecastTarget(selectedItems)}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <Scissors className="w-4 h-4" />
+                            Gerar Lote de Corte ({selectedItems.length})
                         </button>
                     </div>
                 )}
@@ -1034,7 +1037,7 @@ const OrdersTable = () => {
             {activeTab === 'evolucao' && (
                 <>
                     {/* Tabela */}
-                    <div className="flex-1 overflow-auto min-h-0 print:overflow-visible print:min-h-0">
+                    <div className="flex-1 overflow-auto min-h-0 print:overflow-visible print:min-h-0" onScroll={handleScroll}>
                         <table className="w-full text-sm text-left text-gray-500 print:w-full">
                             <thead className="sticky top-0 z-10 text-xs text-gray-700 uppercase bg-gray-50 outline outline-1 outline-gray-200">
                                 {viewMode === 'tree' ? (
@@ -1157,13 +1160,7 @@ const OrdersTable = () => {
                                                                 >
                                                                     <StickyNote className="w-4 h-4" />
                                                                 </button>
-                                                                <button
-                                                                    title="Consultar PCPMetal AI"
-                                                                    onClick={(e) => { e.stopPropagation(); setPcpmetalContext(getAIContext(order)); setPcpmetalOpen(true); }}
-                                                                    className="text-blue-400 hover:text-blue-700 transition-colors p-1 rounded hover:bg-blue-50"
-                                                                >
-                                                                    <Bot className="w-4 h-4" />
-                                                                </button>
+
                                                                 {/* Dropdown de impressão/exportação */}
                                                                 <div className="relative" onClick={e => e.stopPropagation()}>
                                                                     <button
@@ -1629,27 +1626,20 @@ const OrdersTable = () => {
                     </div>
 
                     {/* Footer / Paginação */}
-                    {!loading && !error && orders.length > 0 && (
-                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between print:hidden">
-                            <span className="text-sm text-gray-500">
-                                {viewMode === 'tree' ? 'Página' : 'Página de Itens'} <span className="font-semibold text-gray-900">{page}</span> de <span className="font-semibold text-gray-900">{totalPages}</span>
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(Math.max(1, page - 1))}
-                                    disabled={page === 1}
-                                    className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    <ChevronLeft className="h-5 w-5 text-gray-600" />
-                                </button>
-                                <button
-                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                                    disabled={page === totalPages}
-                                    className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    <ChevronRight className="h-5 w-5 text-gray-600" />
-                                </button>
+                    {loading && page > 1 && (
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center print:hidden">
+                            <div className="flex items-center gap-2 text-gray-500">
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                <span className="text-sm font-medium">Carregando mais itens...</span>
                             </div>
+                        </div>
+                    )}
+
+                    {!loading && !error && orders.length > 0 && page >= totalPages && (
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center print:hidden">
+                            <span className="text-sm text-gray-400">
+                                Todos os {orders.length} registros foram carregados.
+                            </span>
                         </div>
                     )}
                 </>
@@ -1743,6 +1733,20 @@ const OrdersTable = () => {
                 )
             }
             {
+                corteForecastTarget && (
+                    <CorteForecastModal
+                        isOpen={true}
+                        items={corteForecastTarget}
+                        onClose={() => setCorteForecastTarget(null)}
+                        onSaveSuccess={() => {
+                            setCorteForecastTarget(null);
+                            setSelectedItems([]);
+                        }}
+                        usuario={user?.nome}
+                    />
+                )
+            }
+            {
                 pcpForecastTarget && (
                     <PCPForecastModal
                         isOpen={true}
@@ -1769,12 +1773,12 @@ const OrdersTable = () => {
                                     pcp_delivery_forecast_qtd: pcpQtd
                                 };
                                 
-                                setOrderItems(prev => ({
-                                    ...prev,
-                                    [target.pedido]: prev[target.pedido]?.map(i =>
+                                if (orderItems[target.pedido]) {
+                                    const newItems = orderItems[target.pedido].map(i =>
                                         i.item === target.item ? { ...i, ...newData } : i
-                                    )
-                                }));
+                                    );
+                                    updateOrderItemsForPedido(target.pedido, newItems);
+                                }
                                 
                                 if (viewMode === 'flat') {
                                     setOrders(prev => prev.map(o => {

@@ -1,1 +1,12 @@
-const mysqlPool = require('./services/mysqlService'); async function run() { try { const [rows] = await mysqlPool.query('DESCRIBE app_planning_lotes'); console.log('lotes', rows.filter(r => r.Field === 'modo_calculo')); const [rows2] = await mysqlPool.query('DESCRIBE app_production_planning'); console.log('planning', rows2.filter(r => r.Field === 'modo_calculo')); } catch(e) { console.error(e) } process.exit(0); } run();
+const db = require('./db'); const mysqlPool = require('./services/mysqlService');
+
+(async () => {
+    try {
+        const [rows] = await mysqlPool.query("SELECT id, op_numero, op_item, op_sequencia, operacao_codigo, quantidade FROM app_production_appointments WHERE op_numero = '006185'");
+        console.table(rows);
+        process.exit(0);
+    } catch(e) {
+        console.error(e);
+        process.exit(1);
+    }
+})();

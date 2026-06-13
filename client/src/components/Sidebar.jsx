@@ -153,9 +153,6 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
     // Helper to check visibility (default true if config is empty/loading or key missing)
     const isVisible = (itemId) => {
-        // Always show System/Config
-        if (itemId === 'config' || itemId === 'protheus-estudo') return true;
-
         // Company-level menu config: if explicitly hidden, hide it
         if (isConfigLoaded && Object.keys(visibleItems).length > 0) {
             if (visibleItems[itemId] === false) return false;

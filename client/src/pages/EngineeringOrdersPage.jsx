@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight,
     Package, Layers, FileText, FileSpreadsheet, Loader2,
-    GripVertical, Settings, X, Eye, EyeOff, Scissors, Play, Square
+    GripVertical, Settings, X, Eye, EyeOff, Scissors, Play, Square,
+    ArrowUp, ArrowDown, ArrowUpDown, HelpCircle, Printer
 } from 'lucide-react';
 import {
     getPedidosFlat, getProdutos, getReportDownloadUrl,
-    getFileUrl, getUserPreference, saveUserPreference, api
+    getFileUrl, getUserPreference, saveUserPreference, api, getUsers
 } from '../services/api';
 
 import DocsModal from '../components/DocsModal';
@@ -19,9 +20,14 @@ import EngineeringPlanModal from '../components/EngineeringPlanModal';
 import PCPForecastModal from '../components/PCPForecastModal';
 import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
+import QuickDateEditModal from '../components/QuickDateEditModal';
+import EngineeringOrdersPrint from '../components/EngineeringOrdersPrint';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import useStickyState from '../hooks/useStickyState';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ─── Column definitions ────────────────────────────────────────────────────────
 const ALL_COLUMNS = [
@@ -35,6 +41,17 @@ const ALL_COLUMNS = [
     { key: 'codigo', label: 'Cód. Prod', required: false },
     { key: 'c6_xrevm', label: 'C6_XREVM', required: false },
     { key: 'tipo', label: 'Tipo', required: false },
+    { key: 'designer_name', label: 'Projetista', required: false },
+    { key: 'engineering_start_date', label: 'Início Eng.', required: false },
+    { key: 'designer_start_forecast', label: 'Início Prev.', required: false },
+    { key: 'designer_end_forecast', label: 'Fim Prev.', required: false },
+    { key: 'designer_start_real', label: 'Início Real', required: false },
+    { key: 'designer_end_real', label: 'Fim Real', required: false },
+    { key: 'designer_production_release_date', label: 'Lib. Engenharia', required: false },
+    { key: 'designer_notes', label: 'Obs. Projetista', required: false },
+    { key: 'pcp_mat_req_date', label: 'Req. Material (PCP)', required: false },
+    { key: 'pcp_mech_start_date', label: 'Início Mec. (PCP)', required: false },
+    { key: 'pcp_cut_rel_date', label: 'Lib. Corte (PCP)', required: false },
     { key: 'ref_cliente', label: 'Ref. Cliente', required: false },
     { key: 'rev_cliente', label: 'Rev. Cliente', required: false },
     { key: 'descricao', label: 'Descrição', required: false },
@@ -58,7 +75,7 @@ function loadColConfigLocal() {
         if (saved) {
             const parsed = JSON.parse(saved);
             const knownKeys = new Set(parsed.map(c => c.key));
-            const extra = ALL_COLUMNS.filter(c => !knownKeys.has(c.key));
+            const extra = ALL_COLUMNS.filter(c => !knownKeys.has(c.key)).map(c => ({ ...c, visible: true }));
             return [...parsed, ...extra];
         }
     } catch (_) { /* ignore */ }
@@ -70,7 +87,7 @@ async function loadColConfigFromServer() {
         const saved = await getUserPreference(PREF_KEY);
         if (saved && Array.isArray(saved)) {
             const knownKeys = new Set(saved.map(c => c.key));
-            const extra = ALL_COLUMNS.filter(c => !knownKeys.has(c.key));
+            const extra = ALL_COLUMNS.filter(c => !knownKeys.has(c.key)).map(c => ({ ...c, visible: true }));
             return [...saved, ...extra];
         }
     } catch (_) { /* fallback to local */ }
@@ -103,24 +120,36 @@ function formatCurrency(value) {
 function ColumnSettingsPanel({ columns, onChange, onClose }) {
     const [cols, setCols] = useState(columns);
     const [dragging, setDragging] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [showHelp, setShowHelp] = useState(false);
 
     const handleDragStart = (idx) => setDragging(idx);
     const handleDragOver = (e, idx) => {
         e.preventDefault();
         if (dragging === null || dragging === idx) return;
+        
+        // Find actual indices in the full list if filtered
+        const actualDraggingIdx = cols.findIndex(c => c.key === filteredCols[dragging].key);
+        const actualTargetIdx = cols.findIndex(c => c.key === filteredCols[idx].key);
+        
         const next = [...cols];
-        const [moved] = next.splice(dragging, 1);
-        next.splice(idx, 0, moved);
+        const [moved] = next.splice(actualDraggingIdx, 1);
+        next.splice(actualTargetIdx, 0, moved);
         setCols(next);
         setDragging(idx);
     };
     const handleDrop = () => setDragging(null);
 
-    const toggleVisible = (idx) => {
+    const toggleVisible = (key) => {
+        const idx = cols.findIndex(c => c.key === key);
         if (cols[idx].required) return;
         const next = [...cols];
         next[idx] = { ...next[idx], visible: !next[idx].visible };
         setCols(next);
+    };
+
+    const setAllVisible = (visible) => {
+        setCols(cols.map(c => c.required ? c : { ...c, visible }));
     };
 
     const handleSave = () => {
@@ -132,7 +161,10 @@ function ColumnSettingsPanel({ columns, onChange, onClose }) {
     const handleReset = () => {
         const def = ALL_COLUMNS.map(c => ({ ...c, visible: true }));
         setCols(def);
+        setSearchTerm('');
     };
+
+    const filteredCols = cols.filter(c => c.label.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
@@ -141,31 +173,75 @@ function ColumnSettingsPanel({ columns, onChange, onClose }) {
                     <div className="flex items-center gap-2">
                         <Settings className="h-5 w-5 text-indigo-600" />
                         <h2 className="text-base font-bold text-gray-800">Ordem e Visibilidade das Colunas</h2>
+                        <button 
+                            onClick={() => setShowHelp(!showHelp)}
+                            className={`p-1 rounded-full transition-colors ${showHelp ? 'bg-indigo-100 text-indigo-700' : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100'}`}
+                            title="Ajuda sobre o painel"
+                        >
+                            <HelpCircle className="h-4 w-4" />
+                        </button>
                     </div>
                     <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition">
                         <X className="h-4 w-4 text-gray-500" />
                     </button>
                 </div>
-                <p className="text-xs text-gray-400 px-5 pt-3 pb-1">Arraste para reordenar. Clique no olho para mostrar/ocultar.</p>
+                
+                {showHelp && (
+                    <div className="px-5 py-3 bg-indigo-50 border-b border-indigo-100 text-sm text-indigo-900 leading-relaxed">
+                        <p className="font-semibold mb-1">Como usar este painel:</p>
+                        <ul className="list-disc pl-5 space-y-1 text-xs">
+                            <li><strong>Reordenar:</strong> Clique e segure no ícone <GripVertical className="inline h-3 w-3 text-indigo-400"/> e arraste a coluna para a posição desejada. Note que o arraste é desabilitado enquanto você usa a barra de busca.</li>
+                            <li><strong>Ocultar/Mostrar:</strong> Clique no ícone de olho (<Eye className="inline h-3 w-3 text-indigo-500"/>) para esconder colunas que você não utiliza, deixando a tela mais limpa. Colunas com selo <span className="bg-indigo-100 text-indigo-600 px-1 rounded text-[9px] uppercase font-bold">Fixo</span> não podem ser ocultadas.</li>
+                            <li><strong>Mostrar Todas / Ocultar Todas:</strong> Use os botões abaixo para ligar ou desligar várias colunas de uma vez.</li>
+                            <li><strong>Pesquisa:</strong> Use a barra de busca para encontrar rapidamente uma coluna numa lista grande.</li>
+                            <li><strong>Resetar:</strong> Volta as colunas para o padrão de fábrica.</li>
+                        </ul>
+                        <p className="mt-2 text-xs italic text-indigo-700">Ao clicar em "Salvar", sua configuração ficará armazenada no seu navegador para seus próximos acessos!</p>
+                    </div>
+                )}
+
+                <div className="px-5 pt-3 pb-2 space-y-3">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Buscar coluna..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs text-gray-400">Arraste para reordenar.</p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setAllVisible(true)} className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition">
+                                Mostrar Todas
+                            </button>
+                            <button onClick={() => setAllVisible(false)} className="text-[10px] font-semibold text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition">
+                                Ocultar Todas
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 <div className="overflow-y-auto flex-1 px-5 py-2 space-y-1.5">
-                    {cols.map((col, idx) => (
+                    {filteredCols.map((col, idx) => (
                         <div
                             key={col.key}
-                            draggable
+                            draggable={searchTerm === ''} // Only allow dragging when not filtering
                             onDragStart={() => handleDragStart(idx)}
                             onDragOver={(e) => handleDragOver(e, idx)}
                             onDrop={handleDrop}
-                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing select-none
+                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${searchTerm === '' ? 'cursor-grab active:cursor-grabbing' : ''} select-none
                                 ${dragging === idx ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-gray-100 bg-gray-50 hover:border-indigo-200'}`}
                         >
-                            <GripVertical className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                            <GripVertical className={`h-4 w-4 flex-shrink-0 ${searchTerm === '' ? 'text-gray-300' : 'text-gray-100'}`} />
                             <span className={`flex-1 text-sm font-medium ${!col.visible ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
                                 {col.label}
                             </span>
                             {col.required
                                 ? <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold uppercase">Fixo</span>
                                 : (
-                                    <button onClick={() => toggleVisible(idx)} className="p-1 rounded-lg hover:bg-gray-200 transition">
+                                    <button onClick={() => toggleVisible(col.key)} className="p-1 rounded-lg hover:bg-gray-200 transition">
                                         {col.visible
                                             ? <Eye className="h-4 w-4 text-indigo-500" />
                                             : <EyeOff className="h-4 w-4 text-gray-400" />
@@ -175,6 +251,9 @@ function ColumnSettingsPanel({ columns, onChange, onClose }) {
                             }
                         </div>
                     ))}
+                    {filteredCols.length === 0 && (
+                        <div className="text-center py-8 text-sm text-gray-400">Nenhuma coluna encontrada</div>
+                    )}
                 </div>
                 <div className="flex gap-3 p-5 border-t border-gray-100">
                     <button onClick={handleReset} className="flex-1 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
@@ -231,8 +310,9 @@ const EngineeringOrdersPage = () => {
     const [totalPages, setTotalPages] = useState(1);
     const limit = 100;
 
-    // Tipo frontend filter (multi-select)
-    const [tipoFilter, setTipoFilter] = useStickyState([], '@metalfisa:eng_tipoFilter');
+    // Tipo frontend filter (multi-select) — default: Revisão, Restrição, Novo
+    const [tipoFilter, setTipoFilter] = useStickyState(['Revisão', 'Restrição', 'Novo'], '@metalfisa:eng_tipoFilter');
+    const printRef = useRef(null);
     // Emissão frontend filter (single date)
     const [emissaoFilter, setEmissaoFilter] = useStickyState('', '@metalfisa:eng_emissaoFilter');
     const [showSettings, setShowSettings] = useState(false);
@@ -240,10 +320,22 @@ const EngineeringOrdersPage = () => {
     
     // Engineering Timesheet Active Timer
     const [activeTimer, setActiveTimer] = useState(null);
+    const [designers, setDesigners] = useState([]);
+
+    // Load designers on mount
+    useEffect(() => {
+        getUsers({ setor: 'ENGENHARIA' })
+            .then(users => setDesigners(users || []))
+            .catch(err => console.error('Error loading designers:', err));
+    }, []);
 
     // Bulk selection state
     const [selectedItems, setSelectedItems] = useState(new Set());
     const [batchModalOpen, setBatchModalOpen] = useState(false);
+
+    // UI states for interactions
+    const [pinnedRow, setPinnedRow] = useState(null);
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
     const fetchActiveTimer = async () => {
         try {
@@ -299,6 +391,7 @@ const EngineeringOrdersPage = () => {
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
     // PCP Planned date modal
     const [planModalTarget, setPlanModalTarget] = useState(null); // { pedido, item, currentDate, currentObs }
+    const [editingCell, setEditingCell] = useState(null);
 
     const filters = {
         cliente: orderFilters.cliente,
@@ -354,6 +447,26 @@ const EngineeringOrdersPage = () => {
         return true;
     });
 
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+        setSortConfig({ key, direction });
+    };
+
+    const sortedOrders = [...filteredOrders].sort((a, b) => {
+        if (!sortConfig.key) return 0;
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+        if (aVal === bVal) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        const aStr = String(aVal).toLowerCase();
+        const bStr = String(bVal).toLowerCase();
+        if (!isNaN(aStr) && !isNaN(bStr)) {
+            return sortConfig.direction === 'asc' ? Number(aStr) - Number(bStr) : Number(bStr) - Number(aStr);
+        }
+        return sortConfig.direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    });
 
     const fetchData = async (overrides = {}) => {
         setLoading(true);
@@ -363,7 +476,14 @@ const EngineeringOrdersPage = () => {
             const searchPage = overrides.page || page;
             const result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit });
             const { data, meta } = result;
-            setOrders(data);
+            if (searchPage === 1) {
+                setOrders(data);
+            } else {
+                setOrders(prev => {
+                    const newIds = new Set(data.map(d => `${d.pedido}-${d.item}`));
+                    return [...prev.filter(p => !newIds.has(`${p.pedido}-${p.item}`)), ...data];
+                });
+            }
             setTotalPages(Math.ceil(meta.total / limit));
         } catch (err) {
             const serverError = err.response?.data;
@@ -399,9 +519,14 @@ const EngineeringOrdersPage = () => {
     };
 
     const handleSaveEngineeringControl = (pedido, itemCode, newData) => {
-        setOrders(prev => prev.map(i =>
-            (i.pedido === pedido && i.item === itemCode) ? { ...i, ...newData } : i
-        ));
+        if (!pedido && !itemCode) {
+            // Batch update: refetch data to reflect changes
+            fetchData();
+        } else {
+            setOrders(prev => prev.map(i =>
+                (i.pedido === pedido && i.item === itemCode) ? { ...i, ...newData } : i
+            ));
+        }
     };
 
     // Exportar Espelho OS Corte Laser (MO0013) — requer filtro por pedido específico
@@ -432,9 +557,105 @@ const EngineeringOrdersPage = () => {
         window.open(url, '_blank');
     };
 
+    // ── Report helpers ──────────────────────────────────────────────────────────
+    const getReportCols = () => visibleCols.filter(c => !['acoes'].includes(c.key));
+
+    const formatReportDate = (val) => {
+        if (!val) return '';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return val;
+        return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    };
+
+    const getCellText = (col, item) => {
+        const dateKeys = [
+            'engineering_start_date', 'designer_start_forecast', 'designer_end_forecast',
+            'designer_start_real', 'designer_end_real', 'designer_production_release_date',
+            'pcp_mat_req_date', 'pcp_mech_start_date', 'pcp_cut_rel_date', 'entrega', 'data_pcp', 'lib_producao'
+        ];
+        if (dateKeys.includes(col.key)) return formatReportDate(item[col.key]);
+        if (col.key === 'emissao') {
+            const v = item.emissao;
+            if (!v) return '';
+            if (String(v).length === 8) return `${v.slice(6,8)}/${v.slice(4,6)}/${v.slice(0,4)}`;
+            return formatReportDate(v);
+        }
+        if (col.key === 'cliente') return item.nome_cliente || '';
+        if (col.key === 'tipo') return item.status_tipo_item || '';
+        if (col.key === 'op') return item.op_num || '';
+        if (col.key === 'c6_xrevm') return item.rev_codigo || '';
+        if (col.key === 'status') return item.status_item || '';
+        const v = item[col.key];
+        return v != null ? String(v) : '';
+    };
+
+    const handleExportFilteredExcel = () => {
+        if (filteredOrders.length === 0) return alert('Nenhum dado visível para exportar.');
+        const cols = getReportCols();
+        const rows = filteredOrders.map(item => {
+            const row = {};
+            cols.forEach(col => { row[col.label] = getCellText(col, item); });
+            return row;
+        });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Pedidos Engenharia');
+        XLSX.writeFile(wb, `Pedidos_Engenharia_${new Date().toISOString().slice(0,10)}.xlsx`);
+    };
+
+    const handleExportPDF = () => {
+        if (filteredOrders.length === 0) return alert('Nenhum dado visível para exportar.');
+        const cols = getReportCols();
+        const engKeys = new Set(['engineering_start_date','designer_name','designer_start_forecast','designer_end_forecast','designer_start_real','designer_end_real','designer_production_release_date','designer_notes']);
+        const pcpKeys = new Set(['pcp_mat_req_date','pcp_mech_start_date','pcp_cut_rel_date']);
+
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+
+        // Header box
+        doc.setFillColor(30, 58, 138); // indigo-900
+        doc.rect(10, 8, 400, 12, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.text('METALFISA — Relatório de Pedidos de Engenharia', 14, 16.5);
+        doc.setFontSize(8);
+        doc.text(`Emitido em: ${new Date().toLocaleString('pt-BR')}  |  Itens: ${filteredOrders.length}`, 300, 16.5, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+
+        const headRow = cols.map(c => c.label);
+        const bodyRows = filteredOrders.map(item => cols.map(col => getCellText(col, item)));
+
+        const colStyles = {};
+        cols.forEach((col, i) => {
+            if (engKeys.has(col.key)) colStyles[i] = { fillColor: [239, 246, 255], textColor: [30, 58, 138] };
+            else if (pcpKeys.has(col.key)) colStyles[i] = { fillColor: [255, 247, 237], textColor: [124, 45, 18] };
+        });
+
+        autoTable(doc, {
+            head: [headRow],
+            body: bodyRows,
+            startY: 24,
+            styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize', minCellWidth: 12 },
+            headStyles: { fillColor: [55, 65, 81], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            columnStyles: colStyles,
+            margin: { left: 10, right: 10 },
+        });
+
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(7);
+            doc.setTextColor(150);
+            doc.text(`MetalFisa — Sistema LYNX — Página ${i} de ${pageCount}`, 10, doc.internal.pageSize.getHeight() - 6);
+        }
+
+        doc.save(`Pedidos_Engenharia_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
 
     // Render cell content for a given column key and row
-    const renderCell = (colKey, item) => {
+    const renderCell = (colKey, item, colLabel = colKey) => {
         switch (colKey) {
             case 'pedido':
                 return <span className="font-bold text-gray-900">{item.pedido}</span>;
@@ -455,18 +676,281 @@ const EngineeringOrdersPage = () => {
                 return <span className="text-xs font-mono bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{item.op_num || '-'}</span>;
             case 'codigo':
                 return (
-                    <Link
-                        to={`/estrutura/${encodeURIComponent(item.codigo)}`}
-                        state={{ from: location.pathname, pedido: item.pedido, item: item.item }}
+                    <a
+                        href={`/estrutura/${encodeURIComponent(item.codigo)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 text-xs font-mono"
+                        title="Abrir estrutura em nova aba"
                     >
                         {item.codigo} <Layers className="h-3 w-3" />
-                    </Link>
+                    </a>
                 );
             case 'c6_xrevm':
                 return <span className="text-xs text-gray-500 font-mono">{item.rev_codigo || '-'}</span>;
             case 'tipo':
                 return <TipoBadge tipo={item.status_tipo_item} detalhe={item.status_tipo_detalhe} />;
+            case 'designer_name': {
+                const val = item.designer_name || '';
+
+                if (editingCell && editingCell.pedido === item.pedido && editingCell.item === item.item && editingCell.key === colKey) {
+                    return (
+                        <div className="w-[150px]">
+                            <select
+                                autoFocus
+                                className="w-full text-xs p-1 border-2 border-indigo-500 rounded outline-none shadow-sm font-semibold bg-white"
+                                value={editingCell.value}
+                                onChange={async (e) => {
+                                    const newVal = e.target.value;
+                                    const cur = editingCell;
+                                    setEditingCell(null);
+                                    if (newVal === val) return;
+                                    try {
+                                        if (cur.batchItems && cur.batchItems.length > 0) {
+                                            await api.post('/pedidos/batch/items/notes', {
+                                                items: cur.batchItems,
+                                                formData: { designer_name: newVal }
+                                            });
+                                            const batchKeys = new Set(cur.batchItems.map(b => `${b.pedido}-${b.item}`));
+                                            setOrders(prev => prev.map(row =>
+                                                batchKeys.has(`${row.pedido}-${row.item}`)
+                                                ? { ...row, designer_name: newVal } : row
+                                            ));
+                                        } else {
+                                            await api.post(`/pedidos/${item.pedido}/items/${item.item}/notes`, {
+                                                designer_name: newVal
+                                            });
+                                            setOrders(prev => prev.map(row =>
+                                                (row.pedido === item.pedido && row.item === item.item)
+                                                ? { ...row, designer_name: newVal } : row
+                                            ));
+                                        }
+                                    } catch (err) {
+                                        alert('Erro ao salvar: ' + (err.response?.data?.error || err.message));
+                                    }
+                                }}
+                                onBlur={() => setEditingCell(null)}
+                                onKeyDown={e => { if (e.key === 'Escape') setEditingCell(null); }}
+                            >
+                                <option value="">Selecione...</option>
+                                {designers.map(d => (
+                                    <option key={d.idUsuario} value={d.NomeCompleto}>{d.NomeCompleto}</option>
+                                ))}
+                            </select>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div
+                        className="cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 transition-colors group/designer"
+                        title="Clique para alterar o Projetista"
+                        onClick={() => {
+                            const itemKey = `${item.pedido}-${item.item}`;
+                            const isSelected = selectedItems.has(itemKey);
+                            const list = selectedItems.size > 0 ? getSelectedItemsList() : [];
+                            if (!isSelected && selectedItems.size > 0) {
+                                list.push({ pedido: item.pedido, item: item.item });
+                            }
+                            setEditingCell({
+                                pedido: item.pedido,
+                                item: item.item,
+                                key: colKey,
+                                value: val,
+                                batchItems: list.length > 1 ? list : null
+                            });
+                        }}
+                    >
+                        {val ? (
+                            <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px] inline-block">{val}</span>
+                        ) : (
+                            <span className="text-xs text-gray-400 border border-transparent border-dashed px-1.5 py-0.5 group-hover/designer:border-gray-300 rounded">Definir...</span>
+                        )}
+                    </div>
+                );
+            }
+            case 'designer_start_forecast':
+            case 'designer_end_forecast':
+            case 'engineering_start_date':
+            case 'designer_start_real':
+            case 'designer_end_real':
+            case 'designer_production_release_date':
+            case 'pcp_mat_req_date':
+            case 'pcp_mech_start_date':
+            case 'pcp_cut_rel_date': {
+                const val = item[colKey];
+                
+                // Color formatting based on the field
+                let colorClass = "text-gray-400 group-hover/date:text-blue-600";
+                let bgClass = "";
+                let hasValClass = "bg-blue-50 text-blue-700 border border-blue-200";
+                
+                if (colKey.includes('real') || colKey.includes('production_release')) {
+                    colorClass = "text-gray-400 group-hover/date:text-green-600";
+                    hasValClass = "bg-green-50 text-green-700 border border-green-200";
+                } else if (colKey.includes('pcp_')) {
+                    colorClass = "text-gray-400 group-hover/date:text-amber-600";
+                    hasValClass = "bg-amber-50 text-amber-700 border border-amber-200";
+                } else if (colKey.includes('engineering_start')) {
+                    colorClass = "text-gray-400 group-hover/date:text-indigo-600";
+                    hasValClass = "bg-indigo-50 text-indigo-700 border border-indigo-200";
+                }
+
+                if (editingCell && editingCell.pedido === item.pedido && editingCell.item === item.item && editingCell.key === colKey) {
+                    return (
+                        <div className="w-[110px]">
+                            <input 
+                                autoFocus
+                                type="date" 
+                                className="w-full text-[10px] p-0.5 border-2 border-indigo-500 rounded outline-none shadow-sm font-medium"
+                                value={editingCell.value}
+                                onChange={e => setEditingCell({...editingCell, value: e.target.value})}
+                                onBlur={async () => {
+                                    if (editingCell.saving) return;
+                                    setEditingCell({...editingCell, saving: true});
+                                    
+                                    const oldVal = val ? val.split('T')[0] : '';
+                                    if (oldVal === editingCell.value) {
+                                        setEditingCell(null);
+                                        return;
+                                    }
+
+                                    try {
+                                        if (editingCell.batchItems && editingCell.batchItems.length > 0) {
+                                            await api.post('/pedidos/batch/items/notes', {
+                                                items: editingCell.batchItems,
+                                                formData: { [colKey]: editingCell.value }
+                                            });
+                                            // Update all batch rows locally — no page reload
+                                            const batchKeys = new Set(editingCell.batchItems.map(b => `${b.pedido}-${b.item}`));
+                                            setOrders(prev => prev.map(row =>
+                                                batchKeys.has(`${row.pedido}-${row.item}`)
+                                                ? { ...row, [colKey]: editingCell.value } : row
+                                            ));
+                                        } else {
+                                            await api.post(`/pedidos/${item.pedido}/items/${item.item}/notes`, {
+                                                [colKey]: editingCell.value
+                                            });
+                                            setOrders(prev => prev.map(row =>
+                                                (row.pedido === item.pedido && row.item === item.item)
+                                                ? { ...row, [colKey]: editingCell.value } : row
+                                            ));
+                                        }
+                                    } catch (err) {
+                                        alert('Erro ao salvar: ' + (err.response?.data?.error || err.message));
+                                    }
+                                    setEditingCell(null);
+                                }}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                        e.target.blur(); // Triggers onBlur to save
+                                    }
+                                    if (e.key === 'Escape') setEditingCell(null);
+                                }}
+                            />
+                        </div>
+                    );
+                }
+
+                return (
+                    <div
+                        className="cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 transition-colors group/date"
+                        title={`Clique para editar ${colLabel}`}
+                        onClick={() => {
+                            const itemKey = `${item.pedido}-${item.item}`;
+                            const isSelected = selectedItems.has(itemKey);
+                            const list = selectedItems.size > 0 ? getSelectedItemsList() : [];
+                            if (!isSelected && selectedItems.size > 0) {
+                                list.push({ pedido: item.pedido, item: item.item });
+                            }
+                            setEditingCell({
+                                pedido: item.pedido,
+                                item: item.item,
+                                key: colKey,
+                                value: val ? val.split('T')[0] : '',
+                                batchItems: list.length > 1 ? list : null
+                            });
+                        }}
+                    >
+                        {val ? (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${hasValClass} ${colKey.includes('end_') || colKey.includes('production') || colKey.includes('cut_') ? 'font-bold' : ''}`}>
+                                {new Date(val).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                            </span>
+                        ) : <span className={`text-[10px] border border-transparent border-dashed px-1.5 py-0.5 group-hover/date:border-gray-300 rounded ${colorClass}`}>Definir...</span>}
+                    </div>
+                );
+            }
+            case 'designer_notes': {
+                const val = item.designer_notes || '';
+
+                if (editingCell && editingCell.pedido === item.pedido && editingCell.item === item.item && editingCell.key === colKey) {
+                    return (
+                        <div className="w-[200px]">
+                            <textarea
+                                autoFocus
+                                rows={3}
+                                className="w-full text-xs p-1 border-2 border-indigo-500 rounded outline-none shadow-sm resize-none"
+                                value={editingCell.value}
+                                onChange={e => setEditingCell({...editingCell, value: e.target.value})}
+                                onBlur={async () => {
+                                    if (editingCell.saving) return;
+                                    setEditingCell({...editingCell, saving: true});
+                                    if (val === editingCell.value) { setEditingCell(null); return; }
+                                    try {
+                                        if (editingCell.batchItems && editingCell.batchItems.length > 0) {
+                                            await api.post('/pedidos/batch/items/notes', {
+                                                items: editingCell.batchItems,
+                                                formData: { designer_notes: editingCell.value }
+                                            });
+                                            const batchKeys = new Set(editingCell.batchItems.map(b => `${b.pedido}-${b.item}`));
+                                            setOrders(prev => prev.map(row =>
+                                                batchKeys.has(`${row.pedido}-${row.item}`)
+                                                ? { ...row, designer_notes: editingCell.value } : row
+                                            ));
+                                        } else {
+                                            await api.post(`/pedidos/${item.pedido}/items/${item.item}/notes`, {
+                                                designer_notes: editingCell.value
+                                            });
+                                            setOrders(prev => prev.map(row =>
+                                                (row.pedido === item.pedido && row.item === item.item)
+                                                ? { ...row, designer_notes: editingCell.value } : row
+                                            ));
+                                        }
+                                    } catch (err) {
+                                        alert('Erro ao salvar: ' + (err.response?.data?.error || err.message));
+                                    }
+                                    setEditingCell(null);
+                                }}
+                                onKeyDown={e => {
+                                    if (e.key === 'Escape') setEditingCell(null);
+                                    if (e.key === 'Enter' && e.ctrlKey) e.target.blur();
+                                }}
+                            />
+                            <p className="text-[9px] text-gray-400 mt-0.5">Ctrl+Enter para salvar · Esc para cancelar</p>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div
+                        className="cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 transition-colors group/notes max-w-[180px]"
+                        title="Clique para editar a observação"
+                        onClick={() => {
+                            const itemKey = `${item.pedido}-${item.item}`;
+                            const isSelected = selectedItems.has(itemKey);
+                            const list = selectedItems.size > 0 ? getSelectedItemsList() : [];
+                            if (!isSelected && selectedItems.size > 0) list.push({ pedido: item.pedido, item: item.item });
+                            setEditingCell({ pedido: item.pedido, item: item.item, key: colKey, value: val, batchItems: list.length > 1 ? list : null });
+                        }}
+                    >
+                        {val ? (
+                            <span className="text-xs text-gray-600 truncate max-w-[160px] inline-block">{val}</span>
+                        ) : (
+                            <span className="text-xs text-gray-400 border border-transparent border-dashed px-1.5 py-0.5 group-hover/notes:border-gray-300 rounded">Adicionar obs...</span>
+                        )}
+                    </div>
+                );
+            }
             case 'ref_cliente':
                 return <span className="text-xs font-mono text-gray-600">{item.ref_cliente || '-'}</span>;
             case 'rev_cliente':
@@ -552,12 +1036,21 @@ const EngineeringOrdersPage = () => {
                     <div
                         className="flex flex-col gap-1 cursor-pointer group"
                         title="Clique para definir/editar data planejada"
-                        onClick={() => setPlanModalTarget({
-                            pedido: item.pedido,
-                            item: item.item,
-                            currentDate: planned,
-                            currentObs: item.pcp_planned_eng_obs
-                        })}
+                        onClick={() => {
+                            const itemKey = `${item.pedido}-${item.item}`;
+                            const isSelected = selectedItems.has(itemKey);
+                            const list = selectedItems.size > 0 ? getSelectedItemsList() : [];
+                            if (!isSelected && selectedItems.size > 0) {
+                                list.push({ pedido: item.pedido, item: item.item });
+                            }
+                            setPlanModalTarget({
+                                pedido: item.pedido,
+                                item: item.item,
+                                currentDate: planned,
+                                currentObs: item.pcp_planned_eng_obs,
+                                batchItems: list.length > 1 ? list : null
+                            });
+                        }}
                     >
                         {/* Planejado line */}
                         <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-all ${planned
@@ -567,6 +1060,13 @@ const EngineeringOrdersPage = () => {
                             <Calendar className="h-2.5 w-2.5" />
                             <span>Plan: {planned ? new Date(planned).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Definir...'}</span>
                         </div>
+                        {/* Previsão Projetista */}
+                        {item.designer_end_forecast && (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                <Calendar className="h-2.5 w-2.5" />
+                                <span>Prev: {new Date(item.designer_end_forecast).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                            </div>
+                        )}
                         {/* Realizado line */}
                         {released && (
                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">
@@ -615,10 +1115,17 @@ const EngineeringOrdersPage = () => {
         }
     };
 
+    const handleScroll = useCallback((e) => {
+        const { scrollTop, scrollHeight, clientHeight } = e.target;
+        if (scrollHeight - scrollTop <= clientHeight * 1.5 && !loading && page < totalPages) {
+            setPage(page + 1);
+        }
+    }, [loading, page, totalPages]);
+
     const visibleCols = colConfig.filter(c => c.visible !== false && (canViewFinancials || !['valor_unitario', 'valor_total'].includes(c.key)));
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:overflow-visible print:shadow-none print:border-none flex flex-col h-[calc(100vh-100px)]">
             {/* Header & Filters */}
             <div className="p-4 border-b border-gray-100 bg-white print:hidden">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
@@ -664,13 +1171,16 @@ const EngineeringOrdersPage = () => {
 
                     {/* Pedido */}
                     <div className="flex flex-col gap-1">
-                        <label className="text-[11px] font-medium text-gray-600 ml-1">Pedido:</label>
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">
+                            Pedido:
+                            <span className="ml-1 text-gray-400 font-normal">(sep. por vírgula)</span>
+                        </label>
                         <div className="relative">
                             <Filter className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                             <input
                                 type="text"
                                 name="pedido"
-                                placeholder="Nº Pedido..."
+                                placeholder="4002, 4618, 5000..."
                                 value={filters.pedido}
                                 onChange={handleFilterChange}
                                 className="pl-9 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all"
@@ -798,13 +1308,24 @@ const EngineeringOrdersPage = () => {
 
                     {/* Action buttons */}
                     <div className="md:col-span-2 flex gap-2">
-                        <button
-                            type="submit"
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
-                        >
-                            <Search className="h-4 w-4" />
-                            Filtrar
-                        </button>
+                        {selectedItems.size > 0 ? (
+                            <button
+                                type="button"
+                                onClick={() => setEngineeringTarget({ isBatch: true })}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-all flex items-center justify-center shadow-md animate-in fade-in zoom-in duration-200"
+                            >
+                                <Settings className="h-4 w-4 mr-2" />
+                                Editar {selectedItems.size} Item(s)
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
+                            >
+                                <Search className="h-4 w-4" />
+                                Filtrar
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={handleDownloadExcel}
@@ -813,14 +1334,36 @@ const EngineeringOrdersPage = () => {
                         >
                             <FileSpreadsheet className="h-4 w-4" />
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleDownloadLaserExport}
-                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium rounded-lg text-sm px-3 py-2.5 transition-colors flex items-center justify-center"
-                            title="Exportar OS Corte Laser (MO0013) — filtre por pedido específico"
-                        >
-                            <Scissors className="h-4 w-4" />
-                        </button>
+                        {/* ── Report group ── */}
+                        <div className="flex items-center gap-0 border border-indigo-200 rounded-lg overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => setTimeout(() => window.print(), 100)}
+                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium text-xs px-2.5 py-2.5 transition-colors flex items-center gap-1 border-r border-indigo-200"
+                                title="Imprimir relatório (itens visíveis)"
+                            >
+                                <Printer className="h-3.5 w-3.5" />
+                                <span className="hidden lg:inline text-[11px]">Imprimir</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExportFilteredExcel}
+                                className="bg-green-50 hover:bg-green-100 text-green-700 font-medium text-xs px-2.5 py-2.5 transition-colors flex items-center gap-1 border-r border-green-200"
+                                title="Exportar Excel (itens visíveis com filtros)"
+                            >
+                                <FileSpreadsheet className="h-3.5 w-3.5" />
+                                <span className="hidden lg:inline text-[11px]">Excel</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExportPDF}
+                                className="bg-red-50 hover:bg-red-100 text-red-700 font-medium text-xs px-2.5 py-2.5 transition-colors flex items-center gap-1"
+                                title="Exportar PDF (itens visíveis com filtros)"
+                            >
+                                <FileText className="h-3.5 w-3.5" />
+                                <span className="hidden lg:inline text-[11px]">PDF</span>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Toggle pendentes */}
@@ -850,7 +1393,7 @@ const EngineeringOrdersPage = () => {
             </div>
 
             {/* Table */}
-            <div className="overflow-x-scroll min-h-[400px] print:overflow-visible print:min-h-0">
+            <div className="overflow-auto flex-1 print:overflow-visible" onScroll={handleScroll}>
                 <table className="w-full text-sm text-left text-gray-500 print:w-full">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-100">
                         <tr>
@@ -866,9 +1409,21 @@ const EngineeringOrdersPage = () => {
                             {visibleCols.map(col => (
                                 <th
                                     key={col.key}
-                                    className={`px-4 py-3 font-semibold whitespace-nowrap ${col.key === 'acoes' ? 'print:hidden text-center' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp', 'valor_unitario', 'valor_total'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
+                                    onClick={() => col.key !== 'acoes' && handleSort(col.key)}
+                                    className={`px-4 py-3 font-semibold whitespace-nowrap select-none ${col.key !== 'acoes' ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''} ${col.key === 'acoes' ? 'print:hidden text-center' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp', 'valor_unitario', 'valor_total'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'designer_name', 'item', 'status', 'lib_producao', 'entrega', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
                                 >
-                                    {col.label}
+                                    <div className={`flex items-center gap-1 ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp', 'valor_unitario', 'valor_total'].includes(col.key) ? 'justify-end' : ['emissao', 'op', 'c6_xrevm', 'tipo', 'designer_name', 'item', 'status', 'lib_producao', 'entrega', 'data_pcp'].includes(col.key) ? 'justify-center' : 'justify-start'}`}>
+                                        {col.label}
+                                        {col.key !== 'acoes' && (
+                                            <span className="text-gray-400">
+                                                {sortConfig.key === col.key ? (
+                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                                ) : (
+                                                    <ArrowUpDown className="h-3 w-3 opacity-30 hover:opacity-100" />
+                                                )}
+                                            </span>
+                                        )}
+                                    </div>
                                 </th>
                             ))}
                         </tr>
@@ -892,25 +1447,29 @@ const EngineeringOrdersPage = () => {
                                     </div>
                                 </td>
                             </tr>
-                        ) : filteredOrders.length === 0 ? (
+                        ) : sortedOrders.length === 0 ? (
                             <tr>
                                 <td colSpan={visibleCols.length} className="px-6 py-12 text-center text-gray-400">
                                     Nenhum registro encontrado com estes filtros.
                                 </td>
                             </tr>
                         ) : (
-                            filteredOrders.map((item, idx) => {
+                            sortedOrders.map((item, idx) => {
                                 const itemKey = `${item.pedido}-${item.item}`;
                                 const isSelected = selectedItems.has(itemKey);
+                                const isPinned = pinnedRow === itemKey;
                                 return (
                                     <tr
                                         key={`${item.pedido}-${item.item}-${idx}`}
-                                        className={`transition-colors border-b border-gray-50 last:border-0 ${
-                                            isSelected
-                                                ? 'bg-indigo-50 hover:bg-indigo-100/70'
-                                                : parseFloat(item.qtd_faturar) <= 0
-                                                    ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
-                                                    : 'bg-white hover:bg-slate-50'
+                                        onClick={() => setPinnedRow(isPinned ? null : itemKey)}
+                                        className={`transition-all border-b border-gray-50 last:border-0 cursor-pointer ${
+                                            isPinned
+                                                ? 'bg-indigo-50 ring-2 ring-indigo-400 z-10 relative shadow-sm'
+                                                : isSelected
+                                                    ? 'bg-indigo-50/50 hover:bg-indigo-100/70'
+                                                    : parseFloat(item.qtd_faturar) <= 0
+                                                        ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
+                                                        : 'bg-white hover:bg-slate-50'
                                         }`}
                                     >
                                         <td className="px-3 py-2 print:hidden">
@@ -925,9 +1484,9 @@ const EngineeringOrdersPage = () => {
                                         {visibleCols.map(col => (
                                             <td
                                                 key={col.key}
-                                                className={`px-4 py-2 ${col.key === 'acoes' ? 'text-center print:hidden' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'item', 'status', 'lib_producao', 'entrega', 'ref_cliente', 'rev_cliente', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
+                                                className={`px-4 py-2 ${col.key === 'acoes' ? 'text-center print:hidden' : ''} ${['qtd_entregue', 'saldo', 'quantidade', 'qtd_pcp'].includes(col.key) ? 'text-right' : ''} ${['emissao', 'op', 'c6_xrevm', 'tipo', 'designer_name', 'item', 'status', 'lib_producao', 'entrega', 'ref_cliente', 'rev_cliente', 'data_pcp'].includes(col.key) ? 'text-center' : ''}`}
                                             >
-                                                {renderCell(col.key, item)}
+                                                {renderCell(col.key, item, col.label)}
                                             </td>
                                         ))}
                                     </tr>
@@ -938,21 +1497,21 @@ const EngineeringOrdersPage = () => {
                 </table>
             </div>
 
-            {/* Pagination */}
-            {!loading && !error && orders.length > 0 && (
-                <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between print:hidden">
-                    <span className="text-sm text-gray-500">
-                        Página <span className="font-semibold text-gray-900">{page}</span> de <span className="font-semibold text-gray-900">{totalPages}</span>
-                        {tipoFilter.length > 0 && <span className="ml-2 text-xs text-indigo-600 font-medium">({filteredOrders.length} itens filtrados por: {tipoFilter.join(', ')})</span>}
-                    </span>
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                            <ChevronLeft className="h-5 w-5 text-gray-600" />
-                        </button>
-                        <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                            <ChevronRight className="h-5 w-5 text-gray-600" />
-                        </button>
+            {/* Infinite Scroll Indicator */}
+            {loading && page > 1 && (
+                <div className="p-4 bg-gray-50 flex items-center justify-center border-t border-gray-100">
+                    <div className="flex items-center gap-2 text-gray-500">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span className="text-sm font-medium">Carregando mais itens...</span>
                     </div>
+                </div>
+            )}
+            
+            {!loading && !error && orders.length > 0 && page >= totalPages && (
+                <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center print:hidden">
+                    <span className="text-sm text-gray-400">
+                        Todos os {orders.length} registros foram carregados.
+                    </span>
                 </div>
             )}
 
@@ -993,9 +1552,14 @@ const EngineeringOrdersPage = () => {
             {engineeringTarget && (
                 <EngineeringControlModal
                     isOpen={Boolean(engineeringTarget)}
-                    onClose={() => setEngineeringTarget(null)}
-                    orderId={engineeringTarget.orderId}
-                    item={engineeringTarget.item}
+                    onClose={() => {
+                        setEngineeringTarget(null);
+                        // Clear selected items if we just did a batch save
+                        if (engineeringTarget.isBatch) setSelectedItems(new Set());
+                    }}
+                    orderId={engineeringTarget.isBatch ? null : engineeringTarget.orderId}
+                    item={engineeringTarget.isBatch ? null : engineeringTarget.item}
+                    batchItems={engineeringTarget.isBatch ? getSelectedItemsList() : undefined}
                     onSave={handleSaveEngineeringControl}
                 />
             )}
@@ -1038,12 +1602,17 @@ const EngineeringOrdersPage = () => {
                     item={planModalTarget.item}
                     currentDate={planModalTarget.currentDate}
                     currentObs={planModalTarget.currentObs}
-                    onSave={(newData) => {
-                        setOrders(prev => prev.map(o =>
-                            (o.pedido === planModalTarget.pedido && o.item === planModalTarget.item)
-                                ? { ...o, ...newData }
-                                : o
-                        ));
+                    batchItems={planModalTarget.batchItems}
+                    onSave={(newData, isBatch) => {
+                        if (isBatch) {
+                            fetchData();
+                        } else {
+                            setOrders(prev => prev.map(o =>
+                                (o.pedido === planModalTarget.pedido && o.item === planModalTarget.item)
+                                    ? { ...o, ...newData }
+                                    : o
+                            ));
+                        }
                     }}
                 />
             )}
@@ -1069,14 +1638,42 @@ const EngineeringOrdersPage = () => {
                             {selectedItems.size === 1 ? 'item selecionado' : 'itens selecionados'}
                         </span>
                     </div>
-                    <div className="w-px h-5 bg-slate-600" />
+                    
+                    <div className="w-px h-5 bg-slate-600 mx-1" />
+                    
                     <button
                         onClick={() => setBatchModalOpen(true)}
-                        className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500 hover:bg-indigo-400 rounded-xl text-sm font-bold transition-all shadow-md"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold transition-all shadow-md"
                     >
                         <Settings className="h-4 w-4" />
-                        Controle de Engenharia em Lote
+                        Lote Eng.
                     </button>
+
+                    <button
+                        onClick={async () => {
+                            const list = getSelectedItemsList();
+                            const pcpItems = list.filter(i => i.status_tipo_item === 'PCP');
+                            if (pcpItems.length === 0) {
+                                alert('Nenhum dos itens selecionados está com status PCP.');
+                                return;
+                            }
+                            if (pcpItems.length < list.length) {
+                                if (!window.confirm(`Atenção: Apenas ${pcpItems.length} dos ${list.length} itens estão no status PCP. Deseja gerar o lote apenas para eles?`)) return;
+                            }
+                            try {
+                                const response = await api.post('/pedidos/pcp-lotes', { itens: pcpItems, criador: 'PCP' });
+                                alert(`Lote gerado com sucesso: ${response.data.lote_ref}`);
+                                setSelectedItems(new Set());
+                            } catch (e) {
+                                alert('Erro ao gerar lote.');
+                            }
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 rounded-xl text-sm font-semibold transition-all shadow-md text-slate-900"
+                    >
+                        <Factory className="h-4 w-4" />
+                        Gerar Lote PCP
+                    </button>
+
                     <button
                         onClick={() => setSelectedItems(new Set())}
                         className="p-1.5 hover:bg-slate-700 rounded-lg transition-colors ml-1"
@@ -1086,6 +1683,22 @@ const EngineeringOrdersPage = () => {
                     </button>
                 </div>
             )}
+
+            {/* Hidden print component — rendered offscreen, triggered by window.print() */}
+            <div className="hidden print:block">
+                <EngineeringOrdersPrint
+                    ref={printRef}
+                    orders={filteredOrders}
+                    visibleCols={visibleCols}
+                    generatedAt={new Date().toLocaleString('pt-BR')}
+                    filters={{
+                        Cliente: filters.cliente,
+                        Pedido: filters.pedido,
+                        Produto: filters.produto,
+                        Tipo: tipoFilter.join(', ') || undefined,
+                    }}
+                />
+            </div>
         </div>
     );
 };

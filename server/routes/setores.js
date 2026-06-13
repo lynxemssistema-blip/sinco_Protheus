@@ -500,7 +500,7 @@ router.get('/visao', async (req, res) => {
                 const orConditions = pedidosArr.map(p => {
                     params.push(`%${p}%`);
                     const paramIdx = params.length;
-                    return `(COALESCE(NULLIF(TRIM(pl.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) LIKE $${paramIdx} OR pl.c2_num LIKE $${paramIdx})`;
+                    return `(pl.c2_pedido LIKE $${paramIdx} OR root_op.c2_pedido LIKE $${paramIdx} OR pl.c2_num LIKE $${paramIdx})`;
                 });
                 conditions.push(`(${orConditions.join(' OR ')})`);
             }
@@ -880,6 +880,7 @@ router.get('/visao', async (req, res) => {
         }
     } catch (err) {
         console.error('[setores/visao] Erro geral:', err.message, err.stack);
+        require('fs').appendFileSync('C:\\Users\\adm\\Desktop\\MetalFisa Anty\\server\\error_log.txt', err.stack + '\n');
         res.status(500).json({ error: err.message });
     }
 });

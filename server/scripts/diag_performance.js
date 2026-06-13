@@ -59,7 +59,7 @@ async function diagPostgres() {
     const v = ver.rows[0];
     const uptime = Math.floor((Date.now() - new Date(v.start_time)) / 3600000);
     console.log(`  📦 Versão: ${v.version.split(' ').slice(0,2).join(' ')}`);
-    console.log(`  ⏱  Uptime: ${uptime}h desde ${new Date(v.start_time).toLocaleString('pt-BR')}`);
+    console.log(`  ⏱  Uptime: ${uptime}h desde ${new Date(v.start_time).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
   } catch(e) { console.error('  versão:', e.message); }
 
   // 2. Conexões ativas
@@ -197,7 +197,7 @@ async function diagMySQL() {
   try {
     const [rows] = await conn.query('SELECT VERSION() as ver, NOW() as now_ts');
     console.log(`  📦 Versão: MySQL ${rows[0].ver}`);
-    console.log(`  🕐 Horário do servidor: ${new Date(rows[0].now_ts).toLocaleString('pt-BR')}`);
+    console.log(`  🕐 Horário do servidor: ${new Date(rows[0].now_ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
   } catch(e) { console.error('  versão:', e.message); }
 
   // Status globais chave
@@ -280,7 +280,7 @@ async function diagMySQL() {
 
 async function main() {
   console.log('\n🔍 DIAGNÓSTICO DE PERFORMANCE — MetalFisa');
-  console.log('🕐 Executado em: ' + new Date().toLocaleString('pt-BR'));
+  console.log('🕐 Executado em: ' + new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
   console.log('💻 A partir de: ' + require('os').hostname());
 
   await diagPostgres();

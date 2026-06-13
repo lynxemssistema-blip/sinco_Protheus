@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     getFaturamentoSolicitacoes,
     getFaturamentoAuditoria,
@@ -10,18 +10,29 @@ import {
     insertFaturamentoSolicitacaoItem,
     getPedidosFlat,
     getProductDocs,
-    getFileUrl
+    getFileUrl,
+    getFaturamentoDashboard
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, History, Clock, CheckCircle, Eye, Download, XCircle, Trash2, CheckCircle2, Save, AlertTriangle, Plus, Search, X } from 'lucide-react';
+import { 
+    FileText, History, Clock, CheckCircle, Eye, Download, XCircle, Trash2, CheckCircle2, 
+    Save, AlertTriangle, Plus, Search, X, DollarSign, TrendingUp, Users, Target, Lock, RefreshCw, Calendar
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 import generateFaturamentoPdf from '../services/faturamentoPdfGenerator';
 import generateFaturamentosExcel from '../services/faturamentoExcelGenerator';
 import useStickyState from '../hooks/useStickyState';
+import { format, subDays, subMonths, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import {
+    BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
+} from 'recharts';
 
 const ControleFaturamento = () => {
-    const { user } = useAuth();
-    const canViewFinancials = user?.permissoes?.some(p => p.page_id === 'valores_financeiros' && p.can_view);
+    const { user, hasPermission } = useAuth();
+    const canViewFinancials = hasPermission('valores_financeiros', 'view');
+
+    const [activeTab, setActiveTab] = useState('gestao'); // 'gestao' | 'financeiro'
 
     const [solicitacoes, setSolicitacoes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -35,6 +46,18 @@ const ControleFaturamento = () => {
 
     // Filtros
     const [statusFilter, setStatusFilter] = useStickyState('Pendente', '@metalfisa:controleFat_status');
+
+    // Estados da Visão Financeira
+    const [finFilters, setFinFilters] = useState({
+        dataInicial: format(subMonths(new Date(), 3), 'yyyy-MM-dd'),
+        dataFinal:   format(new Date(), 'yyyy-MM-dd'),
+        cliente:     '',
+    });
+    const [finPeriodPreset, setFinPeriodPreset] = useState('3m');
+    const [finPeriodGroupBy, setFinPeriodGroupBy] = useState('dia'); // 'dia' | 'semana' | 'mes'
+    const [clientData, setClientData] = useState(null);
+    const [periodData, setPeriodData] = useState(null);
+    const [finLoading, setFinLoading] = useState(false);
 
     // UI States
     const [globalNf, setGlobalNf] = useState('');
@@ -298,8 +321,415 @@ const ControleFaturamento = () => {
         }
     };
 
+    const fetchFinancialData = useCallback(async () => {
+        if (!canViewFinancials) return;
+        setFinLoading(true);
+        try {
+            const baseParams = {
+                ...(finFilters.dataInicial && { dataInicial: finFilters.dataInicial }),
+                ...(finFilters.dataFinal && { dataFinal: finFilters.dataFinal }),
+                ...(finFilters.cliente && { cliente: finFilters.cliente }),
+            };
+            
+            // Execute parallel requests for client grouping and period grouping
+            const [clientRes, periodRes] = await Promise.all([
+                getFaturamentoDashboard({ ...baseParams, groupBy: 'cliente' }),
+                getFaturamentoDashboard({ ...baseParams, groupBy: finPeriodGroupBy }),
+            ]);
+            
+            setClientData(clientRes);
+            setPeriodData(periodRes);
+        } catch (err) {
+            toast.error('Erro ao carregar dados financeiros.');
+            console.error(err);
+        } finally {
+            setFinLoading(false);
+        }
+    }, [finFilters, finPeriodGroupBy, canViewFinancials]);
+
+    useEffect(() => {
+        if (activeTab === 'financeiro') {
+            fetchFinancialData();
+        }
+    }, [activeTab, fetchFinancialData]);
+
+    const renderVisaoFinanceira = () => {
+        if (!canViewFinancials) {
+            return (
+                <div className="bg-white rounded-xl border border-gray-200 p-8 text-center flex flex-col items-center justify-center min-h-[400px]">
+                    <Lock className="w-16 h-16 text-gray-400 mb-4 opacity-50" />
+                    <h2 className="text-xl font-bold text-gray-800 mb-2">Acesso Restrito</h2>
+                    <p className="text-sm text-gray-500 max-w-md">Você não possui a permissão <strong>valores_financeiros</strong> necessária para visualizar este painel financeiro.</p>
+                </div>
+            );
+        }
+
+        // Process KPIs (from clientData or periodData, they share the same status KPIs)
+        let totalSolicitado = 0;
+        let totalFaturado = 0;
+        let totalPendente = 0;
+
+        if (clientData?.kpis) {
+            clientData.kpis.forEach(k => {
+                // Sum requested value (all statuses except cancelled)
+                if (k.status !== 'Cancelado') {
+                    totalSolicitado += parseFloat(k.valor_total) || 0;
+                }
+                if (k.status === 'Atendido') {
+                    totalFaturado += parseFloat(k.valor_total) || 0;
+                }
+                if (k.status === 'Pendente') {
+                    totalPendente += parseFloat(k.valor_total) || 0;
+                }
+            });
+        }
+
+        const pctFaturado = totalSolicitado > 0 ? Math.round((totalFaturado / totalSolicitado) * 100) : 0;
+
+        // Process charts
+        const chartData = periodData?.agrupamento?.map(item => ({
+            name: item.label,
+            'Solicitado (R$)': parseFloat(item.valor_total) || 0,
+            'Faturado (R$)': parseFloat(item.valor_faturado) || 0,
+        })) || [];
+
+        return (
+            <div className="space-y-6 animate-fadeIn p-1">
+                {/* Filtros rápidos e controles */}
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Period presets */}
+                        {[
+                            { label: '7d', days: 7 },
+                            { label: '30d', days: 30 },
+                            { label: '3m', months: 3 },
+                            { label: '6m', months: 6 },
+                            { label: '12m', months: 12 },
+                        ].map(p => (
+                            <button
+                                key={p.label}
+                                onClick={() => {
+                                    setFinPeriodPreset(p.label);
+                                    const today = new Date();
+                                    const ini = p.months 
+                                        ? format(subMonths(today, p.months), 'yyyy-MM-dd')
+                                        : format(subDays(today, p.days), 'yyyy-MM-dd');
+                                    setFinFilters(f => ({ ...f, dataInicial: ini, dataFinal: format(today, 'yyyy-MM-dd') }));
+                                }}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border ${
+                                    finPeriodPreset === p.label 
+                                        ? 'bg-blue-600 text-white border-blue-600' 
+                                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                }`}
+                            >
+                                {p.label.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 md:max-w-2xl">
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Data Início</label>
+                            <input 
+                                type="date" 
+                                value={finFilters.dataInicial}
+                                onChange={e => {
+                                    setFinPeriodPreset('custom');
+                                    setFinFilters(f => ({ ...f, dataInicial: e.target.value }));
+                                }}
+                                className="w-full text-xs border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-300 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Data Fim</label>
+                            <input 
+                                type="date" 
+                                value={finFilters.dataFinal}
+                                onChange={e => {
+                                    setFinPeriodPreset('custom');
+                                    setFinFilters(f => ({ ...f, dataFinal: e.target.value }));
+                                }}
+                                className="w-full text-xs border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-300 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Buscar Cliente</label>
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    placeholder="Nome do cliente..."
+                                    value={finFilters.cliente}
+                                    onChange={e => setFinFilters(f => ({ ...f, cliente: e.target.value }))}
+                                    className="w-full text-xs border border-gray-200 rounded-lg p-2 pr-8 focus:ring-2 focus:ring-blue-300 outline-none"
+                                />
+                                <Search className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-2.5" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={fetchFinancialData}
+                        disabled={finLoading}
+                        className="px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 flex items-center gap-1.5 h-9"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${finLoading ? 'animate-spin' : ''}`} /> Atualizar
+                    </button>
+                </div>
+
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Total Solicitado */}
+                    <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl p-5 text-white shadow-sm flex flex-col justify-between min-h-[120px] relative overflow-hidden">
+                        <div className="flex justify-between items-start z-10">
+                            <span className="text-xs font-bold uppercase tracking-wider opacity-90">Solicitado Total</span>
+                            <DollarSign className="w-5 h-5 opacity-70" />
+                        </div>
+                        <div className="mt-2 z-10">
+                            <h2 className="text-2xl font-black">{formatCurrency(totalSolicitado)}</h2>
+                            <p className="text-[10px] opacity-75 mt-1">Soma de todas as solicitações comerciais no período</p>
+                        </div>
+                        <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                    </div>
+
+                    {/* Total Faturado / NFs */}
+                    <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-5 text-white shadow-sm flex flex-col justify-between min-h-[120px] relative overflow-hidden">
+                        <div className="flex justify-between items-start z-10">
+                            <span className="text-xs font-bold uppercase tracking-wider opacity-90">NF Emitida (Faturado)</span>
+                            <CheckCircle2 className="w-5 h-5 opacity-70" />
+                        </div>
+                        <div className="mt-2 z-10">
+                            <h2 className="text-2xl font-black">{formatCurrency(totalFaturado)}</h2>
+                            <p className="text-[10px] opacity-75 mt-1">Total de solicitações atendidas e faturadas</p>
+                        </div>
+                        <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                    </div>
+
+                    {/* Aguardando NF */}
+                    <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl p-5 text-white shadow-sm flex flex-col justify-between min-h-[120px] relative overflow-hidden">
+                        <div className="flex justify-between items-start z-10">
+                            <span className="text-xs font-bold uppercase tracking-wider opacity-90">Aguardando Faturamento</span>
+                            <Clock className="w-5 h-5 opacity-70" />
+                        </div>
+                        <div className="mt-2 z-10">
+                            <h2 className="text-2xl font-black">{formatCurrency(totalPendente)}</h2>
+                            <p className="text-[10px] opacity-75 mt-1">Solicitações pendentes aguardando faturamento</p>
+                        </div>
+                        <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                    </div>
+
+                    {/* Taxa de Atendimento */}
+                    <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between min-h-[120px] relative overflow-hidden">
+                        <div className="flex justify-between items-start">
+                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Conversão de Faturamento</span>
+                            <Target className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div className="mt-2">
+                            <div className="flex items-baseline gap-1.5">
+                                <h2 className="text-3xl font-black text-gray-800">{pctFaturado}%</h2>
+                                <span className="text-xs text-gray-400 font-semibold">atendido</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
+                                <div className="bg-indigo-600 h-2 rounded-full transition-all duration-500" style={{ width: `${pctFaturado}%` }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Evolução Periódica */}
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <div>
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-blue-600" /> Evolução por Período
+                            </h3>
+                            <p className="text-xs text-gray-400">Total solicitado vs notas fiscais emitidas agrupadas por data</p>
+                        </div>
+                        
+                        <div className="flex bg-gray-100 rounded-lg p-1 self-start">
+                            {[
+                                { value: 'dia', label: 'Diário' },
+                                { value: 'semana', label: 'Semanal' },
+                                { value: 'mes', label: 'Mensal' },
+                            ].map(p => (
+                                <button
+                                    key={p.value}
+                                    onClick={() => setFinPeriodGroupBy(p.value)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                        finPeriodGroupBy === p.value 
+                                            ? 'bg-white shadow text-blue-700' 
+                                            : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="h-[300px] w-full">
+                        {finLoading ? (
+                            <div className="h-full w-full flex items-center justify-center text-gray-400 text-sm">Carregando dados do gráfico...</div>
+                        ) : chartData.length === 0 ? (
+                            <div className="h-full w-full flex items-center justify-center text-gray-400 text-sm">Nenhuma movimentação registrada no período.</div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis 
+                                        dataKey="name" 
+                                        tick={{ fontSize: 10, fill: '#64748b' }} 
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tickFormatter={v => {
+                                            if (finPeriodGroupBy === 'mes') {
+                                                try { return format(parseISO(`${v}-01`), 'MMM/yy', { locale: ptBR }); } catch { return v; }
+                                            }
+                                            if (finPeriodGroupBy === 'dia') {
+                                                try { return format(parseISO(v), 'dd/MM', { locale: ptBR }); } catch { return v; }
+                                            }
+                                            if (finPeriodGroupBy === 'semana') {
+                                                try { return format(parseISO(v), 'dd/MM', { locale: ptBR }); } catch { return v; }
+                                            }
+                                            return v;
+                                        }}
+                                    />
+                                    <YAxis 
+                                        tick={{ fontSize: 9, fill: '#64748b' }} 
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tickFormatter={v => new Intl.NumberFormat('pt-BR', { notation: 'compact' }).format(v)}
+                                    />
+                                    <Tooltip 
+                                        formatter={v => [formatCurrency(v), '']}
+                                        contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                                    <Bar dataKey="Solicitado (R$)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="Faturado (R$)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+                </div>
+
+                {/* Tabela de Clientes e Detalhes */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                <Users className="w-5 h-5 text-indigo-600" /> Faturamento por Cliente
+                            </h3>
+                            <p className="text-xs text-gray-400">Total de solicitações e faturamento emitido por cada cliente no período</p>
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                            <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b border-gray-100">
+                                <tr>
+                                    <th className="px-6 py-3">Cliente</th>
+                                    <th className="px-6 py-3 text-right">Qtd Solicitações</th>
+                                    <th className="px-6 py-3 text-right">Itens</th>
+                                    <th className="px-6 py-3 text-right">Solicitado Total</th>
+                                    <th className="px-6 py-3 text-right">NF Emitida (Faturado)</th>
+                                    <th className="px-6 py-3 text-right">Aguardando NF</th>
+                                    <th className="px-6 py-3 text-center">% Faturado</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {finLoading ? (
+                                    [...Array(5)].map((_, idx) => (
+                                        <tr key={idx} className="animate-pulse">
+                                            <td className="px-6 py-4"><div className="h-3.5 bg-gray-100 rounded w-48" /></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-3.5 bg-gray-100 rounded w-12 ml-auto" /></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-3.5 bg-gray-100 rounded w-12 ml-auto" /></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
+                                            <td className="px-6 py-4"><div className="h-3.5 bg-gray-100 rounded w-20 mx-auto" /></td>
+                                        </tr>
+                                    ))
+                                ) : !clientData?.agrupamento || clientData.agrupamento.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="7" className="px-6 py-10 text-center text-gray-400 italic">Nenhum dado financeiro de cliente encontrado no período.</td>
+                                    </tr>
+                                ) : (
+                                    clientData.agrupamento.map((row, idx) => {
+                                        const rowSolicitado = parseFloat(row.valor_total) || 0;
+                                        const rowFaturado = parseFloat(row.valor_faturado) || 0;
+                                        const rowPendente = Math.max(0, rowSolicitado - rowFaturado);
+                                        const rowPct = rowSolicitado > 0 ? Math.round((rowFaturado / rowSolicitado) * 100) : 0;
+                                        
+                                        return (
+                                            <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                                                <td className="px-6 py-4 font-semibold text-gray-800 truncate max-w-[280px]" title={row.label}>
+                                                    {row.label || 'Não identificado'}
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-gray-600 font-medium">
+                                                    {row.qtd_solicitacoes}
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-gray-600 font-medium">
+                                                    {row.qtd_itens}
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-semibold text-gray-700">
+                                                    {formatCurrency(rowSolicitado)}
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-semibold text-emerald-600 bg-emerald-50/20">
+                                                    {formatCurrency(rowFaturado)}
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-semibold text-amber-600">
+                                                    {formatCurrency(rowPendente)}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <div className="w-16 bg-gray-100 rounded-full h-1.5 hidden sm:block">
+                                                            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${rowPct}%` }} />
+                                                        </div>
+                                                        <span className="font-bold text-gray-700 w-10 text-right">{rowPct}%</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
-        <div className="p-4 md:p-6 bg-gray-50 min-h-[calc(100vh-64px)] flex flex-col md:flex-row gap-6 animate-fadeIn">
+        <div className="p-4 md:p-6 bg-gray-50 min-h-[calc(100vh-64px)] flex flex-col gap-6 animate-fadeIn">
+            {/* Header com Abas */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 shrink-0">
+                <div>
+                    <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <FileText className="w-6 h-6 text-blue-600" /> Faturamento Comercial
+                    </h1>
+                    <p className="text-xs text-gray-500">Gestão de solicitações de faturamento e análise de performance financeira.</p>
+                </div>
+                <div className="flex bg-gray-100 rounded-lg p-1 self-start sm:self-center">
+                    <button 
+                        onClick={() => setActiveTab('gestao')} 
+                        className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${activeTab === 'gestao' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Gestão de Solicitações
+                    </button>
+                    {canViewFinancials && (
+                        <button 
+                            onClick={() => setActiveTab('financeiro')} 
+                            className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${activeTab === 'financeiro' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            Visão Financeira
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {activeTab === 'gestao' ? (
+                <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden">
             {/* Esquerda: Lista de Solicitações */}
             <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col h-[calc(100vh-120px)]">
                 <div className="flex justify-between items-center mb-4">
@@ -389,7 +819,7 @@ const ControleFaturamento = () => {
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-gray-100 pb-4">
                                 <div>
                                     <div className="flex items-center gap-3">
-                                        <h1 className="text-2xl font-black text-gray-800">{selectedSolicitacao.numero_solicitacao}</h1>
+                                        <h2 className="text-2xl font-black text-gray-800">{selectedSolicitacao.numero_solicitacao}</h2>
                                     </div>
                                     <p className="text-sm text-gray-500 mt-1">
                                         Solicitado por: <strong className="text-gray-700">{selectedSolicitacao.usuario}</strong> em <strong className="text-gray-700">{new Date(selectedSolicitacao.created_at).toLocaleString('pt-BR')}</strong>
@@ -657,6 +1087,12 @@ const ControleFaturamento = () => {
                     </div>
                 )}
             </div>
+            </div>
+            ) : (
+                <div className="flex-1 overflow-y-auto h-[calc(100vh-200px)] scrollbar-thin pr-1">
+                    {renderVisaoFinanceira()}
+                </div>
+            )}
 
             {/* FLOATING ACTION BAR PARA ENVIO DE E-MAIL LOTE */}
             {selectedItems.length > 0 && (

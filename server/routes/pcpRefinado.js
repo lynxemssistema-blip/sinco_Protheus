@@ -492,7 +492,19 @@ router.get('/rastreabilidade', async (req, res) => {
              whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
         }
         
-        if (pedido) whereClauses.push(`TRIM(c5.c5_num) ILIKE '%${pedido.trim()}%'`);
+        if (pedido) {
+            const pedidoList = String(pedido).split(',')
+                .map(p => p.trim().replace(/[^a-zA-Z0-9]/g, ''))
+                .filter(p => p.length > 0)
+                .map(p => p.padStart(6, '0'));
+
+            if (pedidoList.length === 1) {
+                whereClauses.push(`TRIM(c5.c5_num) = '${pedidoList[0]}'`);
+            } else if (pedidoList.length > 1) {
+                const values = pedidoList.map(p => `'${p}'`).join(',');
+                whereClauses.push(`TRIM(c5.c5_num) IN (${values})`);
+            }
+        }
         if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
         if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
         
@@ -902,7 +914,19 @@ router.get('/cronograma', async (req, res) => {
                 )
             )`);
         }
-        if (pedido) whereClauses.push(`TRIM(c5.c5_num) ILIKE '%${pedido.trim()}%'`);
+        if (pedido) {
+            const pedidoList = String(pedido).split(',')
+                .map(p => p.trim().replace(/[^a-zA-Z0-9]/g, ''))
+                .filter(p => p.length > 0)
+                .map(p => p.padStart(6, '0'));
+
+            if (pedidoList.length === 1) {
+                whereClauses.push(`TRIM(c5.c5_num) = '${pedidoList[0]}'`);
+            } else if (pedidoList.length > 1) {
+                const values = pedidoList.map(p => `'${p}'`).join(',');
+                whereClauses.push(`TRIM(c5.c5_num) IN (${values})`);
+            }
+        }
         if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
         if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
 

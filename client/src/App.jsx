@@ -142,7 +142,7 @@ const PrivateRoute = () => {
     const pageId = PATH_TO_PAGE_ID[location.pathname];
 
     // If there's a mapped page and user is NOT admin,    // Check permissions
-    if (pageId && pageId !== 'protheus-estudo' && pageId !== 'ajuda' && !isAdmin && !hasPermission(pageId, 'view')) {
+    if (pageId && pageId !== 'ajuda' && !isAdmin && !hasPermission(pageId, 'view')) {
         // allow basic access fallback if no specific page found?     
         return (
             <Layout>
@@ -219,8 +219,8 @@ const Layout = ({ children, fullWidth = true }) => {
                 </header>
 
                 {/* Scrollable Area */}
-                <div className="flex-1 overflow-auto p-2 md:p-4 w-full print:overflow-visible print:h-auto print:p-0">
-                    <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto'} space-y-6`}>
+                <div className="flex-1 overflow-auto p-1 md:p-2 w-full print:overflow-visible print:h-auto print:p-0">
+                    <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto'} space-y-4`}>
                         {children}
                     </div>
                 </div>

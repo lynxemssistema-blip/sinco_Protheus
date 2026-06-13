@@ -157,7 +157,7 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                             </tr>
                             <tr>
                                 <td style="padding: 6px 0; font-weight: bold;">Data/Hora:</td>
-                                <td style="padding: 6px 0;">${new Date().toLocaleString('pt-BR')}</td>
+                                <td style="padding: 6px 0;">${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
                             </tr>
                             <tr>
                                 <td style="padding: 6px 0; font-weight: bold;">Registros Atualizados:</td>

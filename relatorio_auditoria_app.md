@@ -1,80 +1,580 @@
-# 🚀 Relatório Profundo de Auditoria do App
+# 🚀 Relatório de Análise e Auditoria do Código
 
-Análise técnica em todo o projeto MetalFisa (Client & Server) para identificar peso morto, TODOs esquecidos, lixo de código e arquivos soltos.
+Análise técnica profunda realizada em todo o projeto MetalFisa (Client & Server) para identificar pendências (TODOs), blocos comentados e arquivos órfãos.
 
-## ⚠️ 1. Arquivos com maior concentração de TODOs e FIXMEs
-| Arquivo | Qtd |
-|---|---|
-| client\src\pages\financeiro\DashboardFinanceiro.jsx | 7 |
-| client\src\pages\ConferenciaPage.jsx | 3 |
-| client\src\pages\ProductionControl.jsx | 2 |
-| client\src\pages\sinco\IndApontamentoPage.jsx | 2 |
-| client\src\config\helpContent.js | 1 |
-| client\src\pages\pcp\CurvaSPedido.jsx | 1 |
-| client\src\pages\vmi\DemandaVMIMapeamentoPage.jsx | 1 |
-| client\src\pages\vmi\VMIPedidosMapeamentoPage.jsx | 1 |
-| client\src\services\productionControlPdfGenerator.js | 1 |
-| server\routes\production.js | 1 |
-| server\routes\sinco_apontamento.js | 1 |
-| server\routes\vmiPedidos.js | 1 |
-| server\services\pcpmetal\orchestrator.js | 1 |
-| server\test_all_filters.js | 1 |
+## ⚠️ 1. Arquivos com pendências de desenvolvimento (TODOs / FIXMEs)
+Estes arquivos contêm comentários de melhoria pendente.
 
-## 🗑️ 2. Lixo de Código (Blocos comentados // const, // function)
-| Arquivo | Blocos Inativos (Aprox) |
-|---|---|
-| server\routes\reports.js | 3 |
+| Arquivo | Quantidade de TODOs |
+| :--- | :---: |
+| `client\src\pages\financeiro\DashboardFinanceiro.jsx` | **7** |
+| `client\src\pages\ConferenciaPage.jsx` | **3** |
+| `client\src\pages\ProductionControl.jsx` | **2** |
+| `client\src\pages\sinco\IndApontamentoPage.jsx` | **2** |
+| `server\scripts\create_all_indexes.js` | **2** |
+| `client\src\components\orders\OrdersTimelineTab.jsx` | **1** |
+| `client\src\config\helpContent.js` | **1** |
+| `client\src\pages\pcp\CurvaSPedido.jsx` | **1** |
+| `client\src\pages\sgq\GestaoAtivos.jsx` | **1** |
+| `client\src\pages\vmi\DemandaVMIMapeamentoPage.jsx` | **1** |
+| `client\src\pages\vmi\VMIPedidosMapeamentoPage.jsx` | **1** |
+| `client\src\services\productionControlPdfGenerator.js` | **1** |
+| `server\routes\production.js` | **1** |
+| `server\routes\sinco_apontamento.js` | **1** |
+| `server\routes\vmiPedidos.js` | **1** |
+| `server\scripts\debug\test_all_filters.js` | **1** |
+| `server\services\geminiPcpService.js` | **1** |
+| `server\services\pcpmetal\orchestrator.js` | **1** |
 
-## 👻 3. Componentes/Arquivos Potencialmente Órfãos (Não Importados)
-| Arquivo (Top 50) | Status |
-|---|---|
-| client\src\components\GanttChart.jsx | Órfão |
-| client\src\components\GanttQuickPlanModal.jsx | Órfão |
-| client\src\components\OrderItemNotesModal.jsx | Órfão |
-| client\src\components\OrdersTable.jsx | Órfão |
-| client\src\pages\admin\ProtheusStudyChat.jsx | Órfão |
-| client\src\pages\AvisosHistorico.jsx | Órfão |
-| client\src\pages\BOMGenerator.jsx | Órfão |
-| client\src\pages\comercial\DashboardFaturamento.jsx | Órfão |
-| client\src\pages\ConferenciaPage.jsx | Órfão |
-| client\src\pages\ControleFaturamento.jsx | Órfão |
-| client\src\pages\EngineeringControlReport.jsx | Órfão |
-| client\src\pages\EngineeringOrdersPage.jsx | Órfão |
-| client\src\pages\EngineeringReleaseReport.jsx | Órfão |
-| client\src\pages\FaturamentoPainel.jsx | Órfão |
-| client\src\pages\FaturamentoSolicitacoesHistorico.jsx | Órfão |
-| client\src\pages\financeiro\Balancete.jsx | Órfão |
-| client\src\pages\financeiro\DashboardFinanceiro.jsx | Órfão |
-| client\src\pages\financeiro\FluxoCaixa.jsx | Órfão |
-| client\src\pages\gerencial\VisaoGerencialAtrasos.jsx | Órfão |
-| client\src\pages\gerencial\VisaoGerencialProdutos.jsx | Órfão |
-| client\src\pages\GestaoOPsPage.jsx | Órfão |
-| client\src\pages\HelpCenter.jsx | Órfão |
-| client\src\pages\InternalRequestsPage.jsx | Órfão |
-| client\src\pages\ItensAFaturar.jsx | Órfão |
-| client\src\pages\Login.jsx | Órfão |
-| client\src\pages\manutencao\Atividades.jsx | Órfão |
-| client\src\pages\manutencao\Checklists.jsx | Órfão |
-| client\src\pages\manutencao\Dashboard.jsx | Órfão |
-| client\src\pages\manutencao\GestaoMateriais.jsx | Órfão |
-| client\src\pages\manutencao\Maquinas.jsx | Órfão |
-| client\src\pages\manutencao\Ordens.jsx | Órfão |
-| client\src\pages\manutencao\Tecnicos.jsx | Órfão |
-| client\src\pages\MaterialManagementPage.jsx | Órfão |
-| client\src\pages\MeuCanal.jsx | Órfão |
-| client\src\pages\pcp\ApontamentoPorUsuarioOpPage.jsx | Órfão |
-| client\src\pages\pcp\PlanejamentoEstruturaRouting.jsx | Órfão |
-| client\src\pages\pcp\SetoresCadastro.jsx | Órfão |
-| client\src\pages\pcp\SetoresRecursos.jsx | Órfão |
-| client\src\pages\pcp\VisaoSetores.jsx | Órfão |
-| client\src\pages\PlanoContas.jsx | Órfão |
-| client\src\pages\PPAPsBuscarProduto.jsx | Órfão |
-| client\src\pages\ProductCatalog.jsx | Órfão |
-| client\src\pages\production\TrackingEvolution.jsx | Órfão |
-| client\src\pages\ProductionAnalytics.jsx | Órfão |
-| client\src\pages\ProductionControl.jsx | Órfão |
-| client\src\pages\ProductionEvolution.jsx | Órfão |
-| client\src\pages\ProductionGanttPlanning.jsx | Órfão |
-| client\src\pages\ProductionMatrixPage.jsx | Órfão |
-| client\src\pages\ProductionOrders.jsx | Órfão |
-| client\src\pages\ProductionOrdersByOp.jsx | Órfão |
+---
+
+## 🗑️ 2. Blocos de Código Comentados (Código Morto / Inativo)
+Arquivos que contêm blocos inativos (importações, variáveis ou funções comentadas com `//`).
+
+| Arquivo | Blocos Inativos (Linhas) |
+| :--- | :---: |
+
+
+---
+
+## 👻 3. Componentes/Arquivos Frontend Potencialmente Órfãos (Não Importados)
+Arquivos localizados no diretório `client/src` que não possuem importação estática ou dinâmica mapeada no código-fonte principal. Podem ser resquícios de arquivos antigos.
+
+| Arquivo Frontend | Status |
+| :--- | :--- |
+| `client\src\pages\wabtec\WabtecDatasContainer.jsx` | ⚠️ Potencialmente Sem Uso |
+| `client\src\services\api_sgq_romaneios.js` | ⚠️ Potencialmente Sem Uso |
+| `client\src\services\loteWithDrawingsPdfGenerator_backup.js` | ⚠️ Potencialmente Sem Uso |
+
+---
+
+## 🛠️ 4. Scripts e Utilitários de Backend Autônomos (Sem Importação Direta)
+Estes scripts residem no diretório `server/` e são executados de forma manual/avulsa (migrations, checagens de banco de dados, scripts de suporte). Não são importados pelo servidor Express principal, o que é o comportamento esperado.
+
+| Script de Backend | Função Estimada |
+| :--- | :--- |
+| `server\__check_estrutura.js` | Script Utilitário / Migração |
+| `server\_cascata004618.js` | Script Utilitário / Migração |
+| `server\_completa_planning.js` | Script Utilitário / Migração |
+| `server\_completa_profundo.js` | Script Utilitário / Migração |
+| `server\_corrige_pendentes.js` | Script Utilitário / Migração |
+| `server\_diagnostico.js` | Script Utilitário / Migração |
+| `server\_finaliza.js` | Script Utilitário / Migração |
+| `server\_plan004618.js` | Script Utilitário / Migração |
+| `server\add_col.js` | Script Utilitário / Migração |
+| `server\add_config_column.js` | Script Utilitário / Migração |
+| `server\add_custo.js` | Script Utilitário / Migração |
+| `server\add_funcao_column.js` | Script Utilitário / Migração |
+| `server\add_logs.js` | Script Utilitário / Migração |
+| `server\add_pedido_col.js` | Script Utilitário / Migração |
+| `server\add_pedido_col2.js` | Script Utilitário / Migração |
+| `server\add_tempo_execucao.js` | Script Utilitário / Migração |
+| `server\add_user_fields.js` | Script Utilitário / Migração |
+| `server\add_user_to_romaneios.js` | Script Utilitário / Migração |
+| `server\alter_nc.js` | Script Utilitário / Migração |
+| `server\alter_vmi_rev2.js` | Script Utilitário / Migração |
+| `server\alter_vmi_rev3.js` | Script Utilitário / Migração |
+| `server\alter_vmi_table.js` | Script Utilitário / Migração |
+| `server\analyze_002730.js` | Script Utilitário / Migração |
+| `server\analyze_duplication.js` | Script Utilitário / Migração |
+| `server\analyze_op_obs_logic.js` | Script Utilitário / Migração |
+| `server\api_pcp_verify.js` | Script Utilitário / Migração |
+| `server\apply_002730.js` | Script Utilitário / Migração |
+| `server\backfill_pedido.js` | Script Utilitário / Migração |
+| `server\backfill_pedido2.js` | Script Utilitário / Migração |
+| `server\backfill_sa5.js` | Script Utilitário / Migração |
+| `server\bench_stock.js` | Script Utilitário / Migração |
+| `server\check_002730_07.js` | Script Utilitário / Migração |
+| `server\check_2025.js` | Script Utilitário / Migração |
+| `server\check_50.js` | Script Utilitário / Migração |
+| `server\check_actions.js` | Script Utilitário / Migração |
+| `server\check_all_71_91_9B.js` | Script Utilitário / Migração |
+| `server\check_all_sc6_cols.js` | Script Utilitário / Migração |
+| `server\check_api_response_v2.js` | Script Utilitário / Migração |
+| `server\check_api_response.js` | Script Utilitário / Migração |
+| `server\check_appt.js` | Script Utilitário / Migração |
+| `server\check_appts_schema.js` | Script Utilitário / Migração |
+| `server\check_aprovados.js` | Script Utilitário / Migração |
+| `server\check_columns_full.js` | Script Utilitário / Migração |
+| `server\check_columns.js` | Script Utilitário / Migração |
+| `server\check_config_value.js` | Script Utilitário / Migração |
+| `server\check_db_schema.js` | Script Utilitário / Migração |
+| `server\check_db.js` | Script Utilitário / Migração |
+| `server\check_debug_doc.js` | Script Utilitário / Migração |
+| `server\check_doc.js` | Script Utilitário / Migração |
+| `server\check_docs.js` | Script Utilitário / Migração |
+| `server\check_enrich.js` | Script Utilitário / Migração |
+| `server\check_indexes_v2.js` | Script Utilitário / Migração |
+| `server\check_indexes.js` | Script Utilitário / Migração |
+| `server\check_mt5.js` | Script Utilitário / Migração |
+| `server\check_mta.js` | Script Utilitário / Migração |
+| `server\check_mysql_tables.js` | Script Utilitário / Migração |
+| `server\check_mysql.js` | Script Utilitário / Migração |
+| `server\check_op_006175.js` | Script Utilitário / Migração |
+| `server\check_op_obs_full.js` | Script Utilitário / Migração |
+| `server\check_op.js` | Script Utilitário / Migração |
+| `server\check_ops_cte.js` | Script Utilitário / Migração |
+| `server\check_ops_prefilter.js` | Script Utilitário / Migração |
+| `server\check_ops_split.js` | Script Utilitário / Migração |
+| `server\check_ops.js` | Script Utilitário / Migração |
+| `server\check_order.js` | Script Utilitário / Migração |
+| `server\check_pending_71_91_9B.js` | Script Utilitário / Migração |
+| `server\check_perms.js` | Script Utilitário / Migração |
+| `server\check_pg.js` | Script Utilitário / Migração |
+| `server\check_products.js` | Script Utilitário / Migração |
+| `server\check_produto.js` | Script Utilitário / Migração |
+| `server\check_romaneio_schema.js` | Script Utilitário / Migração |
+| `server\check_sc2.js` | Script Utilitário / Migração |
+| `server\check_sc5.js` | Script Utilitário / Migração |
+| `server\check_sc6_cols.js` | Script Utilitário / Migração |
+| `server\check_schema_temp.js` | Script Utilitário / Migração |
+| `server\check_schema.js` | Script Utilitário / Migração |
+| `server\check_scj.js` | Script Utilitário / Migração |
+| `server\check_sg1010.js` | Script Utilitário / Migração |
+| `server\check_sg2_columns.js` | Script Utilitário / Migração |
+| `server\check_sg2_temp.js` | Script Utilitário / Migração |
+| `server\check_sg2.js` | Script Utilitário / Migração |
+| `server\check_sh6.js` | Script Utilitário / Migração |
+| `server\check_specific_items.js` | Script Utilitário / Migração |
+| `server\check_stock_syntax.js` | Script Utilitário / Migração |
+| `server\check_tables.js` | Script Utilitário / Migração |
+| `server\check_unc.js` | Script Utilitário / Migração |
+| `server\check_usuario_schema.js` | Script Utilitário / Migração |
+| `server\check.js` | Script Utilitário / Migração |
+| `server\clean_faturamento.js` | Script Utilitário / Migração |
+| `server\clear_pcp_dates.js` | Script Utilitário / Migração |
+| `server\comparison_endpoint_fixed.js` | Script Utilitário / Migração |
+| `server\comparison_endpoint_v2.js` | Script Utilitário / Migração |
+| `server\create_company_table.js` | Script Utilitário / Migração |
+| `server\create_map_table.js` | Script Utilitário / Migração |
+| `server\create_production_table.js` | Script Utilitário / Migração |
+| `server\create_production_tables_v2.js` | Script Utilitário / Migração |
+| `server\create_stock_table.js` | Script Utilitário / Migração |
+| `server\create_table_manual.js` | Script Utilitário / Migração |
+| `server\create_table.js` | Script Utilitário / Migração |
+| `server\create_wabtec_bom.js` | Script Utilitário / Migração |
+| `server\create_wabtec_table.js` | Script Utilitário / Migração |
+| `server\create_webtech_tables.js` | Script Utilitário / Migração |
+| `server\data_quality_check.js` | Script Utilitário / Migração |
+| `server\detailed_pcp_verify.js` | Script Utilitário / Migração |
+| `server\disable_finished_orders.js` | Script Utilitário / Migração |
+| `server\disable_old_orders.js` | Script Utilitário / Migração |
+| `server\dump_op_root_item02.js` | Script Utilitário / Migração |
+| `server\dump_op_root.js` | Script Utilitário / Migração |
+| `server\evolution_endpoint_fix.js` | Script Utilitário / Migração |
+| `server\final_op_analysis.js` | Script Utilitário / Migração |
+| `server\find_engineer.js` | Script Utilitário / Migração |
+| `server\find_obs_patterns.js` | Script Utilitário / Migração |
+| `server\find_pedcli_sc2.js` | Script Utilitário / Migração |
+| `server\find_pedcli.js` | Script Utilitário / Migração |
+| `server\fix_batch_ops.js` | Script Utilitário / Migração |
+| `server\fix_db_duplicates.js` | Script Utilitário / Migração |
+| `server\fix_docs.js` | Script Utilitário / Migração |
+| `server\fix_encoding.js` | Script Utilitário / Migração |
+| `server\fix_funcao_column.js` | Script Utilitário / Migração |
+| `server\fix_model.js` | Script Utilitário / Migração |
+| `server\fix_user_photo_column.js` | Script Utilitário / Migração |
+| `server\fix_usuario_schema.js` | Script Utilitário / Migração |
+| `server\force_enable_setting.js` | Script Utilitário / Migração |
+| `server\full_migrate.js` | Script Utilitário / Migração |
+| `server\generate_token.js` | Script Utilitário / Migração |
+| `server\grant.js` | Script Utilitário / Migração |
+| `server\hunt_custom_tables.js` | Script Utilitário / Migração |
+| `server\hunt_sc2_order.js` | Script Utilitário / Migração |
+| `server\hunt_sc2_pedido_keyword.js` | Script Utilitário / Migração |
+| `server\hunt_value_safe.js` | Script Utilitário / Migração |
+| `server\hunt_value.js` | Script Utilitário / Migração |
+| `server\inspect_op_sequences.js` | Script Utilitário / Migração |
+| `server\inspect_sb1010.js` | Script Utilitário / Migração |
+| `server\inspect_sc2_op_deep.js` | Script Utilitário / Migração |
+| `server\inspect_sc2_op.js` | Script Utilitário / Migração |
+| `server\inspect_sc2.js` | Script Utilitário / Migração |
+| `server\inspect_schema.js` | Script Utilitário / Migração |
+| `server\inspect_sg2010.js` | Script Utilitário / Migração |
+| `server\inspect_sz0.js` | Script Utilitário / Migração |
+| `server\investigate_sf2_tipocli.js` | Script Utilitário / Migração |
+| `server\investigate_sf2.js` | Script Utilitário / Migração |
+| `server\investigate-pedido-3663.js` | Script Utilitário / Migração |
+| `server\kill_queries.js` | Script Utilitário / Migração |
+| `server\list_extra_columns.js` | Script Utilitário / Migração |
+| `server\list_op_tables.js` | Script Utilitário / Migração |
+| `server\list_sc6_columns_pg.js` | Script Utilitário / Migração |
+| `server\list_sc6_columns.js` | Script Utilitário / Migração |
+| `server\list_sh6_cols.js` | Script Utilitário / Migração |
+| `server\list_usuario_columns.js` | Script Utilitário / Migração |
+| `server\migrate_audit.js` | Script Utilitário / Migração |
+| `server\migrate_nfe.js` | Script Utilitário / Migração |
+| `server\migrate_rncs.js` | Script Utilitário / Migração |
+| `server\migrate_sgq_help.js` | Script Utilitário / Migração |
+| `server\migrations\create_auditoria_tables.js` | Script Utilitário / Migração |
+| `server\patch_pedidos_flat.js` | Script Utilitário / Migração |
+| `server\query-db.js` | Script Utilitário / Migração |
+| `server\refactor_plan_comparison.js` | Script Utilitário / Migração |
+| `server\refactor_plan_evolution.js` | Script Utilitário / Migração |
+| `server\research_relationships.js` | Script Utilitário / Migração |
+| `server\restart_sinco_pm2.js` | Script Utilitário / Migração |
+| `server\rh_vagas_migration.js` | Script Utilitário / Migração |
+| `server\run_ref_query.js` | Script Utilitário / Migração |
+| `server\run_webtech_setup.js` | Script Utilitário / Migração |
+| `server\scratch_check_tasks.js` | Script Utilitário / Migração |
+| `server\scratch_db.js` | Script Utilitário / Migração |
+| `server\scratch_test_put.js` | Script Utilitário / Migração |
+| `server\scratch.js` | Script Utilitário / Migração |
+| `server\scripts\add_menu_config_column.js` | Script Utilitário / Migração |
+| `server\scripts\add_op_col.js` | Script Utilitário / Migração |
+| `server\scripts\add_operacao_column.js` | Script Utilitário / Migração |
+| `server\scripts\audit_db.js` | Script Utilitário / Migração |
+| `server\scripts\check_005916.js` | Script Utilitário / Migração |
+| `server\scripts\check_active.js` | Script Utilitário / Migração |
+| `server\scripts\check_all_status.js` | Script Utilitário / Migração |
+| `server\scripts\check_attachments.js` | Script Utilitário / Migração |
+| `server\scripts\check_audit.js` | Script Utilitário / Migração |
+| `server\scripts\check_canc.js` | Script Utilitário / Migração |
+| `server\scripts\check_cfop.js` | Script Utilitário / Migração |
+| `server\scripts\check_chave.js` | Script Utilitário / Migração |
+| `server\scripts\check_cols.js` | Script Utilitário / Migração |
+| `server\scripts\check_columns.js` | Script Utilitário / Migração |
+| `server\scripts\check_del.js` | Script Utilitário / Migração |
+| `server\scripts\check_details.js` | Script Utilitário / Migração |
+| `server\scripts\check_diff.js` | Script Utilitário / Migração |
+| `server\scripts\check_filial.js` | Script Utilitário / Migração |
+| `server\scripts\check_last_op.js` | Script Utilitário / Migração |
+| `server\scripts\check_lotes.js` | Script Utilitário / Migração |
+| `server\scripts\check_max_op.js` | Script Utilitário / Migração |
+| `server\scripts\check_ops.js` | Script Utilitário / Migração |
+| `server\scripts\check_pg_connections.js` | Script Utilitário / Migração |
+| `server\scripts\check_roteiro.js` | Script Utilitário / Migração |
+| `server\scripts\check_sf3.js` | Script Utilitário / Migração |
+| `server\scripts\check_sped.js` | Script Utilitário / Migração |
+| `server\scripts\check_status.js` | Script Utilitário / Migração |
+| `server\scripts\check_tes.js` | Script Utilitário / Migração |
+| `server\scripts\check_totals.js` | Script Utilitário / Migração |
+| `server\scripts\check_vmi_cfop.js` | Script Utilitário / Migração |
+| `server\scripts\clean_fracoes.js` | Script Utilitário / Migração |
+| `server\scripts\clean_pcp_forecasts.js` | Script Utilitário / Migração |
+| `server\scripts\clear_tables.js` | Script Utilitário / Migração |
+| `server\scripts\compare_nfs.js` | Script Utilitário / Migração |
+| `server\scripts\create_all_indexes.js` | Script Utilitário / Migração |
+| `server\scripts\create_ind_producao_table.js` | Script Utilitário / Migração |
+| `server\scripts\create_indexes_phase2.js` | Script Utilitário / Migração |
+| `server\scripts\create_pg_indexes.js` | Script Utilitário / Migração |
+| `server\scripts\create_rh_tables.js` | Script Utilitário / Migração |
+| `server\scripts\create_sales_notes_table.js` | Script Utilitário / Migração |
+| `server\scripts\create_sgq_cargos_mysql.js` | Script Utilitário / Migração |
+| `server\scripts\create_sgq_cargos_table.js` | Script Utilitário / Migração |
+| `server\scripts\dba_optimize.js` | Script Utilitário / Migração |
+| `server\scripts\debug_pedido4090.js` | Script Utilitário / Migração |
+| `server\scripts\debug_setor_filter.js` | Script Utilitário / Migração |
+| `server\scripts\debug\alter_table.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_balance_check.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_codes.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_counts.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_data_loss.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_delivery_balance.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_evolution_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_filter_diagnostics.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_full_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_import.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_client_check.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_client.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_divergence.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_heirarchy.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_links.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_sequence.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_op_sorting.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_order_002553_v2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_order_002553.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_order.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_plan_date.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_producao_op.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_production_filter.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_production_fix.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_real_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_resource_st0055.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_romaneio_join.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_sc2_raw.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_sc5_recent.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_sc5.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_sinco.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_stock_db.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_unc.js` | Script Utilitário / Migração |
+| `server\scripts\debug\debug_window_function.js` | Script Utilitário / Migração |
+| `server\scripts\debug\migrate_ordens.js` | Script Utilitário / Migração |
+| `server\scripts\debug\migrate_planning_v2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\migrate_tecnicos.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_2730.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_actual_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_all_filters.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_api_auth.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_api_pcp.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_appts_4155.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_appts_like_4155.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_appts_schema.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_bad_password.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_bare.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_bulk.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_complete.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_comprehensive.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_conn.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_connection.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_count.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_cte.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_db.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_db2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_delete.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_direct.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_docs.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_duplication_fix.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_email.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_endpoint.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_engineering_bom.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_error.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_explain.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_explosion.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_explosion2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_express.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_fast.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_filter.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_fixed.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_flat_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_flat.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_flat2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_full_route.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_funcao_persistence.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_http.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_items_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_join.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_keys.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_kpi.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_kpi2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_kpi3.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_list_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_login_mimic.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_login.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_migration.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_mt6.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_mta.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_no_inactive.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_nofilter.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_notin.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_notrim.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_op_api_specific.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_op_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_op_mirror.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_op_sql.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_op.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_optimized_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pc_com_pv.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pc.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pcp.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pdf.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pedido_4155_pg.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pedidos_flat_perf.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_performance_fase1.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pg_array.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pg_plan.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_pg.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_prod.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_production_err.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_products_api.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_logic.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_op.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_op2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_op3.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_op4.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_op5.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_protheus_structure.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_purchase_requests.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query_pg.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query_protheus.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query_romaneio.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_query4.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_revisions.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_roteiro.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_roteiro2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_route_full.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_route_logic.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_search_partner.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_sh1.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_sh1010.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_single.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_split.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_split1.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_sql.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_stock.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_structure.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_subquery.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_tipo_pa.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_v1_vs_v2.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_visao_explain.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_visao_gerencial.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_visao.js` | Script Utilitário / Migração |
+| `server\scripts\debug\test_vite_proxy.js` | Script Utilitário / Migração |
+| `server\scripts\debug\trigger_rebuild.js` | Script Utilitário / Migração |
+| `server\scripts\delete_test_ops.js` | Script Utilitário / Migração |
+| `server\scripts\deploy_ssh2.js` | Script Utilitário / Migração |
+| `server\scripts\diag_performance.js` | Script Utilitário / Migração |
+| `server\scripts\dump_all.js` | Script Utilitário / Migração |
+| `server\scripts\extract_protheus_sqls.js` | Script Utilitário / Migração |
+| `server\scripts\find_sum.js` | Script Utilitário / Migração |
+| `server\scripts\fix_ops.js` | Script Utilitário / Migração |
+| `server\scripts\fix_syntax.js` | Script Utilitário / Migração |
+| `server\scripts\force_send_email_detailed.js` | Script Utilitário / Migração |
+| `server\scripts\force_send_email.js` | Script Utilitário / Migração |
+| `server\scripts\get_cfop_col.js` | Script Utilitário / Migração |
+| `server\scripts\get_cols.js` | Script Utilitário / Migração |
+| `server\scripts\get_d2_cols.js` | Script Utilitário / Migração |
+| `server\scripts\get_sf3_cols.js` | Script Utilitário / Migração |
+| `server\scripts\get_user_34.js` | Script Utilitário / Migração |
+| `server\scripts\historico_kpi.js` | Script Utilitário / Migração |
+| `server\scripts\import_cargos_mysql.js` | Script Utilitário / Migração |
+| `server\scripts\inspect_columns.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_conferencia.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_manutencao.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_materials.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_mysql_conferencia.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_rh_vagas.js` | Script Utilitário / Migração |
+| `server\scripts\migrate_sgq_romaneios.js` | Script Utilitário / Migração |
+| `server\scripts\migrateHelpToDb.js` | Script Utilitário / Migração |
+| `server\scripts\pg_cleanup.js` | Script Utilitário / Migração |
+| `server\scripts\pg_diag_and_cleanup.js` | Script Utilitário / Migração |
+| `server\scripts\setup_protheus_study_db.js` | Script Utilitário / Migração |
+| `server\scripts\setup_sgq_assets.js` | Script Utilitário / Migração |
+| `server\scripts\setup_vmi_db.js` | Script Utilitário / Migração |
+| `server\scripts\show_create.js` | Script Utilitário / Migração |
+| `server\scripts\simulate_audit.js` | Script Utilitário / Migração |
+| `server\scripts\simulate_update.js` | Script Utilitário / Migração |
+| `server\scripts\test_004546_no_seq.js` | Script Utilitário / Migração |
+| `server\scripts\test_apis.js` | Script Utilitário / Migração |
+| `server\scripts\test_auto_num_000000.js` | Script Utilitário / Migração |
+| `server\scripts\test_auto_num_AUTO.js` | Script Utilitário / Migração |
+| `server\scripts\test_auto_num.js` | Script Utilitário / Migração |
+| `server\scripts\test_backend_op.js` | Script Utilitário / Migração |
+| `server\scripts\test_bom.js` | Script Utilitário / Migração |
+| `server\scripts\test_cascata.js` | Script Utilitário / Migração |
+| `server\scripts\test_deleted_op.js` | Script Utilitário / Migração |
+| `server\scripts\test_email.js` | Script Utilitário / Migração |
+| `server\scripts\test_fast.js` | Script Utilitário / Migração |
+| `server\scripts\test_kpi_query.js` | Script Utilitário / Migração |
+| `server\scripts\test_kpi.js` | Script Utilitário / Migração |
+| `server\scripts\test_mt6_2.js` | Script Utilitário / Migração |
+| `server\scripts\test_mt6.js` | Script Utilitário / Migração |
+| `server\scripts\test_nova_estrategia.js` | Script Utilitário / Migração |
+| `server\scripts\test_pending_ops.js` | Script Utilitário / Migração |
+| `server\scripts\test_protheus_op.js` | Script Utilitário / Migração |
+| `server\scripts\test_roteiro.js` | Script Utilitário / Migração |
+| `server\scripts\test_roteiro2.js` | Script Utilitário / Migração |
+| `server\scripts\test_roteiro3.js` | Script Utilitário / Migração |
+| `server\scripts\test_sequen.js` | Script Utilitário / Migração |
+| `server\scripts\test_small.js` | Script Utilitário / Migração |
+| `server\scripts\test_vertical_MO0013.js` | Script Utilitário / Migração |
+| `server\scripts\test-item-status.js` | Script Utilitário / Migração |
+| `server\scripts\trigger_pg_cleanup.js` | Script Utilitário / Migração |
+| `server\scripts\validate_columns.js` | Script Utilitário / Migração |
+| `server\setup_company_table.js` | Script Utilitário / Migração |
+| `server\setup_metadata_table.js` | Script Utilitário / Migração |
+| `server\setup_pcp_forecast_table.js` | Script Utilitário / Migração |
+| `server\setup_romaneio_db.js` | Script Utilitário / Migração |
+| `server\setup_system_metrics_mysql.js` | Script Utilitário / Migração |
+| `server\setup_system_metrics_table.js` | Script Utilitário / Migração |
+| `server\setup_winscp_table.js` | Script Utilitário / Migração |
+| `server\temp_mojibake.js` | Script Utilitário / Migração |
+| `server\temp-migration.js` | Script Utilitário / Migração |
+| `server\test_ai_route.js` | Script Utilitário / Migração |
+| `server\test_api.js` | Script Utilitário / Migração |
+| `server\test_bom.js` | Script Utilitário / Migração |
+| `server\test_cliente.js` | Script Utilitário / Migração |
+| `server\test_cliente2.js` | Script Utilitário / Migração |
+| `server\test_cliente3.js` | Script Utilitário / Migração |
+| `server\test_cliente4.js` | Script Utilitário / Migração |
+| `server\test_cliente5.js` | Script Utilitário / Migração |
+| `server\test_cliente6.js` | Script Utilitário / Migração |
+| `server\test_cliente7.js` | Script Utilitário / Migração |
+| `server\test_compras.js` | Script Utilitário / Migração |
+| `server\test_db_conn.js` | Script Utilitário / Migração |
+| `server\test_db.js` | Script Utilitário / Migração |
+| `server\test_dupes.js` | Script Utilitário / Migração |
+| `server\test_endpoint.js` | Script Utilitário / Migração |
+| `server\test_faturamento.js` | Script Utilitário / Migração |
+| `server\test_gemini.js` | Script Utilitário / Migração |
+| `server\test_insert.js` | Script Utilitário / Migração |
+| `server\test_kpi_2.js` | Script Utilitário / Migração |
+| `server\test_meucanal.js` | Script Utilitário / Migração |
+| `server\test_mysql.js` | Script Utilitário / Migração |
+| `server\test_optimized_query_2.js` | Script Utilitário / Migração |
+| `server\test_optimized_query.js` | Script Utilitário / Migração |
+| `server\test_pg.js` | Script Utilitário / Migração |
+| `server\test_query.js` | Script Utilitário / Migração |
+| `server\test_query2.js` | Script Utilitário / Migração |
+| `server\test_query3.js` | Script Utilitário / Migração |
+| `server\test_sa5_deep.js` | Script Utilitário / Migração |
+| `server\test_sa5_mtm.js` | Script Utilitário / Migração |
+| `server\test_sa5.js` | Script Utilitário / Migração |
+| `server\test_sd1_full.js` | Script Utilitário / Migração |
+| `server\test_sd1_schema.js` | Script Utilitário / Migração |
+| `server\test_sd1.js` | Script Utilitário / Migração |
+| `server\test_sf2.js` | Script Utilitário / Migração |
+| `server\test_space.js` | Script Utilitário / Migração |
+| `server\test_update_sc2.js` | Script Utilitário / Migração |
+| `server\test_update.js` | Script Utilitário / Migração |
+| `server\test-mysql-file.js` | Script Utilitário / Migração |
+| `server\test-query.js` | Script Utilitário / Migração |
+| `server\test-suppliers.js` | Script Utilitário / Migração |
+| `server\test-taxa.js` | Script Utilitário / Migração |
+| `server\test.js` | Script Utilitário / Migração |
+| `server\testQueries.js` | Script Utilitário / Migração |
+| `server\tmp_test_db2.js` | Script Utilitário / Migração |
+| `server\tmp_test_mysql.js` | Script Utilitário / Migração |
+| `server\tmp_test_mysql2.js` | Script Utilitário / Migração |
+| `server\tmp\check_hier.js` | Script Utilitário / Migração |
+| `server\tmp\check_montapeca.js` | Script Utilitário / Migração |
+| `server\tmp\check_montapeca2.js` | Script Utilitário / Migração |
+| `server\tmp\check_mysql_case.js` | Script Utilitário / Migração |
+| `server\tmp\check_mysql_tables.js` | Script Utilitário / Migração |
+| `server\tmp\check_orphans.js` | Script Utilitário / Migração |
+| `server\tmp\check_pg_cols.js` | Script Utilitário / Migração |
+| `server\tmp\check_piece.js` | Script Utilitário / Migração |
+| `server\tmp\check_piece2.js` | Script Utilitário / Migração |
+| `server\tmp\check_schema_tmp.js` | Script Utilitário / Migração |
+| `server\tmp\check_sd2010_nat.js` | Script Utilitário / Migração |
+| `server\tmp\db_audit_all.js` | Script Utilitário / Migração |
+| `server\tmp\db_inspector.js` | Script Utilitário / Migração |
+| `server\tmp\db_inspector2.js` | Script Utilitário / Migração |
+| `server\tmp\db_inspector3.js` | Script Utilitário / Migração |
+| `server\tmp\debug_500_pedidos.js` | Script Utilitário / Migração |
+| `server\tmp\debug_avisos.js` | Script Utilitário / Migração |
+| `server\tmp\inspect_more_tables.js` | Script Utilitário / Migração |
+| `server\tmp\list_all_sd2010_cols.js` | Script Utilitário / Migração |
+| `server\tmp\list_all_sf2010_cols.js` | Script Utilitário / Migração |
+| `server\tmp\list_pg_tables.js` | Script Utilitário / Migração |
+| `server\tmp\setup_comentarios_db.js` | Script Utilitário / Migração |
+| `server\tmp\sync_osi_dry_run.js` | Script Utilitário / Migração |
+| `server\tmp\sync_osi_units_execute.js` | Script Utilitário / Migração |
+| `server\tmp\sync_units_dry_run.js` | Script Utilitário / Migração |
+| `server\tmp\sync_units_execute.js` | Script Utilitário / Migração |
+| `server\tmp\test_14719.js` | Script Utilitário / Migração |
+| `server\tmp\test_history_endpoint.js` | Script Utilitário / Migração |
+| `server\tmp\test_pedidos_fix.js` | Script Utilitário / Migração |
+| `server\tmp\test_sql_direct.js` | Script Utilitário / Migração |
+| `server\tmp\truncate_romaneios.js` | Script Utilitário / Migração |
+| `server\tmp\verify_db_general.js` | Script Utilitário / Migração |
+| `server\tmp\verify_sd_cols.js` | Script Utilitário / Migração |
+| `server\tmp\verify_target_tables.js` | Script Utilitário / Migração |
+| `server\undo.js` | Script Utilitário / Migração |
+| `server\update_db.js` | Script Utilitário / Migração |
+| `server\update_manutencao_schema.js` | Script Utilitário / Migração |
+| `server\update_photo_column.js` | Script Utilitário / Migração |
+| `server\update_product_features_db.js` | Script Utilitário / Migração |
+| `server\update_produtos_docs_metadata.js` | Script Utilitário / Migração |
+| `server\update_romaneio_revisions.js` | Script Utilitário / Migração |
+| `server\update_romaneio_schema.js` | Script Utilitário / Migração |
+| `server\upload_tar.js` | Script Utilitário / Migração |
+| `server\verify_data.js` | Script Utilitário / Migração |
+| `server\verify_evolution_endpoint.js` | Script Utilitário / Migração |
+| `server\verify_items_api.js` | Script Utilitário / Migração |
+| `server\verify_order_fallback.js` | Script Utilitário / Migração |
+| `server\verify_parts.js` | Script Utilitário / Migração |
+| `server\verify_sc2.js` | Script Utilitário / Migração |

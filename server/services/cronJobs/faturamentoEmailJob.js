@@ -44,7 +44,7 @@ const runJob = async (isTest = false, testEmail = null) => {
                 <div style="margin-bottom: 30px; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; background-color: #fafbfc;">
                     <h3 style="color: #0f172a; margin-top: 0; margin-bottom: 5px;">Solicitação em Aberto: <span style="color:#1e40af">${sol.numero_solicitacao}</span></h3>
                     <p style="margin: 0; font-size: 13px; color: #475569;"><strong>Solicitante:</strong> ${sol.usuario}</p>
-                    <p style="margin: 0 0 15px 0; font-size: 13px; color: #475569;"><strong>Na fila desde:</strong> ${new Date(sol.created_at).toLocaleString('pt-BR')}</p>
+                    <p style="margin: 0 0 15px 0; font-size: 13px; color: #475569;"><strong>Na fila desde:</strong> ${new Date(sol.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                     
                     <table style="width: 100%; border-collapse: collapse;">
                         <thead style="background-color: #f1f5f9; text-align: left;">

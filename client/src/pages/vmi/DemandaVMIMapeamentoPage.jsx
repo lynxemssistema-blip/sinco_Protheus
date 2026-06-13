@@ -130,6 +130,13 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
     const handleBuscarSugestoes = async () => {
         setBuscando(true);
         try {
+            // Monta mapa codigo_cliente -> descricao_cliente para fallback por descrição
+            const descMap = {};
+            demandas.forEach(d => {
+                if (d.codigo_cliente && d.descricao_cliente)
+                    descMap[d.codigo_cliente] = d.descricao_cliente;
+            });
+
             const codigosBuscar = [...new Set(
                 demandas.map(d => d.codigo_cliente).filter(cod => !mapeamentos[cod])
             )];
@@ -142,8 +149,10 @@ export default function DemandaVMIMapeamentoPage({ isTab = false }) {
             let processados = 0;
             for (let i = 0; i < codigosBuscar.length; i += BATCH_SIZE) {
                 const chunk = codigosBuscar.slice(i, i + BATCH_SIZE);
+                // Envia itens com descricao para ativar fallback por palavras-chave
+                const itens = chunk.map(cod => ({ cod, descricao: descMap[cod] || '' }));
                 try {
-                    const res = await api.post('/vmi/mapeamento/sugerir', { codigos: chunk });
+                    const res = await api.post('/vmi/mapeamento/sugerir', { itens });
                     const novasSugestoes = res.data.sugestoes || {};
                     const novasBases     = res.data.bases     || {};
                     const autoSelecoes   = {};

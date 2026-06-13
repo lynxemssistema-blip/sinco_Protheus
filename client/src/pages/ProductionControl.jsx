@@ -380,7 +380,26 @@ export default function ProductionControl() {
             await saveProductionPlanBatch(plans, observacao);
             setPlanningOp(null);
             setSelectedOps([]); // Clear selection after planning
-            loadData();
+            
+            // Local state update: update planned start/end dates immediately
+            setOps(prevOps => prevOps.map(o => {
+                const match = plans.find(p =>
+                    String(p.op_numero).trim() === String(o.op).trim() &&
+                    String(p.op_item).trim() === String(o.item_op).trim() &&
+                    String(p.op_sequencia).trim() === String(o.sequen).trim() &&
+                    String(p.operacao_codigo).trim() === String(o.operacao).trim()
+                );
+                if (match) {
+                    return {
+                        ...o,
+                        data_planejada_inicio: match.data_inicio.replace(' ', 'T'),
+                        data_planejada_fim: match.data_fim.replace(' ', 'T')
+                    };
+                }
+                return o;
+            }));
+            
+            toast.success('Planejamento em lote salvo com sucesso!');
         } catch (err) {
             console.error(err);
             alert('Erro ao salvar planejamento em lote');
@@ -411,11 +430,26 @@ export default function ProductionControl() {
         }
     };
 
-    const handleAppointmentSave = async (data) => {
-        // API chamada movida para o Modal
+    const handleAppointmentSave = async (dataPayload) => {
         setAppointingOp(null);
-        if (appointingOp) {
-            await refreshOperation(appointingOp);
+        
+        const data = Array.isArray(dataPayload) ? dataPayload[dataPayload.length - 1] : dataPayload;
+        
+        // Resolve a OP a partir dos dados do callback ou do estado anterior
+        const targetOp = data ? {
+            op: data.op_numero,
+            item_op: data.op_item,
+            sequen: data.op_sequencia,
+            operacao: data.operacao_codigo
+        } : appointingOp;
+
+        if (targetOp) {
+            if (String(targetOp.sequen).trim() === '001') {
+                // Se for a OP pai, recarrega todos os dados para refletir as baixas automáticas dos filhos em cascata
+                loadData();
+            } else {
+                await refreshOperation(targetOp);
+            }
         } else {
             loadData();
         }

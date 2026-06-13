@@ -19,7 +19,10 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
         // A data base NUNCA pode ser anterior à data atual
         const todayStr = new Date().toISOString().split('T')[0];
-        const dataBaseEfetiva = data_inicio < todayStr ? todayStr : data_inicio;
+        if (data_inicio < todayStr) {
+            throw new Error(`A data de início (${data_inicio}) não pode ser anterior à data de hoje (${todayStr}).`);
+        }
+        const dataBaseEfetiva = data_inicio;
 
         pgClient = await db.connect();
         agent_logs.push(`Iniciando FCS: ${ops.length} OPs selecionadas | Data base: ${data_inicio} | Data efetiva: ${dataBaseEfetiva} | Sábado: ${include_saturday ? 'SIM' : 'NÃO'}`);
@@ -603,6 +606,11 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             await mysqlPool.query(
                 `DELETE FROM app_production_planning_diario
                  WHERE op_numero IN (${deletePlaceholders})`,
+                [...opsProcessadasNums]
+            );
+            await mysqlPool.query(
+                `DELETE FROM app_pcp_delivery_forecasts
+                 WHERE TRIM(op_protheus) IN (${deletePlaceholders})`,
                 [...opsProcessadasNums]
             );
             if (deleteResult.affectedRows > 0) {

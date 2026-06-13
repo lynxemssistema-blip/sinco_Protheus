@@ -4,6 +4,7 @@ const path = require('path');
 const compression = require('compression');
 const cors = require('cors');
 const pedidosRouter = require('./routes/pedidos');
+const corteRouter = require('./routes/corte');
 const { authenticateToken } = require('./routes/auth');
 
 const http = require('http');
@@ -171,6 +172,7 @@ app.use('/api', authenticateToken);
 
 // Routes (all protected by auth middleware above)
 app.use('/api/pedidos', pedidosRouter);
+app.use('/api/corte', corteRouter);
 app.use('/api/pedidos-status', require('./routes/pedidos_status'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/produtos', require('./routes/produtos'));

@@ -303,7 +303,11 @@ router.get('/', authenticateToken, async (req, res) => {
             SELECT p.*,
                    m.b1_cod, m.descricao_protheus
             FROM app_vmi_pedidos p
-            LEFT JOIN app_demanda_vmi_map m ON p.codigo_base = m.codigo_produto_cliente
+            LEFT JOIN app_demanda_vmi_map m ON (
+                p.codigo_produto_cliente = m.codigo_produto_cliente OR
+                REPLACE(REPLACE(REPLACE(p.codigo_produto_cliente, '.', ''), '-', ''), ' ', '') = 
+                REPLACE(REPLACE(REPLACE(m.codigo_produto_cliente, '.', ''), '-', ''), ' ', '')
+            )
         `;
         const params = [];
         if (lote) {

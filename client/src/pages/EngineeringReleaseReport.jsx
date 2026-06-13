@@ -3,11 +3,12 @@ import api, { getFileUrl } from '../services/api';
 import { 
     ClipboardList, Search, Calendar, User, Package, 
     Download, Mail, Filter, Loader2, AlertCircle, 
-    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText
+    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText, Scissors
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { generateSingleRNCPdf } from '../services/rncPdfGenerator';
 import RNCSendEmailModal from '../components/RNCSendEmailModal';
+import CorteReleaseTab from '../components/CorteReleaseTab';
 
 
 // ─── Aba Engenharia ───────────────────────────────────────────────────────────
@@ -854,6 +855,7 @@ const EngineeringReleaseReport = () => {
     const tabs = [
         { id: 'engenharia', label: 'Engenharia', icon: ClipboardList, color: 'red' },
         { id: 'pcp',        label: 'PCP / Lote Aglutinado', icon: Factory,       color: 'green' },
+        { id: 'corte',      label: 'Liberação de Corte', icon: Scissors,      color: 'indigo' },
         { id: 'romaneio',   label: 'Controle Romaneio', icon: Package,       color: 'blue' },
         { id: 'rnc_emails', label: 'Controle Envios RNC', icon: Mail,          color: 'indigo' },
         { id: 'nfe_emails', label: 'Recebimentos Fiscais', icon: FileText,     color: 'teal' },
@@ -901,6 +903,7 @@ const EngineeringReleaseReport = () => {
             {/* Tab Content */}
             {activeTab === 'engenharia' ? <EngineeringTab /> : 
              activeTab === 'pcp' ? <PCPTab /> : 
+             activeTab === 'corte' ? <CorteReleaseTab /> : 
              activeTab === 'rnc_emails' ? <RNCEmailsTab /> : 
              activeTab === 'nfe_emails' ? <NFEReceiptsTab /> : <RomaneioHistoryTab />}
         </div>

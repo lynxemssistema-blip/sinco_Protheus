@@ -161,49 +161,66 @@ export default function ProductionMatrixPage() {
         }
     };
 
-    const handleAppointmentSave = async (data) => {
+    const handleAppointmentSave = async (dataPayload) => {
         setAppointingOp(null);
+
+        const payloads = Array.isArray(dataPayload) ? dataPayload : [dataPayload];
+        console.log('📦 [MATRIX] handleAppointmentSave payloads:', payloads);
 
         // ATUALIZAÇÃO OTIMISTA (Sem Reload)
         setData(prev => {
-                const newItems = prev.items.map(item => {
-                    // Encontrar o item correto (OP, ItemOP e SEQUENCIA)
-                    if (item.op === data.op_numero &&
-                        item.item_op === data.op_item &&
-                        item.sequencia === data.op_sequencia) {
+                let newItems = [...prev.items];
+                
+                payloads.forEach(data => {
+                    newItems = newItems.map(item => {
+                        // Encontrar o item correto (OP, ItemOP e SEQUENCIA)
+                        const isMatch = String(item.op).trim() === String(data.op_numero).trim() &&
+                                        String(item.item_op).trim() === String(data.op_item).trim() &&
+                                        (String(item.sequen).trim() === String(data.op_sequencia).trim() || String(item.sequencia).trim() === String(data.op_sequencia).trim());
+                        
+                        if (isMatch) {
+                            console.log(`✅ [MATRIX] Found matching row for OP: ${item.op}`);
+                            const updatedOps = { ...item.operations };
 
-                        const updatedOps = { ...item.operations };
+                            // Find the target column by matching operacao_real (can be comma-separated like "10, 30")
+                            const targetColumn = Object.keys(updatedOps).find(key => {
+                                const realOps = String(updatedOps[key].operacao_real || '').split(',').map(s => s.trim());
+                                return realOps.includes(String(data.operacao_codigo).trim()) || String(updatedOps[key].operacao_real) == String(data.operacao_codigo);
+                            }) || data.operacao_codigo;
 
-                        // Find the target column by matching operacao_real
-                        const targetColumn = Object.keys(updatedOps).find(key =>
-                            updatedOps[key].operacao_real == data.operacao_codigo
-                        ) || data.operacao_codigo;
+                            const currentOp = updatedOps[targetColumn];
 
-                        const currentOp = updatedOps[targetColumn];
+                            if (currentOp) {
+                                const addedQtd = Number(data.quantidade);
+                                console.log(`🎯 [MATRIX] Updating cell: ${targetColumn} with +${addedQtd} (was ${currentOp.qtd_produzida || 0})`);
+                                const newProduced = (currentOp.qtd_produzida || 0) + addedQtd;
+                                const plan = currentOp.qtd_planejada || 0;
+                                const newPercent = plan > 0 ? Math.min(100, Math.round((newProduced / plan) * 100)) : 0;
 
-                        if (currentOp) {
-                            const addedQtd = Number(data.quantidade);
-                            const newProduced = (currentOp.qtd_produzida || 0) + addedQtd;
-                            const plan = currentOp.qtd_planejada || 0;
-                            const newPercent = plan > 0 ? Math.min(100, Math.round((newProduced / plan) * 100)) : 0;
+                                let newStatus = currentOp.status;
+                                if (newPercent >= 100) newStatus = 'done';
+                                else if (newPercent > 0) newStatus = 'in_progress';
 
-                            let newStatus = currentOp.status;
-                            if (newPercent >= 100) newStatus = 'done';
-                            else if (newPercent > 0) newStatus = 'in_progress';
-
-                            updatedOps[targetColumn] = {
-                                ...currentOp,
-                                qtd_produzida: newProduced,
-                                percentual: newPercent,
-                                status: newStatus
-                            };
+                                updatedOps[targetColumn] = {
+                                    ...currentOp,
+                                    qtd_produzida: newProduced,
+                                    percentual: newPercent,
+                                    status: newStatus
+                                };
+                            }
+                            return { ...item, operations: updatedOps };
                         }
-                        return { ...item, operations: updatedOps };
-                    }
-                    return item;
+                        return item;
+                    });
                 });
+                
                 return { ...prev, items: newItems };
         });
+
+        // Silently refresh the matrix from the backend to ensure absolute synchronization
+        // This resolves issues where cached localStorage data (useStickyState) or partial 
+        // optimistic updates cause the UI to desync from the database state.
+        loadData();
     };
 
     const getStatusColor = (status) => {
@@ -450,18 +467,18 @@ export default function ProductionMatrixPage() {
 
                                             {/* Itens do Grupo */}
                                             {group.items.map((item) => (
-                                                <tr key={`${item.op}_${item.item_op}_${item.sequencia || '001'}`} className={`transition-colors ${(!item.sequencia || item.sequencia === '001') ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
+                                                <tr key={`${item.op}_${item.item_op}_${item.sequen || item.sequencia || '001'}`} className={`transition-colors ${(!(item.sequen || item.sequencia) || (item.sequen || item.sequencia) === '001') ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
                                                     <td className="border-b border-r px-4 py-3 bg-white sticky left-0 z-10">
                                                         <div className="flex items-center justify-between gap-2">
-                                                            <div className={`flex-1 ${(item.sequencia && item.sequencia !== '001') ? 'pl-4 border-l-2 border-slate-200 ml-1' : ''}`}>
+                                                            <div className={`flex-1 ${((item.sequen || item.sequencia) && (item.sequen || item.sequencia) !== '001') ? 'pl-4 border-l-2 border-slate-200 ml-1' : ''}`}>
                                                                 <div className="flex items-center gap-2">
                                                                     <div className="text-[10px] text-slate-500 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">
                                                                         OP: {item.op}-{item.item_op}
-                                                                        {item.sequencia && item.sequencia !== '001' && (
-                                                                            <span className="ml-1 text-slate-400">Seq: {item.sequencia}</span>
+                                                                        {(item.sequen || item.sequencia) && (item.sequen || item.sequencia) !== '001' && (
+                                                                            <span className="ml-1 text-slate-400">Seq: {item.sequen || item.sequencia}</span>
                                                                         )}
                                                                     </div>
-                                                                    {(item.sequencia && item.sequencia !== '001') && <div className="text-[10px] text-slate-300">↳</div>}
+                                                                    {((item.sequen || item.sequencia) && (item.sequen || item.sequencia) !== '001') && <div className="text-[10px] text-slate-300">↳</div>}
                                                                 </div>
 
                                                                 {item.nome_cliente && <div className="text-[10px] text-slate-400 truncate max-w-[150px] mt-1" title={item.nome_cliente}>Cli: {item.nome_cliente}</div>}
@@ -506,7 +523,7 @@ export default function ProductionMatrixPage() {
                                                                 );
                                                             }
 
-                                                            const timerId = `${item.op}_${item.item_op || '01'}_${item.sequencia || '001'}_${opData.operacao_real || opCode}`;
+                                                            const timerId = `${item.op}_${item.item_op || '01'}_${item.sequen || item.sequencia || '001'}_${opData.operacao_real || opCode}`;
                                                             const cellTimer = timers[timerId];
                                                             const isRunning = cellTimer && cellTimer.isRunning;
                                                             const startedTime = cellTimer?.startedAt

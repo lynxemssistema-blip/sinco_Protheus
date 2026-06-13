@@ -543,7 +543,12 @@ router.post('/ordem-producao/incluir', async (req, res) => {
         const protheusResp = protheusRes.data;
         console.log('📬 [OP] Resposta Protheus →', protheusResp);
 
-        require('fs').appendFileSync('protheus_log.txt', new Date().toISOString() + ' RESP: ' + JSON.stringify(protheusResp) + '\n');
+        try {
+            const path = require('path');
+            require('fs').appendFileSync(path.join(__dirname, '../protheus_log.txt'), new Date().toISOString() + ' RESP: ' + JSON.stringify(protheusResp) + '\\n');
+        } catch (logErr) {
+            console.error('[protheus_log] Failed to write log:', logErr.message);
+        }
 
         // Protheus retorna HTTP 200 mesmo em falha; checar messages[]
         const messages = Array.isArray(protheusResp.message)

@@ -72,7 +72,15 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
 
                 if (!controller.signal.aborted) {
                     const { data, meta } = result;
-                    setOrders(data);
+                    if (searchPage === 1) {
+                        setOrders(data);
+                    } else {
+                        setOrders(prev => {
+                            const idKey = searchViewMode === 'flat' ? d => `${d.pedido}-${d.item}` : d => d.pedido;
+                            const newIds = new Set(data.map(idKey));
+                            return [...prev.filter(p => !newIds.has(idKey(p))), ...data];
+                        });
+                    }
                     setTotalPages(Math.ceil(meta.total / searchLimit));
                     setRetryInfo(null);
                     setLoading(false); // ✅ success

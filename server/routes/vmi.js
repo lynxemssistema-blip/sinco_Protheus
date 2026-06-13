@@ -87,6 +87,20 @@ async function initTables() {
 
 initTables().catch(err => console.error('❌ VMI table init error:', err.message));
 
+// Migração incremental: adiciona colunas novas à tabela de cache se ainda não existirem
+(async () => {
+    const alters = [
+        `ALTER TABLE app_demanda_vmi_pedidos_cache ADD COLUMN item_pedido VARCHAR(50) DEFAULT '' AFTER pedido_metalfisa`,
+        `ALTER TABLE app_demanda_vmi_pedidos_cache ADD COLUMN ops_relacionadas MEDIUMTEXT DEFAULT NULL`,
+        `ALTER TABLE app_demanda_vmi_pedidos_cache ADD COLUMN data_entrega_comercial VARCHAR(8) DEFAULT '' AFTER ops_relacionadas`,
+        `ALTER TABLE app_demanda_vmi_pedidos_cache ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`,
+        `CREATE UNIQUE INDEX uq_vmi_cache_oc_prod ON app_demanda_vmi_pedidos_cache (ordem_compra_cliente(100), codigo_produto_cliente(100))`
+    ];
+    for (const sql of alters) {
+        try { await mysqlPool.query(sql); } catch (_) { /* ignora se coluna/índice já existe */ }
+    }
+})();
+
 // ── POST /api/vmi/leituras  — save a reading ─────────────────────────────────
 router.post('/leituras', async (req, res) => {
     const { nome_arquivo, mes_referencia, mes_label, sheet_name, itens, pedidos_identificados } = req.body;
@@ -802,13 +816,54 @@ router.get('/demandas', async (req, res) => {
 
         const [rows] = await mysqlPool.query(`
             SELECT
-                id, lote_importacao, prioridade_cliente, ordem_compra_cliente, produto_pai,
-                descricao_equipamento, codigo_produto_cliente, descricao_produto_cliente,
-                rev_cliente, mes_referencia, quantidade, created_at
-            FROM app_demanda_vmi
-            WHERE lote_importacao = ?
-            ORDER BY ordem_compra_cliente ASC, codigo_produto_cliente ASC, mes_referencia ASC
+                v.id, v.lote_importacao, v.prioridade_cliente, v.ordem_compra_cliente, v.produto_pai,
+                v.descricao_equipamento, v.codigo_produto_cliente, v.descricao_produto_cliente,
+                v.rev_cliente, v.mes_referencia, v.quantidade, v.created_at,
+                d.data_original, d.data_revisada,
+                pc.pedido_metalfisa, pc.item_pedido, pc.data_criacao_metalfisa, pc.data_entrega_metalfisa,
+                pc.qtd_pedido, pc.qtd_entregue, pc.saldo_entregar, pc.notas_fiscais, pc.ops_relacionadas,
+                pc.data_entrega_comercial,
+                fpd.data_entrega_pcp, fpd.data_prevista_faturamento
+            FROM app_demanda_vmi v
+            LEFT JOIN app_demanda_vmi_datas d
+              ON d.ordem_compra_cliente = v.ordem_compra_cliente
+             AND d.codigo_produto_cliente = v.codigo_produto_cliente
+            LEFT JOIN app_demanda_vmi_pedidos_cache pc
+              ON pc.ordem_compra_cliente = v.ordem_compra_cliente
+             AND pc.codigo_produto_cliente = v.codigo_produto_cliente
+            LEFT JOIN (
+                SELECT TRIM(pedido) COLLATE utf8mb4_general_ci AS pedido,
+                       TRIM(item)   COLLATE utf8mb4_general_ci AS item,
+                    MIN(data_entrega_pcp) AS data_entrega_pcp,
+                    MAX(data_prevista_faturamento) AS data_prevista_faturamento
+                FROM app_pcp_delivery_forecasts
+                WHERE pedido IS NOT NULL AND item IS NOT NULL
+                GROUP BY TRIM(pedido) COLLATE utf8mb4_general_ci, TRIM(item) COLLATE utf8mb4_general_ci
+            ) fpd ON fpd.pedido = TRIM(SUBSTRING_INDEX(IFNULL(pc.pedido_metalfisa,''), ' / ', 1))
+                 AND fpd.item   = TRIM(SUBSTRING_INDEX(IFNULL(pc.item_pedido,''),      ' / ', 1))
+            WHERE v.lote_importacao = ?
+            ORDER BY v.ordem_compra_cliente ASC, v.codigo_produto_cliente ASC, v.mes_referencia ASC
         `, [loteSelecionado]);
+
+        // Parse JSON fields stored as text in MySQL cache
+        rows.forEach(r => {
+            if (r.notas_fiscais != null) {
+                if (typeof r.notas_fiscais === 'string') {
+                    try { r.notas_fiscais = JSON.parse(r.notas_fiscais); } catch { r.notas_fiscais = []; }
+                }
+                if (!Array.isArray(r.notas_fiscais)) r.notas_fiscais = [];
+            } else {
+                r.notas_fiscais = [];
+            }
+            if (r.ops_relacionadas != null) {
+                if (typeof r.ops_relacionadas === 'string') {
+                    try { r.ops_relacionadas = JSON.parse(r.ops_relacionadas); } catch { r.ops_relacionadas = []; }
+                }
+                if (!Array.isArray(r.ops_relacionadas)) r.ops_relacionadas = [];
+            } else {
+                r.ops_relacionadas = [];
+            }
+        });
 
         // --- ENRIQUECIMENTO COM CLASSIFICAÇÃO PROTHEUS ---
         if (rows.length > 0) {
@@ -838,20 +893,23 @@ router.get('/demandas', async (req, res) => {
                         const cleanCodes = Object.keys(cleanToOriginal);
                         if (cleanCodes.length > 0) {
                             try {
+                                // Auto-match via SZ1: z1_codcli (código do cliente) → z1_produto (b1_cod Protheus)
                                 const autoMatchQuery = `
-                                    SELECT TRIM(b1_cod) as b1_cod
-                                    FROM public.sb1010
-                                    WHERE TRIM(b1_cod) = ANY($1::text[])
-                                    AND COALESCE(d_e_l_e_t_, '') = ''
+                                    SELECT DISTINCT
+                                        UPPER(REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g')) AS clean_codcli,
+                                        TRIM(sz1.z1_produto) AS b1_cod
+                                    FROM public.sz1010 sz1
+                                    WHERE UPPER(REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g')) = ANY($1::text[])
+                                    AND COALESCE(sz1.d_e_l_e_t_, '') = ''
+                                    AND TRIM(sz1.z1_produto) <> ''
                                 `;
                                 const autoMatchResult = await db.query(autoMatchQuery, [cleanCodes]);
                                 autoMatchResult.rows.forEach(r => {
-                                    const cleanFound = r.b1_cod.toUpperCase();
-                                    const orig = cleanToOriginal[cleanFound];
+                                    const orig = cleanToOriginal[r.clean_codcli];
                                     if (orig) mapeamentoMap[orig] = r.b1_cod;
                                 });
                             } catch (errAuto) {
-                                console.error('Erro no auto-match de b1_cod:', errAuto.message);
+                                console.error('Erro no auto-match via SZ1:', errAuto.message);
                             }
                         }
                     }
@@ -888,12 +946,7 @@ router.get('/demandas', async (req, res) => {
                                     
                                     -- 3. PCP (Default)
                                     ELSE 'PCP'
-                                END as status_tipo_item_base,
-                                CASE
-                                    WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no cadastro (SB1 b1_msblql).'
-                                    WHEN EXISTS (SELECT 1 FROM public.sz0010 sz0 WHERE TRIM(sz0.z0_produto) = TRIM(sb1.b1_cod) AND sz0.z0_status = 'P' AND COALESCE(sz0.d_e_l_e_t_, '') = '') THEN 'Restrição pendente no cadastro (SZ0 status=P).'
-                                    WHEN NOT EXISTS (SELECT 1 FROM public.sg1010 sg1 WHERE TRIM(sg1.g1_cod) = TRIM(sb1.b1_cod) AND COALESCE(sg1.d_e_l_e_t_, '') = '')
-                                     AND NOT EXISTS (SELECT 1 FROM public.sg2010 sg2 WHERE TRIM(sg2.g2_produto) = TRIM(sb1.b1_cod) AND COALESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
+LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
                                     ELSE 'Item liberado para PCP.'
                                 END as status_tipo_detalhe_base
                             FROM public.sb1010 sb1
@@ -905,28 +958,51 @@ router.get('/demandas', async (req, res) => {
                         const statusMap = {};
                         pgResult.rows.forEach(r => { statusMap[r.b1_cod] = r; });
 
-                        // 3. Mescla os dados
-                        rows.forEach(row => {
-                            const b1Cod = mapeamentoMap[row.codigo_produto_cliente];
+                        // 2.5 Busca PDFs — tabela opcional, não bloqueia o enriquecimento
+                        const pdfMap = {};
+                        try {
+                            const [pdfRows] = await mysqlPool.execute(
+                                `SELECT b1_cod, pdf_url FROM app_vmi_pdfs WHERE b1_cod IN (${b1Cods.map(() => '?').join(',')})`,
+                                b1Cods
+                            );
+                            pdfRows.forEach(p => { pdfMap[p.b1_cod] = p.pdf_url; });
+                        } catch (_) { /* tabela app_vmi_pdfs pode não existir */ }
+
+                        // 3. Mescla os dados diretamente em rows (mutação in-place)
+                        rows.forEach(r => {
+                            if (r.notas_fiscais) {
+                                try { r.notas_fiscais = typeof r.notas_fiscais === 'string' ? JSON.parse(r.notas_fiscais) : r.notas_fiscais; }
+                                catch (e) { r.notas_fiscais = []; }
+                            }
+                            if (r.ops_relacionadas) {
+                                try { r.ops_relacionadas = typeof r.ops_relacionadas === 'string' ? JSON.parse(r.ops_relacionadas) : r.ops_relacionadas; }
+                                catch (e) { r.ops_relacionadas = []; }
+                            }
+
+                            const b1Cod = mapeamentoMap[r.codigo_produto_cliente];
                             if (b1Cod && statusMap[b1Cod]) {
                                 const s = statusMap[b1Cod];
-                                row.b1_cod = b1Cod;
-                                row.b1_desc = s.b1_desc;
 
-                                // Lógica de Revisão: Compara rev_cliente da planilha com rev_protheus (SZ1)
+                                // Lógica de Revisão: Compara rev_cliente com rev_protheus (SZ1)
                                 const revsProtheus = (s.rev_protheus || '').split(' / ').map(v => v.trim());
-                                const revVmi = (row.rev_cliente || '').trim();
+                                const revVmi = (r.rev_cliente || '').trim();
+                                let stItem = s.status_tipo_item_base;
+                                let stDetalhe = s.status_tipo_detalhe_base;
 
                                 if (revVmi && revsProtheus.length > 0 && !revsProtheus.includes(revVmi)) {
-                                    row.status_tipo_item = 'Revisão';
-                                    row.status_tipo_detalhe = `Diferença de revisão. VMI: ${revVmi} / Protheus: ${s.rev_protheus}`;
-                                } else {
-                                    row.status_tipo_item = s.status_tipo_item_base;
-                                    row.status_tipo_detalhe = s.status_tipo_detalhe_base;
+                                    stItem = 'Revisão';
+                                    stDetalhe = `Diferença de revisão. VMI: ${revVmi} / Protheus: ${s.rev_protheus}`;
                                 }
+
+                                r.b1_cod = b1Cod;
+                                r.b1_desc = s.b1_desc;
+                                r.pdf_url = pdfMap[String(b1Cod).trim()] || null;
+                                r.status_tipo_item = stItem;
+                                r.status_tipo_detalhe = stDetalhe;
                             } else if (b1Cod) {
-                                row.status_tipo_item = 'Restrição';
-                                row.status_tipo_detalhe = 'Produto mapeado não encontrado no Protheus (SB1).';
+                                r.b1_cod = b1Cod;
+                                r.status_tipo_item = 'Restrição';
+                                r.status_tipo_detalhe = 'Produto mapeado não encontrado no Protheus (SB1).';
                             }
                         });
                     }
@@ -1148,15 +1224,27 @@ router.post('/pedidos-protheus', async (req, res) => {
             return s.replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
         };
         
+        const cleanCliente = (str) => {
+            let s = String(str || '');
+            const revMatch = s.match(/(-[A-Za-z0-9]+|\s+REV.*)$/i);
+            if (revMatch) s = s.substring(0, revMatch.index);
+            return s.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        };
+
         const pedidosClienteArray = [...new Set(rows.map(r => cleanOrderNumber(r.ordem_compra_cliente)).filter(Boolean))];
         const pedidosClienteLikeArray = pedidosClienteArray.map(p => `%${p}%`);
-        const b1Cods = [...new Set(rows.map(r => String(r.b1_cod || '').trim()).filter(Boolean))];
+        let b1Cods = [...new Set(rows.map(r => String(r.b1_cod || '').trim()).filter(Boolean))];
+        const codigosClienteArray = [...new Set(rows.map(r => cleanCliente(r.codigo_produto_cliente)).filter(Boolean))];
 
         const sc6Map = {};
-        
-        if (pedidosClienteArray.length > 0 && b1Cods.length > 0) {
+        let pgSync = null;
+
+        if (pedidosClienteArray.length > 0) {
+            pgSync = await db.connect();
+            try { await pgSync.query("SET statement_timeout = '240000'"); } catch (_) {}
+
             const querySC6 = `
-                SELECT 
+                SELECT
                     LTRIM(UPPER(REGEXP_REPLACE(
                         REGEXP_REPLACE(
                             REGEXP_REPLACE(c6.c6_pedcli, 'dmc-?9800-?', '', 'gi'),
@@ -1166,8 +1254,10 @@ router.post('/pedidos-protheus', async (req, res) => {
                     )), '0') AS pedcli,
                     TRIM(c6.c6_produto) AS b1_cod,
                     TRIM(c6.c6_num) AS c6_num,
+                    MIN(TRIM(c6.c6_item)) AS c6_item,
                     SUM(COALESCE(c6.c6_qtdven, 0)) AS qtd_pedido,
-                    SUM(COALESCE(c6.c6_qtdent, 0)) AS qtd_entregue
+                    SUM(COALESCE(c6.c6_qtdent, 0)) AS qtd_entregue,
+                    MAX(TRIM(c6.c6_entreg)) AS c6_entreg
                 FROM public.sc6010 c6
                 WHERE c6.d_e_l_e_t_ = ''
                   AND LTRIM(UPPER(REGEXP_REPLACE(
@@ -1177,10 +1267,26 @@ router.post('/pedidos-protheus', async (req, res) => {
                       ),
                       '[^a-zA-Z0-9]', '', 'g'
                   )), '0') LIKE ANY($1::text[])
-                  AND TRIM(c6.c6_produto) = ANY($2::text[])
+                  AND (
+                      (array_length($2::text[], 1) IS NOT NULL AND TRIM(c6.c6_produto) = ANY($2::text[]))
+                      OR
+                      UPPER(REGEXP_REPLACE(TRIM(c6.c6_produto), '[^a-zA-Z0-9]', '', 'g')) = ANY($3::text[])
+                      OR
+                      EXISTS (
+                          SELECT 1 FROM public.sz1010 sz1
+                          WHERE TRIM(sz1.z1_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(sz1.d_e_l_e_t_, '') = ''
+                            AND UPPER(REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g')) = ANY($3::text[])
+                      )
+                  )
                 GROUP BY 1, TRIM(c6.c6_produto), TRIM(c6.c6_num)
             `;
-            const sc6Result = await db.query(querySC6, [pedidosClienteLikeArray, b1Cods]);
+            const sc6Result = await pgSync.query(querySC6, [pedidosClienteLikeArray, b1Cods.length > 0 ? b1Cods : ['___DUMMY___'], codigosClienteArray]);
+            
+            console.log('[VMI Sync SC6] rows:', sc6Result.rowCount);
+
+            // Re-populate b1Cods to ensure SD2 and SC2 fetches work properly for products found via codigosClienteArray
+            b1Cods = [...new Set([...b1Cods, ...sc6Result.rows.map(r => r.b1_cod)])];
             
             const orderNums = [...new Set(sc6Result.rows.map(r => r.c6_num).filter(Boolean))];
             let nfsMap = {};
@@ -1203,7 +1309,7 @@ router.post('/pedidos-protheus', async (req, res) => {
                       AND TRIM(d2.d2_cod) = ANY($2::text[])
                       AND COALESCE(d2.d_e_l_e_t_, '') = ''
                 `;
-                const sd2Result = await db.query(querySD2, [orderNums, b1Cods]);
+                const sd2Result = await pgSync.query(querySD2, [orderNums, b1Cods]);
                 sd2Result.rows.forEach(r => {
                     const key = `${r.order_num}_${cleanString(r.b1_cod)}`;
                     if (!nfsMap[key]) nfsMap[key] = [];
@@ -1217,24 +1323,141 @@ router.post('/pedidos-protheus', async (req, res) => {
                 });
             }
 
+            let opMap = {};
+            if (orderNums.length > 0) {
+                const querySC2 = `
+                    SELECT
+                        TRIM(c2_pedido) AS order_num,
+                        TRIM(c2_produto) AS b1_cod,
+                        TRIM(c2_num) AS op_num,
+                        TRIM(c2_item) AS op_item,
+                        c2_quant AS op_qtd_total,
+                        c2_quje AS op_qtd_entregue,
+                        TRIM(c2_datprf) AS op_datprf,
+                        CASE
+                            WHEN c2_quje >= c2_quant AND c2_quant > 0 THEN 'Concluída'
+                            WHEN c2_quje > 0 THEN 'Em Andamento'
+                            ELSE 'Em Aberto'
+                        END AS op_status
+                    FROM public.sc2010
+                    WHERE c2_pedido = ANY($1::text[])
+                      AND TRIM(c2_produto) = ANY($2::text[])
+                      AND COALESCE(d_e_l_e_t_, '') = ''
+                `;
+                const fmtProtheusDate = (s) => {
+                    if (!s || s.trim() === '' || s.trim() === '00000000') return null;
+                    const d = s.trim();
+                    return d.length === 8 ? `${d.slice(6,8)}/${d.slice(4,6)}/${d.slice(0,4)}` : null;
+                };
+                const sc2Result = await pgSync.query(querySC2, [orderNums, b1Cods]);
+                sc2Result.rows.forEach(r => {
+                    const key = `${r.order_num}_${cleanString(r.b1_cod)}`;
+                    if (!opMap[key]) opMap[key] = [];
+                    const progresso = r.op_qtd_total > 0 ? Math.round((r.op_qtd_entregue / r.op_qtd_total) * 100) : 0;
+                    opMap[key].push({
+                        op: r.op_num + (r.op_item ? r.op_item : ''),
+                        progresso: Math.min(100, Math.max(0, progresso)),
+                        status: r.op_status || 'Em Aberto',
+                        datprf: fmtProtheusDate(r.op_datprf),
+                        qtd_total: Number(r.op_qtd_total || 0),
+                        qtd_entregue: Number(r.op_qtd_entregue || 0)
+                    });
+                });
+            }
+
             sc6Result.rows.forEach(r => {
-                const key = `${cleanOrderNumber(r.pedcli)}_${cleanString(r.b1_cod)}`;
-                if (!sc6Map[key]) sc6Map[key] = [];
+                const pedKey = cleanOrderNumber(r.pedcli);
+                if (!sc6Map[pedKey]) sc6Map[pedKey] = [];
                 
                 const nfsKey = `${r.c6_num}_${cleanString(r.b1_cod)}`;
                 const nfs = nfsMap[nfsKey] || [];
                 
-                sc6Map[key].push({ 
-                    num: r.c6_num, 
+                sc6Map[pedKey].push({
+                    b1_cod: r.b1_cod,
+                    num: r.c6_num,
+                    item: r.c6_item || '',
+                    data_entrega: r.c6_entreg || '',
                     qtd: Number(r.qtd_entregue),
                     qtdven: Number(r.qtd_pedido),
-                    notas_fiscais: nfs
+                    notas_fiscais: nfs,
+                    ops: opMap[nfsKey] || []
                 });
             });
         }
 
+        // ── Salva resultados no cache MySQL ──────────────────────────────────
+        // Faz o mesmo match que o frontend faria, mas aqui temos todos os dados
+        try {
+            const cacheMap = {};
+            for (const row of rows) {
+                const ocKey = cleanOrderNumber(row.ordem_compra_cliente || '');
+                const ocEntries = sc6Map[ocKey] || [];
+                if (ocEntries.length === 0) continue;
+
+                const b1Cod = String(row.b1_cod || '').trim();
+                if (!b1Cod) continue;
+                const cleanB1 = cleanString(b1Cod);
+                const matching = ocEntries.filter(x => cleanString(x.b1_cod) === cleanB1);
+                if (matching.length === 0) continue;
+
+                const cacheKey = `${row.ordem_compra_cliente}||${row.codigo_produto_cliente}`;
+                if (cacheMap[cacheKey]) continue; // já processado
+
+                const qPed = matching.reduce((s, x) => s + Number(x.qtdven || 0), 0);
+                const qEnt = matching.reduce((s, x) => s + Number(x.qtd || 0), 0);
+                const pedidos = [...new Set(matching.map(x => x.num).filter(Boolean))].join(' / ');
+                const items   = [...new Set(matching.map(x => x.item).filter(Boolean))].join(' / ');
+                const allNfs  = matching.flatMap(x => x.notas_fiscais || []);
+                const allOps  = matching.flatMap(x => x.ops || []);
+                const dataEntrega = matching[0]?.data_entrega || '';
+
+                cacheMap[cacheKey] = {
+                    ordem_compra_cliente:  row.ordem_compra_cliente,
+                    codigo_produto_cliente: row.codigo_produto_cliente,
+                    pedido_metalfisa:       pedidos,
+                    item_pedido:            items,
+                    qtd_pedido:             qPed,
+                    qtd_entregue:           qEnt,
+                    saldo_entregar:         Math.max(0, qPed - qEnt),
+                    notas_fiscais:          JSON.stringify(allNfs),
+                    ops_relacionadas:       JSON.stringify(allOps),
+                    data_entrega_comercial: dataEntrega
+                };
+            }
+
+            const cacheRows = Object.values(cacheMap);
+            if (cacheRows.length > 0) {
+                for (const r of cacheRows) {
+                    await mysqlPool.execute(`
+                        INSERT INTO app_demanda_vmi_pedidos_cache
+                            (ordem_compra_cliente, codigo_produto_cliente, pedido_metalfisa, item_pedido,
+                             qtd_pedido, qtd_entregue, saldo_entregar, notas_fiscais, ops_relacionadas,
+                             data_entrega_comercial, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE
+                            pedido_metalfisa       = VALUES(pedido_metalfisa),
+                            item_pedido            = VALUES(item_pedido),
+                            qtd_pedido             = VALUES(qtd_pedido),
+                            qtd_entregue           = VALUES(qtd_entregue),
+                            saldo_entregar         = VALUES(saldo_entregar),
+                            notas_fiscais          = VALUES(notas_fiscais),
+                            ops_relacionadas       = VALUES(ops_relacionadas),
+                            data_entrega_comercial = VALUES(data_entrega_comercial),
+                            updated_at             = NOW()
+                    `, [r.ordem_compra_cliente, r.codigo_produto_cliente, r.pedido_metalfisa, r.item_pedido,
+                        r.qtd_pedido, r.qtd_entregue, r.saldo_entregar, r.notas_fiscais, r.ops_relacionadas,
+                        r.data_entrega_comercial || '']);
+                }
+                console.log(`[VMI Cache] ${cacheRows.length} entradas salvas/atualizadas`);
+            }
+        } catch (cacheErr) {
+            console.error('[VMI Cache] Erro ao salvar cache (não crítico):', cacheErr.message);
+        }
+
+        if (pgSync) pgSync.release();
         res.json({ success: true, mappings: sc6Map });
     } catch (err) {
+        if (pgSync) { try { pgSync.release(); } catch (_) {} }
         console.error('Erro ao buscar pedidos Protheus (SC6):', err);
         res.status(500).json({ error: 'Erro ao buscar SC6' });
     }
@@ -1720,3 +1943,266 @@ router.get('/op-mirror/:b1cod', async (req, res) => {
 });
 
 module.exports = router;
+
+// ── PUT /api/vmi/data-entrega ──
+router.put('/data-entrega', async (req, res) => {
+    const { ordem_compra_cliente, codigo_produto_cliente, produto_pai, data_original, data_revisada } = req.body;
+    
+    if (!ordem_compra_cliente || !codigo_produto_cliente) {
+        return res.status(400).json({ error: 'Pedido e Produto são obrigatórios.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO app_demanda_vmi_datas 
+                (ordem_compra_cliente, codigo_produto_cliente, produto_pai, data_original, data_revisada, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                data_original = COALESCE(VALUES(data_original), data_original),
+                data_revisada = VALUES(data_revisada),
+                produto_pai = COALESCE(VALUES(produto_pai), produto_pai),
+                updated_by = VALUES(updated_by)
+        `;
+        
+        await mysqlPool.execute(query, [
+            ordem_compra_cliente, 
+            codigo_produto_cliente, 
+            produto_pai || null, 
+            data_original || null, 
+            data_revisada || null, 
+            req.user?.nome || req.user?.NomeCompleto || null
+        ]);
+
+        res.json({ success: true, msg: 'Data atualizada com sucesso.' });
+    } catch (err) {
+        console.error('[VMI PUT data-entrega Error]', err);
+        res.status(500).json({ error: 'Erro ao atualizar a data de entrega.', details: err.message });
+    }
+});
+
+// ── GET /api/vmi/comparacao-diaria ──
+router.get('/comparacao-diaria', async (req, res) => {
+    try {
+        const [datas] = await mysqlPool.query(`
+            SELECT DISTINCT data_referencia 
+            FROM app_demanda_vmi_entregas_log 
+            ORDER BY data_referencia DESC 
+            LIMIT 2
+        `);
+        
+        if (datas.length < 2) {
+            return res.json({ 
+                comparacao: [], 
+                dias: datas.map(d => d.data_referencia),
+                msg: 'São necessários pelo menos 2 dias de histórico para comparação.' 
+            });
+        }
+        
+        const diaHoje = datas[0].data_referencia;
+        const diaOntem = datas[1].data_referencia;
+
+        const [comparacao] = await mysqlPool.query(`
+            SELECT 
+                h.ordem_compra_cliente, 
+                h.codigo_produto_cliente,
+                COALESCE(o.qtd_entregue, 0) as entregue_ontem,
+                h.qtd_entregue as entregue_hoje,
+                (h.qtd_entregue - COALESCE(o.qtd_entregue, 0)) as delta_entregue
+            FROM app_demanda_vmi_entregas_log h
+            LEFT JOIN app_demanda_vmi_entregas_log o 
+              ON o.ordem_compra_cliente = h.ordem_compra_cliente 
+             AND o.codigo_produto_cliente = h.codigo_produto_cliente 
+             AND o.data_referencia = ?
+            WHERE h.data_referencia = ? 
+              AND (h.qtd_entregue - COALESCE(o.qtd_entregue, 0)) <> 0
+            ORDER BY delta_entregue DESC
+        `, [diaOntem, diaHoje]);
+
+        res.json({
+            dias: { hoje: diaHoje, ontem: diaOntem },
+            comparacao
+        });
+
+    } catch (err) {
+        console.error('[VMI GET comparacao-diaria Error]', err);
+        res.status(500).json({ error: 'Erro ao gerar comparativo diário.', details: err.message });
+    }
+});
+
+// ── POST /api/vmi/snapshot ──
+router.post('/snapshot', async (req, res) => {
+    try {
+        const { rows } = req.body;
+        if (!rows || rows.length === 0) return res.json({ success: true });
+
+        const hoje = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
+
+        await mysqlPool.query(`DELETE FROM app_demanda_vmi_entregas_log WHERE data_referencia = ?`, [hoje]);
+
+        const pushParams = [];
+        const seen = new Set();
+        
+        for (const r of rows) {
+            const qtd = Number(r.qtd_entregue) || 0;
+            const key = `${r.ordem_compra_cliente}_${r.codigo_produto_cliente}`;
+            
+            if (!seen.has(key)) {
+                seen.add(key);
+                pushParams.push([hoje, r.ordem_compra_cliente, r.codigo_produto_cliente, qtd, 0]);
+            }
+        }
+
+        if (pushParams.length > 0) {
+            const CHUNK_SIZE = 1000;
+            for (let i = 0; i < pushParams.length; i += CHUNK_SIZE) {
+                const chunk = pushParams.slice(i, i + CHUNK_SIZE);
+                await mysqlPool.query(
+                    `INSERT INTO app_demanda_vmi_entregas_log (data_referencia, ordem_compra_cliente, codigo_produto_cliente, qtd_entregue, qtd_delta) VALUES ?`, 
+                    [chunk]
+                );
+            }
+        }
+
+        res.json({ success: true, msg: 'Snapshot diário de entregas atualizado.' });
+    } catch (err) {
+        console.error('[VMI POST snapshot Error]', err);
+        res.status(500).json({ error: 'Erro ao gerar snapshot.', details: err.message });
+    }
+});
+
+// ── POST /api/vmi/pedidos-cache ──
+router.post('/pedidos-cache', async (req, res) => {
+    try {
+        const { rows } = req.body;
+        if (!rows || rows.length === 0) return res.json({ success: true });
+
+        const pushParams = [];
+        const seen = new Set();
+        
+        for (const r of rows) {
+            if (!r.pedido_metalfisa && r.qtd_pedido == null) continue;
+
+            const key = `${r.ordem_compra_cliente}_${r.codigo_produto_cliente}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                pushParams.push([
+                    r.ordem_compra_cliente,
+                    r.codigo_produto_cliente,
+                    r.pedido_metalfisa || null,
+                    r.data_criacao_metalfisa || null,
+                    r.data_entrega_metalfisa || null,
+                    Number(r.qtd_pedido) || 0,
+                    Number(r.qtd_entregue) || 0,
+                    Number(r.saldo_entregar) || 0,
+                    r.notas_fiscais ? JSON.stringify(r.notas_fiscais) : null
+                ]);
+            }
+        }
+
+        if (pushParams.length > 0) {
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < pushParams.length; i += CHUNK_SIZE) {
+                const chunk = pushParams.slice(i, i + CHUNK_SIZE);
+                await mysqlPool.query(
+                    `INSERT INTO app_demanda_vmi_pedidos_cache 
+                    (ordem_compra_cliente, codigo_produto_cliente, pedido_metalfisa, data_criacao_metalfisa, data_entrega_metalfisa, qtd_pedido, qtd_entregue, saldo_entregar, notas_fiscais) 
+                    VALUES ?
+                    ON DUPLICATE KEY UPDATE 
+                        pedido_metalfisa = VALUES(pedido_metalfisa),
+                        data_criacao_metalfisa = VALUES(data_criacao_metalfisa),
+                        data_entrega_metalfisa = VALUES(data_entrega_metalfisa),
+                        qtd_pedido = VALUES(qtd_pedido),
+                        qtd_entregue = VALUES(qtd_entregue),
+                        saldo_entregar = VALUES(saldo_entregar),
+                        notas_fiscais = VALUES(notas_fiscais),
+                        updated_at = CURRENT_TIMESTAMP
+                    `,
+                    [chunk]
+                );
+            }
+        }
+
+        res.json({ success: true, msg: 'Cache de pedidos atualizado.' });
+    } catch (err) {
+        console.error('[VMI POST pedidos-cache Error]', err);
+        res.status(500).json({ error: 'Erro ao atualizar cache de pedidos.', details: err.message });
+    }
+});
+
+// ── POST /api/vmi/ops-progresso ──
+router.post('/ops-progresso', async (req, res) => {
+    try {
+        const { itens } = req.body;
+        if (!itens || !itens.length) return res.json({ ops: {} });
+
+        // Extrai os produtos (b1_cod) e cria uma lista de produtos únicos
+        const b1Cods = [...new Set(itens.map(i => i.b1_cod).filter(Boolean))];
+        if (b1Cods.length === 0) return res.json({ ops: {} });
+
+        const pgPool = require('../protheusDb');
+
+        const inClause = b1Cods.map((_, i) => `$${i + 1}`).join(',');
+        
+        // Busca as OPs abertas (ou recém fechadas) para esses produtos
+        // Filtramos por OPs que ainda não foram totalmente apontadas ou cujo saldo é relevante
+        // c2_quant = Qtd Total da OP
+        // c2_quje = Qtd Já Entregue (Apontada)
+        const query = `
+            SELECT 
+                TRIM(c2_num) AS op_num,
+                TRIM(c2_produto) AS b1_cod,
+                TRIM(c2_pedido) AS pedido_metalfisa,
+                TRIM(c2_emissao) AS data_criacao,
+                c2_quant AS qtd_total,
+                c2_quje AS qtd_apontada
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+              AND TRIM(c2_produto) IN (${inClause})
+              AND TRIM(c2_datrf) = ''
+        `;
+
+        const result = await pgPool.query(query, b1Cods);
+
+        const opsMap = {};
+
+        // Organiza as OPs pelo formato esperado no frontend: `b1_cod||pedido_metalfisa`
+        result.rows.forEach(r => {
+            const progresso = r.qtd_total > 0 ? Math.round((r.qtd_apontada / r.qtd_total) * 100) : 0;
+            const opData = {
+                op_num: r.op_num,
+                data_criacao: r.data_criacao ? `${r.data_criacao.substring(6,8)}/${r.data_criacao.substring(4,6)}/${r.data_criacao.substring(0,4)}` : '',
+                progresso: Math.min(100, Math.max(0, progresso))
+            };
+
+            // O Frontend tenta combinar b1_cod e pedido_metalfisa
+            // Vamos associar a OP à chave exata que o frontend aguarda
+            const key = `${r.b1_cod}||${r.pedido_metalfisa || ''}`;
+            
+            if (!opsMap[key]) {
+                opsMap[key] = [];
+            }
+            // Evita duplicidade de num OP no array (caso SC2010 tenha quebras por sequencia)
+            if (!opsMap[key].some(x => x.op_num === r.op_num)) {
+                opsMap[key].push(opData);
+            }
+            
+            // Caso a OP no Protheus esteja sem pedido (para estoque), associa apenas ao b1_cod genérico
+            if (r.pedido_metalfisa === '') {
+                // Tenta associar a TODOS os itens que tem esse b1_cod na request
+                itens.filter(i => i.b1_cod === r.b1_cod).forEach(itemReq => {
+                    const reqKey = `${itemReq.b1_cod}||${itemReq.pedido_metalfisa || ''}`;
+                    if (!opsMap[reqKey]) opsMap[reqKey] = [];
+                    if (!opsMap[reqKey].some(x => x.op_num === r.op_num)) {
+                        opsMap[reqKey].push(opData);
+                    }
+                });
+            }
+        });
+
+        res.json({ success: true, ops: opsMap });
+
+    } catch (err) {
+        console.error('[VMI POST ops-progresso Error]', err);
+        res.status(500).json({ error: 'Erro ao buscar progresso das OPs', details: err.message });
+    }
+});

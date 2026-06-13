@@ -248,7 +248,8 @@ export default function IndApontamentoPage({ embedded = false }) {
         }
     };
 
-    const handleAppointmentSave = async (data) => {
+    const handleAppointmentSave = async (dataPayload) => {
+        const data = Array.isArray(dataPayload) ? dataPayload[dataPayload.length - 1] : dataPayload;
         const payload = { ...data };
         if (appointingOp && appointingOp.op_fracionada) {
             payload.op_fracionada = appointingOp.op_fracionada;

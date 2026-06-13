@@ -141,6 +141,16 @@ export const getItensPedido = async (pedidoId) => {
     return response.data;
 };
 
+// Lean endpoint for PDF generation — only PG core data + MySQL notes (2 queries total)
+export const getPedidoPdfData = async (pedidoId) => {
+    if (!pedidoId || String(pedidoId).trim() === '') {
+        console.warn('[getPedidoPdfData] pedidoId inválido:', pedidoId);
+        return null;
+    }
+    const response = await api.get(`/pedidos/${encodeURIComponent(String(pedidoId).trim())}/pdf-data`);
+    return response.data;
+};
+
 // Fetches lightweight status classification (Restrição/Revisão/Novo/PCP) for each item of an order.
 // Uses the dedicated /item-status endpoint (Option B) — does NOT trigger the heavy /:id/itens enrichment.
 export const getItemStatus = async (pedidoId) => {
@@ -398,7 +408,26 @@ export const importProductWeights = (file) => {
 };
 
 // COMPANY
-export const getCompanySettings = () => api.get('/company').then(res => res.data);
+export const getCompanySettings = () => api.get('/company').then(res => {
+    const data = res.data;
+    if (data) {
+        if (typeof data.general_config === 'string') {
+            try {
+                data.general_config = JSON.parse(data.general_config);
+            } catch (e) {
+                console.error('Failed to parse general_config', e);
+            }
+        }
+        if (typeof data.menu_config === 'string') {
+            try {
+                data.menu_config = JSON.parse(data.menu_config);
+            } catch (e) {
+                console.error('Failed to parse menu_config', e);
+            }
+        }
+    }
+    return data;
+});
 export const updateCompanySettings = (data) => api.put('/company', data).then(res => res.data);
 export const updateMenuSettings = (data) => api.put('/company/menu', data).then(res => res.data);
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);

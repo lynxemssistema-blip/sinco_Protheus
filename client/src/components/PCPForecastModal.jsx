@@ -651,7 +651,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                     <Package className="h-4 w-4 text-indigo-600" />
                                     Itens Selecionados ({targetItems.length})
                                 </h3>
-                                <div className="space-y-3 mb-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="space-y-3 mb-4 pr-2">
                                     {targetItems.map((t, idx) => {
                                         const itemKey = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
                                         const uniqueKey = `${itemKey}_${idx}`;
@@ -808,7 +808,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 title="Remover Programação PCP"
                 message="Tem certeza que deseja remover esta programação do sistema?"
                 onConfirm={handleConfirmDelete}
-                onCancel={() => setConfirmModal({ isOpen: false, id: null })}
+                onClose={() => setConfirmModal({ isOpen: false, id: null })}
             />
         </div>
     );

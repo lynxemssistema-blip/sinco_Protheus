@@ -233,7 +233,8 @@ export const MENU_GROUPS = [
         id: 'financeiro_sensivel',
         label: 'Acessos Sensíveis (RH/Financeiro)',
         items: [
-            { id: 'valores_financeiros', label: 'Visualizar Valores Financeiros (R$)', path: '#', icon: BarChart, hidden: true }
+            { id: 'valores_financeiros', label: 'Visualizar Valores Financeiros (R$)', path: '#', icon: BarChart, hidden: true },
+            { id: 'aba_financeiro_faturar', label: 'Visualizar Aba Financeira (Itens a Faturar)', path: '#', icon: BarChart, hidden: true }
         ]
     }
 ];

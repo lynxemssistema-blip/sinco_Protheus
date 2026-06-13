@@ -5,7 +5,7 @@ import { getAppointmentHistory, getCompanySettings, getOpRoteiroSaldo, saveAppoi
 import { useTimer } from '../contexts/TimerContext';
 
 export default function ProductionAppointmentModal({ op, onClose, onSave }) {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
     const timerId = `${op.op}_${op.item_op || '01'}_${op.sequen || '001'}_${op.operacao}`;
     const globalTimer = timers[timerId] || null;
@@ -38,7 +38,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [showHistory, setShowHistory] = useState(false);
     const [appointmentMode, setAppointmentMode] = useState(null);
-    const [enableMultiOp, setEnableMultiOp] = useState(false);
+    const [enableMultiOp, setEnableMultiOp] = useState(hasPermission('action_pcp_multi_appointment', 'view'));
 
     // Auto-focus logic
     const qtdInputRef = useRef(null);
@@ -86,11 +86,9 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
         getCompanySettings()
             .then(data => {
                 setAppointmentMode(data?.general_config?.production_appointment_mode || 'free');
-                setEnableMultiOp(data?.general_config?.enable_multi_operation_appointment || false);
             })
             .catch(() => {
                 setAppointmentMode('free');
-                setEnableMultiOp(false);
             });
     }, []);
 
@@ -112,6 +110,11 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
         setLoadingOps(true);
         try {
             const codProduto = op.cod_produto_op || op.produto; // Handle different property names from parent
+            
+            // Pre-fill the current operation with fallback balance initially
+            const fallbackBalance = Math.max(0, (Number(op.qtd_planejada_op) || 0) - (Number(op.qtd_produzida_real) || 0));
+            setQuantities({ [op.operacao]: fallbackBalance > 0 ? fallbackBalance : '' });
+
             if (!codProduto) {
                 console.warn("Sem cod_produto_op, incapaz de buscar roteiro completo");
                 setLoadingOps(false);
@@ -130,6 +133,14 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             const visibleOps = currentIndex >= 0 ? ops.slice(0, currentIndex + 1) : ops;
             
             setRouteOperations(visibleOps);
+
+            // Auto-fill all quantities with the available balance (saldo)
+            const initialQuantities = {};
+            visibleOps.forEach(row => {
+                initialQuantities[row.operacao_codigo] = row.saldo > 0 ? row.saldo : '';
+            });
+            setQuantities(initialQuantities);
+            
         } catch (err) {
             console.error('Erro ao buscar roteiro:', err);
         } finally {
@@ -199,7 +210,10 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
         }
 
         isSubmittingRef.current = true;
-        setLoading(true);
+        
+        // Sumir com o modal imediatamente da tela do usuário
+        onClose();
+
         try {
             const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
             const end = `${formData.data_fim} ${formData.hora_fim}:00`;
@@ -215,7 +229,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             
             const savedPayloads = [];
 
-            // Dispara salvar para cada operacao escolhida sequencialmente
+            // Dispara salvar para cada operacao escolhida sequencialmente no background
             for (const opRow of opsToSave) {
                 const isCurrent = Number(opRow.operacao_codigo) === Number(op.operacao);
                 const userName = user?.nome || user?.login || 'Desconhecido';
@@ -237,29 +251,19 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                 savedPayloads.push(payload);
             }
 
-            // Precisamos simular o comportamento original que a página mãe esperava:
-            // A página mãe esperava UM payload retornado (ou nenhum argumento, se formos redesenhar a API).
-            // O componente chamava: await onSave({ ... }) e então fechava.
-            // Para não quebrar a matriz nem o vertical (já que salvamos direto), chamamos onSave com o último payload
-            // Assim, a listagem do componente mãe vai dar refresh (vertical page calls loadData).
-            // Em ProductionMatrixPage, a atualização otimista acontecerá apenas na última OP enviada,
-            // mas como as anteriores são de colunas anteriores, está tudo bem pois o VerticalPage faz loadData.
+            // Notifica o componente pai sobre a conclusão do salvamento para atualizar a listagem
             if (savedPayloads.length > 0) {
-                await onSave(savedPayloads[savedPayloads.length - 1]);
+                onSave(savedPayloads);
             }
-            
-            onClose();
         } catch (error) {
-            // Se for nosso erro de conflito (duplo clique detectado pelo backend), tratamos de forma silenciosa e fechamos
+            // Como o modal já sumiu, lidamos com erros em background
             if (error.response?.status === 409) {
                 console.warn('Backend bloqueou submissão duplicada (Double Click).');
-                onClose();
             } else {
-                alert('Erro ao salvar: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
+                const errorMsg = 'Erro ao salvar apontamento no background: ' + (error.response?.data?.error || error.response?.data?.message || error.message);
+                console.error(errorMsg);
+                alert(errorMsg);
             }
-        } finally {
-            setLoading(false);
-            isSubmittingRef.current = false;
         }
     };
 

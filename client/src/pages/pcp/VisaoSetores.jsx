@@ -236,7 +236,7 @@ export default function VisaoSetores() {
                 </div>
             )}
 
-            <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col space-y-5 min-h-0">
+            <div className="w-full flex-1 flex flex-col space-y-5 min-h-0">
 
                 {/* Header */}
                 <div className="flex items-center justify-between flex-wrap gap-3">

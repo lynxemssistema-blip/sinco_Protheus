@@ -317,27 +317,14 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
         setFormData(prev => {
             const nextData = { ...prev, [name]: value };
 
-            // Auto-fill para todas as datas do modal
-            const allDateFields = [
-                'engineering_start_date',
-                'bom_prepared_at',
-                'bom_released_at',
-                'designer_start_forecast',
-                'designer_end_forecast',
-                'designer_start_real',
-                'designer_end_real',
-                'designer_production_release_date',
-                'pcp_mat_req_date',
-                'pcp_mech_start_date',
-                'pcp_cut_rel_date'
-            ];
-
-            if (allDateFields.includes(name) && value) {
-                allDateFields.forEach(field => {
-                    if (!nextData[field]) {
-                        nextData[field] = value;
-                    }
-                });
+            // Auto-fill específico para Projetista
+            if (value) {
+                if (name === 'designer_start_forecast' && !nextData.designer_end_forecast) {
+                    nextData.designer_end_forecast = value;
+                }
+                if (name === 'designer_start_real' && !nextData.designer_end_real) {
+                    nextData.designer_end_real = value;
+                }
             }
 
             return nextData;

@@ -830,22 +830,7 @@ export default function Settings() {
                                     </p>
                                 </div>
 
-                                {/* Apontamento Multi-Operação */}
-                                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                    <div>
-                                        <h4 className="font-medium text-slate-800">Apontamento Multi-Operação</h4>
-                                        <p className="text-sm text-slate-500">Permitir apontar operações anteriores pendentes na mesma tela (Baixa Automática).</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleGeneralConfig('enable_multi_operation_appointment')}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.enable_multi_operation_appointment ? 'bg-blue-600' : 'bg-slate-200'}`}
-                                    >
-                                        <span
-                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.enable_multi_operation_appointment ? 'translate-x-6' : 'translate-x-1'}`}
-                                        />
-                                    </button>
-                                </div>
+
 
                                 {/* Romaneio Config */}
                                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
@@ -2268,6 +2253,30 @@ export default function Settings() {
                                             </div>
                                         );
                                     })}
+
+                                    {/* Ações Especiais / Permissões de Produção */}
+                                    <div className="border border-slate-200 rounded-xl overflow-hidden mt-6">
+                                        <div className="flex items-center justify-between px-5 py-3 bg-indigo-50 border-b border-slate-200">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-sm font-bold text-indigo-800 uppercase tracking-wider">Ações de Produção / PCP</span>
+                                            </div>
+                                        </div>
+                                        <div className="divide-y divide-slate-100">
+                                            <div className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">
+                                                <div>
+                                                    <span className="text-sm text-slate-700 font-bold block">Apontamento Multi-Operação (Baixa Automática)</span>
+                                                    <span className="text-xs text-slate-500">Permitir que este usuário/perfil aponte operações anteriores pendentes da OP de uma só vez.</span>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); togglePerm('action_pcp_multi_appointment', 'view'); }}
+                                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${permMatrix['action_pcp_multi_appointment']?.can_view ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                                                >
+                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${permMatrix['action_pcp_multi_appointment']?.can_view ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">

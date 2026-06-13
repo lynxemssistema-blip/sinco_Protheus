@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, Package, FileText, Bot, Printer, Factory, ClipboardList, MoreVertical, LayoutList, Image as ImageIcon, ShoppingCart, CheckSquare, X, Save, History } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, Package, FileText, Bot, Printer, Factory, ClipboardList, MoreVertical, LayoutList, Image as ImageIcon, ShoppingCart, CheckSquare, X, Save, History, BarChart2, ChevronUp, ChevronDown } from 'lucide-react';
 import { getPedidosFlat, api, getProdutos, createFaturamentoSolicitacao, getProductDocs, getFileUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -9,10 +9,45 @@ import useStickyState from '../hooks/useStickyState';
 import ProductImageModal from '../components/ProductImageModal';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
 import { BillingForecastInput } from '../components/orders/BillingForecastInput';
+import FinancialView from '../components/orders/FinancialView';
+
+const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
+    return (
+        <th className={`px-2 py-2 font-semibold ${className} align-top`}>
+            <div className="flex flex-col gap-1">
+                <div 
+                    className={`flex items-center gap-1 cursor-pointer hover:bg-gray-200 p-1 rounded transition-colors ${align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'}`}
+                    onClick={() => columnKey && requestSort(columnKey)}
+                    title={columnKey ? `Clique para ordenar por ${label}` : ''}
+                >
+                    <span className="whitespace-nowrap">{label}</span>
+                    {columnKey && (
+                        <div className="flex flex-col text-gray-400">
+                            <ChevronUp strokeWidth={3} className={`h-2.5 w-2.5 -mb-[2px] ${sortConfig.key === columnKey && sortConfig.direction === 'asc' ? 'text-blue-600' : ''}`} />
+                            <ChevronDown strokeWidth={3} className={`h-2.5 w-2.5 ${sortConfig.key === columnKey && sortConfig.direction === 'desc' ? 'text-blue-600' : ''}`} />
+                        </div>
+                    )}
+                </div>
+                {columnKey && (
+                    <input
+                        type="text"
+                        className="w-full min-w-[60px] text-[10px] font-normal border border-gray-300 rounded px-1.5 py-1 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 text-gray-700 bg-white"
+                        placeholder="Filtrar..."
+                        value={filterValue || ''}
+                        onChange={(e) => onFilterChange(columnKey, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                )}
+            </div>
+        </th>
+    );
+};
 
 const ItensAFaturar = () => {
-    const { user } = useAuth();
-    const canViewFinancials = user?.permissoes?.some(p => p.page_id === 'valores_financeiros' && p.can_view);
+    const { user, hasPermission, isAdmin } = useAuth();
+    const canViewFinancials = isAdmin || hasPermission('valores_financeiros', 'view');
+    const canViewFinancialTab = isAdmin || hasPermission('aba_financeiro_faturar', 'view');
+    
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -22,6 +57,16 @@ const ItensAFaturar = () => {
     const [selectedProductForImage, setSelectedProductForImage] = useState(null);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
+
+    // Active Tab State (with Sticky persistence)
+    const [activeTab, setActiveTab] = useStickyState('itens', '@metalfisa:itensFat_activeTab');
+
+    // Enforce tab security
+    useEffect(() => {
+        if (!canViewFinancialTab && activeTab !== 'itens') {
+            setActiveTab('itens');
+        }
+    }, [canViewFinancialTab, activeTab, setActiveTab]);
 
     // Filters
     const [filters, setFilters] = useStickyState({
@@ -41,6 +86,9 @@ const ItensAFaturar = () => {
     const [totalPages, setTotalPages] = useState(1);
     const limit = 100;
 
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+    const [columnFilters, setColumnFilters] = useState({});
+
     // --- FATURAMENTO CART STATE ---
     const [selectedItems, setSelectedItems] = useState({}); // { 'pedido-item': orderObject }
     const [isCartModalOpen, setIsCartModalOpen] = useState(false);
@@ -52,9 +100,14 @@ const ItensAFaturar = () => {
         setLoading(true);
         setError(null);
         try {
-            const searchFilters = { ...filters, op_status: 'com_op', ...overrides };
+            const searchFilters = { 
+                ...filters, 
+                op_status: 'com_op', 
+                ...overrides 
+            };
+
             const searchPage = overrides.page || page;
-            const searchLimit = searchFilters.pedido ? 5000 : limit;
+            const searchLimit = limit;
 
             const result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit });
 
@@ -229,9 +282,62 @@ const ItensAFaturar = () => {
 
     // Filtro local "Apenas Prontos": mostra somente OPs com última operação CONCLUÍDA.
     const filteredRows = React.useMemo(() => {
-        if (filters.somente_prontos !== 'true') return rows;
-        return rows.filter(r => isLastOpConcluido(r));
-    }, [rows, filters.somente_prontos]);
+        let result = rows;
+        
+        if (filters.somente_prontos === 'true') {
+            result = result.filter(r => isLastOpConcluido(r));
+        }
+
+        const getNestedValue = (row, key) => {
+            if (['data_entrega_pcp', 'serie_cliente', 'serie_metalfisa', 'numero_serie', 'lote'].includes(key)) {
+                return row._pcp_prog ? row._pcp_prog[key] : '';
+            }
+            return row[key];
+        };
+
+        // Apply column filters
+        Object.keys(columnFilters).forEach(key => {
+            const filterValue = (columnFilters[key] || '').toLowerCase();
+            if (filterValue) {
+                result = result.filter(r => String(getNestedValue(r, key) || '').toLowerCase().includes(filterValue));
+            }
+        });
+
+        // Apply sorting
+        if (sortConfig.key) {
+            result = [...result].sort((a, b) => {
+                const aValue = getNestedValue(a, sortConfig.key);
+                const bValue = getNestedValue(b, sortConfig.key);
+
+                // Handle numeric sorting for known numeric fields
+                const numericFields = ['valor_unitario', 'valor_total', 'quantidade', 'qtd_entreg', 'qtd_faturar', 'saldo_produzido', 'op_qtd'];
+                if (numericFields.includes(sortConfig.key)) {
+                    const diff = parseFloat(aValue || 0) - parseFloat(bValue || 0);
+                    return sortConfig.direction === 'asc' ? diff : -diff;
+                }
+
+                const strA = String(aValue || '').toLowerCase();
+                const strB = String(bValue || '').toLowerCase();
+                if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return result;
+    }, [rows, filters.somente_prontos, columnFilters, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const handleColumnFilterChange = (key, value) => {
+        setColumnFilters(prev => ({ ...prev, [key]: value }));
+    };
 
     // --- FATURAMENTO LOGIC ---
     const handleSelectItem = (row) => {
@@ -528,12 +634,35 @@ const ItensAFaturar = () => {
             )}
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden relative">
-                <div className="p-4 border-b border-gray-100 bg-white shrink-0 flex flex-col justify-between md:flex-row gap-4">
-                    <div>
-                        <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                            <LayoutList className="h-6 w-6 text-blue-600" />    
+                {canViewFinancialTab && (
+                    <div className="flex border-b border-gray-200 bg-slate-50/80 px-4 shrink-0 gap-1">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('itens')}
+                            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${activeTab === 'itens' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <LayoutList className="h-4 w-4" />
                             Itens a Faturar
-                        </h2>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('financeiro')}
+                            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${activeTab === 'financeiro' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <BarChart2 className="h-4 w-4" />
+                            Dados Financeiros
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === 'itens' ? (
+                    <>
+                        <div className="p-4 border-b border-gray-100 bg-white shrink-0 flex flex-col justify-between md:flex-row gap-4">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                    <LayoutList className="h-6 w-6 text-blue-600" />    
+                                    Itens a Faturar
+                                </h2>
                         <p className="text-sm text-gray-500 mt-1">Visão consolidada de saldos pendentes para faturamento</p>
                         {filters.only_active === 'true' && (
                             <div className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5 animate-pulse">
@@ -666,7 +795,7 @@ const ItensAFaturar = () => {
                     <table className="w-full text-sm text-left text-gray-500 whitespace-nowrap relative">
                         <thead className="text-[11px] text-gray-700 uppercase bg-slate-50 border-b border-gray-200 sticky top-0 z-10">
                             <tr>
-                                <th className="px-3 py-3 w-10 text-center">
+                                <th className="px-3 py-3 w-10 text-center align-top pt-5">
                                     <div className="flex items-center justify-center">
                                         <input
                                             type="checkbox"
@@ -677,30 +806,30 @@ const ItensAFaturar = () => {
                                         />
                                     </div>
                                 </th>
-                                <th className="px-3 py-3 font-semibold text-center w-8">PDF</th>
-                                <th className="px-3 py-3 font-semibold">Pedido.</th>
-                                <th className="px-3 py-3 font-semibold">Item</th>
-                                <th className="px-3 py-3 font-semibold text-center">OP Original</th>
-                                <th className="px-3 py-3 font-semibold">Cód. Produto</th>
-                                <th className="px-3 py-3 font-semibold">Descrição</th>
-                                <th className="px-3 py-3 font-semibold">Cliente</th>
-                                <th className="px-3 py-3 font-semibold">Emissão</th>
-                                <th className="px-3 py-3 font-semibold">Ped. Cli</th>
-                                <th className="px-3 py-3 font-semibold">Desenho Cli.</th>
-                                {canViewFinancials && <th className="px-3 py-3 font-semibold text-right text-gray-700">V. Unit (R$)</th>}
-                                {canViewFinancials && <th className="px-3 py-3 font-semibold text-right text-gray-700">V. Total (R$)</th>}
-                                <th className="px-3 py-3 font-semibold text-right">Qtd Tot.</th>
-                                <th className="px-3 py-3 font-semibold text-right">Qtd Entr.</th>
-                                <th className="px-3 py-3 font-semibold text-right text-blue-700">Saldo</th>
-                                <th className="px-3 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
-                                <th className="px-3 py-3 font-semibold text-center text-teal-700 whitespace-nowrap">Prev. Fat.</th>
-                                <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
-                                <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série MF</th>
-                                <th className="px-3 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
-                                <th className="px-3 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
-                                <th className="px-3 py-3 font-semibold text-center">Status</th>
-                                <th className="px-3 py-3 font-semibold text-center text-cyan-700">Fat. Solicitados</th>
-                                <th className="px-3 py-3 font-semibold text-center">NFs Anteriores</th>
+                                <th className="px-3 py-3 font-semibold text-center w-8 align-top pt-5">PDF</th>
+                                <SortableHeader label="Pedido." columnKey="pedido" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['pedido']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Item" columnKey="item" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['item']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="OP Original" columnKey="op_num_completa" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['op_num_completa']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Cód. Produto" columnKey="codigo" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['codigo']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Descrição" columnKey="descricao" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['descricao']} onFilterChange={handleColumnFilterChange} className="w-40" />
+                                <SortableHeader label="Cliente" columnKey="nome_cliente" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['nome_cliente']} onFilterChange={handleColumnFilterChange} className="w-32" />
+                                <SortableHeader label="Emissão" columnKey="emissao" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['emissao']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Ped. Cli" columnKey="ped_cliente" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['ped_cliente']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Desenho Cli." columnKey="ref_cliente" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['ref_cliente']} onFilterChange={handleColumnFilterChange} />
+                                {canViewFinancials && <SortableHeader label="V. Unit (R$)" columnKey="valor_unitario" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['valor_unitario']} onFilterChange={handleColumnFilterChange} className="text-gray-700" />}
+                                {canViewFinancials && <SortableHeader label="V. Total (R$)" columnKey="valor_total" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['valor_total']} onFilterChange={handleColumnFilterChange} className="text-gray-700" />}
+                                <SortableHeader label="Qtd Tot." columnKey="quantidade" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['quantidade']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Qtd Entr." columnKey="qtd_entreg" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_entreg']} onFilterChange={handleColumnFilterChange} />
+                                <SortableHeader label="Saldo" columnKey="qtd_faturar" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_faturar']} onFilterChange={handleColumnFilterChange} className="text-blue-700" />
+                                <SortableHeader label="Dt. Entrega" columnKey="data_entrega_pcp" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_entrega_pcp']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Prev. Fat." columnKey="data_prevista_faturamento" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_prevista_faturamento']} onFilterChange={handleColumnFilterChange} className="text-teal-700" />
+                                <SortableHeader label="Série Cli." columnKey="serie_cliente" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_cliente']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Série MF" columnKey="serie_metalfisa" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_metalfisa']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Nº Série" columnKey="numero_serie" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['numero_serie']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Lote" columnKey="lote" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['lote']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <th className="px-3 py-3 font-semibold text-center align-top pt-5">Status</th>
+                                <th className="px-3 py-3 font-semibold text-center text-cyan-700 align-top pt-5">Fat. Solicitados</th>
+                                <SortableHeader label="NFs Anteriores" columnKey="nfs_anteriores" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['nfs_anteriores']} onFilterChange={handleColumnFilterChange} />
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50 text-[13px]">
@@ -917,10 +1046,18 @@ const ItensAFaturar = () => {
                         </div>
                     </div>
                 )}
+                    </>
+                ) : (
+                    <FinancialView 
+                        rows={rows} 
+                        loading={loading} 
+                        error={error} 
+                    />
+                )}
             </div>
 
             {/* FLOATING ACTION BAR FOR CART */}
-            {numSelected > 0 && (
+            {activeTab === 'itens' && numSelected > 0 && (
                 <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.3)] px-6 py-4 flex items-center gap-6 z-40 border border-slate-700 animate-[translateUp_0.3s_ease-out]">
                     <div className="flex items-center gap-3">
                         <div className="bg-blue-500/20 p-2 rounded-full text-blue-400">

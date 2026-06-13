@@ -19,6 +19,8 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
     const [reportData, setReportData] = useState(null);
     const [showReport, setShowReport] = useState(false);
     const [resourceChart, setResourceChart] = useState({});
+    const [finalAnswer, setFinalAnswer] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
     // { 'MEC01': { desc, capDia, dates: { '2026-06-06': allocatedMin } } }
 
     const logsEndRef = useRef(null);
@@ -38,6 +40,8 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             setDataInicio(getTodayDate());
             setMissingTimes([]);
             setSuccessMessage('');
+            setErrorMessage('');
+            setFinalAnswer('');
             setAgentLogs([]);
             setReportData(null);
             setShowReport(false);
@@ -56,19 +60,24 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
         setLoading(true);
         setAgentLogs([]);
         setSuccessMessage('');
+        setErrorMessage('');
+        setFinalAnswer('');
         setResourceChart({});
 
         let socket = null;
+        const isNumericId = /^\d+$/.test(String(hermesTaskId));
+
         import('socket.io-client').then(({ io }) => {
             socket = io(window.location.origin, {
                 transports: ['polling', 'websocket'],
                 reconnectionAttempts: 5,
             });
 
+            // 1. Escuta progresso do FCS
             socket.on('hermes_fcs_progress', (data) => {
-                if (data.runId !== hermesTaskId) return;
+                // Aceita progresso se for o runId direto ou se for o runId dinâmico capturado da task
+                if (data.runId !== hermesTaskId && data.runId !== socket._currentFcsRunId) return;
 
-                // Adiciona logs do lote em tempo real
                 if (data.agent_logs?.length) {
                     setAgentLogs(prev => [
                         ...prev,
@@ -76,20 +85,63 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                     ]);
                 }
 
-                // Atualiza gráfico de carga por recurso
                 if (data.carga_diaria) {
                     setResourceChart(data.carga_diaria);
                 }
 
-                // Finaliza quando servidor sinaliza conclusão
                 if (data.done) {
                     setLoading(false);
                     setSuccessMessage(data.message || 'Planejamento FCS concluído pelo Hermes (Servidor).');
+                    if (onPlanSuccess) onPlanSuccess();
                 }
             });
+
+            // 2. Escuta inicio global do FCS para capturar a runId dinâmica
+            socket.on('hermes_fcs_started', ({ runId }) => {
+                socket._currentFcsRunId = runId;
+                setAgentLogs(prev => [
+                    ...prev,
+                    { msg: `🚀 Motor FCS Iniciado (ID: ${runId}). Rastreando progresso...`, icon: '🤖', time: new Date() }
+                ]);
+            });
+
+            // 3. Escuta eventos genéricos de Task (caso hermesTaskId seja numérico)
+            if (isNumericId) {
+                socket.on('connect', () => {
+                    socket.emit('join_hermes_task', Number(hermesTaskId));
+                });
+
+                socket.on('hermes_task_step', (step) => {
+                    setAgentLogs(prev => [
+                        ...prev,
+                        { msg: step.message, icon: step.icon || '⚙️', time: new Date() }
+                    ]);
+                });
+
+                socket.on('hermes_task_done', (payload) => {
+                    // Se o FCS rodou, a conclusão vem pelo hermes_fcs_progress.
+                    // Caso contrário, finaliza pela conclusão da tarefa hermes.
+                    if (!socket._currentFcsRunId) {
+                        setLoading(false);
+                        if (payload.status === 'error') {
+                            setErrorMessage(payload.answer || payload.message || 'Erro durante a execução da tarefa.');
+                        } else {
+                            setSuccessMessage(payload.message || 'Tarefa concluída com sucesso.');
+                            setFinalAnswer(payload.answer || '');
+                            if (onPlanSuccess) onPlanSuccess();
+                        }
+                    }
+                });
+
+                // Dispara a execução no backend
+                api.post(`/hermes/tasks/${hermesTaskId}/execute`).catch(err => {
+                    setLoading(false);
+                    setErrorMessage(err.response?.data?.error || 'Falha ao acionar a execução da tarefa no servidor.');
+                });
+            }
         }).catch(() => {
             setLoading(false);
-            setSuccessMessage('Erro ao conectar ao socket do servidor.');
+            setErrorMessage('Erro ao conectar ao socket do servidor.');
         });
 
         return () => { if (socket) socket.disconnect(); };
@@ -130,6 +182,12 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
     const handlePlan = async () => {
         if (!dataInicio) {
             toast.warning('Por favor, informe a data de início.');
+            return;
+        }
+
+        const todayStr = getTodayDate();
+        if (dataInicio < todayStr) {
+            toast.warning('A data de início não pode ser anterior à data de hoje.');
             return;
         }
 
@@ -241,6 +299,13 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             toast.warning('Por favor, informe a data de início.');
             return;
         }
+
+        const todayStr = getTodayDate();
+        if (dataInicio < todayStr) {
+            toast.warning('A data de início não pode ser anterior à data de hoje.');
+            return;
+        }
+
         setLoading(true);
         setMissingTimes([]);
         setSuccessMessage('');
@@ -514,7 +579,7 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
 
                     {/* ── SUCESSO ──────────────────────────────────────────────── */}
                     {successMessage && (
-                        <div className="flex flex-col items-center py-6 text-center animate-in fade-in zoom-in duration-300">
+                        <div className="flex flex-col items-center py-6 text-center animate-in fade-in zoom-in duration-300 bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 mb-4">
                             <CheckCircle className="w-12 h-12 text-green-500 mb-3" />
                             <h3 className="text-lg font-bold text-slate-800 mb-1">Planejamento Concluído</h3>
                             <p className="text-slate-600 text-sm font-medium">{successMessage}</p>
@@ -527,8 +592,25 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         </div>
                     )}
 
+                    {/* ── ERRO ─────────────────────────────────────────────────── */}
+                    {errorMessage && (
+                        <div className="flex flex-col items-center py-6 text-center animate-in fade-in zoom-in duration-300 bg-red-50/50 border border-red-100 rounded-xl p-4 mb-4">
+                            <AlertTriangle className="w-12 h-12 text-red-500 mb-3" />
+                            <h3 className="text-lg font-bold text-slate-800 mb-1">Falha na Execução</h3>
+                            <p className="text-red-700 text-sm font-medium">{errorMessage}</p>
+                        </div>
+                    )}
+
+                    {/* ── RESPOSTA DO AGENTE ─────────────────────────────────────── */}
+                    {finalAnswer && (
+                        <div className="bg-slate-50 border border-slate-250/60 rounded-xl p-4 mb-4 max-h-64 overflow-y-auto shadow-inner">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Resposta do Agente</div>
+                            <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-sans">{finalAnswer}</div>
+                        </div>
+                    )}
+
                     {/* ── CONSOLE DE LOGS ──────────────────────────────────────── */}
-                    {agentLogs.length > 0 && !successMessage && (
+                    {agentLogs.length > 0 && (
                         <div className="bg-slate-900 rounded-xl p-4 font-mono shadow-inner border border-slate-700">
                             <div className="flex items-center gap-2 mb-3 text-indigo-400 border-b border-slate-700 pb-2">
                                 <BrainCircuit className="w-4 h-4" />
@@ -594,7 +676,7 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                 </div>
 
                 {/* FOOTER */}
-                {!successMessage && !missingTimes.length && !loading && (
+                {!successMessage && !errorMessage && !missingTimes.length && !loading && (
                     <div className="p-4 border-t border-slate-100 bg-white flex flex-wrap justify-between gap-3 shrink-0">
                         <button onClick={onClose} className="px-5 py-2 text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition-colors text-sm">Cancelar</button>
                         {!hermesTaskId && (
@@ -640,6 +722,11 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                 {successMessage && !loading && (
                     <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
                         <button onClick={onClose} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all shadow-md active:scale-95 text-sm">Fechar</button>
+                    </div>
+                )}
+                {errorMessage && !loading && (
+                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
+                        <button onClick={onClose} className="px-6 py-2 bg-red-650 hover:bg-red-750 text-white font-bold rounded-lg transition-all shadow-md active:scale-95 text-sm">Fechar</button>
                     </div>
                 )}
             </div>
