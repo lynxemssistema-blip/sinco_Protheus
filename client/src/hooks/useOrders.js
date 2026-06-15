@@ -1,15 +1,18 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { getPedidos, getPedidosFlat, getItensPedido } from '../services/api';
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
+const DEBOUNCE_MS = 500; // text filter debounce
 
-// Exponential backoff: 2s, 4s, 8s
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Custom hook that encapsulates fetch logic, AbortController management,
- * exponential backoff on 500 errors, and individual-row polling after PCP save.
+ * Custom hook with:
+ * - Exponential backoff on 500 errors
+ * - Debounce (500ms) for text filters to avoid hammering the API on every keystroke
+ * - Infinite scroll: page>1 appends instead of replacing
+ * - hasNextPage instead of COUNT(*) total — backend fetches limit+1 to check
  *
  * @param {object} options
  * @param {number} options.limit - page size
@@ -22,40 +25,78 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [totalPages, setTotalPages] = useState(1);
-    const [retryInfo, setRetryInfo] = useState(null); // { attempt, maxRetries }
+    const [hasNextPage, setHasNextPage] = useState(false);
+    const [retryInfo, setRetryInfo] = useState(null);
+    const [loadingMore, setLoadingMore] = useState(false);
 
     const [orderItems, setOrderItems] = useState({});
     const [itemsLoading, setItemsLoading] = useState(false);
 
     const abortRef = useRef(null);
+    // Debounce timer refs per text filter
+    const debounceRef = useRef(null);
+    // Tracks the "settled" filters (after debounce fires)
+    const [debouncedFilters, setDebouncedFilters] = useState(filters);
+
+    // Text-based filter keys that should be debounced
+    const TEXT_FILTER_KEYS = ['cliente', 'produto', 'pedcli'];
+
+    useEffect(() => {
+        const hasTextChange = TEXT_FILTER_KEYS.some(
+            (k) => filters[k] !== debouncedFilters[k]
+        );
+
+        if (hasTextChange) {
+            clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => {
+                setDebouncedFilters({ ...filters });
+            }, DEBOUNCE_MS);
+        } else {
+            // Non-text filter change (dates, selects) — apply immediately
+            setDebouncedFilters({ ...filters });
+        }
+
+        return () => clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters]);
 
     const fetchData = useCallback(async (overrides = {}) => {
-        // Cancel any in-flight request
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
+        const searchPage = overrides.page || page;
+        
+        if (searchPage === 1) {
+            setLoading(true);
+            setOrders([]); // Clear immediately to trigger skeleton loading
+        } else {
+            setLoadingMore(true);
+        }
+        
         setError(null);
         setRetryInfo(null);
 
+        // Use debouncedFilters for the actual request
+        const activeFilters = overrides._useRawFilters ? filters : debouncedFilters;
+
         const searchFilters = {
-            cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
-            pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
-            produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
-            pedcli: overrides.pedcli !== undefined ? overrides.pedcli : filters.pedcli,
-            dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
-            dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
-            dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
-            tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
-            op_status: overrides.op_status !== undefined ? overrides.op_status : filters.op_status,
-            only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
-            sortBy: overrides.sortBy !== undefined ? overrides.sortBy : filters.sortBy,
-            sortOrder: overrides.sortOrder !== undefined ? overrides.sortOrder : filters.sortOrder,
+            cliente: overrides.cliente !== undefined ? overrides.cliente : activeFilters.cliente,
+            pedido: overrides.pedido !== undefined ? overrides.pedido : activeFilters.pedido,
+            produto: overrides.produto !== undefined ? overrides.produto : activeFilters.produto,
+            pedcli: overrides.pedcli !== undefined ? overrides.pedcli : activeFilters.pedcli,
+            dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : activeFilters.dataInicial,
+            dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : activeFilters.dataFinal,
+            dateType: overrides.dateType !== undefined ? overrides.dateType : activeFilters.dateType,
+            tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : activeFilters.tipo_item,
+            op_status: overrides.op_status !== undefined ? overrides.op_status : activeFilters.op_status,
+            only_active: overrides.only_active !== undefined ? overrides.only_active : activeFilters.only_active,
+            sortBy: overrides.sortBy !== undefined ? overrides.sortBy : activeFilters.sortBy,
+            sortOrder: overrides.sortOrder !== undefined ? overrides.sortOrder : activeFilters.sortOrder,
         };
-        const searchPage = overrides.page || page;
         const searchViewMode = overrides.viewMode || viewMode;
-        const searchLimit = searchFilters.pedido ? 5000 : limit;
+        // Never use a massive limit — keep pagination for all cases
+        const searchLimit = limit;
         const reqOptions = { signal: controller.signal };
 
         let attempt = 0;
@@ -72,25 +113,32 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
 
                 if (!controller.signal.aborted) {
                     const { data, meta } = result;
+
                     if (searchPage === 1) {
                         setOrders(data);
                     } else {
+                        // Infinite scroll: append new page, deduplicate by composite key
                         setOrders(prev => {
-                            const idKey = searchViewMode === 'flat' ? d => `${d.pedido}-${d.item}` : d => d.pedido;
-                            const newIds = new Set(data.map(idKey));
-                            return [...prev.filter(p => !newIds.has(idKey(p))), ...data];
+                            const idKey = searchViewMode === 'flat'
+                                ? d => `${d.pedido}-${d.item}`
+                                : d => d.pedido;
+                            const existingIds = new Set(prev.map(idKey));
+                            const newRows = data.filter(d => !existingIds.has(idKey(d)));
+                            return [...prev, ...newRows];
                         });
                     }
-                    setTotalPages(Math.ceil(meta.total / searchLimit));
+
+                    // Backend returns hasNextPage (limit+1 trick) or total for tree view
+                    const hnp = meta.hasNextPage ?? (data.length === searchLimit);
+                    setHasNextPage(hnp);
+                    setTotalPages(meta.total ? Math.ceil(meta.total / searchLimit) : (hnp ? searchPage + 1 : searchPage));
                     setRetryInfo(null);
-                    setLoading(false); // ✅ success
+                    setLoading(false);
+                    setLoadingMore(false);
                 }
                 return;
             } catch (err) {
                 if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
-                    // We intentionally DO NOT set loading to false here.
-                    // A cancellation only happens because a newer fetch was started,
-                    // which is now responsible for managing the loading state.
                     return;
                 }
                 lastError = err;
@@ -103,35 +151,33 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
                     const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
                     setRetryInfo({ attempt, maxRetries: MAX_RETRIES, delayMs: delay });
                     await wait(delay);
-                    if (controller.signal.aborted) {
-                        setLoading(false); // ✅ aborted during retry wait
-                        return;
-                    }
+                    if (controller.signal.aborted) { setLoading(false); return; }
                     continue;
                 }
 
-                // Non-retryable or max retries reached
                 if (!controller.signal.aborted) {
                     const serverError = err.response?.data;
                     const errorMsg = serverError
                         ? (typeof serverError === 'object' ? JSON.stringify(serverError, null, 2) : serverError)
                         : err.message;
                     setError(`Erro ao carregar dados: ${errorMsg}`);
+                    setHasNextPage(false);
+                    setTotalPages(0);
                 }
-                setLoading(false); // ✅ error path
+                setLoading(false);
+                setLoadingMore(false);
                 return;
             }
         }
 
-        // Exhausted retries
         if (!abortRef.current?.signal.aborted && lastError) {
             setError(`Servidor indisponível após ${MAX_RETRIES} tentativas. Por favor, tente novamente em alguns instantes.`);
+            setHasNextPage(false);
+            setTotalPages(0);
         }
-        setLoading(false); // ✅ exhausted retries
-    }, [filters, page, viewMode, limit]);
+        setLoading(false);
+    }, [debouncedFilters, filters, page, viewMode, limit]);
 
-    // After a PCP modal save, poll the order's items until the data reflects the change.
-    // Replaces the hardcoded setTimeout(1000) pattern.
     const pollOrderItems = useCallback(async (target, expandedOrderId, onFlatUpdate) => {
         if (!target || Array.isArray(target)) return;
 
@@ -142,7 +188,6 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
             await wait(POLL_INTERVAL_MS);
             try {
                 const updatedItems = await getItensPedido(target.pedido);
-
                 const targetUpdated = updatedItems.find((u) => u.item === target.item);
                 const hasChanged = targetUpdated && (
                     targetUpdated.pcp_delivery_forecast_date !== target.pcp_delivery_forecast_date ||
@@ -150,14 +195,10 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
                 );
 
                 if (hasChanged || i === MAX_POLL_ATTEMPTS - 1) {
-                    // Update tree view items cache
                     if (expandedOrderId === target.pedido) {
                         setOrderItems((prev) => ({ ...prev, [target.pedido]: updatedItems }));
                     }
-                    // Update flat view
-                    if (onFlatUpdate) {
-                        onFlatUpdate(target.pedido, updatedItems);
-                    }
+                    if (onFlatUpdate) onFlatUpdate(target.pedido, updatedItems);
                     break;
                 }
             } catch (err) {
@@ -168,22 +209,14 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
     }, []);
 
     const handleExpandRow = useCallback(async (pedidoId, currentExpandedRow, setExpandedRow) => {
-        if (currentExpandedRow === pedidoId) {
-            setExpandedRow(null);
-            return;
-        }
+        if (currentExpandedRow === pedidoId) { setExpandedRow(null); return; }
         setExpandedRow(pedidoId);
-
-        // Skip fetch if already cached
         if (orderItems[pedidoId]) return;
 
         setItemsLoading(true);
         try {
             const itens = await getItensPedido(pedidoId);
-            setOrderItems((prev) => ({
-                ...prev,
-                [pedidoId]: Array.isArray(itens) ? itens : [],
-            }));
+            setOrderItems((prev) => ({ ...prev, [pedidoId]: Array.isArray(itens) ? itens : [] }));
         } catch (err) {
             console.error(`Erro ao buscar itens do pedido ${pedidoId}:`, err);
         } finally {
@@ -211,8 +244,10 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
         orders,
         setOrders,
         loading,
+        loadingMore,
         error,
         totalPages,
+        hasNextPage,
         retryInfo,
         orderItems,
         itemsLoading,
@@ -221,5 +256,6 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
         handleExpandRow,
         updateOrderItemsForPedido,
         updateFlatOrdersFromItems,
+        debouncedFilters,
     };
 };

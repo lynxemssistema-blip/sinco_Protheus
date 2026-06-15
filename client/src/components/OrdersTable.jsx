@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
 import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
@@ -31,6 +31,37 @@ import ItemStatusBadge from './orders/ItemStatusBadge';
 import TableSkeletonRows from './orders/TableSkeletonRows';
 import RetryToast from './orders/RetryToast';
 import { useOrders } from '../hooks/useOrders';
+import ColumnSettingsPanel, { loadColConfigLocal, loadColConfigFromServer, saveColConfig } from './orders/ColumnSettingsPanel';
+import * as XLSX from 'xlsx';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import VirtualFlatList from './orders/VirtualFlatList';
+
+const PREF_KEY = 'visao_geral_col_order_v1';
+export const ALL_FLAT_COLUMNS = [
+    { key: 'checkbox', label: 'Sel.', required: true, width: 40 },
+    { key: 'pedido', label: 'Pedido', required: true, width: 90 },
+    { key: 'emissao', label: 'Emissão', required: false, width: 90 },
+    { key: 'ref_cliente', label: 'Ref. Cliente', required: false, width: 100 },
+    { key: 'cliente', label: 'Cliente', required: false, width: 150 },
+    { key: 'pc', label: 'PC', required: false, width: 90 },
+    { key: 'item', label: 'It', required: false, width: 40 },
+    { key: 'op', label: 'OP', required: false, width: 80 },
+    { key: 'codigo', label: 'Cód. Prod', required: false, width: 140 },
+    { key: 'c6_xrevm', label: 'C6_XREVM', required: false },
+    { key: 'rev_cliente', label: 'Rev. Cliente', required: false },
+    { key: 'acoes', label: 'Ações', required: true, width: 100 },
+    { key: 'tipo', label: 'Tipo', required: false, width: 80 },
+    { key: 'descricao', label: 'Descrição', required: false },
+    { key: 'status', label: 'Status', required: false },
+    { key: 'qtd_entreg', label: 'Entreg.', required: false },
+    { key: 'saldo_fat', label: 'Saldo Fat.', required: false },
+    { key: 'qtd', label: 'Qtd.', required: false },
+    { key: 'lib_eng', label: 'Lib. Eng.', required: false },
+    { key: 'entrega', label: 'Entrega', required: false },
+    { key: 'qtd_pcp', label: 'Qtd. PCP', required: false },
+    { key: 'data_pcp', label: 'Data PCP', required: false },
+    { key: 'prev_fat', label: 'Prev. Fat.', required: false },
+];
 
 const OrdersTable = () => {
 
@@ -93,6 +124,112 @@ const OrdersTable = () => {
     const [openActionMenu, setOpenActionMenu] = useState(null);
     const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
 
+    const [colConfig, setColConfig] = useState(() => loadColConfigLocal(PREF_KEY, ALL_FLAT_COLUMNS));
+    const [showColSettings, setShowColSettings] = useState(false);
+
+    // PCP Excel Import State
+    const [importProgress, setImportProgress] = useState(null);
+    const fileInputRef = React.useRef(null);
+    // Ref for the scrollable table container (virtualizer anchor)
+    const tableScrollRef = useRef(null);
+    // Sentinel div at bottom of flat list for infinite scroll
+    const sentinelRef = useRef(null);
+
+    const handleImportPCPFile = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setImportProgress({ text: 'Lendo arquivo Excel...', current: 0, total: 0 });
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            
+            if (!sheet || !sheet['!ref']) {
+                toast.warn('Planilha vazia ou formato inválido.');
+                setImportProgress(null);
+                return;
+            }
+
+            const range = XLSX.utils.decode_range(sheet['!ref']);
+            const rowsToUpdate = [];
+            
+            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+                const rowInfo = sheet['!rows'] && sheet['!rows'][R];
+                if (rowInfo && rowInfo.hidden) continue;
+
+                const pedidoCell = sheet[XLSX.utils.encode_cell({ r: R, c: 3 })]; // Coluna D (index 3)
+                const produtoCell = sheet[XLSX.utils.encode_cell({ r: R, c: 5 })]; // Coluna F (index 5)
+                const itemCell = sheet[XLSX.utils.encode_cell({ r: R, c: 2 })]; // Coluna C (index 2)
+                const dataCell = sheet[XLSX.utils.encode_cell({ r: R, c: 22 })]; // Coluna W (index 22)
+
+                if (!pedidoCell || !pedidoCell.v) continue;
+
+                let rawDate = dataCell ? dataCell.v : null;
+                let formattedDate = null;
+                if (rawDate) {
+                    if (rawDate instanceof Date) {
+                        // Fix serial timezones
+                        rawDate = new Date(rawDate.getTime() + rawDate.getTimezoneOffset() * 60000);
+                        formattedDate = rawDate.toISOString().split('T')[0];
+                    } else if (!isNaN(rawDate)) {
+                        const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+                        formattedDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                    } else {
+                        formattedDate = String(rawDate);
+                    }
+                }
+
+                rowsToUpdate.push({
+                    pedido: pedidoCell.v,
+                    produto: produtoCell ? produtoCell.v : null,
+                    item: itemCell ? itemCell.v : null,
+                    dataPcp: formattedDate
+                });
+            }
+
+            if (rowsToUpdate.length === 0) {
+                toast.warn('Nenhuma linha visível válida encontrada.');
+                setImportProgress(null);
+                return;
+            }
+
+            let current = 0;
+            const total = rowsToUpdate.length;
+
+            for (const row of rowsToUpdate) {
+                current++;
+                setImportProgress({ 
+                    text: `Processando Pedido: ${row.pedido} | Produto: ${row.produto || '-'} | Data: ${row.dataPcp || '-'}`, 
+                    current, 
+                    total 
+                });
+
+                await api.put('/pedidos/import-pcp-date', {
+                    pedido: row.pedido,
+                    produto: row.produto,
+                    item: row.item,
+                    dataPcp: row.dataPcp
+                });
+            }
+
+            toast.success(`Planilha processada! ${total} linhas atualizadas.`);
+            fetchData({ page: 1 }); // Reload data
+        } catch (err) {
+            console.error('Erro na importação:', err);
+            toast.error('Erro ao importar planilha.');
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            setImportProgress(null);
+        }
+    };
+
+    useEffect(() => {
+        loadColConfigFromServer(PREF_KEY, ALL_FLAT_COLUMNS).then(cfg => {
+            if (cfg) setColConfig(cfg);
+        });
+    }, []);
+
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
@@ -137,7 +274,19 @@ const OrdersTable = () => {
 
     // Pagination
     const page = orderFilters.page;
-    const setPage = (val) => updateOrderFilters({ page: val });
+    
+    // Use useCallback to prevent reference changes that cause VirtualFlatList to reset its observer
+    const setPage = useCallback((val) => {
+        if (typeof val === 'function') {
+            updateOrderFilters({ page: val(orderFilters.page) });
+        } else {
+            updateOrderFilters({ page: val });
+        }
+    }, [orderFilters.page, updateOrderFilters]);
+
+    const handleLoadMore = useCallback(() => {
+        setPage(p => p + 1);
+    }, [setPage]);
 
     const limit = viewMode === 'flat' ? 50 : 20;
     const colSpanCount = viewMode === 'flat' ? 24 : 7;
@@ -146,6 +295,7 @@ const OrdersTable = () => {
         orders,
         setOrders,
         loading,
+        loadingMore,
         error,
         totalPages,
         retryInfo,
@@ -156,7 +306,10 @@ const OrdersTable = () => {
         handleExpandRow: hookHandleExpandRow,
         updateOrderItemsForPedido,
         updateFlatOrdersFromItems,
+        debouncedFilters,
     } = useOrders({ limit, viewMode, filters, page });
+
+    const hasNextPage = page < totalPages;
 
     const handleExpandRow = useCallback((pedidoId) => {
         hookHandleExpandRow(pedidoId, expandedRow, setExpandedRow);
@@ -164,6 +317,7 @@ const OrdersTable = () => {
 
     // Selection State (Flat View)
     const [selectedItems, setSelectedItems] = useState([]);
+    const [activeRowKey, setActiveRowKey] = useState(null);
 
     const handleSelectAll = (e) => {
         if (e.target.checked) setSelectedItems([...orders]);
@@ -185,11 +339,39 @@ const OrdersTable = () => {
         return !!(filters.cliente || filters.pedido || filters.produto || filters.pedcli || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
     };
 
+    const isInitialMount = React.useRef(true);
+    const prevDebouncedFiltersRef = React.useRef(debouncedFilters);
+
     // Fetch on page/viewMode/active/sort filter change
     useEffect(() => {
-        fetchData();
+        console.log("OrdersTable useEffect triggered! page:", page, "viewMode:", viewMode, "debouncedFilters:", debouncedFilters);
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            console.log("Skipping initial mount");
+            return;
+        }
+
+        let overridePage = undefined;
+        if (JSON.stringify(debouncedFilters) !== JSON.stringify(prevDebouncedFiltersRef.current)) {
+            console.log("debouncedFilters changed! Calling setPage(1)");
+            prevDebouncedFiltersRef.current = debouncedFilters;
+            setPage(1);
+            overridePage = 1;
+        }
+
+        console.log("Calling fetchData with overridePage:", overridePage);
+        fetchData(overridePage !== undefined ? { page: overridePage } : undefined);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, viewMode, filters.only_active, filters.sortBy, filters.sortOrder]);
+    }, [page, viewMode, debouncedFilters]);
+
+    // Auto-load all batches sequentially in flat mode (no need to scroll)
+    useEffect(() => {
+        if (viewMode !== 'flat') return;
+        if (loading || loadingMore) return;
+        if (!hasNextPage) return;
+        const timer = setTimeout(() => handleLoadMore(), 200);
+        return () => clearTimeout(timer);
+    }, [viewMode, loading, loadingMore, hasNextPage, handleLoadMore]);
 
     const handleFilterChange = useCallback((e) => {
         const { name, value } = e.target;
@@ -207,7 +389,7 @@ const OrdersTable = () => {
         // Set context page to 1
         setPage(1);
         // Execute fetch immediately with page 1 override to avoid closure lag
-        fetchData({ page: 1 });
+        fetchData({ page: 1, _useRawFilters: true });
     };
 
     const handleUpdateFaturamentoDate = useCallback((pedidoId, itemId, dateValue, newId) => {
@@ -609,11 +791,12 @@ const OrdersTable = () => {
     };
 
     const handleScroll = useCallback((e) => {
+        if (viewMode === 'flat') return; // Let VirtualFlatList handle infinite scrolling in flat mode
         const { scrollTop, scrollHeight, clientHeight } = e.target;
         if (scrollHeight - scrollTop <= clientHeight * 1.5 && !loading && page < totalPages) {
             setPage(page + 1);
         }
-    }, [loading, page, totalPages]);
+    }, [loading, page, totalPages, viewMode, setPage]);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
@@ -646,6 +829,40 @@ const OrdersTable = () => {
                     </div>
                 </div>
             )}
+
+            {/* Overlay Progress Bar para Planilha PCP */}
+            {importProgress && (
+                <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900/70 backdrop-blur-sm" style={{ pointerEvents: 'all' }}>
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-lg w-full border border-gray-100 mx-4">
+                        <div className="mb-6 w-full flex flex-col items-center">
+                            <FileSpreadsheet className="h-12 w-12 text-green-600 mb-4 animate-pulse" />
+                            <h3 className="text-xl font-bold text-gray-800 mb-2">Importando Planilha PCP</h3>
+                            <p className="text-sm font-medium text-gray-600 mb-4 h-8 flex items-center justify-center px-4 bg-gray-50 rounded-lg w-full border border-gray-100">
+                                {importProgress.text}
+                            </p>
+                            
+                            {importProgress.total > 0 && (
+                                <div className="w-full">
+                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                        <span>Progresso</span>
+                                        <span>{importProgress.current} de {importProgress.total}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                        <div 
+                                            className="bg-green-500 h-3 rounded-full transition-all duration-300 ease-out" 
+                                            style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 w-full">
+                            ⚠️ Por favor, não feche a página ou navegue para outra tela enquanto o processamento estiver em andamento.
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header & Filtros */}
             <div className="border-b border-gray-100 bg-white print:hidden">
                 {/* ── Top loading progress bar ── */}
@@ -666,23 +883,35 @@ const OrdersTable = () => {
                     </div>
 
                     {/* View Mode Toggle */}
-                    <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                    <div className="flex gap-2 items-center">
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleImportPCPFile} />
                         <button
-                            onClick={() => setViewMode('tree')}
-                            aria-label="Ver visão agrupada"
-                            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'tree' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            onClick={() => fileInputRef.current?.click()}
+                            title="Importar Data PCP via Planilha Central"
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all shadow-sm"
                         >
-                            <AlignJustify className="w-4 h-4" />
-                            Agrupado
+                            <FileSpreadsheet className="w-4 h-4" />
+                            <span className="hidden md:inline">Buscar Planilha Central</span>
                         </button>
-                        <button
-                            onClick={() => setViewMode('flat')}
-                            aria-label="Ver visão de lista plana"
-                            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'flat' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            <List className="w-4 h-4" />
-                            Lista Plana
-                        </button>
+
+                        <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                            <button
+                                onClick={() => setViewMode('tree')}
+                                aria-label="Ver visão agrupada"
+                                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'tree' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <AlignJustify className="w-4 h-4" />
+                                Agrupado
+                            </button>
+                            <button
+                                onClick={() => setViewMode('flat')}
+                                aria-label="Ver visão de lista plana"
+                                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'flat' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <List className="w-4 h-4" />
+                                Lista Plana
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -767,6 +996,7 @@ const OrdersTable = () => {
                                 <option value="pedido">Emissão Pedido</option>
                                 <option value="entrega">Data de Entrega</option>
                                 <option value="nf">Emissão NF</option>
+                                <option value="entrega_pcp">Data PCP</option>
                             </select>
                         </div>
                         <div className="relative">
@@ -776,9 +1006,9 @@ const OrdersTable = () => {
                                 name="dataInicial"
                                 value={filters.dataInicial}
                                 onChange={handleFilterChange}
-                                aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
+                                aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : filters.dateType === 'entrega_pcp' ? 'Data PCP' : 'Emissão NF'})`}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
+                                title={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : filters.dateType === 'entrega_pcp' ? 'Data PCP' : 'Emissão NF'})`}
                             />
                         </div>
                     </div>
@@ -787,7 +1017,7 @@ const OrdersTable = () => {
                         <div className="flex justify-between items-center mb-1">
                             <label className="text-[11px] font-medium text-gray-600">Fim:</label>
                             <span className="text-[11px] font-bold text-blue-600">
-                                {filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'}
+                                {filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : filters.dateType === 'entrega_pcp' ? 'Data PCP' : 'Emissão NF'}
                             </span>
                         </div>
                         <div className="relative">
@@ -797,12 +1027,12 @@ const OrdersTable = () => {
                                 name="dataFinal"
                                 value={filters.dataFinal}
                                 onChange={handleFilterChange}
-                                aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
+                                aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : filters.dateType === 'entrega_pcp' ? 'Data PCP' : 'Emissão NF'})`}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : 'Emissão NF'})`}
+                                title={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : filters.dateType === 'entrega' ? 'Data de Entrega' : filters.dateType === 'entrega_pcp' ? 'Data PCP' : 'Emissão NF'})`}
                             />
                         </div>
-                        {filters.dateType === 'entrega' && (
+                        {['entrega', 'entrega_pcp'].includes(filters.dateType) && (
                             <div className="flex justify-between mt-0.5">
                                 <button
                                     type="button"
@@ -908,6 +1138,25 @@ const OrdersTable = () => {
                             <StickyNote className="h-4 w-4" />
                             <span>Ata</span>
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => { setPcpmetalContext({ page: 'visao-geral', modulo: 'Vis�o Geral', action: 'Geral' }); setPcpmetalOpen(true); }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 font-medium rounded-lg text-sm px-4 py-2.5 text-center transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            title="Abrir Assistente Hermes"
+                        >
+                            <Bot className="w-4 h-4" /> Hermes AI
+                        </button>
+
+                        {viewMode === 'flat' && (
+                            <button
+                                type="button"
+                                onClick={() => setShowColSettings(true)}
+                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-2"
+                                title="Configurar Colunas"
+                            >
+                                <Settings className="h-4 w-4" />
+                            </button>
+                        )}
                     </div>
 
                     <div className="md:col-span-10 lg:col-span-10 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
@@ -1037,7 +1286,7 @@ const OrdersTable = () => {
             {activeTab === 'evolucao' && (
                 <>
                     {/* Tabela */}
-                    <div className="flex-1 overflow-auto min-h-0 print:overflow-visible print:min-h-0" onScroll={handleScroll}>
+                    <div ref={tableScrollRef} className="flex-1 overflow-auto min-h-0 print:overflow-visible print:min-h-0" onScroll={handleScroll}>
                         <table className="w-full text-sm text-left text-gray-500 print:w-full">
                             <thead className="sticky top-0 z-10 text-xs text-gray-700 uppercase bg-gray-50 outline outline-1 outline-gray-200">
                                 {viewMode === 'tree' ? (
@@ -1052,36 +1301,85 @@ const OrdersTable = () => {
                                     </tr>
                                 ) : (
                                     <tr>
-                                        <th className="px-2 py-3 border-b border-slate-700 text-center sticky left-0 z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={orders.length > 0 && selectedItems.length === orders.length}
-                                                onChange={handleSelectAll}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                            />
-                                        </th>
-                                        <th className="px-3 py-3 font-semibold sticky left-[40px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px]">Pedido</th>
-                                        <th className="px-3 py-3 font-semibold text-center sticky left-[130px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px]">Emissão</th>
-                                        <th className="px-3 py-3 font-semibold sticky left-[220px] z-20 bg-gray-50 min-w-[100px] max-w-[100px] w-[100px] truncate">Ref. Cliente</th>
-                                        <th className="px-3 py-3 font-semibold sticky left-[320px] z-20 bg-gray-50 min-w-[150px] max-w-[150px] w-[150px] truncate">Cliente</th>
-                                        <th className="px-3 py-3 font-semibold sticky left-[470px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] truncate">PC</th>
-                                        <th className="px-2 py-3 font-semibold text-center sticky left-[560px] z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">It</th>
-                                        <th className="px-3 py-3 font-semibold text-center sticky left-[600px] z-20 bg-gray-50 min-w-[80px] max-w-[80px] w-[80px]">OP</th>
-                                        <th className="px-3 py-3 font-semibold sticky left-[680px] z-20 bg-gray-50 min-w-[140px] max-w-[140px] w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Cód. Prod</th>
-                                        <th className="px-4 py-3 font-semibold">C6_XREVM</th>
-                                        <th className="px-4 py-3 font-semibold">Rev. Cliente</th>
-                                        <th className="px-4 py-3 font-semibold text-center w-8 print:hidden text-[10px]">Ações</th>
-                                        <th className="px-4 py-3 font-semibold text-center w-16">Tipo</th>
-                                        <th className="px-4 py-3 font-semibold">Descrição</th>
-                                        <th className="px-4 py-3 font-semibold text-center">Status</th>
-                                        <th className="px-4 py-3 font-semibold text-right">Entreg.</th>
-                                        <th className="px-4 py-3 font-semibold text-right">Saldo Fat.</th>
-                                        <th className="px-4 py-3 font-semibold text-right">Qtd.</th>
-                                        <th className="px-4 py-3 font-semibold text-center">Lib. Eng.</th>
-                                        <th className="px-4 py-3 font-semibold text-center">Entrega</th>
-                                        <th className="px-4 py-3 font-semibold text-right text-xs">Qtd. PCP</th>
-                                        <th className="px-4 py-3 font-semibold text-center text-xs">Data PCP</th>
-                                        <th className="px-4 py-3 font-semibold text-center text-xs text-teal-800">Prev. Fat.</th>
+                                        {colConfig.filter(c => c.visible).map(col => {
+                                            const isSortable = ['pedido', 'emissao', 'entrega', 'data_pcp', 'prev_fat'].includes(col.key);
+                                            const sortKeyMap = { 'pedido': 'pedido', 'emissao': 'emissao', 'entrega': 'entrega', 'data_pcp': 'entrega_pcp', 'prev_fat': 'prev_fat' };
+                                            const isActiveSort = isSortable && filters.sortBy === sortKeyMap[col.key];
+                                            const sortIcon = isActiveSort ? (filters.sortOrder === 'ASC' ? <ArrowUp className="w-3 h-3 ml-1 inline text-blue-600" /> : <ArrowDown className="w-3 h-3 ml-1 inline text-blue-600" />) : null;
+                                            
+                                            const thProps = isSortable ? {
+                                                onClick: () => {
+                                                    const mapped = sortKeyMap[col.key];
+                                                    setFilters(prev => ({
+                                                        ...prev,
+                                                        sortBy: mapped,
+                                                        sortOrder: prev.sortBy === mapped && prev.sortOrder === 'ASC' ? 'DESC' : 'ASC',
+                                                        page: 1
+                                                    }));
+                                                },
+                                                className: "cursor-pointer hover:bg-gray-100 transition-colors select-none",
+                                                title: `Ordenar por ${col.label}`
+                                            } : {};
+
+                                            switch (col.key) {
+                                                case 'checkbox':
+                                                    return (
+                                                        <th key="checkbox" className="px-2 py-3 border-b border-slate-700 text-center sticky left-0 z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={orders.length > 0 && selectedItems.length === orders.length}
+                                                                onChange={handleSelectAll}
+                                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                            />
+                                                        </th>
+                                                    );
+                                                case 'pedido':
+                                                    return <th key="pedido" {...thProps} className={`px-3 py-3 font-semibold sticky left-[40px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] ${thProps.className || ''}`}>Pedido{sortIcon}</th>;
+                                                case 'emissao':
+                                                    return <th key="emissao" {...thProps} className={`px-3 py-3 font-semibold text-center bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] ${thProps.className || ''}`}>Emissão{sortIcon}</th>;
+                                                case 'ref_cliente':
+                                                    return <th key="ref_cliente" className="px-3 py-3 font-semibold bg-gray-50 min-w-[100px] max-w-[100px] w-[100px] truncate">Ref. Cliente</th>;
+                                                case 'cliente':
+                                                    return <th key="cliente" className="px-3 py-3 font-semibold bg-gray-50 min-w-[150px] max-w-[150px] w-[150px] truncate">Cliente</th>;
+                                                case 'pc':
+                                                    return <th key="pc" className="px-3 py-3 font-semibold bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] truncate">PC</th>;
+                                                case 'item':
+                                                    return <th key="item" className="px-2 py-3 font-semibold text-center bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">It</th>;
+                                                case 'op':
+                                                    return <th key="op" className="px-3 py-3 font-semibold text-center bg-gray-50 min-w-[80px] max-w-[80px] w-[80px]">OP</th>;
+                                                case 'codigo':
+                                                    return <th key="codigo" className="px-3 py-3 font-semibold bg-gray-50 min-w-[140px] max-w-[140px] w-[140px]">Cód. Prod</th>;
+                                                case 'c6_xrevm':
+                                                    return <th key="c6_xrevm" className="px-4 py-3 font-semibold">C6_XREVM</th>;
+                                                case 'rev_cliente':
+                                                    return <th key="rev_cliente" className="px-4 py-3 font-semibold">Rev. Cliente</th>;
+                                                case 'acoes':
+                                                    return <th key="acoes" className="px-4 py-3 font-semibold text-center w-8 print:hidden text-[10px]">Ações</th>;
+                                                case 'tipo':
+                                                    return <th key="tipo" className="px-4 py-3 font-semibold text-center w-16">Tipo</th>;
+                                                case 'descricao':
+                                                    return <th key="descricao" className="px-4 py-3 font-semibold">Descrição</th>;
+                                                case 'status':
+                                                    return <th key="status" className="px-4 py-3 font-semibold text-center">Status</th>;
+                                                case 'qtd_entreg':
+                                                    return <th key="qtd_entreg" className="px-4 py-3 font-semibold text-right">Entreg.</th>;
+                                                case 'saldo_fat':
+                                                    return <th key="saldo_fat" className="px-4 py-3 font-semibold text-right">Saldo Fat.</th>;
+                                                case 'qtd':
+                                                    return <th key="qtd" className="px-4 py-3 font-semibold text-right">Qtd.</th>;
+                                                case 'lib_eng':
+                                                    return <th key="lib_eng" className="px-4 py-3 font-semibold text-center">Lib. Eng.</th>;
+                                                case 'entrega':
+                                                    return <th key="entrega" {...thProps} className={`px-4 py-3 font-semibold text-center ${thProps.className || ''}`}>Entrega{sortIcon}</th>;
+                                                case 'qtd_pcp':
+                                                    return <th key="qtd_pcp" className="px-4 py-3 font-semibold text-right text-xs">Qtd. PCP</th>;
+                                                case 'data_pcp':
+                                                    return <th key="data_pcp" {...thProps} className={`px-4 py-3 font-semibold text-center text-xs ${thProps.className || ''}`}>Data PCP{sortIcon}</th>;
+                                                case 'prev_fat':
+                                                    return <th key="prev_fat" {...thProps} className={`px-4 py-3 font-semibold text-center text-xs text-teal-800 ${thProps.className || ''}`}>Prev. Fat.{sortIcon}</th>;
+                                                default: return null;
+                                            }
+                                        })}
                                     </tr>
                                 )}
                             </thead>
@@ -1589,35 +1887,40 @@ const OrdersTable = () => {
                                                 </React.Fragment>
                                             ))
                                         ) : (
-                                            // FLAT VIEW — memoized rows prevent full-table re-renders
-                                            orders.map((item, idx) => (
-                                                <FlatItemRow
-                                                    key={`${item.pedido}-${item.item}-${idx}`}
-                                                    item={item}
-                                                    locationPathname={location.pathname}
-                                                    isSelected={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)}
-                                                    printingOrderId={printingOrderId}
-                                                    openActionMenu={openActionMenu}
-                                                    menuPosition={menuPosition}
-                                                    onSelectItem={handleSelectItem}
-                                                    onOpenDocs={handleOpenDocs}
-                                                    onSetEngineeringTarget={setEngineeringTarget}
-                                                    onSetPcpForecastTarget={setPcpForecastTarget}
-                                                    onSetNotesTarget={setNotesTarget}
-                                                    onSetInvoiceModal={({ nf, item: it }) => { setSelectedInvoice(nf); setInvoiceModalItem(it); }}
-                                                    onOpenActionMenu={setOpenActionMenu}
-                                                    formatProtheusDate={formatProtheusDate}
-                                                    onPrintOPMirror={handlePrintOPMirror}
-                                                    onPrintFichas={handlePrintFichas}
-                                                    onPrintOPByOperation={handlePrintOPByOperation}
-                                                    onPrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
-                                                    onPrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
-                                                    onPrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
-                                                    onExportOPByOperationExcel={handleExportOPByOperationExcel}
-                                                    onSetMenuPosition={setMenuPosition}
-                                                    onUpdateFaturamentoDate={handleUpdateFaturamentoDate}
-                                                />
-                                            ))
+                                            // FLAT VIEW -- virtualized: only visible rows in DOM
+                                            <VirtualFlatList
+                                                orders={orders}
+                                                scrollContainerRef={tableScrollRef}
+                                                hasNextPage={hasNextPage}
+                                                onLoadMore={handleLoadMore}
+                                                loadingMore={loadingMore}
+                                                colConfig={colConfig}
+                                                locationPathname={location.pathname}
+                                                selectedItems={selectedItems}
+                                                activeRowKey={activeRowKey}
+                                                setActiveRowKey={setActiveRowKey}
+                                                printingOrderId={printingOrderId}
+                                                openActionMenu={openActionMenu}
+                                                menuPosition={menuPosition}
+                                                handleSelectItem={handleSelectItem}
+                                                handleOpenDocs={handleOpenDocs}
+                                                setEngineeringTarget={setEngineeringTarget}
+                                                setPcpForecastTarget={setPcpForecastTarget}
+                                                setNotesTarget={setNotesTarget}
+                                                setSelectedInvoice={setSelectedInvoice}
+                                                setInvoiceModalItem={setInvoiceModalItem}
+                                                setOpenActionMenu={setOpenActionMenu}
+                                                formatProtheusDate={formatProtheusDate}
+                                                handlePrintOPMirror={handlePrintOPMirror}
+                                                handlePrintFichas={handlePrintFichas}
+                                                handlePrintOPByOperation={handlePrintOPByOperation}
+                                                handlePrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
+                                                handlePrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
+                                                handlePrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
+                                                handleExportOPByOperationExcel={handleExportOPByOperationExcel}
+                                                setMenuPosition={setMenuPosition}
+                                                handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
+                                            />
                                         )}
                                     </>
                                 )}
@@ -1635,11 +1938,20 @@ const OrdersTable = () => {
                         </div>
                     )}
 
-                    {!loading && !error && orders.length > 0 && page >= totalPages && (
-                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center print:hidden">
-                            <span className="text-sm text-gray-400">
-                                Todos os {orders.length} registros foram carregados.
-                            </span>
+                    {!loading && !error && orders.length > 0 && (
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center gap-2 print:hidden">
+                            {viewMode === 'flat' && (loadingMore || hasNextPage) ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500 flex-shrink-0" />
+                                    <span className="text-sm text-blue-600 font-medium">
+                                        Carregando dados… {orders.length} registros carregados até agora (lote {page})
+                                    </span>
+                                </>
+                            ) : (
+                                <span className="text-sm text-gray-400">
+                                    Todos os {orders.length} registros foram carregados.
+                                </span>
+                            )}
                         </div>
                     )}
                 </>
@@ -1799,7 +2111,19 @@ const OrdersTable = () => {
                 isOpen={pcpmetalOpen}
                 onClose={() => setPcpmetalOpen(false)}
                 context={pcpmetalContext}
+                pageData={{ ops: orders, total: orders?.length || 0 }}
             />
+            
+            {showColSettings && (
+                <ColumnSettingsPanel
+                    columns={colConfig}
+                    allColumns={ALL_FLAT_COLUMNS}
+                    prefKey={PREF_KEY}
+                    onChange={setColConfig}
+                    onClose={() => setShowColSettings(false)}
+                />
+            )}
+            
             {/* Retry Toast — shown during exponential backoff on 500 errors */}
             <RetryToast retryInfo={retryInfo} />
         </div>

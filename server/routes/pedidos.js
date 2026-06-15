@@ -10,6 +10,34 @@ const nodePath = require('path');
 const ExcelJS = require('exceljs');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
+
+// ── Forecast cache (módulo) — TTL 60s, evita fetch MySQL por requisição ────
+let _fcCache = { map: new Map(), expiresAt: 0 };
+async function getForecastMapCached() {
+    if (Date.now() < _fcCache.expiresAt) return _fcCache.map;
+    const map = new Map();
+    try {
+        const [rows] = await mysqlPool.query(`
+            SELECT TRIM(pedido) as pedido, TRIM(item) as item,
+                   MAX(data_entrega_pcp) as data_entrega_pcp,
+                   MAX(data_prevista_faturamento) as data_prevista_faturamento
+            FROM app_pcp_delivery_forecasts
+            WHERE pedido IS NOT NULL AND item IS NOT NULL
+            GROUP BY TRIM(pedido), TRIM(item)
+        `);
+        for (const row of rows) {
+            map.set(`${row.pedido}|${row.item}`, {
+                data_entrega_pcp: row.data_entrega_pcp || null,
+                data_prevista_faturamento: row.data_prevista_faturamento || null
+            });
+        }
+    } catch (err) {
+        console.error('getForecastMapCached error:', err.message);
+    }
+    _fcCache = { map, expiresAt: Date.now() + 60_000 };
+    return map;
+}
+
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
@@ -62,9 +90,24 @@ router.get('/', async (req, res) => {
         }
 
         if (cliente) {
-            whereClause += ` AND sa1.a1_nome ILIKE '%' || $${paramCount} || '%'`;
-            params.push(cliente);
-            paramCount++;
+            const pgClient = await db.connect();
+            let clienteMatches = [];
+            try {
+                const resTemp = await pgClient.query(
+                    `SELECT a1_cod, a1_loja FROM public.sa1010 WHERE COALESCE(d_e_l_e_t_, '') = '' AND a1_nome ILIKE $1 LIMIT 5000`, 
+                    [`%${cliente}%`]
+                );
+                clienteMatches = resTemp.rows;
+            } finally {
+                pgClient.release();
+            }
+
+            if (clienteMatches.length === 0) {
+                return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+            }
+
+            const inValues = clienteMatches.map(m => `('${m.a1_cod}', '${m.a1_loja}')`).join(', ');
+            whereClause += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
         }
 
         if (pedido) {
@@ -333,58 +376,20 @@ router.get('/flat', async (req, res) => {
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
 
-        // Fetch forecasts from MySQL first — limit to recent records to keep payload small
-        let forecastJson = '[]';
-        try {
-            const [forecastRows] = await mysqlPool.query(`
-                SELECT TRIM(pedido) as pedido, TRIM(item) as item, 
-                       MAX(data_entrega_pcp) as data_entrega_pcp, 
-                       MAX(data_prevista_faturamento) as data_prevista_faturamento 
-                FROM app_pcp_delivery_forecasts
-                WHERE pedido IS NOT NULL AND item IS NOT NULL
-                  AND (updated_at >= DATE_SUB(NOW(), INTERVAL 180 DAY) OR created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY))
-                GROUP BY TRIM(pedido), TRIM(item)
-            `);
-            if (forecastRows.length > 0) {
-                forecastJson = JSON.stringify(forecastRows.map(row => ({
-                    pedido: row.pedido,
-                    item: row.item,
-                    data_entrega_pcp: row.data_entrega_pcp || null,
-                    data_prevista_faturamento: row.data_prevista_faturamento || null
-                })));
-            }
-        } catch (err) {
-            // If date filtering fails (no updated_at column), fall back to unfiltered
-            try {
-                const [forecastRows] = await mysqlPool.query(`
-                    SELECT TRIM(pedido) as pedido, TRIM(item) as item, 
-                           MAX(data_entrega_pcp) as data_entrega_pcp, 
-                           MAX(data_prevista_faturamento) as data_prevista_faturamento 
-                    FROM app_pcp_delivery_forecasts
-                    WHERE pedido IS NOT NULL AND item IS NOT NULL
-                    GROUP BY TRIM(pedido), TRIM(item)
-                    LIMIT 5000
-                `);
-                if (forecastRows.length > 0) {
-                    forecastJson = JSON.stringify(forecastRows.map(row => ({
-                        pedido: row.pedido,
-                        item: row.item,
-                        data_entrega_pcp: row.data_entrega_pcp || null,
-                        data_prevista_faturamento: row.data_prevista_faturamento || null
-                    })));
-                }
-            } catch (e2) {
-                console.error('Error fetching forecasts for virtual join:', e2);
-            }
-        }
-
         params = [];
         let paramCount = 1;
         let countParams = [];
         let countParamCount = 1;
 
-        // Base Filter Logic
-        const getInactiveFilter = await getInactiveOrdersFilter();
+        // Parallelize 3 MySQL round-trips that were previously serial:
+        //  1. forecast map (can be large table)
+        //  2+3. getInactiveOrdersFilter (2 queries internally)
+        const _tMysqlStart = Date.now();
+        const [forecastMap, getInactiveFilter] = await Promise.all([
+            getForecastMapCached(),
+            getInactiveOrdersFilter()
+        ]);
+        console.log(`⏱ /flat MySQL pre-fetch took ${Date.now() - _tMysqlStart}ms (forecastMap=${forecastMap.size} entries)`);
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
         let countWhereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
@@ -398,12 +403,25 @@ router.get('/flat', async (req, res) => {
         }
 
         if (cliente) {
-            whereClause += ` AND sa1.a1_nome ILIKE '%' || $${paramCount} || '%'`;
-            params.push(cliente);
-            paramCount++;
-            countWhereClause += ` AND sa1.a1_nome ILIKE '%' || $${countParamCount} || '%'`;
-            countParams.push(cliente);
-            countParamCount++;
+            const pgClient = await db.connect();
+            let clienteMatches = [];
+            try {
+                const resTemp = await pgClient.query(
+                    `SELECT a1_cod, a1_loja FROM public.sa1010 WHERE COALESCE(d_e_l_e_t_, '') = '' AND a1_nome ILIKE $1 LIMIT 5000`, 
+                    [`%${cliente}%`]
+                );
+                clienteMatches = resTemp.rows;
+            } finally {
+                pgClient.release();
+            }
+
+            if (clienteMatches.length === 0) {
+                return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+            }
+
+            const inValues = clienteMatches.map(m => `('${m.a1_cod}', '${m.a1_loja}')`).join(', ');
+            whereClause += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
+            countWhereClause += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
         }
 
         if (pedido) {
@@ -590,7 +608,10 @@ router.get('/flat', async (req, res) => {
                     countParams.push(val);
                     countParamCount++;
                 }
+            } else if (dateType === 'entrega_pcp') {
+                // entrega_pcp date filter uses the fc CTE — handled in the fc setup block below
             } else {
+                // Default: filter by emissao (dateType=pedido or unrecognized)
                 if (dataInicial) {
                     const val = dataInicial.replace(/-/g, '');
                     whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
@@ -612,122 +633,191 @@ router.get('/flat', async (req, res) => {
             }
         }
 
-        // ── MAIN QUERY ─────────────────────────────────────────────────────────
-        // Melhorias de performance:
-        // 1. ref_cliente / rev_cliente removidos do SQL (subqueries correlacionadas) → batch PG após
-        // 2. notas_fiscais removido do SQL (json_agg corr.) → batch PG após
-        // 3. LATERAL JOINs substituem EXISTS duplicados nos dois blocos CASE → avaliados 1x por linha
-        // CTE pattern: paged_items limita paginação a nível de (pedido, item).
-        // O JOIN externo com sc2010 sem LIMIT expande cada item para todas as suas OPs.
-        // Isso garante que múltiplas OPs do mesmo item sejam todas visíveis com seus
-        // respectivos saldos produzidos e programações PCP.
+        // ── FC JOIN SETUP (forecast data injected via unnest arrays) ────────────
+        // Qualquer sort/filtro que dependa de datas PCP usa o fc CTE para que o
+        // PostgreSQL faça TODA a ordenação, filtro e paginação sem JS intermediário.
+        const needsFcJoin = (sortBy === 'entrega_pcp' || sortBy === 'prev_fat') ||
+                            (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) ||
+                            !!pcpDataInicial || !!pcpDataFinal;
+
+        let fcJoin = '';
+        let countFcJoin = '';
+        let fcSelect = 'NULL::timestamp AS data_entrega_pcp, NULL::timestamp AS data_prevista_faturamento';
+
+        if (needsFcJoin && forecastMap.size > 0) {
+            const fcPedidos = [], fcItems = [], fcDatas = [], fcPrevFats = [];
+            for (const [key, val] of forecastMap) {
+                const [p, i] = key.split('|');
+                fcPedidos.push(p);
+                fcItems.push(i);
+                fcDatas.push(val.data_entrega_pcp ? new Date(val.data_entrega_pcp) : null);
+                fcPrevFats.push(val.data_prevista_faturamento ? new Date(val.data_prevista_faturamento) : null);
+            }
+            // paramCount == countParamCount aqui (sempre incrementados juntos)
+            const fcBase = paramCount;
+            params.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
+            countParams.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
+            paramCount += 4;
+            countParamCount += 4;
+
+            const fcJoinSql = `
+                LEFT JOIN (
+                    SELECT * FROM unnest(
+                        $${fcBase}::text[], $${fcBase+1}::text[],
+                        $${fcBase+2}::timestamp[], $${fcBase+3}::timestamp[]
+                    ) AS t(fc_pedido, fc_item, data_entrega_pcp, data_prevista_faturamento)
+                ) fc ON fc.fc_pedido = TRIM(c6.c6_num) AND fc.fc_item = TRIM(c6.c6_item)
+            `;
+            fcJoin = fcJoinSql;
+            countFcJoin = fcJoinSql;
+            fcSelect = 'fc.data_entrega_pcp, fc.data_prevista_faturamento';
+
+            // Filtro entrega_pcp por data (empurrado ao DB)
+            if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
+                if (dataInicial) {
+                    whereClause += ` AND fc.data_entrega_pcp >= $${paramCount}::timestamp`;
+                    countWhereClause += ` AND fc.data_entrega_pcp >= $${countParamCount}::timestamp`;
+                    const v = new Date(dataInicial);
+                    params.push(v); countParams.push(v); paramCount++; countParamCount++;
+                }
+                if (dataFinal) {
+                    whereClause += ` AND fc.data_entrega_pcp <= $${paramCount}::timestamp`;
+                    countWhereClause += ` AND fc.data_entrega_pcp <= $${countParamCount}::timestamp`;
+                    const v = new Date(dataFinal + 'T23:59:59');
+                    params.push(v); countParams.push(v); paramCount++; countParamCount++;
+                }
+            }
+
+            // Filtro pcpDataInicial / pcpDataFinal (empurrado ao DB)
+            if (pcpDataInicial) {
+                whereClause += ` AND fc.data_entrega_pcp >= $${paramCount}::timestamp`;
+                countWhereClause += ` AND fc.data_entrega_pcp >= $${countParamCount}::timestamp`;
+                const v = new Date(pcpDataInicial);
+                params.push(v); countParams.push(v); paramCount++; countParamCount++;
+            }
+            if (pcpDataFinal) {
+                whereClause += ` AND fc.data_entrega_pcp <= $${paramCount}::timestamp`;
+                countWhereClause += ` AND fc.data_entrega_pcp <= $${countParamCount}::timestamp`;
+                const v = new Date(pcpDataFinal + 'T23:59:59');
+                params.push(v); countParams.push(v); paramCount++; countParamCount++;
+            }
+
+        } else if (needsFcJoin) {
+            // forecastMap vazio mas filtro/sort depende dele → retorna 0 resultados
+            if ((dateType === 'entrega_pcp' && (dataInicial || dataFinal)) || pcpDataInicial || pcpDataFinal) {
+                whereClause += ' AND FALSE';
+                countWhereClause += ' AND FALSE';
+            }
+        }
+
+        // ── ORDER BY ──────────────────────────────────────────────────────────
+        const sortDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
         let orderClauseInner = '';
         if (sortBy === 'entrega') {
-            orderClauseInner = `ORDER BY NULLIF(TRIM(COALESCE(c6.c6_entreg, '')), '') ${sortOrder === 'ASC' ? 'ASC' : 'DESC'} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
+            orderClauseInner = `ORDER BY NULLIF(TRIM(COALESCE(c6.c6_entreg, '')), '') ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'emissao') {
-            orderClauseInner = `ORDER BY c5.c5_emissao ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c5.c5_num DESC, c6.c6_item ASC`;
+            orderClauseInner = `ORDER BY c5.c5_emissao ${sortDir}, c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'entrega_pcp') {
-            orderClauseInner = `ORDER BY 
-                CASE WHEN fc.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, 
-                fc.data_entrega_pcp ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
-                c5.c5_num DESC, c6.c6_item ASC`;
+            orderClauseInner = fcJoin
+                ? `ORDER BY CASE WHEN fc.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, fc.data_entrega_pcp ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
+                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'prev_fat') {
-            orderClauseInner = `ORDER BY 
-                CASE WHEN fc.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, 
-                fc.data_prevista_faturamento ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
-                c5.c5_num DESC, c6.c6_item ASC`;
+            orderClauseInner = fcJoin
+                ? `ORDER BY CASE WHEN fc.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, fc.data_prevista_faturamento ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
+                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'pedido') {
-            orderClauseInner = `ORDER BY c5.c5_num ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, c6.c6_item ASC`;
+            orderClauseInner = `ORDER BY c5.c5_num ${sortDir}, c6.c6_item ASC`;
         } else {
             orderClauseInner = `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
         }
 
         let orderClauseOuter = '';
         if (sortBy === 'entrega') {
-            orderClauseOuter = `ORDER BY NULLIF(TRIM(pi.entrega), '') ${sortOrder === 'ASC' ? 'ASC' : 'DESC'} NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+            orderClauseOuter = `ORDER BY NULLIF(TRIM(pi.entrega), '') ${sortDir} NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         } else if (sortBy === 'emissao') {
-            orderClauseOuter = `ORDER BY pi.emissao ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+            orderClauseOuter = `ORDER BY pi.emissao ${sortDir}, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         } else if (sortBy === 'entrega_pcp') {
-            orderClauseOuter = `ORDER BY 
-                CASE WHEN pi.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, 
-                pi.data_entrega_pcp ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
-                pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+            orderClauseOuter = `ORDER BY CASE WHEN pi.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, pi.data_entrega_pcp ${sortDir} NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         } else if (sortBy === 'prev_fat') {
-            orderClauseOuter = `ORDER BY 
-                CASE WHEN pi.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, 
-                pi.data_prevista_faturamento ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, 
-                pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+            orderClauseOuter = `ORDER BY CASE WHEN pi.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, pi.data_prevista_faturamento ${sortDir} NULLS LAST, pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         } else if (sortBy === 'pedido') {
-            orderClauseOuter = `ORDER BY pi.pedido ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
+            orderClauseOuter = `ORDER BY pi.pedido ${sortDir}, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         } else {
             orderClauseOuter = `ORDER BY pi.pedido DESC, pi.item ASC, c2.c2_sequen ASC, c2.c2_num ASC`;
         }
 
-        // Only include the jsonb forecast join when sorting by those columns —
-        // avoids parsing a large JSON blob on every unfiltered page load.
-        const needsFcJoin = sortBy === 'entrega_pcp' || sortBy === 'prev_fat';
-
-        // If the fc JOIN is needed, prepend forecastJson as $1 and shift all
-        // subsequent positional params by 1 (they were numbered from 1 without it).
-        if (needsFcJoin) {
-            params.unshift(forecastJson);       // becomes $1
-            countParams; // countQuery never uses forecastJson
-        }
-
-        const fcParamRef = needsFcJoin ? '$1::jsonb' : null;
-        const fcJoin = needsFcJoin
-            ? `LEFT JOIN jsonb_to_recordset($1::jsonb) AS fc(pedido varchar, item varchar, data_entrega_pcp varchar, data_prevista_faturamento varchar)
-                    ON fc.pedido = TRIM(c5.c5_num) AND fc.item = TRIM(c6.c6_item)`
-            : '';
-        const fcSelect = needsFcJoin
-            ? 'fc.data_entrega_pcp,\n                    fc.data_prevista_faturamento'
-            : 'NULL::varchar AS data_entrega_pcp,\n                    NULL::varchar AS data_prevista_faturamento';
-
         query = `
-            WITH paged_items AS (
+            WITH paged_base AS (
                 SELECT
-                    TRIM(c5.c5_num) as pedido,
-                    TRIM(c5.c5_cliente) as cod_cliente,
-                    TRIM(c5.c5_lojacli) as loja_cliente,
-                    NULLIF(TRIM(COALESCE(c5.c5_mennota, '') || ' ' || COALESCE(c5.c5_zobs, '') || ' ' || COALESCE(c5.c5_zobsorc, '')), '') AS observacoes_gerais,
-                    sa1.a1_nome as nome_cliente,
-                    c5.c5_emissao as emissao,
-                    c5.c5_orcres as orcamento,
-                    TRIM(c6.c6_item) as item,
-                    c6.c6_item as item_raw,
-                    TRIM(c6.c6_produto) as codigo,
-                    c6.c6_produto as codigo_raw,
-                    TRIM(c6.c6_xrevm) as rev_codigo,
-                    TRIM(c6.c6_xrevc) as c6_rev_cliente,
-                    sb1.b1_desc as descricao,
-                    TRIM(sb1.b1_msblql) as b1_msblql,
-                    c6.c6_um as unidade,
-                    COALESCE(c6.c6_qtdven, 0)::numeric(18,6) as quantidade,
-                    COALESCE(c6.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
-                    (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
-                    c6.c6_prcven::numeric(18,2) as valor_unitario,
-                    c6.c6_valor::numeric(18,2) as valor_total,
-                    COALESCE(sb1.b1_prv1, 0)::numeric(18,2) as preco_cadastro,
-                    TRIM(COALESCE(c6.c6_entreg, '')) as entrega,
-                    c6.c6_pedcli as ped_cliente,
-                    c5.c5_liberok as status_cor,
-                    ${fcSelect}
+                    c5.c5_num,
+                    c5.c5_cliente,
+                    c5.c5_lojacli,
+                    c5.c5_mennota,
+                    c5.c5_zobs,
+                    c5.c5_zobsorc,
+                    c5.c5_emissao,
+                    c5.c5_orcres,
+                    c5.c5_liberok,
+                    c6.c6_item,
+                    c6.c6_produto,
+                    c6.c6_xrevm,
+                    c6.c6_xrevc,
+                    c6.c6_um,
+                    c6.c6_qtdven,
+                    c6.c6_qtdent,
+                    c6.c6_prcven,
+                    c6.c6_valor,
+                    c6.c6_entreg,
+                    c6.c6_pedcli,
+                    ${fcJoin ? 'fc.data_entrega_pcp, fc.data_prevista_faturamento' : 'NULL::varchar as data_entrega_pcp, NULL::varchar as data_prevista_faturamento'}
                 FROM public.sc5010 c5
                 JOIN public.sc6010 c6
                     ON COALESCE(c6.d_e_l_e_t_, '') = ''
                     AND c6.c6_filial = c5.c5_filial
                     AND c6.c6_num = c5.c5_num
-                LEFT JOIN public.sa1010 sa1
-                    ON sa1.a1_cod = c5.c5_cliente
-                    AND sa1.a1_loja = c5.c5_lojacli
-                    AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-                LEFT JOIN public.sb1010 sb1
-                    ON sb1.b1_cod = c6.c6_produto
-                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
                 ${fcJoin}
                 ${whereClause}
                 ${orderClauseInner}
+                -- Fetch one extra row to detect hasNextPage without COUNT(*)
                 LIMIT $${paramCount} OFFSET $${paramCount + 1}
+            ),
+            paged_items AS (
+                SELECT
+                    TRIM(pb.c5_num) as pedido,
+                    TRIM(pb.c5_cliente) as cod_cliente,
+                    TRIM(pb.c5_lojacli) as loja_cliente,
+                    NULLIF(TRIM(COALESCE(pb.c5_mennota, '') || ' ' || COALESCE(pb.c5_zobs, '') || ' ' || COALESCE(pb.c5_zobsorc, '')), '') AS observacoes_gerais,
+                    sa1.a1_nome as nome_cliente,
+                    pb.c5_emissao as emissao,
+                    pb.c5_orcres as orcamento,
+                    TRIM(pb.c6_item) as item,
+                    pb.c6_item as item_raw,
+                    TRIM(pb.c6_produto) as codigo,
+                    pb.c6_produto as codigo_raw,
+                    TRIM(pb.c6_xrevm) as rev_codigo,
+                    TRIM(pb.c6_xrevc) as c6_rev_cliente,
+                    sb1.b1_desc as descricao,
+                    TRIM(sb1.b1_msblql) as b1_msblql,
+                    pb.c6_um as unidade,
+                    COALESCE(pb.c6_qtdven, 0)::numeric(18,6) as quantidade,
+                    COALESCE(pb.c6_qtdent, 0)::numeric(18,6) as qtd_entreg,
+                    (COALESCE(pb.c6_qtdven, 0) - COALESCE(pb.c6_qtdent, 0))::numeric(18,6) as qtd_faturar,
+                    pb.c6_prcven::numeric(18,2) as valor_unitario,
+                    pb.c6_valor::numeric(18,2) as valor_total,
+                    COALESCE(sb1.b1_prv1, 0)::numeric(18,2) as preco_cadastro,
+                    TRIM(COALESCE(pb.c6_entreg, '')) as entrega,
+                    pb.c6_pedcli as ped_cliente,
+                    pb.c5_liberok as status_cor,
+                    pb.data_entrega_pcp,
+                    pb.data_prevista_faturamento
+                FROM paged_base pb
+                LEFT JOIN public.sa1010 sa1
+                    ON sa1.a1_cod = pb.c5_cliente
+                    AND sa1.a1_loja = pb.c5_lojacli
+                    AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                LEFT JOIN public.sb1010 sb1
+                    ON sb1.b1_cod = pb.c6_produto
+                    AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             )
             SELECT
                 pi.*,
@@ -747,10 +837,8 @@ router.get('/flat', async (req, res) => {
             ${orderClauseOuter}
         `;
 
-        params.push(limitParsed, offset);
+        params.push(limitParsed + 1, offset); // +1 for hasNextPage detection
 
-        // Lightweight count query — no jsonb join, no sb1, no LATERAL.
-        // Runs in parallel with the data query so it adds no wall-clock latency.
         countQuery = `
             SELECT COUNT(*) as total
             FROM public.sc5010 c5
@@ -762,30 +850,31 @@ router.get('/flat', async (req, res) => {
                 ON sa1.a1_cod = c5.c5_cliente
                 AND sa1.a1_loja = c5.c5_lojacli
                 AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+            ${countFcJoin}
             ${countWhereClause}
         `;
 
         errorStep = 'pg_main_query';
-        // Usa client dedicado para aumentar timeout desta query pesada (CTE + LATERAL joins).
-        // A count query leve roda em paralelo pelo pool normal.
+        // Single dedicated client — no more COUNT(*) query
         const pgClient = await db.connect();
-        let result, countResult;
+        let result;
+        const _tQueryStart = Date.now();
         try {
-            // Tuning: increase work_mem for sort/hash operations; extend timeout to 5min
-            await pgClient.query("SET LOCAL statement_timeout = '300000'; SET LOCAL work_mem = '64MB'; SET LOCAL enable_seqscan = off;");
-            [result, countResult] = await Promise.all([
-                pgClient.query(query, params),
-                db.query(countQuery, countParams)
-            ]);
+            await pgClient.query("SET statement_timeout = '120000'; SET work_mem = '64MB';");
+            // Fetch limit+1 to detect hasNextPage without COUNT(*)
+            result = await pgClient.query(query, params);
         } finally {
-            pgClient.release();
+            pgClient?.release();
         }
+        console.log(`✅ /flat PG query took ${Date.now() - _tQueryStart}ms (rows=${result.rows.length})`);
 
         if (req.query.minimal === 'true') {
+            const hasNextPage = result.rows.length > limitParsed;
+            const pageData = result.rows.slice(0, limitParsed);
             return res.json({
-                data: result.rows,
+                data: pageData,
                 meta: {
-                    total: countResult.rows.length > 0 ? parseInt(countResult.rows[0].total, 10) : 0,
+                    hasNextPage,
                     page: pageParsed,
                     limit: limitParsed
                 }
@@ -793,6 +882,18 @@ router.get('/flat', async (req, res) => {
         }
 
         errorStep = 'enrichment';
+
+        // Quando fcJoin não está ativo, data_entrega_pcp e data_prevista_faturamento
+        // vêm como NULL do DB — preenche do cache em memória (exibição, não sort/filter).
+        if (!fcJoin) {
+            for (const row of result.rows) {
+                const fc = forecastMap.get(`${String(row.pedido).trim()}|${String(row.item).trim()}`);
+                if (fc) {
+                    row.data_entrega_pcp = fc.data_entrega_pcp;
+                    row.data_prevista_faturamento = fc.data_prevista_faturamento;
+                }
+            }
+        }
 
         // ── ENRICHMENT em paralelo ─────────────────────────────────────────────
         if (result.rows.length > 0) {
@@ -1145,20 +1246,6 @@ router.get('/flat', async (req, res) => {
                 console.error('Erro batch status lookup:', e.message);
             }
 
-            // Filtro por Data PCP (pós-enriquecimento)
-            if (pcpDataInicial || pcpDataFinal) {
-                const dInicio = pcpDataInicial ? new Date(pcpDataInicial) : null;
-                const dFim = pcpDataFinal ? new Date(pcpDataFinal + 'T23:59:59') : null;
-                result.rows = result.rows.filter(row => {
-                    const progs = row.pcp_programacoes || [];
-                    return progs.some(p => {
-                        const d = new Date(p.data_entrega_pcp);
-                        if (dInicio && d < dInicio) return false;
-                        if (dFim && d > dFim) return false;
-                        return true;
-                    });
-                });
-            }
         }
 
         if (pedido && String(pedido).trim() === '004002') {
@@ -1166,18 +1253,34 @@ router.get('/flat', async (req, res) => {
             console.log('Item 01 count:', result.rows.filter(r => r.item === '01').length);
         }
 
+        // Slice to limitParsed — the extra row was only fetched to detect next page
+        const hasNextPage = result.rows.length > limitParsed;
+        const pageData = result.rows.slice(0, limitParsed);
+
         res.json({
-            data: result.rows,
+            data: pageData,
             meta: {
-                total: parseInt(countResult.rows[0].total),
+                hasNextPage,
                 page: parseInt(page),
                 limit: limitParsed
             }
         });
 
     } catch (err) {
-        require('fs').writeFileSync('error_log.txt', err.stack + '\n' + String(errorStep));
-        console.error('Erro FLAT VIEW:', err);
+        const errLog = [
+            `step=${errorStep}`,
+            `code=${err.code || 'n/a'}`,
+            `msg=${err.message}`,
+            err.stack,
+            `--- query ---`,
+            query,
+            `--- params ---`,
+            JSON.stringify(params)
+        ].join('\n');
+        require('fs').writeFileSync('error_log.txt', errLog);
+        console.error(`❌ Erro fatal na rota /pedidos/flat [step=${errorStep}]:`, err.message);
+        console.error(`   PG code: ${err.code || 'n/a'} | position: ${err.position || 'n/a'}`);
+        if (err.code === '57014') console.error('   ⚠️ Query cancelada por statement_timeout — verifique índices ou aumente o timeout.');
         
         if (err.code === '53300' || err.code === '53100') {
             return res.status(503).json({
@@ -3111,6 +3214,75 @@ router.get('/pcp-lotes', async (req, res) => {
     } catch (error) {
         console.error('[PCP Lotes List Error]', error);
         res.status(500).json({ error: 'Erro ao buscar lotes', details: error.message });
+    }
+});
+
+// PUT /api/pedidos/import-pcp-date
+// Atualiza a data_entrega_pcp vindo da planilha Excel
+router.put('/import-pcp-date', async (req, res) => {
+    try {
+        const { pedido, item, produto, dataPcp } = req.body;
+        if (!pedido) {
+            return res.status(400).json({ error: 'Pedido é obrigatório.' });
+        }
+
+        const formattedPedido = String(pedido).trim().padStart(6, '0');
+        const formattedItem = item ? String(item).trim().padStart(2, '0') : null;
+        const formattedDate = dataPcp ? String(dataPcp).trim() : null;
+
+        if (!formattedDate) {
+             return res.json({ success: true, message: 'Sem data para atualizar' });
+        }
+
+        let resolvedItem = formattedItem;
+        let saldo_fat = 0;
+
+        // Buscar no PostgreSQL o item (se faltar) e o saldo_fat (quantidade)
+        const pgClient = await db.connect();
+        try {
+            let sql = `SELECT TRIM(c6_item) as item, (COALESCE(c6_qtdven::numeric, 0) - COALESCE(c6_qtdent::numeric, 0)) as saldo_fat FROM sc6010 WHERE c6_num = $1 AND COALESCE(d_e_l_e_t_, '') = ''`;
+            let params = [formattedPedido];
+            
+            if (formattedItem) {
+                sql += ` AND c6_item = $2`;
+                params.push(formattedItem);
+            } else if (produto) {
+                sql += ` AND c6_produto = $2`;
+                params.push(produto);
+            }
+            
+            sql += ` LIMIT 1`;
+            
+            const result = await pgClient.query(sql, params);
+            if (result.rows.length > 0) {
+                resolvedItem = result.rows[0].item;
+                saldo_fat = Math.max(0, result.rows[0].saldo_fat || 0);
+            }
+        } finally {
+            pgClient.release();
+        }
+
+        const finalItem = resolvedItem || '01';
+
+        // Verifica se já existe
+        const [existing] = await mysqlPool.query('SELECT id FROM app_pcp_delivery_forecasts WHERE pedido = ? AND item = ? ORDER BY id DESC LIMIT 1', [formattedPedido, finalItem]);
+
+        if (existing.length > 0) {
+            await mysqlPool.query(
+                'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ? WHERE id = ?',
+                [formattedDate, saldo_fat, existing[0].id]
+            );
+        } else {
+            await mysqlPool.query(
+                'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario) VALUES (?, ?, ?, ?, ?)',
+                [formattedPedido, finalItem, formattedDate, saldo_fat, 'SISTEMA_PLANILHA']
+            );
+        }
+
+        res.json({ success: true, item: finalItem, quantidade_pcp: saldo_fat });
+    } catch (error) {
+        console.error('[Import PCP Date Error]', error);
+        res.status(500).json({ error: 'Erro ao atualizar data', details: error.message });
     }
 });
 
