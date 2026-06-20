@@ -18,6 +18,7 @@ import EngineeringControlModal from './EngineeringControlModal';
 import PCPForecastModal from './PCPForecastModal';
 import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
+import PCPBalanceModal from './PCPBalanceModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -61,6 +62,7 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'qtd_pcp', label: 'Qtd. PCP', required: false },
     { key: 'data_pcp', label: 'Data PCP', required: false },
     { key: 'prev_fat', label: 'Prev. Fat.', required: false },
+    { key: 'evolucao_op', label: 'Evolução OP', required: false, width: 100 },
 ];
 
 const OrdersTable = () => {
@@ -106,10 +108,13 @@ const OrdersTable = () => {
     const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [corteForecastTarget, setCorteForecastTarget] = useState(null);
+    const [pcpBalanceTarget, setPcpBalanceTarget] = useState(null);
+    const [reportSelectedItems, setReportSelectedItems] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
-
-    // Global page-blocking state: prevents simultaneous heavy DB queries
+    const [priorityTarget, setPriorityTarget] = useState(null);
+    const [priorityText, setPriorityText] = useState('');
+    const [prioritySubmitting, setPrioritySubmitting] = useState(false);
     const [pageBlocking, setPageBlocking] = useState(null); // null = free, string = blocking message
 
     // PCPMetal AI Drawer State
@@ -306,7 +311,7 @@ const OrdersTable = () => {
         handleExpandRow: hookHandleExpandRow,
         updateOrderItemsForPedido,
         updateFlatOrdersFromItems,
-        debouncedFilters,
+        debouncedFilters
     } = useOrders({ limit, viewMode, filters, page });
 
     const hasNextPage = page < totalPages;
@@ -340,29 +345,30 @@ const OrdersTable = () => {
     };
 
     const isInitialMount = React.useRef(true);
-    const prevDebouncedFiltersRef = React.useRef(debouncedFilters);
+    const fetchFiltersStr = React.useMemo(() => {
+        const { sortBy, sortOrder, ...fetchFilters } = debouncedFilters;
+        return JSON.stringify(fetchFilters);
+    }, [debouncedFilters]);
+
+    const prevFetchFiltersStrRef = React.useRef(fetchFiltersStr);
 
     // Fetch on page/viewMode/active/sort filter change
     useEffect(() => {
-        console.log("OrdersTable useEffect triggered! page:", page, "viewMode:", viewMode, "debouncedFilters:", debouncedFilters);
         if (isInitialMount.current) {
             isInitialMount.current = false;
-            console.log("Skipping initial mount");
             return;
         }
 
         let overridePage = undefined;
-        if (JSON.stringify(debouncedFilters) !== JSON.stringify(prevDebouncedFiltersRef.current)) {
-            console.log("debouncedFilters changed! Calling setPage(1)");
-            prevDebouncedFiltersRef.current = debouncedFilters;
+        if (fetchFiltersStr !== prevFetchFiltersStrRef.current) {
+            prevFetchFiltersStrRef.current = fetchFiltersStr;
             setPage(1);
             overridePage = 1;
         }
 
-        console.log("Calling fetchData with overridePage:", overridePage);
         fetchData(overridePage !== undefined ? { page: overridePage } : undefined);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, viewMode, debouncedFilters]);
+    }, [page, viewMode, fetchFiltersStr]);
 
     // Auto-load all batches sequentially in flat mode (no need to scroll)
     useEffect(() => {
@@ -375,14 +381,8 @@ const OrdersTable = () => {
 
     const handleFilterChange = useCallback((e) => {
         const { name, value } = e.target;
-        
-        // Se mudou a ordenação, volta para a página 1
-        if (name === 'sortBy' || name === 'sortOrder') {
-            setPage(1);
-        }
-
         setFilters(prev => ({ ...prev, [name]: value }));
-    }, [setFilters, setPage]);
+    }, [setFilters]);
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -514,6 +514,47 @@ const OrdersTable = () => {
             alert('Erro ao gerar PDF: ' + err.message);
         } finally {
             setDownloadingPDF(false);
+        }
+    };
+
+    const handlePrioritySubmit = async () => {
+        if (!priorityTarget) return;
+        setPrioritySubmitting(true);
+        try {
+            if (Array.isArray(priorityTarget) && priorityTarget.length > 1) {
+                const itensTarget = priorityTarget.map(target => ({
+                    pedido: target.pedido,
+                    item_pedido: target.item,
+                    op_numero: target.op_num,
+                    produto: target.codigo || target.produto
+                }));
+                
+                await api.post('/ata-viva/prioridade-lote', {
+                    itens: itensTarget,
+                    texto_livre: priorityText,
+                    usuario: user?.nome
+                });
+            } else {
+                const target = Array.isArray(priorityTarget) ? priorityTarget[0] : priorityTarget;
+                await api.post('/ata-viva/prioridade', {
+                    pedido: target.pedido,
+                    item_pedido: target.item,
+                    op_numero: target.op_num,
+                    produto: target.codigo || target.produto,
+                    texto_livre: priorityText,
+                    usuario: user?.nome
+                });
+            }
+
+            toast.success('Prioridade definida com sucesso. Hermes notificado.');
+            setPriorityTarget(null);
+            setPriorityText('');
+            if (Array.isArray(priorityTarget)) setSelectedItems([]);
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || 'Erro ao definir prioridade.');
+        } finally {
+            setPrioritySubmitting(false);
         }
     };
 
@@ -797,6 +838,40 @@ const OrdersTable = () => {
             setPage(page + 1);
         }
     }, [loading, page, totalPages, viewMode, setPage]);
+
+    const sortedOrders = React.useMemo(() => {
+        if (!filters.sortBy) return orders;
+
+        const keyMap = {
+            'pedido': 'pedido',
+            'emissao': 'data_emissao',
+            'entrega': 'data_entrega',
+            'entrega_pcp': 'data_entrega_pcp',
+            'prev_fat': 'data_prevista_faturamento'
+        };
+        const objKey = keyMap[filters.sortBy] || filters.sortBy;
+
+        return [...orders].sort((a, b) => {
+            let valA = a[objKey];
+            let valB = b[objKey];
+
+            // Special handling for dates
+            if (['data_emissao', 'data_entrega', 'data_entrega_pcp', 'data_prevista_faturamento'].includes(objKey)) {
+                valA = valA ? new Date(valA).getTime() : 0;
+                valB = valB ? new Date(valB).getTime() : 0;
+            } else if (objKey === 'pedido') {
+                valA = parseInt(valA, 10) || 0;
+                valB = parseInt(valB, 10) || 0;
+            } else {
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+            }
+
+            if (valA < valB) return filters.sortOrder === 'ASC' ? -1 : 1;
+            if (valA > valB) return filters.sortOrder === 'ASC' ? 1 : -1;
+            return 0;
+        });
+    }, [orders, filters.sortBy, filters.sortOrder]);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
@@ -1140,7 +1215,7 @@ const OrdersTable = () => {
                         </button>
                         <button
                             type="button"
-                            onClick={() => { setPcpmetalContext({ page: 'visao-geral', modulo: 'Vis�o Geral', action: 'Geral' }); setPcpmetalOpen(true); }}
+                            onClick={() => { setPcpmetalContext({ page: 'visao-geral', modulo: 'Viso Geral', action: 'Geral' }); setPcpmetalOpen(true); }}
                             className="bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 font-medium rounded-lg text-sm px-4 py-2.5 text-center transition-colors flex items-center justify-center gap-2 shadow-sm"
                             title="Abrir Assistente Hermes"
                         >
@@ -1264,6 +1339,27 @@ const OrdersTable = () => {
                 {/* Lote Actions */}
                 {selectedItems.length > 0 && viewMode === 'flat' && (
                     <div className="px-4 flex items-center gap-2">
+                        <button
+                            onClick={() => setPriorityTarget(selectedItems)}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <AlertCircle className="w-4 h-4" />
+                            Prioridade ({selectedItems.length})
+                        </button>
+                        <button
+                            onClick={() => { setReportSelectedItems(selectedItems); setShowReportModal(true); }}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <StickyNote className="w-4 h-4" />
+                            Ata ({selectedItems.length})
+                        </button>
+                        <button
+                            onClick={() => setPcpBalanceTarget(selectedItems)}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <Calendar className="w-4 h-4" />
+                            Planejamento PCP ({selectedItems.length})
+                        </button>
                         <button
                             onClick={() => setPcpForecastTarget(selectedItems)}
                             className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow text-sm font-medium transition-colors"
@@ -1405,7 +1501,7 @@ const OrdersTable = () => {
                                     <>
                                         {viewMode === 'tree' ? (
                                             // TREE VIEW IMPLEMENTATION
-                                            orders.map((order, idx) => (
+                                            sortedOrders.map((order, idx) => (
                                                 <React.Fragment key={`${order.pedido}-${idx}`}>
                                                     <tr
                                                         className={`
@@ -1604,6 +1700,7 @@ const OrdersTable = () => {
                                                                                         <th className="px-4 py-2 text-right text-xs">Qtd. PCP</th>
                                                                                         <th className="px-4 py-2 text-center text-xs">Data PCP</th>
                                                                                         <th className="px-4 py-2 text-center text-xs text-teal-800">Prev. Fat.</th>
+                                                                                        <th className="px-4 py-2 text-center text-xs">Evolução OP</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody>
@@ -1630,7 +1727,7 @@ const OrdersTable = () => {
                                                                                                     <td className="px-4 py-2 font-mono text-xs">
                                                                                                         <Link
                                                                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}`}
-                                                                                                            state={{ from: location.pathname, pedido: item.pedido, item: item.item }}
+                                                                                                            state={{ from: location.pathname, pedido: order.pedido, item: item.item }}
                                                                                                             className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                                                                                                         >
                                                                                                             {item.codigo} <Layers className="h-3 w-3" />
@@ -1714,6 +1811,17 @@ const OrdersTable = () => {
                                                                                                                         >
                                                                                                                             <Settings className="h-4 w-4 flex-shrink-0 text-blue-500" />
                                                                                                                             <span>Controle Engenharia</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { 
+                                                                                                                                e.stopPropagation(); 
+                                                                                                                                setPriorityTarget({ pedido: order.pedido, item: item.item, codigo: item.codigo, op_num: item.op_num }); 
+                                                                                                                                setOpenActionMenu(null); 
+                                                                                                                            }}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                                                                                                        >
+                                                                                                                            <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
+                                                                                                                            <span>Definir Prioridade</span>
                                                                                                                         </button>
                                                                                                                         <div className="border-t border-gray-100 my-1" />
                                                                                                                         <button
@@ -1871,6 +1979,24 @@ const OrdersTable = () => {
                                                                                                             onUpdateSuccess={handleUpdateFaturamentoDate}
                                                                                                         />
                                                                                                     </td>
+                                                                                                    <td className="px-4 py-2 text-center text-xs min-w-[100px]">
+                                                                                                        {(() => {
+                                                                                                            const hasOP = !!item.op_num || !!item.op_protheus;
+                                                                                                            const opQtd = parseFloat(item.op_qtd || 0);
+                                                                                                            const saldoProd = parseFloat(item.saldo_produzido || 0);
+                                                                                                            if (!hasOP) return <span className="text-gray-400">-</span>;
+                                                                                                            if (opQtd <= 0) return <span className="text-gray-500">0%</span>;
+                                                                                                            const pct = Math.min(100, Math.max(0, (saldoProd / opQtd) * 100));
+                                                                                                            return (
+                                                                                                                <div className="flex flex-col items-center justify-center gap-1 min-w-[60px]">
+                                                                                                                    <span className={`font-bold ${pct >= 100 ? 'text-green-600' : pct > 0 ? 'text-blue-600' : 'text-gray-500'}`}>{pct.toFixed(0)}%</span>
+                                                                                                                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                                                                                                        <div className={`h-1.5 rounded-full ${pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-blue-500' : 'bg-gray-400'}`} style={{ width: `${pct}%` }}></div>
+                                                                                                                    </div>
+                                                                                                                </div>
+                                                                                                            );
+                                                                                                        })()}
+                                                                                                    </td>
                                                                                                 </tr>
                                                                                             ))
                                                                                     ) : (
@@ -1889,7 +2015,7 @@ const OrdersTable = () => {
                                         ) : (
                                             // FLAT VIEW -- virtualized: only visible rows in DOM
                                             <VirtualFlatList
-                                                orders={orders}
+                                                orders={sortedOrders}
                                                 scrollContainerRef={tableScrollRef}
                                                 hasNextPage={hasNextPage}
                                                 onLoadMore={handleLoadMore}
@@ -2023,14 +2149,15 @@ const OrdersTable = () => {
             {/* Modal de Relatório da Reunião */}
             <MeetingReportModal
                 isOpen={showReportModal}
-                onClose={() => setShowReportModal(false)}
-                orders={orders.map(o => o.pedido)}
-                filteredData={orders.map(o => ({
+                onClose={() => { setShowReportModal(false); setReportSelectedItems(null); }}
+                orders={reportSelectedItems ? [...new Set(reportSelectedItems.map(i => i.pedido))] : orders.map(o => o.pedido)}
+                filteredData={reportSelectedItems ? reportSelectedItems : orders.map(o => ({
                     pedido: o.pedido,
                     cliente: o.nome_cliente || 'N/A',
                     proxima_entrega: o.emissao || '-'
                 }))}
                 globalMode={isGlobalReport}
+                selectedItemsForAta={reportSelectedItems}
             />
             {/* Modal de Engenharia (Novo) */}
             {
@@ -2053,6 +2180,19 @@ const OrdersTable = () => {
                         onSaveSuccess={() => {
                             setCorteForecastTarget(null);
                             setSelectedItems([]);
+                        }}
+                        usuario={user?.nome}
+                    />
+                )
+            }
+            {
+                pcpBalanceTarget && (
+                    <PCPBalanceModal
+                        isOpen={true}
+                        onClose={() => setPcpBalanceTarget(null)}
+                        selectedItems={pcpBalanceTarget}
+                        onSaveSuccess={() => {
+                            fetchData();
                         }}
                         usuario={user?.nome}
                     />
@@ -2122,6 +2262,79 @@ const OrdersTable = () => {
                     onChange={setColConfig}
                     onClose={() => setShowColSettings(false)}
                 />
+            )}
+
+            {priorityTarget && (
+                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
+                        <div className="p-4 border-b border-gray-200 bg-red-50 flex items-center gap-3">
+                            <div className="p-2 bg-red-100 rounded-lg text-red-600">
+                                <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-900 leading-tight">Definir Prioridade</h2>
+                                <p className="text-xs text-slate-500">Notificará todos via Hermes Live Feed</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                {Array.isArray(priorityTarget) ? (
+                                    <div className="bg-slate-50 p-2 border border-slate-100 rounded col-span-2 flex flex-col py-2 max-h-40 overflow-y-auto">
+                                        <span className="text-slate-400 block text-xs font-medium uppercase tracking-wider mb-2">Itens Selecionados ({priorityTarget.length})</span>
+                                        <div className="space-y-1">
+                                            {priorityTarget.map((t, idx) => (
+                                                <div key={idx} className="bg-white p-1.5 border border-slate-200 rounded flex justify-between text-xs items-center">
+                                                    <span className="font-semibold text-slate-700">{t.pedido} - {t.item}</span>
+                                                    <span className="text-slate-500 text-right">{t.op_num || '-'} ({t.codigo})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="bg-slate-50 p-2 border border-slate-100 rounded">
+                                            <span className="text-slate-400 block text-xs">Pedido / Item</span>
+                                            <span className="font-semibold text-slate-700">{priorityTarget.pedido} - {priorityTarget.item}</span>
+                                        </div>
+                                        <div className="bg-slate-50 p-2 border border-slate-100 rounded">
+                                            <span className="text-slate-400 block text-xs">OP / Produto</span>
+                                            <span className="font-semibold text-slate-700">{priorityTarget.op_num || '-'} <span className="font-normal text-xs ml-1">({priorityTarget.codigo})</span></span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    Motivo ou Observação Livre
+                                </label>
+                                <textarea
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm resize-none"
+                                    rows="3"
+                                    placeholder="Ex: Peça para montagem imediata, liberar corte..."
+                                    value={priorityText}
+                                    onChange={(e) => setPriorityText(e.target.value)}
+                                ></textarea>
+                            </div>
+                        </div>
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                            <button
+                                onClick={() => { setPriorityTarget(null); setPriorityText(''); }}
+                                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+                                disabled={prioritySubmitting}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handlePrioritySubmit}
+                                disabled={prioritySubmitting}
+                                className="px-5 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                                {prioritySubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                                Emitir Prioridade
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
             
             {/* Retry Toast — shown during exponential backoff on 500 errors */}

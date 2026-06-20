@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { getFileUrl } from '../../services/api';
 import { toast } from 'react-toastify';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
     return (
@@ -135,6 +136,57 @@ const FinancialView = ({ rows, loading, error }) => {
             return true;
         });
     }, [rows, filters]);
+
+    // Chart data grouped by month (YYYY-MM)
+    const chartData = useMemo(() => {
+        const monthMap = {};
+        
+        const ensureMonth = (month) => {
+            if (!monthMap[month]) {
+                monthMap[month] = { name: month, entrega: 0, pcp: 0, prevFat: 0, rawMonth: month };
+            }
+        };
+
+        filteredRows.forEach(row => {
+            const qtdVen = parseFloat(row.quantidade || 0);
+            const precoCadastro = parseFloat(row.preco_cadastro || 0);
+            let effectiveValUnit = qtdVen > 0 ? (parseFloat(row.valor_total || 0) / qtdVen) : parseFloat(row.valor_unitario || 0);
+
+            if (effectiveValUnit <= 0.01 && precoCadastro > 0) {
+                effectiveValUnit = precoCadastro;
+            }
+
+            // Using total order value to map the financial progression
+            const valPendente = parseFloat(row.qtd_faturar || 0) * effectiveValUnit;
+            if (valPendente <= 0) return; // Only show pending amounts in this projection
+
+            const formatMonth = (dateStr) => {
+                if (!dateStr) return null;
+                let formatted = String(dateStr).trim();
+                if (/^\d{8}$/.test(formatted)) {
+                    return `${formatted.substring(0,4)}-${formatted.substring(4,6)}`;
+                }
+                return formatted.substring(0, 7); // YYYY-MM
+            };
+
+            const mEntrega = formatMonth(row.entrega);
+            const mPcp = formatMonth(row.data_entrega_pcp);
+            const mPrev = formatMonth(row.data_prevista_faturamento);
+
+            if (mEntrega) { ensureMonth(mEntrega); monthMap[mEntrega].entrega += valPendente; }
+            if (mPcp) { ensureMonth(mPcp); monthMap[mPcp].pcp += valPendente; }
+            if (mPrev) { ensureMonth(mPrev); monthMap[mPrev].prevFat += valPendente; }
+        });
+
+        // Convert to array and sort chronologically
+        const sortedData = Object.values(monthMap).sort((a, b) => a.rawMonth.localeCompare(b.rawMonth));
+        
+        // Format names to MM/YYYY
+        return sortedData.map(d => ({
+            ...d,
+            name: `${d.rawMonth.split('-')[1]}/${d.rawMonth.split('-')[0]}`
+        }));
+    }, [filteredRows]);
 
     // Grouping logic
     const groups = useMemo(() => {
@@ -422,6 +474,41 @@ const FinancialView = ({ rows, loading, error }) => {
                     )}
                 </div>
             </div>
+
+            {/* Financial Comparative Chart */}
+            {chartData.length > 0 && (
+                <div className="p-4 bg-white border-b border-gray-200 shrink-0 shadow-sm">
+                    <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                        <BarChart2 className="h-4 w-4 text-indigo-500" />
+                        A Faturar por Mês: Comparativo (Entrega Original vs Data PCP vs Previsão de Faturamento)
+                    </h4>
+                    <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                                <YAxis 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 12, fill: '#64748b' }} 
+                                    tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                                    dx={-10}
+                                    width={80}
+                                />
+                                <RechartsTooltip 
+                                    formatter={(value) => formatCurrency(value)}
+                                    cursor={{ fill: '#f1f5f9' }}
+                                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                />
+                                <Legend wrapperStyle={{ paddingTop: '10px' }} />
+                                <Bar dataKey="entrega" name="Original (Entrega)" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="pcp" name="Data PCP" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="prevFat" name="Prev. Faturamento" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            )}
 
             {/* Financial summary metrics card layout */}
             <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0 bg-slate-50 border-b border-gray-200">

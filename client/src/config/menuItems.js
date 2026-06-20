@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -13,7 +13,8 @@ export const MENU_GROUPS = [
         id: 'pessoal',
         label: 'Meu Painel',
         items: [
-            { id: 'meu_canal', label: 'Meu Canal (KPIs)', path: '/', icon: BarChart2 }
+            { id: 'meu_canal', label: 'Meu Canal (KPIs)', path: '/dashboard', icon: BarChart2 },
+            { id: 'painel_tv', label: 'Painel de TV (Frontend)', path: '/painel-producao', icon: Monitor }
         ]
     },
     {
@@ -62,13 +63,7 @@ export const MENU_GROUPS = [
             { id: 'apontamento_usuario', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario', icon: Users }
         ]
     },
-    {
-        id: 'sinco_1_0',
-        label: 'SINCO 1.0',
-        items: [
-            { id: 'sinco1_docs', label: 'Dicionário de Dados', path: '/sinco-1-0/docs', icon: Database }
-        ]
-    },
+
     {
         id: 'pcp',
         label: 'PCP Geral',
@@ -94,7 +89,9 @@ export const MENU_GROUPS = [
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
             { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
             { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link },
-            { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight }
+            { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight },
+            { id: 'pcp_controle_execucao', label: 'Controle de Execução', path: '/pcp/controle-execucao', icon: Play },
+            { id: 'pcp_programas_ncn', label: 'Programa CNC', path: '/pcp/programas-ncn', icon: FileText }
         ]
     },
     {

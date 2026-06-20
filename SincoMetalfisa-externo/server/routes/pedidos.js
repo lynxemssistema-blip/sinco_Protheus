@@ -584,7 +584,7 @@ router.get('/flat', async (req, res) => {
                     SELECT op_numero, operacao_codigo, SUM(quantidade) as produzido
                     FROM app_production_appointments
                     WHERE op_numero IN (${opPlaceholders})
-                    AND conferencia_status != 'CANCELADO'
+                    AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                     GROUP BY op_numero, operacao_codigo
                 `, uniqueOpsArr);
             }

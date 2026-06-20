@@ -50,6 +50,7 @@ const ItensAFaturar = () => {
     
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState(null);
 
     // Image & Invoice Modals
@@ -60,6 +61,7 @@ const ItensAFaturar = () => {
 
     // Active Tab State (with Sticky persistence)
     const [activeTab, setActiveTab] = useStickyState('itens', '@metalfisa:itensFat_activeTab');
+    const [selectedRow, setSelectedRow] = useState(null);
 
     // Enforce tab security
     useEffect(() => {
@@ -84,6 +86,7 @@ const ItensAFaturar = () => {
 
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [hasNextPage, setHasNextPage] = useState(false);
     const limit = 100;
 
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -97,7 +100,10 @@ const ItensAFaturar = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const fetchData = async (overrides = {}) => {
-        setLoading(true);
+        const searchPage = overrides.page || page;
+        if (searchPage === 1) setLoading(true);
+        else setLoadingMore(true);
+        
         setError(null);
         try {
             const searchFilters = { 
@@ -106,14 +112,25 @@ const ItensAFaturar = () => {
                 ...overrides 
             };
 
-            const searchPage = overrides.page || page;
             const searchLimit = limit;
 
             const result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit });
 
             const { data, meta } = result;
-            setOrders(data);
-            setTotalPages(Math.ceil(meta.total / searchLimit));
+            if (searchPage === 1) {
+                setOrders(data);
+            } else {
+                setOrders(prev => {
+                    const idKey = d => `${d.pedido}-${d.item}-${d.op_num || ''}`;
+                    const existingIds = new Set(prev.map(idKey));
+                    const newRows = data.filter(d => !existingIds.has(idKey(d)));
+                    return [...prev, ...newRows];
+                });
+            }
+            
+            const hnp = meta.hasNextPage ?? (data.length === searchLimit);
+            setHasNextPage(hnp);
+            setTotalPages(meta.total ? Math.ceil(meta.total / searchLimit) : (hnp ? searchPage + 1 : searchPage));
         } catch (err) {
             console.error(err);
             const serverError = err.response?.data;
@@ -123,7 +140,8 @@ const ItensAFaturar = () => {
 
             setError(`Erro ao carregar dados: ${errorMsg}`);
         } finally {
-            setLoading(false);
+            if (searchPage === 1) setLoading(false);
+            else setLoadingMore(false);
         }
     };
 
@@ -131,6 +149,17 @@ const ItensAFaturar = () => {
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, filters.only_active]);
+
+    // Auto-load all batches sequentially
+    useEffect(() => {
+        if (loading || loadingMore) return;
+        if (hasNextPage) {
+            const timer = setTimeout(() => {
+                setPage(p => p + 1);
+            }, 200);
+            return () => clearTimeout(timer);
+        }
+    }, [hasNextPage, loading, loadingMore]);
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
@@ -299,7 +328,14 @@ const ItensAFaturar = () => {
         Object.keys(columnFilters).forEach(key => {
             const filterValue = (columnFilters[key] || '').toLowerCase();
             if (filterValue) {
-                result = result.filter(r => String(getNestedValue(r, key) || '').toLowerCase().includes(filterValue));
+                // Suporte para múltiplos valores separados por vírgula no filtro local
+                const filterTerms = filterValue.split(',').map(t => t.trim()).filter(Boolean);
+                if (filterTerms.length > 0) {
+                    result = result.filter(r => {
+                        const cellValue = String(getNestedValue(r, key) || '').toLowerCase();
+                        return filterTerms.some(term => cellValue.includes(term));
+                    });
+                }
             }
         });
 
@@ -697,13 +733,13 @@ const ItensAFaturar = () => {
                         </div>
 
                         <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-medium text-gray-600 ml-1">Pedido:</label>
+                            <label className="text-[11px] font-medium text-gray-600 ml-1">Pedido(s):</label>
                             <div className="relative">
                                 <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                                 <input
                                     type="text"
                                     name="pedido"
-                                    placeholder="Nº Pedido..."
+                                    placeholder="Ex: 4002, 4951..."
                                     value={filters.pedido}
                                     onChange={handleFilterChange}
                                     className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -741,7 +777,10 @@ const ItensAFaturar = () => {
                                     <input
                                         type="checkbox"
                                         checked={filters.only_active === 'true'}
-                                        onChange={(e) => setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false' }))}
+                                        onChange={(e) => {
+                                            setPage(1);
+                                            setFilters(prev => ({ ...prev, only_active: e.target.checked ? 'true' : 'false' }));
+                                        }}
                                         className="sr-only peer"
                                     />
                                     <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
@@ -751,7 +790,10 @@ const ItensAFaturar = () => {
                                     <input
                                         type="checkbox"
                                         checked={filters.somente_prontos === 'true'}
-                                        onChange={(e) => setFilters(prev => ({ ...prev, somente_prontos: e.target.checked ? 'true' : 'false' }))}
+                                        onChange={(e) => {
+                                            setPage(1);
+                                            setFilters(prev => ({ ...prev, somente_prontos: e.target.checked ? 'true' : 'false' }));
+                                        }}
                                         className="sr-only peer"
                                     />
                                     <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
@@ -821,7 +863,8 @@ const ItensAFaturar = () => {
                                 <SortableHeader label="Qtd Tot." columnKey="quantidade" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['quantidade']} onFilterChange={handleColumnFilterChange} />
                                 <SortableHeader label="Qtd Entr." columnKey="qtd_entreg" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_entreg']} onFilterChange={handleColumnFilterChange} />
                                 <SortableHeader label="Saldo" columnKey="qtd_faturar" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_faturar']} onFilterChange={handleColumnFilterChange} className="text-blue-700" />
-                                <SortableHeader label="Dt. Entrega" columnKey="data_entrega_pcp" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_entrega_pcp']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Dt. Entrega" columnKey="entrega" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['entrega']} onFilterChange={handleColumnFilterChange} className="text-gray-600" />
+                                <SortableHeader label="Data PCP" columnKey="data_entrega_pcp" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_entrega_pcp']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
                                 <SortableHeader label="Prev. Fat." columnKey="data_prevista_faturamento" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_prevista_faturamento']} onFilterChange={handleColumnFilterChange} className="text-teal-700" />
                                 <SortableHeader label="Série Cli." columnKey="serie_cliente" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_cliente']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
                                 <SortableHeader label="Série MF" columnKey="serie_metalfisa" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_metalfisa']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
@@ -918,6 +961,9 @@ const ItensAFaturar = () => {
                                                 {parseFloat(order.qtd_faturar).toLocaleString()}
                                             </td>
                                             {/* Colunas PCP */}
+                                            <td className="px-2 py-2 text-center text-xs text-gray-500 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                {order.entrega ? formatProtheusDate(order.entrega) : <span className="text-gray-300">—</span>}
+                                            </td>
                                             <td className="px-2 py-2 text-center text-xs font-bold text-indigo-700 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                                 {prog?.data_entrega_pcp ? new Date(prog.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
                                             </td>
@@ -1022,27 +1068,23 @@ const ItensAFaturar = () => {
                     </table>
                 </div>
 
-                {/* Pagination */}
+                {/* Status de Carregamento Contínuo */}
                 {totalPages > 0 && (
                     <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50/50 pb-20">
                         <span className="text-sm text-gray-500">
-                            Página <span className="font-medium text-gray-900">{page}</span> de <span className="font-medium text-gray-900">{totalPages}</span>
+                            Carregados <span className="font-medium text-gray-900">{orders.length}</span> registros 
+                            (Página {page} de {totalPages})
                         </span>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors bg-white text-gray-700"
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                            </button>
-                            <button
-                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages || totalPages === 0}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors bg-white text-gray-700"
-                            >
-                                <ChevronRight className="h-4 w-4" />
-                            </button>
+                        <div className="flex gap-2 items-center">
+                            {loadingMore && (
+                                <div className="flex items-center gap-2 text-blue-600 text-sm">
+                                    <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="font-medium">Carregando mais...</span>
+                                </div>
+                            )}
+                            {!loadingMore && page >= totalPages && (
+                                <span className="text-sm text-green-600 font-medium">Todos os itens carregados</span>
+                            )}
                         </div>
                     </div>
                 )}

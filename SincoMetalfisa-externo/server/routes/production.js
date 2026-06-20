@@ -2209,7 +2209,8 @@ router.post('/appoint', async (req, res) => {
                 if (qtdPlanejada > 0) {
                     const [appRows] = await connection.execute(
                         `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                         WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                         WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                         AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
                         [op_numero, op_item, op_sequencia, operacao_codigo]
                     );
                     const produzido = Number(appRows[0].total) || 0;
@@ -2247,7 +2248,8 @@ router.post('/appoint', async (req, res) => {
                 const prevOp = prevRes.rows[0].prev_operacao;
                 const [prevAppRows] = await connection.execute(
                     `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                     AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
                     [op_numero, op_item, op_sequencia, prevOp]
                 );
                 const prevProduzido = Number(prevAppRows[0].total) || 0;
@@ -4127,6 +4129,16 @@ UPPER(TRIM(usuario)),
 // FUNÇÕES AUXILIARES DE CASCATA
 // ==========================================
 
+function isSeqBefore(seqA, seqB) {
+    if (!seqA || !seqB) return false;
+    const numA = parseInt(seqA.replace(/[^0-9]/g, ''), 10);
+    const numB = parseInt(seqB.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(numA) && !isNaN(numB)) {
+        return numA < numB;
+    }
+    return seqA.trim().localeCompare(seqB.trim()) < 0;
+}
+
 async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, usuario_original, data_inicio, data_fim, initialStatus) {
     // DESABILITADO TEMPORARIAMENTE A PEDIDO DO USUÁRIO (05/05/2026)
     return;
@@ -4150,24 +4162,27 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
             SELECT COALESCE(SUM(quantidade), 0) as total_apontado
             FROM app_production_appointments
             WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+            AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         `, [op_numero, op_item, op_sequencia, operacao_gatilho]);
         const quantidade_total_pai = Number(gatilhoRows[0].total_apontado);
 
-        // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai
+        // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai (apenas anteriores)
         const parentOpsRes = await db.query(`
             SELECT TRIM(g2.g2_operac) as operacao
             FROM public.sg2010 g2
             WHERE btrim(g2.g2_produto) = $1
             AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            ORDER BY g2.g2_operac ASC
         `, [produtoPai]);
 
         for (const popRow of parentOpsRes.rows) {
-            if (!popRow.operacao) continue;
+            if (!popRow.operacao || !isSeqBefore(popRow.operacao, operacao_gatilho)) continue;
 
             const [pAppRows] = await connection.execute(`
                 SELECT COALESCE(SUM(quantidade), 0) as total_apontado
                 FROM app_production_appointments
                 WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+                AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
             `, [op_numero, op_item, op_sequencia, popRow.operacao]);
             
             const apontadoPai = Number(pAppRows[0].total_apontado);
@@ -4240,6 +4255,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                     SELECT COALESCE(SUM(quantidade), 0) as total_apontado
                     FROM app_production_appointments
                     WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+                    AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                 `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao]);
                 
                 const apontado = Number(appRows[0].total_apontado);

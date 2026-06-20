@@ -32,6 +32,11 @@ export default function ManutencaoMaquinas() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [checklistSelecionado, setChecklistSelecionado] = useState('');
+
+    // Zoom/Lightbox states
+    const [zoomMaquina, setZoomMaquina] = useState(null);
+    const [zoomFotoIndex, setZoomFotoIndex] = useState(0);
+
     const [formData, setFormData] = useState({
         id: null,
         nome: '',
@@ -320,7 +325,7 @@ export default function ManutencaoMaquinas() {
                         <tbody className="divide-y divide-slate-100">
                             {maquinas.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-slate-500">
+                                    <td colSpan="7" className="p-8 text-center text-slate-500">
                                         <div className="flex flex-col items-center">
                                             <AlertCircle className="w-8 h-8 text-slate-300 mb-2" />
                                             <p>Nenhuma máquina cadastrada.</p>
@@ -330,7 +335,27 @@ export default function ManutencaoMaquinas() {
                             ) : (
                                 maquinas.map(m => (
                                     <tr key={m.id} className="hover:bg-slate-50/80 transition-colors">
-                                        <td className="p-4 font-bold text-slate-800">{m.nome}</td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-3">
+                                                {m.fotos && m.fotos.length > 0 ? (
+                                                    <img 
+                                                        src={m.fotos[0].data} 
+                                                        alt={m.nome} 
+                                                        className="w-10 h-10 object-cover rounded-md border border-slate-200 cursor-zoom-in hover:opacity-90 hover:scale-105 transition-all flex-shrink-0"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setZoomMaquina(m);
+                                                            setZoomFotoIndex(0);
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 flex-shrink-0">
+                                                        <ImageIcon size={18} />
+                                                    </div>
+                                                )}
+                                                <span className="font-bold text-slate-800">{m.nome}</span>
+                                            </div>
+                                        </td>
                                         <td className="p-4">
                                             {m.tag_identificacao ? (
                                                 <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
@@ -415,7 +440,7 @@ export default function ManutencaoMaquinas() {
                         
                         <div className="p-6 overflow-y-auto flex-1">
                             <form id="maquina-form" onSubmit={handleSave} className="space-y-5">
-                                <div className="grid grid-cols-2 gap-5">
+                                    <div className="grid grid-cols-2 gap-5">
                                     <div className="col-span-2 md:col-span-1">
                                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nome/Modelo *</label>
                                         <input 
@@ -819,6 +844,81 @@ export default function ManutencaoMaquinas() {
                                 {saving ? 'Salvando...' : <><Save size={18} /> Salvar Máquina</>}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Zoom da Foto (Lightbox) */}
+            {zoomMaquina && zoomMaquina.fotos && zoomMaquina.fotos.length > 0 && (
+                <div 
+                    className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center z-[100] p-4"
+                    onClick={() => setZoomMaquina(null)}
+                >
+                    {/* Botão Fechar */}
+                    <button 
+                        onClick={() => setZoomMaquina(null)}
+                        className="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all focus:outline-none"
+                    >
+                        <X size={24} />
+                    </button>
+
+                    {/* Container Principal */}
+                    <div 
+                        className="relative max-w-4xl w-full flex flex-col items-center gap-4"
+                        onClick={(e) => e.stopPropagation()} // impede fechar ao clicar na imagem
+                    >
+                        <div className="relative flex items-center justify-center w-full">
+                            {/* Seta Anterior */}
+                            {zoomMaquina.fotos.length > 1 && (
+                                <button
+                                    onClick={() => setZoomFotoIndex((prev) => (prev === 0 ? zoomMaquina.fotos.length - 1 : prev - 1))}
+                                    className="absolute left-2 md:-left-16 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-all focus:outline-none"
+                                >
+                                    <span className="text-xl font-bold select-none">&larr;</span>
+                                </button>
+                            )}
+
+                            {/* Imagem Principal */}
+                            <img 
+                                src={zoomMaquina.fotos[zoomFotoIndex].data} 
+                                alt={zoomMaquina.fotos[zoomFotoIndex].name || zoomMaquina.nome} 
+                                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-2xl border border-white/10"
+                            />
+
+                            {/* Seta Próxima */}
+                            {zoomMaquina.fotos.length > 1 && (
+                                <button
+                                    onClick={() => setZoomFotoIndex((prev) => (prev === zoomMaquina.fotos.length - 1 ? 0 : prev + 1))}
+                                    className="absolute right-2 md:-right-16 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-all focus:outline-none"
+                                >
+                                    <span className="text-xl font-bold select-none">&rarr;</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Legenda/Nome do arquivo */}
+                        <div className="text-center text-white/80 text-sm font-medium px-4 py-2 bg-slate-950/40 rounded-full">
+                            {zoomMaquina.nome} - Foto {zoomFotoIndex + 1} de {zoomMaquina.fotos.length}
+                        </div>
+
+                        {/* Carrossel de Miniaturas */}
+                        {zoomMaquina.fotos.length > 1 && (
+                            <div className="flex gap-2 mt-2 overflow-x-auto max-w-full p-2">
+                                {zoomMaquina.fotos.map((foto, idx) => (
+                                    <img 
+                                        key={foto.id} 
+                                        src={foto.data} 
+                                        alt="thumbnail" 
+                                        onClick={() => setZoomFotoIndex(idx)}
+                                        className={`w-14 h-14 object-cover rounded-md cursor-pointer transition-all ${
+                                            idx === zoomFotoIndex 
+                                                ? 'ring-2 ring-indigo-500 border-transparent scale-105' 
+                                                : 'opacity-50 hover:opacity-100 border border-white/20'
+                                        }`}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

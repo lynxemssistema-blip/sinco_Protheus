@@ -7,6 +7,8 @@ export default function GestaoAtivos() {
     const [ativos, setAtivos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_search') || '');
+    const [selectedRow, setSelectedRow] = useState(null);
+    const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_status') || 'all');
 
     const [globalTab, setGlobalTab] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_tab') || 'ativos'); // 'ativos' | 'calibracoes' | 'historico'
     const [historico, setHistorico] = useState([]);
@@ -14,6 +16,10 @@ export default function GestaoAtivos() {
     useEffect(() => {
         localStorage.setItem('@MetalFisa:sgq_assets_search', searchTerm);
     }, [searchTerm]);
+
+    useEffect(() => {
+        localStorage.setItem('@MetalFisa:sgq_assets_status', statusFilter);
+    }, [statusFilter]);
 
     useEffect(() => {
         localStorage.setItem('@MetalFisa:sgq_assets_tab', globalTab);
@@ -356,11 +362,15 @@ export default function GestaoAtivos() {
         }
     };
 
-    const filteredAtivos = ativos.filter(a => 
-        (a.name && a.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    const filteredAtivos = ativos.filter(a => {
+        const matchesSearch = (a.name && a.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (a.patrimonio && a.patrimonio.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (a.serial_number && a.serial_number.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+        (a.serial_number && a.serial_number.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        const matchesStatus = statusFilter === 'all' || a.status === statusFilter;
+        
+        return matchesSearch && matchesStatus;
+    });
 
     const sortedAtivos = [...filteredAtivos.filter(a => a.calibration_validity)].sort((a, b) => {
         const dateA = new Date(a.calibration_validity);
@@ -411,8 +421,8 @@ export default function GestaoAtivos() {
 
             {globalTab === 'ativos' && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-200 bg-slate-50">
-                    <div className="relative max-w-md">
+                <div className="flex flex-col sm:flex-row gap-4 p-4 border-b border-slate-200 bg-slate-50">
+                    <div className="relative max-w-md flex-1">
                         <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                         <input
                             type="text"
@@ -421,6 +431,21 @@ export default function GestaoAtivos() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                         />
+                    </div>
+                    <div className="w-full sm:w-48">
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-700 bg-white"
+                        >
+                            <option value="all">Todos os Status</option>
+                            <option value="available">Disponível</option>
+                            <option value="in_use">Em Uso</option>
+                            <option value="calibration">Em Calibração</option>
+                            <option value="pending_certificate">Pendente Certificado</option>
+                            <option value="maintenance">Em Manutenção</option>
+                            <option value="discarded">Descartado</option>
+                        </select>
                     </div>
                 </div>
 
@@ -435,12 +460,13 @@ export default function GestaoAtivos() {
                                 <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">Status</th>
                                 <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">Validade Calibração</th>
                                 <th className="p-4 font-semibold uppercase text-xs tracking-wider text-right">Ações</th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">PDF</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="7" className="p-8 text-center">
+                                    <td colSpan="8" className="p-8 text-center">
                                         <div className="flex justify-center">
                                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                                         </div>
@@ -448,7 +474,7 @@ export default function GestaoAtivos() {
                                 </tr>
                             ) : filteredAtivos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="7" className="p-12 text-center text-slate-500">
+                                    <td colSpan="8" className="p-12 text-center text-slate-500">
                                         <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                                         <p className="font-medium text-lg text-slate-700">Nenhum ativo encontrado.</p>
                                         <p className="text-sm">Cadastre um novo ativo para visualizar aqui.</p>
@@ -456,7 +482,11 @@ export default function GestaoAtivos() {
                                 </tr>
                             ) : (
                                 filteredAtivos.map(a => (
-                                    <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
+                                    <tr 
+                                        key={a.id} 
+                                        onClick={() => setSelectedRow(a.id)}
+                                        className={`transition-colors cursor-pointer ${selectedRow === a.id ? 'bg-indigo-50/80 shadow-sm ring-1 ring-indigo-200' : 'hover:bg-slate-50/80'}`}
+                                    >
                                         <td className="p-4">
                                             {a.patrimonio ? (
                                                 <span className="font-mono text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-200 font-bold">
@@ -533,6 +563,29 @@ export default function GestaoAtivos() {
                                             >
                                                 <Trash2 size={16} />
                                             </button>
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            {(() => {
+                                                if (a.requires_calibration === 0 || a.requires_calibration === false) {
+                                                    return <span className="text-xs text-slate-300">-</span>;
+                                                }
+                                                const latestCal = historico.find(h => h.asset_id === a.id);
+                                                if (latestCal && latestCal.certificate_url) {
+                                                    return (
+                                                        <a 
+                                                            href={latestCal.certificate_url} 
+                                                            target="_blank" 
+                                                            rel="noreferrer"
+                                                            className="inline-flex flex-col items-center justify-center text-red-500 hover:text-red-700 transition-colors bg-red-50 hover:bg-red-100 p-2 rounded-lg border border-red-100"
+                                                            title="Ver Certificado de Calibração"
+                                                        >
+                                                            <FileText size={18} className="mb-0.5" />
+                                                            <span className="text-[9px] font-bold uppercase tracking-wider">PDF</span>
+                                                        </a>
+                                                    );
+                                                }
+                                                return <span className="text-xs text-slate-400 font-medium">Nenhum</span>;
+                                            })()}
                                         </td>
                                     </tr>
                                 ))

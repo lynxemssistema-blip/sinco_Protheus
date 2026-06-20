@@ -47,12 +47,16 @@ api.interceptors.response.use(
 
         if (isAuthFailure) {
             const currentPath = window.location.pathname;
-            if (currentPath !== '/login') {
-                console.warn('🔒 Session expired, redirecting to login...');
-                localStorage.removeItem('@MetalFisa:token');
-                localStorage.removeItem('@MetalFisa:user');
+            
+            console.warn('🔒 Session expired or invalid. Clearing session...');
+            localStorage.removeItem('@MetalFisa:token');
+            localStorage.removeItem('@MetalFisa:user');
+
+            // Do not redirect if already on login or landing page
+            if (currentPath !== '/login' && currentPath !== '/') {
                 window.location.href = '/login';
             }
+            
             // Suppress further error logging for auth failures — they are expected
             // when the session expires and in-flight/debounced requests fire without a token.
             return Promise.reject(error);

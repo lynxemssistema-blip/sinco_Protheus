@@ -447,4 +447,28 @@ router.post('/tasks/:id/execute', async (req, res) => {
     }
 });
 
+// POST /api/hermes/acknowledgments
+router.post('/acknowledgments', async (req, res) => {
+    try {
+        const { message_id, message_text, user_id, user_name } = req.body;
+        
+        // Prevent duplicate acknowledgments
+        const [existing] = await mysqlPool.query(
+            'SELECT id FROM app_hermes_acknowledgments WHERE message_id = ? AND user_id = ?',
+            [message_id, user_id]
+        );
+        
+        if (existing.length === 0) {
+            await mysqlPool.query(
+                'INSERT INTO app_hermes_acknowledgments (message_id, message_text, user_id, user_name) VALUES (?, ?, ?, ?)',
+                [message_id, message_text, user_id, user_name]
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

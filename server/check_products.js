@@ -1,33 +1,23 @@
-
 const db = require('./db');
-
-async function checkProducts() {
+async function run() {
     try {
-        // Count total products
-        console.log("1. Counting total products in sb1010...");
-        const count1 = await db.query("SELECT count(*) FROM sb1010 WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = ''");
-        console.log("   Total: ", count1.rows[0].count);
-
-        // Count products starting with MT
-        console.log("\n2. Counting products starting with 'MT'...");
-        const count2 = await db.query("SELECT count(*) FROM sb1010 WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = '' AND b1_cod LIKE 'MT%'");
-        console.log("   Total: ", count2.rows[0].count);
-
-        // Count products starting with MT followed by digit
-        console.log("\n3. Counting products matching 'MT[0-9]' pattern...");
-        const count3 = await db.query("SELECT count(*) FROM sb1010 WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = '' AND b1_cod ~ '^MT[0-9]'");
-        console.log("   Total: ", count3.rows[0].count);
-
-        // Sample of first 10 products
-        console.log("\n4. First 10 product codes:");
-        const sample = await db.query("SELECT b1_cod FROM sb1010 WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = '' LIMIT 10");
-        sample.rows.forEach((row, i) => {
-            console.log(`   ${i + 1}. "${row.b1_cod}"`);
-        });
-
+        const pedidos = ["004162", "004159", "004145", "004182", "004155", "004143", "004335", "004372"];
+        const placeholders = pedidos.map((_, i) => `$${i + 1}`).join(',');
+        
+        const pgQuery = `
+            SELECT TRIM(C6_NUM) as pedido, TRIM(C6_ITEM) as item, TRIM(C6_PRODUTO) as produto, (C6_QTDVEN - C6_QTDENT) as saldo
+            FROM SC6010 
+            WHERE TRIM(C6_NUM) IN (${placeholders}) 
+              AND D_E_L_E_T_ = ''
+              AND (C6_QTDVEN - C6_QTDENT) > 0
+            ORDER BY C6_PRODUTO
+        `;
+        const pgRes = await db.query(pgQuery, pedidos);
+        console.log(`Found ${pgRes.rows.length} items`);
+        console.log(pgRes.rows.slice(0, 10)); // sample
     } catch (e) {
-        console.error("Error:", e.message);
+        console.error(e);
     }
+    process.exit(0);
 }
-
-checkProducts();
+run();

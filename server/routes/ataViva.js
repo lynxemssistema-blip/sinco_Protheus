@@ -1,0 +1,343 @@
+const express = require('express');
+const router = express.Router();
+const mysqlPool = require('../services/mysqlService');
+const db = require('../db');
+
+const { emitHermesAlert } = require('../services/hermes/proactiveCron');
+
+// GET /api/ata-viva/prioridades-tv
+// Fetch pending max priority tasks and calculate production evolution for TV Dashboard
+router.get('/prioridades-tv', async (req, res) => {
+    try {
+        const [tarefas] = await mysqlPool.query(`
+            SELECT * FROM app_ata_viva_tarefas 
+            WHERE status = 'PENDENTE' 
+            AND (texto_tarefa LIKE '%PRIORIDADE MÁXIMA%' OR texto_tarefa LIKE '%[PRIORIDADE MÁXIMA]%')
+            ORDER BY criado_em DESC LIMIT 100
+        `);
+
+        if (tarefas.length === 0) {
+            return res.json({ data: [] });
+        }
+
+        const produtos = [...new Set(tarefas.map(t => t.produto).filter(Boolean))];
+        const opsFull = [...new Set(tarefas.map(t => t.op_numero).filter(Boolean))];
+        const pedsFull = [...new Set(tarefas.map(t => t.pedido).filter(Boolean))];
+
+        let pedsMap = {};
+        if (pedsFull.length > 0) {
+            const pedsBase = pedsFull.map(p => String(p).trim());
+            const sc5Res = await db.query(`
+                SELECT TRIM(c5_num) as c5_num, TRIM(sa1.a1_nome) as a1_nome
+                FROM public.sc5010 c5
+                INNER JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                WHERE c5.c5_num = ANY($1::varchar[]) AND COALESCE(c5.d_e_l_e_t_, '') = ''
+            `, [pedsBase]);
+            sc5Res.rows.forEach(r => {
+                pedsMap[r.c5_num] = r.a1_nome;
+            });
+        }
+
+        let sc2Map = {};
+        if (opsFull.length > 0) {
+            const opsBase = [...new Set(opsFull.map(op => String(op).substring(0, 6)))];
+            const sc2Res = await db.query(`
+                SELECT TRIM(c2_num) as c2_num, TRIM(c2_item) as c2_item, TRIM(c2_sequen) as c2_sequen, c2_quant, TRIM(c2_produto) as c2_produto
+                FROM public.sc2010
+                WHERE c2_num = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') = ''
+            `, [opsBase]);
+            sc2Res.rows.forEach(r => {
+                const fullOp = `${r.c2_num}${r.c2_item}${r.c2_sequen}`;
+                const key = `${r.c2_num}-${r.c2_produto}`;
+                if (!sc2Map[key]) sc2Map[key] = [];
+                sc2Map[key].push({
+                    quant: parseFloat(r.c2_quant) || 0,
+                    fullOp: fullOp
+                });
+            });
+        }
+
+        let operacoesMap = {};
+        if (produtos.length > 0) {
+            const sg2Res = await db.query(`
+                SELECT TRIM(g2_produto) as produto, COUNT(g2_operac) as total_operacoes
+                FROM public.sg2010
+                WHERE TRIM(g2_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') = ''
+                GROUP BY TRIM(g2_produto)
+            `, [produtos]);
+            sg2Res.rows.forEach(r => {
+                operacoesMap[r.produto] = parseInt(r.total_operacoes, 10) || 1;
+            });
+        }
+
+        let prodMap = {};
+        if (opsFull.length > 0) {
+            const opsBase = [...new Set(opsFull.map(op => String(op).substring(0, 6)))];
+            const placeholders = opsBase.map(() => '?').join(',');
+            const [prodRes] = await mysqlPool.query(`
+                SELECT CONCAT(op_numero, op_item, op_sequencia) as op_full, operacao_codigo, SUM(quantidade) as produzido
+                FROM app_production_appointments
+                WHERE op_numero IN (${placeholders})
+                AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+                GROUP BY op_full, operacao_codigo
+            `, opsBase);
+            prodRes.forEach(r => {
+                const key = `${r.op_full}-${r.operacao_codigo}`;
+                prodMap[key] = (prodMap[key] || 0) + parseFloat(r.produzido);
+            });
+        }
+
+        const data = tarefas.map(t => {
+            let evolucao = 0;
+            let op_qtd = 0;
+            let saldo_produzido = 0;
+
+            if (t.op_numero) {
+                const baseOp = String(t.op_numero).substring(0, 6);
+                const sc2List = sc2Map[`${baseOp}-${t.produto}`];
+                
+                if (sc2List && sc2List.length > 0) {
+                    const totalOps = operacoesMap[t.produto] || 1;
+                    let totalQtd = 0;
+                    let totalSumProduced = 0;
+
+                    sc2List.forEach(sc2Info => {
+                        totalQtd += sc2Info.quant;
+                        
+                        let sumProduced = 0;
+                        Object.keys(prodMap).forEach(k => {
+                            if (k.startsWith(`${sc2Info.fullOp}-`)) {
+                                sumProduced += prodMap[k];
+                            }
+                        });
+                        totalSumProduced += sumProduced;
+                    });
+
+                    saldo_produzido = totalSumProduced / totalOps;
+                    op_qtd = totalQtd;
+
+                    if (op_qtd > 0) {
+                        evolucao = (saldo_produzido / op_qtd) * 100;
+                        if (evolucao > 100) evolucao = 100;
+                    }
+                }
+            }
+
+            const basePed = String(t.pedido).trim();
+            const cliente_nome = pedsMap[basePed] || 'METALFISA';
+
+            return {
+                ...t,
+                cliente_nome,
+                op_qtd,
+                saldo_produzido,
+                evolucao_op: evolucao
+            };
+        });
+
+        res.json({ data });
+
+    } catch (error) {
+        console.error('Erro na API /prioridades-tv:', error);
+        res.status(500).json({ error: 'Erro ao buscar prioridades TV' });
+    }
+});
+
+// POST /api/ata-viva/prioridade
+// Request Instant Priority for an item and emit Hermes alert
+router.post('/prioridade', async (req, res) => {
+    try {
+        const { pedido, item_pedido, op_numero, produto, texto_livre, usuario } = req.body;
+
+        if (!pedido || !produto) {
+            return res.status(400).json({ error: 'Pedido e Produto são obrigatórios para definir prioridade.' });
+        }
+
+        const texto_tarefa = `[PRIORIDADE MÁXIMA] ${texto_livre || 'Prioridade de produção solicitada.'}`;
+        const user = usuario || 'Sistema';
+
+        // 1. Insert into Ata Viva
+        const query = `
+            INSERT INTO app_ata_viva_tarefas 
+            (pedido, item_pedido, op_numero, produto, texto_tarefa, usuario_criacao)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `;
+        await mysqlPool.query(query, [
+            pedido, 
+            item_pedido || '', 
+            op_numero || '', 
+            produto, 
+            texto_tarefa, 
+            user
+        ]);
+
+        // 2. Emit Hermes Live Feed Alert
+        const alertMsg = `**Prioridade de Produção**\n**Pedido:** ${pedido} | **OP:** ${op_numero || 'N/A'} | **Produto:** ${produto}\n**Solicitante:** ${user}\n**Motivo:** ${texto_livre || 'Sem observação'}`;
+        emitHermesAlert(alertMsg, 'error', { pedido, op_numero, requires_ack: true });
+
+        const io = req.app.get('io');
+        if (io) io.emit('tv:prioridades_atualizadas');
+
+        res.json({ success: true, message: 'Prioridade definida e alerta enviado com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao definir prioridade:', error);
+        res.status(500).json({ error: error.message || 'Erro interno ao definir prioridade.' });
+    }
+});
+
+// POST /api/ata-viva/prioridade-lote
+// Request Instant Priority for multiple items and emit a single grouped Hermes alert
+router.post('/prioridade-lote', async (req, res) => {
+    try {
+        const { itens, texto_livre, usuario } = req.body;
+
+        if (!itens || !Array.isArray(itens) || itens.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item fornecido.' });
+        }
+
+        const texto_tarefa = `[PRIORIDADE MÁXIMA] ${texto_livre || 'Prioridade de produção solicitada.'}`;
+        const user = usuario || 'Sistema';
+
+        // 1. Insert into Ata Viva for each item
+        for (const target of itens) {
+            const query = `
+                INSERT INTO app_ata_viva_tarefas 
+                (pedido, item_pedido, op_numero, produto, texto_tarefa, usuario_criacao)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `;
+            await mysqlPool.query(query, [
+                target.pedido, 
+                target.item_pedido || '', 
+                target.op_numero || '', 
+                target.produto, 
+                texto_tarefa, 
+                user
+            ]);
+        }
+
+        // 2. Emit a single Hermes Live Feed Alert
+        let alertMsg = `**Prioridade de Produção em Lote (${itens.length} itens)**\n**Solicitante:** ${user}\n**Motivo:** ${texto_livre || 'Sem observação'}\n\n`;
+        itens.forEach(t => {
+            alertMsg += `- **Pedido:** ${t.pedido} | **OP:** ${t.op_numero || '-'} | **Produto:** ${t.produto}\n`;
+        });
+        
+        emitHermesAlert(alertMsg, 'error', { requires_ack: true });
+
+        const io = req.app.get('io');
+        if (io) io.emit('tv:prioridades_atualizadas');
+
+        res.json({ success: true, message: 'Prioridades definidas e alerta enviado com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao definir prioridade em lote:', error);
+        res.status(500).json({ error: error.message || 'Erro interno ao definir prioridade em lote.' });
+    }
+});
+
+// POST /api/ata-viva/tarefas
+// Create tasks for selected items
+router.post('/tarefas', async (req, res) => {
+    try {
+        const { itens, texto_tarefa, usuario } = req.body;
+
+        if (!itens || !Array.isArray(itens) || itens.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item selecionado.' });
+        }
+        if (!texto_tarefa) {
+            return res.status(400).json({ error: 'Texto da tarefa é obrigatório.' });
+        }
+
+        const values = itens.map(i => [
+            i.pedido || '',
+            i.item_pedido || '',
+            i.op_numero || '',
+            i.produto || '',
+            texto_tarefa,
+            usuario || 'Sistema'
+        ]);
+
+        const query = `
+            INSERT INTO app_ata_viva_tarefas 
+            (pedido, item_pedido, op_numero, produto, texto_tarefa, usuario_criacao)
+            VALUES ?
+        `;
+
+        const [result] = await mysqlPool.query(query, [values]);
+
+        const io = req.app.get('io');
+        if (io) io.emit('tv:prioridades_atualizadas');
+
+        res.json({ message: `${result.affectedRows} tarefas criadas com sucesso.`, success: true });
+    } catch (error) {
+        console.error('Erro ao criar tarefas da Ata Viva:', error);
+        res.status(500).json({ error: 'Erro interno ao criar tarefas.' });
+    }
+});
+
+// GET /api/ata-viva/tarefas
+// Fetch tasks with filters
+router.get('/tarefas', async (req, res) => {
+    try {
+        const { status, pedido, produto } = req.query;
+        let query = 'SELECT * FROM app_ata_viva_tarefas WHERE 1=1';
+        const params = [];
+
+        if (status) {
+            query += ' AND status = ?';
+            params.push(status);
+        }
+        if (pedido) {
+            query += ' AND pedido LIKE ?';
+            params.push(`%${pedido}%`);
+        }
+        if (produto) {
+            query += ' AND produto LIKE ?';
+            params.push(`%${produto}%`);
+        }
+
+        query += ' ORDER BY criado_em DESC LIMIT 500';
+
+        const [rows] = await mysqlPool.query(query, params);
+        res.json({ data: rows });
+    } catch (error) {
+        console.error('Erro ao buscar tarefas da Ata Viva:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar tarefas.' });
+    }
+});
+
+// PUT /api/ata-viva/tarefas/:id/status
+// Update task status
+router.put('/tarefas/:id/status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, usuario } = req.body;
+
+        if (!status || !['PENDENTE', 'CONCLUIDO'].includes(status)) {
+            return res.status(400).json({ error: 'Status inválido.' });
+        }
+
+        let query = 'UPDATE app_ata_viva_tarefas SET status = ?';
+        const params = [status];
+
+        if (status === 'CONCLUIDO') {
+            query += ', data_conclusao = CURRENT_TIMESTAMP, usuario_conclusao = ?';
+            params.push(usuario || 'Sistema');
+        } else {
+            query += ', data_conclusao = NULL, usuario_conclusao = NULL';
+        }
+
+        query += ' WHERE id = ?';
+        params.push(id);
+
+        await mysqlPool.query(query, params);
+
+        const io = req.app.get('io');
+        if (io) io.emit('tv:prioridades_atualizadas');
+
+        res.json({ success: true, message: 'Status atualizado com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao atualizar status da tarefa:', error);
+        res.status(500).json({ error: 'Erro interno ao atualizar status.' });
+    }
+});
+
+module.exports = router;

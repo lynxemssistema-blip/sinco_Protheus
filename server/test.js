@@ -1,12 +1,1 @@
-const db = require('./db'); const mysqlPool = require('./services/mysqlService');
-
-(async () => {
-    try {
-        const [rows] = await mysqlPool.query("SELECT id, op_numero, op_item, op_sequencia, operacao_codigo, quantidade FROM app_production_appointments WHERE op_numero = '006185'");
-        console.table(rows);
-        process.exit(0);
-    } catch(e) {
-        console.error(e);
-        process.exit(1);
-    }
-})();
+require('dotenv').config({ path: '.env' }); const db = require('./db'); const mysqlPool = require('./services/mysqlService'); async function test() { const operacao = 'MO0013'; const plan = '2026-06-15 23:59:59'; const [ops] = await mysqlPool.query('SELECT DISTINCT op_numero FROM app_production_planning WHERE recurso_codigo = ? AND data_planejada_inicio <= ?', [operacao, plan]); const opFilter = ops.map(o => String(o.op_numero).trim().padStart(6, '0')).slice(0, 5000); const res1 = await db.query('SELECT COUNT(*) as c FROM public.sc2010 c2 WHERE TRIM(c2.c2_recurso) =  AND TRIM(c2.c2_num) = ANY() AND c2.d_e_l_e_t_ = \'\'', [operacao, opFilter]); console.log('TRIM COUNT:', res1.rows[0].c); const res2 = await db.query('SELECT COUNT(*) as c FROM public.sc2010 c2 WHERE TRIM(c2.c2_recurso) =  AND c2.c2_num = ANY() AND c2.d_e_l_e_t_ = \'\'', [operacao, opFilter]); console.log('NO-TRIM COUNT:', res2.rows[0].c); process.exit(0); } test();

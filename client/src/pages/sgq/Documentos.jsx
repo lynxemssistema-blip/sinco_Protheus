@@ -189,6 +189,87 @@ const SGQDocuments = () => {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const isInitialLoad = useRef(false);
 
+    // Estados para escaneamento de pasta de contexto da IA
+    const [folderPath, setFolderPath] = useState(() => localStorage.getItem('sgq_ai_folder_path') || '');
+    const [scannedFiles, setScannedFiles] = useState([]);
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [isScanningFolder, setIsScanningFolder] = useState(false);
+    const [isFolderConfigOpen, setIsFolderConfigOpen] = useState(true);
+
+    // Ajuste dinâmico de largura do assistente
+    const [aiWidth, setAiWidth] = useState(() => {
+        const saved = localStorage.getItem('sgq_ai_drawer_width');
+        return saved ? parseInt(saved, 10) : 320;
+    });
+    const isResizing = useRef(false);
+
+    const handleMouseDown = (e) => {
+        e.preventDefault();
+        isResizing.current = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+    };
+
+    const handleMouseMove = (e) => {
+        const newWidth = window.innerWidth - e.clientX;
+        if (newWidth >= 280 && newWidth <= window.innerWidth * 0.6) {
+            setAiWidth(newWidth);
+            localStorage.setItem('sgq_ai_drawer_width', newWidth.toString());
+        }
+    };
+
+    const handleMouseUp = () => {
+        isResizing.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    };
+
+    useEffect(() => {
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    const handleScanFolder = async () => {
+        if (!folderPath.trim()) return alert('Por favor, informe o caminho do diretório.');
+        setIsScanningFolder(true);
+        try {
+            const res = await api.post('/ai/scan-folder', { folderPath: folderPath.trim() });
+            setScannedFiles(res.data.files || []);
+            setSelectedFiles((res.data.files || []).map(f => f.path));
+            localStorage.setItem('sgq_ai_folder_path', folderPath.trim());
+        } catch (err) {
+            console.error(err);
+            const msg = err.response?.data?.error || 'Falha ao escanear o diretório. Verifique se o caminho existe e se o servidor possui permissão de leitura.';
+            alert(msg);
+        } finally {
+            setIsScanningFolder(false);
+        }
+    };
+
+    const handleToggleFileSelection = (filePath) => {
+        setSelectedFiles(prev => {
+            if (prev.includes(filePath)) {
+                return prev.filter(p => p !== filePath);
+            } else {
+                return [...prev, filePath];
+            }
+        });
+    };
+
+    const handleToggleSelectAllFiles = () => {
+        if (selectedFiles.length === scannedFiles.length) {
+            setSelectedFiles([]);
+        } else {
+            setSelectedFiles(scannedFiles.map(f => f.path));
+        }
+    };
+
     // --- Sectors CRUD ---
     const fetchSectors = async () => {
         try {
@@ -479,10 +560,12 @@ const SGQDocuments = () => {
                 selectedText: currentSelectedText,
                 prompt: promptToSend,
                 modelName: aiModel,
-                extraContext: aiContextText
+                extraContext: aiContextText,
+                selectedFiles: selectedFiles
             });
 
-            const suggestion = res.data.suggestion;
+            const suggestion = res.data.suggestion || '';
+            const actions = res.data.actions || [];
 
             setAiHistory(prev => [...prev, { 
                 role: 'ai', 
@@ -490,7 +573,43 @@ const SGQDocuments = () => {
                 targetText: currentSelectedText 
             }]);
 
-            // DO NOT auto insert. Let user choose via UI.
+            // Executa as ações retornadas pelo agente de IA de forma autônoma
+            if (actions && actions.length > 0) {
+                actions.forEach(action => {
+                    switch (action.type) {
+                        case 'SET_SECTOR':
+                            if (action.payload) setActiveSector(action.payload);
+                            break;
+                        case 'SET_CONTENT':
+                            if (action.payload) setContent(action.payload);
+                            break;
+                        case 'INSERT_CONTENT':
+                            if (action.payload) {
+                                if (sunEditorRef.current) {
+                                    sunEditorRef.current.insertHTML(action.payload, true, true);
+                                } else {
+                                    setContent(prev => prev + action.payload);
+                                }
+                            }
+                            break;
+                        case 'SET_HEADER':
+                            if (action.payload) {
+                                setHeaderData(prev => ({ ...prev, ...action.payload }));
+                            }
+                            break;
+                        case 'SHOW_HEADER':
+                            setShowHeader(!!action.payload);
+                            break;
+                        case 'SAVE_DOCUMENT':
+                            setTimeout(() => {
+                                saveDocument();
+                            }, 500);
+                            break;
+                        default:
+                            break;
+                    }
+                });
+            }
 
         } catch (error) {
             console.error(error);
@@ -829,6 +948,7 @@ const SGQDocuments = () => {
 
                         {showHeader && <DocumentHeader headerData={headerData} setHeaderData={setHeaderData} activeSector={activeSector} />}
                         <SunEditor 
+                            ref={sunEditorRef}
                             setContents={content}
                             onChange={setContent}
                             onMouseUp={(e, core) => {
@@ -868,10 +988,21 @@ const SGQDocuments = () => {
                 </div>
             </main>
 
-            {/* AI Assistant Drawer */}
             {isAIOpen && (
-                <aside className="w-80 bg-white border-l border-slate-200 flex flex-col shadow-2xl z-20 flex-shrink-0 animate-in slide-in-from-right">
-                    <div className="p-4 border-b border-slate-100 bg-indigo-600 text-white flex flex-col gap-3">
+                <aside 
+                    style={{ width: `${aiWidth}px` }}
+                    className="bg-white border-l border-slate-200 flex flex-col shadow-2xl z-20 flex-shrink-0 animate-in slide-in-from-right relative"
+                >
+                    {/* Linha/Alça de Redimensionamento */}
+                    <div 
+                        onMouseDown={handleMouseDown}
+                        className="absolute top-0 left-0 bottom-0 w-2 cursor-ew-resize hover:bg-indigo-500/30 transition-colors z-30 flex items-center justify-center group"
+                        title="Arraste para redimensionar"
+                    >
+                        <div className="w-0.5 h-8 bg-slate-300 group-hover:bg-indigo-400 group-active:bg-indigo-500 rounded" />
+                    </div>
+
+                    <div className="p-4 border-b border-slate-100 bg-indigo-600 text-white flex flex-col gap-3 pl-5">
                         <div className="flex items-center gap-3">
                             <div className="bg-white/20 p-2 rounded-lg">
                                 <Bot className="h-6 w-6" />
@@ -908,6 +1039,75 @@ const SGQDocuments = () => {
                         >
                             Capturar Texto Selecionado
                         </button>
+                    </div>
+
+                    {/* Configuração do Diretório de Contexto da IA */}
+                    <div className="border-b border-slate-200 bg-slate-50/80 p-3 shadow-inner">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsFolderConfigOpen(!isFolderConfigOpen)}>
+                            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                Contexto de Diretório ({selectedFiles.length})
+                            </span>
+                            <span className="text-[10px] text-indigo-600 font-bold hover:underline">
+                                {isFolderConfigOpen ? 'Recolher' : 'Expandir'}
+                            </span>
+                        </div>
+                        
+                        {isFolderConfigOpen && (
+                            <div className="mt-3 space-y-3">
+                                <div>
+                                    <label className="block text-[9px] font-bold text-slate-500 mb-1">PASTA DE DOCUMENTOS DO SGQ</label>
+                                    <div className="flex gap-1.5">
+                                        <input
+                                            type="text"
+                                            value={folderPath}
+                                            onChange={(e) => setFolderPath(e.target.value)}
+                                            placeholder="Ex: C:\Sgq\Procedimentos"
+                                            className="flex-1 text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                        />
+                                        <button
+                                            onClick={handleScanFolder}
+                                            disabled={isScanningFolder}
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3 py-1.5 rounded transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                                        >
+                                            {isScanningFolder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Ler'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {scannedFiles.length > 0 && (
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                            <span>ARQUIVOS LIDOS ({scannedFiles.length})</span>
+                                            <button 
+                                                onClick={handleToggleSelectAllFiles}
+                                                className="text-indigo-600 hover:underline"
+                                            >
+                                                {selectedFiles.length === scannedFiles.length ? 'Limpar' : 'Todos'}
+                                            </button>
+                                        </div>
+                                        <div className="max-h-36 overflow-y-auto border border-slate-200 rounded bg-white p-1.5 space-y-1">
+                                            {scannedFiles.map(file => {
+                                                const isChecked = selectedFiles.includes(file.path);
+                                                return (
+                                                    <label key={file.path} className="flex items-start gap-1.5 text-[11px] text-slate-600 hover:bg-slate-100 p-1 rounded cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => handleToggleFileSelection(file.path)}
+                                                            className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3"
+                                                        />
+                                                        <span className="truncate flex-1" title={file.name}>
+                                                            {file.name}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
@@ -1029,7 +1229,8 @@ const SGQDocuments = () => {
                 onClick={() => openHelp('/sgq/documentos')}
                 title="Ajuda desta tela"
                 aria-label="Abrir ajuda contextual"
-                className="fixed bottom-6 right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
+                style={{ right: isAIOpen ? `${aiWidth + 24}px` : '24px' }}
+                className="fixed bottom-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
             >
                 <HelpCircle className="h-5 w-5" />
             </button>

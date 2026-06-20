@@ -38,15 +38,22 @@ router.get('/orders', async (req, res) => {
             paramCount++;
         }
 
-        if (pedido && typeof pedido === 'string') {
-            // Normaliza para 6 dígitos com zeros à esquerda (formato Protheus: '004090')
-            whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(pedido.trim().padStart(6, '0'));
-            paramCount++;
-        } else if (Array.isArray(pedido)) {
-            whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
-            params.push(pedido[0].trim().padStart(6, '0'));
-            paramCount++;
+        if (pedido) {
+            const pedidoList = String(pedido).split(',')
+                .map(p => p.trim())
+                .filter(p => p.length > 0)
+                .map(p => p.padStart(6, '0'));
+
+            if (pedidoList.length === 1) {
+                whereExtra += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+                params.push(pedidoList[0]);
+                paramCount++;
+            } else if (pedidoList.length > 1) {
+                const placeholders = pedidoList.map((_, i) => `$${paramCount + i}`).join(', ');
+                whereExtra += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
+                params.push(...pedidoList);
+                paramCount += pedidoList.length;
+            }
         }
 
         if (produto && typeof produto === 'string') {
@@ -162,6 +169,9 @@ router.get('/orders', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/export', async (req, res) => {
     try {
+        const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        
         const items = req.body; // [{ produto, quantidade, descricao_pai }]
 
         if (!Array.isArray(items) || items.length === 0) {
@@ -178,6 +188,8 @@ router.post('/export', async (req, res) => {
             descricao_pai: String(i.descricao_pai || '').trim(),
         }));
 
+        const inactiveSql = getInactiveFilter('p.pedido');
+
         // ── Query 1: BOM consolidada (aglutinada) ─────────────────────────────
         const bomQuery = `
             WITH RECURSIVE estrutura AS (
@@ -189,6 +201,7 @@ router.post('/export', async (req, res) => {
                     1::numeric                             AS qtd_unitaria,
                     p.quantidade::numeric                  AS qtd_total
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
+                WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 
@@ -237,6 +250,7 @@ router.post('/export', async (req, res) => {
                     1::numeric                             AS qtd_unitaria,
                     p.quantidade::numeric                  AS qtd_total
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
+                WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 

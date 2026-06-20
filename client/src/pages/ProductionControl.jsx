@@ -29,6 +29,7 @@ import { Link } from 'react-router-dom';
 // ... (other imports)
 
 export default function ProductionControl() {
+    const [activeRowKey, setActiveRowKey] = useState(null);
     const [ops, setOps] = useStickyState([], '@metalfisa:prod_control_ops');
     const [total, setTotal] = useStickyState(0, '@metalfisa:prod_control_total');
     const [selectedOpHistory, setSelectedOpHistory] = useState(null);

@@ -76,10 +76,10 @@
 
 /* Active State - High Contrast Signal */
 .tech-nav-item.active {
-    background: rgba(37, 99, 235, 0.1);
-    /* Low opacity blue tint */
+    background: rgba(255, 181, 54, 0.1);
+    /* Low opacity yellow tint */
     color: white;
-    border-left: 2px solid var(--tech-accent);
+    border-left: 2px solid #FFB536;
     /* Sharp indicator */
     font-weight: 600;
 }
@@ -91,9 +91,9 @@
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--tech-accent);
+    background: #FFB536;
     opacity: 0.5;
-    box-shadow: -4px 0 12px var(--tech-accent);
+    box-shadow: -4px 0 12px #FFB536;
     /* Glow leak */
 }
 
@@ -107,11 +107,11 @@
 .tech-nav-item:hover .tech-icon {
     transform: translateX(2px);
     /* Micro-movement */
-    color: var(--tech-accent);
+    color: #FFB536;
 }
 
 .tech-nav-item.active .tech-icon {
-    color: var(--tech-accent);
+    color: #FFB536;
 }
 
 /* Scrollbar Customization - Invisible but scrollable */

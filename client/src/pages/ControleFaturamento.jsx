@@ -69,6 +69,7 @@ const ControleFaturamento = () => {
 
     // Multiselection
     const [selectedItems, setSelectedItems] = useState([]);
+    const [selectedRow, setSelectedRow] = useState(null);
     const [loadingEmail, setLoadingEmail] = useState(false);
 
     // Modal Add Item
@@ -930,7 +931,11 @@ const ControleFaturamento = () => {
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {selectedSolicitacao.itens?.map(it => (
-                                            <tr key={it.id} className="hover:bg-gray-50 transition-colors">
+                                            <tr 
+                                                key={it.id} 
+                                                onClick={() => setSelectedRow(it.id)}
+                                                className={`transition-colors cursor-pointer ${selectedRow === it.id ? 'bg-indigo-50/80 shadow-sm ring-1 ring-indigo-200' : 'hover:bg-gray-50'}`}
+                                            >
                                                 <td className="px-3 py-3 text-center">
                                                     <button onClick={() => toggleItemCheck(it.id)} className={`p-1 rounded-full transition-colors ${itemChecks.includes(it.id) ? 'bg-green-100 text-green-600 shadow-sm ring-1 ring-green-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'} focus:outline-none`} title="Verificar/Confirmar Item">
                                                         <CheckCircle2 className="w-4 h-4" />

@@ -7,6 +7,8 @@ import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
 import logo from '../assets/metalfisa-logo.png';
 
+import LandingPage from './LandingPage';
+
 const Login = () => {
     const [loginInput, setLoginInput] = useState('');
     const [passwordInput, setPasswordInput] = useState('');
@@ -25,9 +27,16 @@ const Login = () => {
     
     const [view, setView] = useState('login'); // 'login', 'recover', 'register'
 
-    const { login } = useAuth();
+    const { login, signed } = useAuth();
     const { toggleHelp } = useHelp();
     const navigate = useNavigate();
+
+    // If user is already logged in, redirect to dashboard automatically
+    React.useEffect(() => {
+        if (signed) {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [signed, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -89,15 +98,33 @@ const Login = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-            <div className="max-w-md w-full bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
-                <div className="bg-blue-600 p-8 text-center text-white relative flex flex-col items-center">
-                    {view !== 'login' && (
+        <>
+            {/* Contextual Landing Page Background */}
+            <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+                <LandingPage />
+            </div>
+
+            {/* Dark Overlay with Blur */}
+            <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-md" />
+
+            {/* Login Form Container */}
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto">
+                <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-100 relative transform transition-all my-auto">
+                    <div className="bg-[#1F365C] p-8 text-center text-white relative flex flex-col items-center">
+                    {view !== 'login' ? (
                         <button 
                             onClick={() => { setView('login'); setError(''); setSuccessMsg(''); }}
                             className="absolute left-4 top-4 text-white/80 hover:text-white transition"
                         >
                             <ArrowLeft className="w-5 h-5" />
+                        </button>
+                    ) : (
+                        <button 
+                            onClick={() => navigate('/')}
+                            className="absolute left-4 top-4 text-white/80 hover:text-white transition flex items-center gap-1 text-xs font-bold uppercase tracking-wider bg-white/10 px-2 py-1 rounded"
+                            title="Voltar para o site"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Site
                         </button>
                     )}
                     <div className="bg-white p-3 rounded-2xl shadow-md mb-4 flex items-center justify-center">
@@ -149,7 +176,7 @@ const Login = () => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {loading ? (
                                     <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -223,7 +250,7 @@ const Login = () => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 mt-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold py-3 mt-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {loading ? (
                                     <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -281,7 +308,7 @@ const Login = () => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full bg-[#1F365C] hover:bg-[#15253f] text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {loading ? (
                                     <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -310,6 +337,7 @@ const Login = () => {
 
                 </div>
             </div>
+            </div>
 
             {/* Floating Help Button */}
             <button
@@ -322,7 +350,7 @@ const Login = () => {
             </button>
 
             <HelpDrawer />
-        </div>
+        </>
     );
 };
 

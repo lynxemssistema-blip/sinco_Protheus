@@ -211,14 +211,14 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
 
         // Fetch appointments (MySQL)
         const [appts] = await mysqlPool.query(`
-            SELECT op_numero, op_item, operacao_codigo, SUM(quantidade) AS total
+            SELECT op_numero, op_item, op_sequencia, operacao_codigo, SUM(quantidade) AS total
             FROM app_production_appointments
             WHERE op_numero IN (?)
-            GROUP BY op_numero, op_item, operacao_codigo
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
         `, [opNums]);
         const apptsMap = {};
         appts.forEach(a => {
-            apptsMap[`${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.operacao_codigo||'').trim()}`] = parseFloat(a.total) || 0;
+            apptsMap[`${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.op_sequencia||'').trim()}|${(a.operacao_codigo||'').trim()}`] = parseFloat(a.total) || 0;
         });
 
         // Fetch config (MySQL)
@@ -287,7 +287,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
             const g2_minutos = parseFloat(routeEntry.tempo) || 0;
             const unitTimeMin = g2_minutos > 0 ? g2_minutos : (parseFloat(conf.tempo_padrao_minutos) || 0);
 
-            const apptKey = `${opn}|${itn}|${opcn}`;
+            const apptKey = `${opn}|${itn}|${(plan.op_sequencia||'').trim()}|${opcn}`;
             const qtde_apontada = apptsMap[apptKey] || 0;
             const qtde_total    = Number(opRow.qtde) || 0;
             const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (Number(opRow.qtde_feita) || 0);

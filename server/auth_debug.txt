@@ -78,3 +78,103 @@ Error: read ECONNRESET
     at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
     at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
 
+2026-06-15T10:42:50.869Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | read ECONNRESET
+Error: read ECONNRESET
+    at Object.createConnectionPromise [as createConnection] (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\promise.js:19:31)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:35:34
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\index.js:136:5
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+
+2026-06-15T10:42:55.797Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | read ECONNRESET
+Error: read ECONNRESET
+    at Object.createConnectionPromise [as createConnection] (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\promise.js:19:31)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:35:34
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\index.js:136:5
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+
+2026-06-15T10:43:17.256Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | read ECONNRESET
+Error: read ECONNRESET
+    at Object.createConnectionPromise [as createConnection] (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\promise.js:19:31)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:35:34
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\index.js:136:5
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+
+2026-06-15T10:43:27.696Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | read ECONNRESET
+Error: read ECONNRESET
+    at Object.createConnectionPromise [as createConnection] (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\mysql2\promise.js:19:31)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\auth.js:35:34
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\index.js:136:5
+    at Layer.handleRequest (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+

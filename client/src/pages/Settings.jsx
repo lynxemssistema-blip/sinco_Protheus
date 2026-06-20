@@ -282,6 +282,13 @@ export default function Settings() {
             if (romNumData && romNumData.current_number) {
                 setRomaneioNumberForm(romNumData.current_number);
             }
+
+            // Load RNC numbering config
+            const rncCfg = generalConfig?.sgq_rnc_config;
+            if (rncCfg) {
+                if (rncCfg.format) setRncFormatForm(rncCfg.format);
+                if (rncCfg.next_seq) setRncNumberForm(String(rncCfg.next_seq));
+            }
             
             // Fetch Pedidos Status
             loadPedidosStatus();
@@ -390,6 +397,36 @@ export default function Settings() {
     };
 
     const [romaneioNumberForm, setRomaneioNumberForm] = useState('');
+
+    // SGQ RNC Numbering Config
+    const [rncNumberForm, setRncNumberForm] = useState('1');
+    const [rncFormatForm, setRncFormatForm] = useState('RNC-{YEAR}-{SEQ:4}');
+
+    const handleRncConfigSubmit = async () => {
+        const num = parseInt(rncNumberForm, 10);
+        if (!rncNumberForm || isNaN(num) || num < 1) {
+            return alert('Digite um número inicial válido (>= 1)!');
+        }
+        if (!rncFormatForm.includes('{SEQ')) {
+            return alert('O formato deve conter o marcador {SEQ} ou {SEQ:N} para a sequência numérica.');
+        }
+        if (!confirm(`Confirmar? O sistema usará o formato "${rncFormatForm}" e o próximo número sequencial será ${num}.`)) return;
+        setLoadingCompany(true);
+        try {
+            const newConfig = {
+                ...companyForm.general_config,
+                sgq_rnc_config: { format: rncFormatForm, next_seq: num }
+            };
+            await updateGeneralSettings({ general_config: newConfig });
+            setCompanyForm(prev => ({ ...prev, general_config: newConfig }));
+            alert('Configuração de numeração de RNC salva com sucesso!');
+        } catch (err) {
+            alert('Erro: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingCompany(false);
+        }
+    };
+
     const handleRomaneioNumberSubmit = async () => {
         if (!romaneioNumberForm || isNaN(romaneioNumberForm)) {
             return alert('Digite um número válido!');
@@ -1233,6 +1270,65 @@ export default function Settings() {
                                         Status: {companyForm.general_config?.module_sgq_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
                                     </span>
                                 </div>
+
+                                {/* RNC Numbering Config */}
+                                <div className="mt-5 pt-4 border-t border-slate-200">
+                                    <h5 className="font-semibold text-slate-700 text-sm mb-1 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>
+                                        Numeração Automática de RNC
+                                    </h5>
+                                    <p className="text-xs text-slate-500 mb-4">
+                                        Define o padrão de número gerado automaticamente para cada nova RNC aberta no sistema.
+                                        Use os marcadores: <code className="bg-slate-100 px-1 rounded">{'{YEAR}'}</code> (ano), <code className="bg-slate-100 px-1 rounded">{'{MONTH}'}</code> (mês), <code className="bg-slate-100 px-1 rounded">{'{SEQ:N}'}</code> (sequência com N dígitos).
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Format */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Formato do Número</label>
+                                            <input
+                                                type="text"
+                                                className="w-full p-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-teal-400 focus:border-teal-500 outline-none"
+                                                placeholder="Ex: RNC-{YEAR}-{SEQ:4}"
+                                                value={rncFormatForm}
+                                                onChange={e => setRncFormatForm(e.target.value)}
+                                            />
+                                            {/* Live Preview */}
+                                            <div className="mt-1.5 text-xs text-slate-500">
+                                                Prévia: <span className="font-mono font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                                                    {rncFormatForm
+                                                        .replace('{YEAR}', new Date().getFullYear())
+                                                        .replace('{MONTH}', String(new Date().getMonth() + 1).padStart(2, '0'))
+                                                        .replace(/\{SEQ:(\d+)\}/, (_, n) => String(parseInt(rncNumberForm) || 1).padStart(parseInt(n), '0'))
+                                                        .replace('{SEQ}', String(parseInt(rncNumberForm) || 1).padStart(4, '0'))
+                                                    }
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {/* Starting Number */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Próximo Número Sequencial</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-400 focus:border-teal-500 outline-none"
+                                                placeholder="Ex: 1"
+                                                value={rncNumberForm}
+                                                onChange={e => setRncNumberForm(e.target.value)}
+                                            />
+                                            <p className="mt-1.5 text-xs text-slate-500">A próxima RNC criada usará este número.</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex justify-end">
+                                        <button
+                                            type="button"
+                                            disabled={loadingCompany}
+                                            onClick={handleRncConfigSubmit}
+                                            className="bg-teal-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-teal-700 text-sm disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCompany ? 'Salvando...' : 'Salvar Configuração de Numeração'}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             
                             {/* Módulo Análise 3D */}
@@ -1314,6 +1410,85 @@ export default function Settings() {
                                     <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_pcp_refinado_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
                                         Status: {companyForm.general_config?.module_pcp_refinado_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
                                     </span>
+                                </div>
+                            </div>
+
+                            {/* Módulo SGQ - Configuração RNC */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-lg">Módulo SGQ - Numeração de RNC</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Configure a numeração automática para os relatórios de não conformidade (RNC).
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Formato da Numeração</label>
+                                        <input 
+                                            type="text" 
+                                            value={companyForm.general_config?.sgq_rnc_config?.format || 'RNC-{YEAR}{MONTH}-{SEQ:4}'}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                setCompanyForm(prev => ({
+                                                    ...prev,
+                                                    general_config: {
+                                                        ...prev.general_config,
+                                                        sgq_rnc_config: {
+                                                            ...prev.general_config?.sgq_rnc_config,
+                                                            format: v
+                                                        }
+                                                    }
+                                                }));
+                                            }}
+                                            placeholder="Ex: RNC-{YEAR}{MONTH}-{SEQ:4}"
+                                            className="w-full p-2 border rounded-lg"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">Variáveis: {'{YEAR}'}, {'{MONTH}'}, {'{SEQ:4}'} (4 é o nº de dígitos)</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Próximo Número (Inicial)</label>
+                                        <input 
+                                            type="number" 
+                                            value={companyForm.general_config?.sgq_rnc_config?.next_seq || 1}
+                                            onChange={(e) => {
+                                                const v = parseInt(e.target.value, 10);
+                                                setCompanyForm(prev => ({
+                                                    ...prev,
+                                                    general_config: {
+                                                        ...prev.general_config,
+                                                        sgq_rnc_config: {
+                                                            ...prev.general_config?.sgq_rnc_config,
+                                                            next_seq: isNaN(v) ? 1 : v
+                                                        }
+                                                    }
+                                                }));
+                                            }}
+                                            className="w-full p-2 border rounded-lg"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        type="button"
+                                        disabled={loadingCompany}
+                                        onClick={async () => {
+                                            const newGeneralConfig = companyForm.general_config;
+                                            try {
+                                                setLoadingCompany(true);
+                                                await updateGeneralSettings({ general_config: newGeneralConfig });
+                                                alert('Configuração RNC salva com sucesso!');
+                                            } catch (err) {
+                                                alert('Erro ao salvar configuração RNC: ' + err.message);
+                                            } finally {
+                                                setLoadingCompany(false);
+                                            }
+                                        }}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium p-2 px-4 rounded-lg flex items-center gap-2 transition"
+                                    >
+                                        {loadingCompany ? 'Aguarde...' : 'Salvar Numeração RNC'}
+                                    </button>
                                 </div>
                             </div>
 

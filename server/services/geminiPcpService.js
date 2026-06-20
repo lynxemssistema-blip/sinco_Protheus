@@ -13,6 +13,13 @@ async function analisarRelatorioFCS(report) {
     const decisoes = report.decisoes || [];
     const ctx = report.contexto_historico || {};
 
+
+    // -- Secao TOP 100 Pecas Consumidoras --
+    const top100 = report.top_100_pecas_gargalo || [];
+    const secaoTop100 = top100.length > 0
+        ? top100.map((p, i) => `${i+1}. [${p.recurso}] Peca: ${p.produto} - Qtd: ${p.quantidade_total} | Tempo Total: ${Math.round(p.tempo_total_min)}min | Unitário: ${p.tempo_unitario_min}min`).join('\n')
+        : '  Nenhuma peca consumidora detectada.';
+
     // -- Seção 1: Capacidade e carga atual dos recursos --
     const seçaoRecursos = resumoRecursos.map(r => {
         const pct = r.capacidade_diaria_min > 0
@@ -90,6 +97,9 @@ Operações sequenciadas: ${report.total_operacoes_planejadas}
 === CAPACIDADE E CARGA DOS RECURSOS ===
 ${seçaoRecursos}
 
+
+=== TOP 100 PECAS MAIS CONSUMIDORAS DA CAPACIDADE ===
+${secaoTop100}
 === GARGALOS DETECTADOS NESTA EXECUÇÃO ===
 ${seçaoGargalos}
 
@@ -101,6 +111,11 @@ ${seçaoAlteracoes}
 
 === CARGA JÁ PLANEJADA NOS PRÓXIMOS 30 DIAS ===
 ${seçaoCargaFutura}
+
+
+INSTRUCAO CRITICA:
+Gere uma analise estritamente SUCINTA, TECNICA E CRITICA.
+Foque no TOP 100 acima. Ha indicios de superdimensionamento de tempo? Ha alguma peca monopolizando um recurso especifico? Aponte diretamente os problemas e não gaste palavras com saudacoes ou explicacoes teoricas. Mostre o que precisa ser revisto na engenharia ou no PCP.
 
 === INSTRUÇÕES ===
 Com base em TODOS os dados acima (planejamento atual + histórico + carga futura), realize uma análise técnica completa.

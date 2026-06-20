@@ -1,0 +1,3 @@
+ReferenceError: status is not defined
+    at C:\Users\adm\Desktop\MetalFisa Anty\server\routes\producao.js:1093:5
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

@@ -15,6 +15,8 @@ import FloatingAvisos from './components/FloatingAvisos';
 import GlobalTimerWidget from './components/GlobalTimerWidget';
 import HelpDrawer from './components/HelpDrawer';
 import EmailBlockerModal from './components/EmailBlockerModal';
+import HermesFeed from './components/HermesFeed';
+import PCPMetalDrawer from './components/PCPMetalDrawer';
 
 // Lazy-loaded pages (code splitting — each becomes a separate chunk)
 const OrdersTable = React.lazy(() => import('./components/OrdersTable'));
@@ -100,6 +102,8 @@ const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
 const VisaoSetores = React.lazy(() => import('./pages/pcp/VisaoSetores'));
 const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
 const PcpFilaDependencias = React.lazy(() => import('./pages/pcp/PcpFilaDependencias'));
+const ControleExecucao = React.lazy(() => import('./pages/pcp/ControleExecucao'));
+const ProgramasNCN = React.lazy(() => import('./pages/pcp/ProgramasNCN'));
 
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
@@ -111,8 +115,8 @@ const WabtecDatasSolicitacaoPage = React.lazy(() => import('./pages/wabtec/Wabte
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
-const Sinco1DocsPage = React.lazy(() => import('./pages/sinco/Sinco1DocsPage'));
 const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
+const TVDashboard = React.lazy(() => import('./pages/TVDashboard'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -173,6 +177,7 @@ const GestaoMateriais = React.lazy(() => import('./pages/manutencao/GestaoMateri
 
 const Layout = ({ children, fullWidth = true }) => {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+    const [isHermesChatOpen, setIsHermesChatOpen] = React.useState(false);
     const { toggleHelp, isOpen, isPinned } = useHelp();
     const location = useLocation();
 
@@ -206,6 +211,16 @@ const Layout = ({ children, fullWidth = true }) => {
                 <EmailBlockerModal />
                 <FloatingAvisos />
                 <HelpDrawer />
+                <HermesFeed />
+                <PCPMetalDrawer isOpen={isHermesChatOpen} onClose={() => setIsHermesChatOpen(false)} />
+
+                <button
+                    onClick={() => setIsHermesChatOpen(!isHermesChatOpen)}
+                    title="Conversar com o Agente Hermes"
+                    className="fixed bottom-[150px] right-6 z-[990] w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-xl transition-all duration-300 flex items-center justify-center print:hidden"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
+                </button>
 
                 {/* Topbar Mobile */}
                 <header className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">
@@ -239,6 +254,8 @@ const Layout = ({ children, fullWidth = true }) => {
     );
 };
 
+const LandingPage = React.lazy(() => import('./pages/LandingPage'));
+
 function App() {
     return (
         <AuthProvider>
@@ -255,14 +272,16 @@ function App() {
                                 </div>
                             }>
                                 <Routes>
+                                    <Route path="/" element={<LandingPage />} />
                                     <Route path="/login" element={<Login />} />
+                                    <Route path="/painel-producao" element={<TVDashboard />} />
 
                                     <Route element={<PrivateRoute />}>
                                         <Route path="/manutencao/maquinas" element={<Layout><ManutencaoMaquinas /></Layout>} />
                                         <Route path="/manutencao/checklists" element={<Layout><ManutencaoChecklists /></Layout>} />
                                         <Route path="/manutencao/ordens" element={<Layout><ManutencaoOrdens /></Layout>} />
                                         <Route path="/manutencao/tecnicos" element={<Layout><ManutencaoTecnicos /></Layout>} />
-                                        <Route path="/" element={
+                                        <Route path="/dashboard" element={
                                             <Layout fullWidth={true}>
                                                 <MeuCanal />
                                             </Layout>
@@ -448,11 +467,7 @@ function App() {
                                                 <ProtheusOverview />
                                             </Layout>
                                         } />
-                                        <Route path="/sinco-1-0/docs" element={
-                                            <Layout fullWidth={true}>
-                                                <Sinco1DocsPage />
-                                            </Layout>
-                                        } />
+
                                         <Route path="/pcp-refinado/rastreabilidade" element={
                                             <Layout fullWidth={true}>
                                                 <RastreabilidadePCP />
@@ -786,6 +801,16 @@ function App() {
                                         <Route path="/pcp/fila-dependencias" element={
                                             <Layout fullWidth={true}>
                                                 <PcpFilaDependencias />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/controle-execucao" element={
+                                            <Layout fullWidth={true}>
+                                                <ControleExecucao />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/programas-ncn" element={
+                                            <Layout>
+                                                <ProgramasNCN />
                                             </Layout>
                                         } />
                                         {/* PCP Refinado Routes */}

@@ -4,6 +4,150 @@
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const HELP_CONTENT = {
 
+  '/painel-producao': {
+    category: 'PCP / Chão de Fábrica',
+    categoryColor: '#8b5cf6',
+    title: 'Painel de TV (Produção & Corte)',
+    icon: 'Tv',
+    description: 'Painel de monitoramento contínuo em tempo real, projetado para exibição em TVs na fábrica. Apresenta o carrossel rotativo de prioridades e o detalhamento de carga de corte por máquina.',
+    tabs: [
+      {
+        id: 'prioridades',
+        label: 'Prioridades de Pedidos',
+        description: 'Painel esquerdo de monitoramento das prioridades comerciais e de produção.',
+        steps: [
+          'Exibição de Prioridades: Mostra as tarefas prioritárias ativas configuradas no painel Ata Viva.',
+          'Carrossel Automático: Caso haja mais de 3 itens, o painel alterna as páginas a cada ciclo do timer global.',
+          'Página Estática/Única: Projetado para exibir os dados de forma compacta e sem barras de rolagem, garantindo leitura perfeita a distância.'
+        ]
+      },
+      {
+        id: 'fila-corte',
+        label: 'Carga de Corte (Opção 1)',
+        description: 'Painel direito rotativo focado em um posto de corte (laser) por vez.',
+        steps: [
+          'Exibição 1 por 1: O carrossel mostra todos os detalhes da fila de uma única máquina ativa por vez, alternando a cada ciclo do timer.',
+          'Limite de Linhas: Exibe no máximo 5 programas por página. Fila maior que 5 gera sub-páginas rotativas para evitar barras de rolagem.',
+          'Cálculo de Tempo Acumulado: O tempo restante de fila para cada programa é acumulado (ex: o 3º programa mostra o tempo dele somado aos anteriores), dando visibilidade real de quando cada chapa iniciará.',
+          'Progresso Geral: A barra de progresso no cabeçalho indica a porcentagem de chapas concluídas de toda a fila ativa do equipamento.'
+        ]
+      },
+      {
+        id: 'alertas-parada',
+        label: 'Equipamentos Parados',
+        description: 'Monitoramento de ordens de serviço de manutenção ativas.',
+        steps: [
+          'Banner de Parada: Se a máquina estiver em manutenção (EM_MANUTENCAO ou AGUARDANDO_MANUTENCAO), um banner vermelho destacado é renderizado no topo.',
+          'Motivo em Tempo Real: O banner exibe o sintoma/motivo cadastrado na Ordem de Serviço aberta no módulo de manutenção.',
+          'Manutenção de Fila: Mesmo paradas ou sem programas pendentes, as máquinas continuam na rotação para manter a equipe ciente de seu status operacional.'
+        ]
+      }
+    ],
+    tips: [
+      'Modo Tela Cheia: Pressione F11 no navegador para maximizar o painel e remover as barras de endereços na TV da fábrica.',
+      'Ajuste da Rotação: Clique no ícone de engrenagem para abrir as opções de rotação e configure o tempo ideal para leitura da equipe.',
+      'Legenda de Cores: Linhas azuis indicam programas em execução (corte ativo); linhas laranja indicam programas em preparação ou montagem.'
+    ],
+    links: [
+      { path: '/pcp/programas-ncn', label: 'Programas CNC' },
+      { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  '/pcp/programas-ncn': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Programas CNC (NCN)',
+    icon: 'Cpu',
+    description: 'Interface de cadastro e sequenciamento de programas CNC para as máquinas de corte e conformação. Permite planejar a utilização de chapas e a ordem de execução.',
+    tabs: [
+      {
+        id: 'cadastro',
+        label: 'Cadastro de Programas',
+        description: 'Registro de novos programas de corte na plataforma.',
+        steps: [
+          'Código e Nome: Cadastre o identificador único do programa CNC (geralmente gerado pelo software de nesting).',
+          'Vínculo de Máquina: Associe o programa ao recurso/máquina onde ele será executado (ex: Laser 01).',
+          'Parâmetros Físicos: Defina a matéria-prima (chapa), espessura, dimensões e o tempo previsto por chapa.',
+          'Quantidade de Chapas: Informe a quantidade total de repetições/chapas planejadas para aquele programa.'
+        ]
+      },
+      {
+        id: 'sequenciamento',
+        label: 'Sequenciamento da Fila',
+        description: 'Definição da ordem de execução das máquinas.',
+        steps: [
+          'Ordem de Execução: Atribua números sequenciais para definir quais programas devem ser rodados primeiro.',
+          'Status Operacional: Acompanhe o status (FILA, EM_EXECUCAO, CONCLUIDO) conforme os operadores apontam a produção.',
+          'Vínculo de Operador: Visualize qual operador está responsável pelo programa que está em andamento.'
+        ]
+      },
+      {
+        id: 'nesting-otimizacao',
+        label: 'Otimização de Nesting',
+        description: 'Maximização do aproveitamento das matérias-primas.',
+        steps: [
+          'Tempo por Peça: Avalie o tempo previsto por ciclo para monitorar eventuais desvios de produtividade.',
+          'Retalho e Perdas: Registre a eficiência de aproveitamento da chapa para monitorar os níveis de refugo metálico.'
+        ]
+      }
+    ],
+    tips: [
+      'Importação em Lote: Utilize a ferramenta de upload se disponível para carregar planos de nesting gerados externamente.',
+      'Sincronização com a TV: Qualquer alteração na ordem de execução atualiza instantaneamente a fila exibida no painel de monitoramento da fábrica.'
+    ],
+    links: [
+      { path: '/painel-producao', label: 'Painel da TV' },
+      { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  '/pcp/controle-execucao': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Controle de Execução',
+    icon: 'Activity',
+    description: 'Interface de acompanhamento operacional detalhado em tempo real. Permite monitorar ordens de produção ativas, operadores logados, tempos de setup e eficácia de execução.',
+    tabs: [
+      {
+        id: 'realtime-log',
+        label: 'Log em Tempo Real',
+        description: 'Fluxo contínuo de eventos do chão de fábrica.',
+        steps: [
+          'Visualização de Apontamentos: Monitore cada peça registrada pelos operadores nos terminais fracionados.',
+          'Operadores Ativos: Identifique quem está logado em cada centro de trabalho e qual OP está executando.',
+          'Status dos Postos: Veja a lista completa de postos ativos com cronômetros de tempo de máquina ligada.'
+        ]
+      },
+      {
+        id: 'setup-tempos',
+        label: 'Tempos de Setup & Carga',
+        description: 'Auditoria de tempos improdutivos e preparação.',
+        steps: [
+          'Tempo de Setup: Monitore os desvios entre o tempo de setup planejado pela engenharia e o realizado na troca de ferramentas.',
+          'Pausas e Paradas: Acompanhe os registros de interrupções por falta de material, ajuste de máquina ou troca de turno.'
+        ]
+      },
+      {
+        id: 'integridade-erp',
+        label: 'Sincronização Protheus',
+        description: 'Garantia de conformidade entre o sistema local e o ERP.',
+        steps: [
+          'Apontamentos Pendentes: Verifique se existem registros locais aguardando envio para o Totvs Protheus.',
+          'Erros de Integração: Identifique e trate rejeições de apontamento no ERP (como divergência de saldo ou operador não cadastrado).'
+        ]
+      }
+    ],
+    tips: [
+      'Auditoria de Desvios: Use a aba de desvios para identificar gargalos onde o tempo de fabricação real superou em mais de 20% o tempo padrão cadastrado pela engenharia.',
+      'Passagem de Turno: Gere o relatório resumido de fechamento de turno para apoiar a transição de equipes na troca de horários.'
+    ],
+    links: [
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/producao', label: 'Ordens de Produção' }
+    ]
+  },
+
   // â”€â”€ ðŸ¤– Diretrizes e Persona do Agente de IA (Metalfisa - Suporte Lynx) â”€â”€â”€â”€â”€â”€â”€
   '_AI_SYSTEM_INSTRUCTIONS_': {
     category: 'InteligÃªncia Artificial',
@@ -178,49 +322,68 @@ export const HELP_CONTENT = {
     categoryColor: '#3b82f6',
     title: 'Pedidos de Venda (Visão Geral)',
     icon: 'ShoppingCart',
-    description: 'Interface principal de acompanhamento global dos pedidos de venda abertos ou encerrados. Reúne quatro abas especializadas: Listagem Geral, Cronograma Gantt de Pedidos (timeline visual por cliente/produto), Exportação de Materiais PCP e Detalhamento por OP.',
+    image: '/help-images/visao_geral.png',
+    description: 'Interface principal e central de acompanhamento global dos pedidos de venda. Reúne filtros avançados, modos de visualização flexíveis (Agrupado ou Lista Plana) e acesso rápido a ações como exportação, relatórios, previsão de faturamento e geração de Lotes de Produção.',
     tabs: [
       {
         id: 'geral',
-        label: 'Aba: Listagem Geral',
-        description: 'Tabela principal com todos os pedidos de venda.',
+        label: 'Aba: Evolução da Carteira (Listagem Geral)',
+        description: 'Tabela principal com todos os pedidos de venda, oferecendo duas visões ("Agrupado" e "Lista Plana") e controles granulares.',
         steps: [
-          'Busque pedidos específicos utilizando a barra de pesquisa superior (por número de pedido, cliente ou produto).',
-          'Utilize os filtros de status para alternar entre pedidos abertos, faturados parcialmente ou totalmente encerrados.',
-          'Clique sobre um pedido para expandir os itens atrelados e ver o status de atendimento de cada linha.',
-          'Use os filtros de data (Emissão / Entrega / NF) para focar em um período específico de análise.',
-          'Exporte a listagem atual clicando no botão Excel no cabeçalho — gera planilha com todos os pedidos filtrados.'
+          '🔄 COMPORTAMENTO INICIAL: Para não sobrecarregar o sistema, os dados NÃO são carregados automaticamente ao abrir a página. Você DEVE preencher os filtros desejados e clicar em "Filtrar" (ou pressionar Enter).',
+          '👁️ MODOS DE VISUALIZAÇÃO: No canto superior direito da tela, alterne entre "Agrupado" (pedidos principais como pais e itens embutidos/aninhados expansíveis) e "Lista Plana" (cada item como uma linha separada).',
+          '🔍 FILTROS DISPONÍVEIS: Filtre por Cliente, número do Pedido de Venda, Ordem de Compra (PC), ou código do Produto.',
+          '📅 FILTROS DE DATA: Selecione o "Tipo" da data para aplicar a pesquisa: "Emissão Pedido", "Data de Entrega" ou "Emissão NF". Você pode usar os atalhos rápidos ("Atrasados/Hoje" e "Hoje/Futuro") que aparecem abaixo dos calendários ao selecionar Data de Entrega.',
+          '⚖️ APENAS PENDENTES (Filtro Pesado): Localizado abaixo dos filtros de data, este botão ativa a exibição EXCLUSIVA de pedidos com saldo pendente (exclui totalmente faturados e foca na operação ativa). Desative-o se desejar uma busca muito mais rápida.',
+          '🔄 ORDENAÇÃO: Localizada na barra de filtros. Permite ordenar os resultados de forma ascendente ou descendente por: Pedido/Item, Data do Pedido, Data de Entrega (Pedido), Data de Entrega PCP ou Previsão de Faturamento.',
+          '🏭 LOTES DE O.P. E CORTE: Na visão "Lista Plana", é possível selecionar múltiplos itens clicando nas checkboxes da primeira coluna. Com itens selecionados, dois botões aparecerão logo acima da tabela permitindo "Gerar Lote de O.P." ou "Gerar Lote de Corte" de forma aglutinada.',
+          '📝 AÇÕES ESPECÍFICAS DA LINHA (Três Pontinhos): Clique no menu "Mais Ações" de um pedido ou item para opções extras, como: "Imprimir Espelho da OP" (simples, agrupado, ou Fichas de Operação) e exportações.',
+          '📷 FOTOS E DOCUMENTOS: Clique no ícone de imagem/documento na tabela para abrir o modal de "Fotos do Produto" ou documentação de engenharia atrelada.'
+        ]
+      },
+      {
+        id: 'pcp-export',
+        label: 'Aba: Exportação Materiais (PCP)',
+        description: 'Visualização focada na relação de materiais atrelados aos pedidos de venda listados.',
+        steps: [
+          'Selecione a aba "Exportação Materiais" para visualizar a relação de itens e matérias-primas.',
+          'Utilize as opções de filtro para isolar componentes específicos e os exporte para planilhas se necessário para rotinas de requisição ou análise.'
         ]
       },
       {
         id: 'cronograma',
-        label: 'Aba: Cronograma (Timeline de Pedidos)',
-        description: 'Visualização Gantt dos pedidos de venda agrupados por cliente e produto, com linha do tempo horizontal.',
+        label: 'Aba: Cronograma / Gantt',
+        description: 'Visualização visual Gantt dos pedidos de venda agrupados por cliente e produto, com linha do tempo horizontal.',
         steps: [
-          'Selecione o período desejado no filtro de datas no topo da aba para definir o intervalo do cronograma.',
           'A linha do tempo exibe cada item de pedido como uma barra horizontal posicionada entre sua data de emissão e data de entrega prevista.',
-          'As cores das barras indicam o status: Verde = Entregue, Laranja = Pendente, Vermelho = Atrasado (data de entrega já passou).',
+          'As cores das barras indicam o status do pedido: Verde = Entregue, Laranja = Pendente, Vermelho = Atrasado (data de entrega já passou).',
           'Passe o mouse sobre uma barra para ver um tooltip com os detalhes completos: pedido, cliente, produto, quantidade e datas.',
-          'Imprimir o Cronograma em PDF (Padrão MetalFisa): Clique no botão "Exportar PDF" (ícone de impressora) no canto superior direito da aba. O sistema gera automaticamente um arquivo .pdf no formato A4 Paisagem (297×210 mm) com:',
-          '  — Cabeçalho corporativo MetalFisa com o logo oficial da empresa no bloco azul marinho (RGB 30, 58, 95).',
-          '  — Bloco de título cinza com o período coberto pelo cronograma e a data de geração.',
-          '  — Tabela de itens com colunas: Pedido, Cliente, Produto, Descrição, Qtd, Unidade, Data Emissão, Data Entrega, Status.',
-          '  — Header persistente em todas as páginas: o cabeçalho MetalFisa reaparece automaticamente em cada nova folha do PDF, garantindo identificação corporativa em relatórios de várias páginas.',
-          '  — Rodapé com número de páginas (Página X de Y) e identificação do relatório.',
-          '  — Linhas alternadas em zebra para facilitar leitura em impressões físicas no chão de fábrica.',
-          'O arquivo é baixado automaticamente com o nome no formato: Cronograma_Pedidos_AAAAMMDD_HHMM.pdf'
+          '🖨️ IMPRESSÃO DO CRONOGRAMA: Clique no botão "Exportar PDF" (ícone de impressora). O arquivo é gerado no padrão corporativo MetalFisa em A4 Paisagem (297×210 mm) e o cabeçalho azul se repete persistente em todas as páginas se o relatório for longo.'
+        ]
+      },
+      {
+        id: 'mrp-bulk',
+        label: 'Aba: Necessidades MP (Almox 01/03)',
+        description: 'Verificação rápida de Materiais (MRP Bulk) para os itens e pedidos visíveis no momento.',
+        steps: [
+          'Fornece uma visão compilada sobre o que será necessário em termos de Matéria Prima (Almoxarifado 01 e 03) para os pedidos listados.',
+          'Ideal para consultas prévias e planejamento de compras.'
         ]
       }
     ],
     steps: [
-      'Navegue entre as abas no topo: "Pedidos" (listagem geral), "Cronograma" (timeline visual), "Exportação Materiais" e "Detalhamento".',
-      'Na aba Cronograma, use o filtro de período para focar nas entregas do mês ou da semana atual.',
-      'Use o botão "Exportar PDF" na aba Cronograma para gerar o relatório no padrão corporativo MetalFisa em A4 paisagem.',
+      '1. Acesse a Visão Geral. A tela estará inicialmente em branco.',
+      '2. Escolha os parâmetros da sua pesquisa e defina a perspectiva de datas (Emissão, Entrega ou Faturamento) e se deseja exibir todos ou apenas Ativos.',
+      '3. Pressione Enter no teclado ou clique em Filtrar.',
+      '4. Com os dados carregados, utilize a barra superior direita para gerar "Download Excel", "Exportar PDF" ou criar uma "Ata (Pedidos da Tela)".',
+      '5. Alterne entre as visões "Agrupado" e "Lista Plana" caso precise extrair relatórios específicos.',
+      '6. Navegue pelas Abas superiores para visualizar dados financeiros (Evolução), de PCP ou o Cronograma Visual Gantt.',
     ],
     tips: [
-      'A aba Cronograma é ideal para reuniões de planejamento: o PDF gerado já vem formatado com o logo e o cabeçalho MetalFisa, pronto para apresentação.',
-      'O PDF do cronograma inclui header persistente — em relatórios com muitas páginas, o cabeçalho MetalFisa aparece em todas as folhas automaticamente.',
-      'Esta visão oferece uma perspectiva mais focada no comercial/entrega, diferente do Controle de Produção que foca nas operações fabris.',
+      '⚡ **Performance**: O filtro "Apenas Pendentes (Filtro Pesado)" realiza verificações extensas no banco. Desativá-lo resultará em pesquisas extremamente mais rápidas e leves.',
+      '📋 **Visão Plana**: A "Lista Plana" é recomendada não apenas para exportação de dados analíticos, mas principalmente porque é a única que ativa as funcionalidades de Geração de Lote (OPs e Corte).',
+      '💰 **Previsão de Faturamento (Billing Forecast)**: Você pode atualizar a data de "Previsão de Faturamento" diretamente da tabela, clicando/editando o campo correspondente. Ele salvará automaticamente.',
+      '🖨️ **Impressão Ágil**: Na listagem geral de pedidos, o Menu de Ações (três pontinhos) permite opções complexas como imprimir Espelhos de OP integrando Desenhos automaticamente.',
     ],
     links: [
       { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
@@ -3011,6 +3174,253 @@ export const HELP_CONTENT = {
     links: [
       { path: '/pcp-refinado/ocupacao', label: 'Taxa de Ocupação' },
       { path: '/controle-producao', label: 'Controle de Produção' }
+    ]
+  },
+
+  // ── SGQ Dashboard ──────────────────────────────────────────────────────────
+  '/sgq': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Painel do SGQ',
+    icon: 'Building2',
+    description: 'Central de controle do Sistema de Gestão da Qualidade da MetalFisa. Acesse os módulos de processos, documentos, não conformidades, calibrações e ferramentas.',
+    steps: [
+      'Navegue pelos cards para acessar cada submódulo da qualidade.',
+      'O módulo de Treinamentos e Processos mapeia as fichas de processo do setor.',
+      'O módulo de RNCs gerencia as ocorrências internas, de fornecedores e clientes.',
+      'O módulo de Calibração monitora os vencimentos de instrumentos de medição.',
+      'Acesse as diretrizes oficiais em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\04.4 SGQ e seus processos'
+    ],
+    tips: [
+      'Use este painel para auditorias internas e externas da ISO 9001.'
+    ],
+    links: [
+      { path: '/sgq/mapeamento-processos', label: 'Mapeamento de Processos' },
+      { path: '/sgq/gestao-rncs', label: 'Gestão de RNCs' }
+    ]
+  },
+
+  // ── Gestão de Ativos ───────────────────────────────────────────────────────
+  '/sgq/ativos': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Gestão de Ativos & Calibração',
+    icon: 'Wrench',
+    description: 'Inventário completo de equipamentos de medição, ferramentas gerais e calibração de instrumentos.',
+    steps: [
+      'Cadastre um ativo pelo botão "Novo Ativo" definindo se ele exige calibração.',
+      'Se o ativo NÃO exige calibração, controle a quantidade em estoque direto na tabela (botões + e -).',
+      'Se exige calibração, insira a validade e gerencie as regras de alerta.',
+      'Use a aba de anexos dentro do cadastro do ativo para subir fotos e manuais técnicos em PDF.',
+      'Acesse as diretrizes oficiais em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\07.1.5 Recursos de monitoramento e medição'
+    ],
+    tips: [
+      'Você pode aplicar as regras de alerta configuradas para um ativo para todos os outros usando o botão de lote no modal.'
+    ],
+    links: [
+      { path: '/sgq/calibracoes', label: 'Controle de Calibração' },
+      { path: '/sgq/caixas', label: 'Caixas de Ferramentas' }
+    ]
+  },
+
+  // ── Caixas de Ferramenta ───────────────────────────────────────────────────
+  '/sgq/caixas': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Caixas de Ferramenta (Custódia)',
+    icon: 'Package',
+    description: 'Gestão de kits e caixas de ferramentas sob custódia de colaboradores específicos.',
+    steps: [
+      'Crie caixas no padrão "CX-METAL-XXXX" e vincule a um colaborador cadastrado.',
+      'Clique em "Gerenciar Ativos" para atribuir ferramentas disponíveis na caixa ou devolvê-las ao estoque.',
+      'Use o botão "Relatório" para imprimir o termo de responsabilidade assinado contendo os itens atuais da caixa.',
+      'Consulte PDFs de manuais associados às ferramentas de maneira rápida pelo sub-modal.',
+      'Acesse as diretrizes oficiais em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\08.5.4 Preservação'
+    ],
+    tips: [
+      'Somente ferramentas com status "Disponível" (available) no inventário podem ser atribuídas a uma caixa.'
+    ],
+    links: [
+      { path: '/sgq/ativos', label: 'Inventário Geral de Ativos' }
+    ]
+  },
+
+  // ── Romaneios SGQ ──────────────────────────────────────────────────────────
+  '/sgq/romaneios': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Romaneios SGQ (Envio/Retorno)',
+    icon: 'Truck',
+    description: 'Controle logístico de remessa e retorno de equipamentos de medição (ex: envio para laboratório de calibração externo).',
+    steps: [
+      'Clique em "Novo Romaneio" e informe o fornecedor, destinatário e data de previsão de retorno.',
+      'Adicione os itens do inventário que farão parte do romaneio.',
+      'Mude o status do romaneio para "Enviado" para indicar a saída física das peças.',
+      'Ao receber as peças de volta, marque os itens como retornados e encerre o romaneio.',
+      'Acesse as diretrizes oficiais em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\08.4 Fornecedores e Aquisicao'
+    ],
+    tips: [
+      'Ao excluir um romaneio pendente, todos os ativos vinculados voltam automaticamente ao status "Disponível".'
+    ],
+    links: [
+      { path: '/sgq/ativos', label: 'Inventário Geral de Ativos' }
+    ]
+  },
+
+  // ── Mapeamento de Processos ────────────────────────────────────────────────
+  '/sgq/mapeamento-processos': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Mapeamento de Processos',
+    icon: 'Layers',
+    description: 'Visualização da árvore de processos e fluxogramas da empresa baseados no sistema.',
+    steps: [
+      'Aba Mapa Mental (ReactFlow): Navegue e clique nos nós dos processos para ver detalhes.',
+      'Aba Organograma Nativo: Veja a representação visual da estrutura hierárquica por setores.',
+      'Ao clicar em um processo, use o formulário para editar a missão, entradas, saídas e responsáveis pelo processo.',
+      'Vincule documentos controlados (procedimentos ISO) diretamente ao processo mapeado.',
+      'Acesse as diretrizes oficiais em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\04.4 SGQ e seus processos'
+    ],
+    tips: [
+      'As alterações de processos feitas aqui atualizam em tempo real o banco de dados e os tutoriais contextuais de cada página correspondente.'
+    ],
+    links: [
+      { path: '/sgq/documentos', label: 'Procedimentos' }
+    ]
+  },
+
+  // ── Cargos e Funções ───────────────────────────────────────────────────────
+  '/sgq/cargos-funcoes': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Cargos e Funções',
+    icon: 'Users',
+    description: 'Descrição de cargos, atribuições, requisitos mínimos e atividades conforme CBO.',
+    steps: [
+      'Veja a lista de cargos da empresa na tabela principal.',
+      'Ao cadastrar ou editar um cargo, defina a denominação CBO, educação exigida, experiência e treinamentos requeridos.',
+      'Adicione as atividades executadas na listagem de responsabilidades.',
+      'Exporte a ficha do cargo em PDF clicando em "Imprimir".',
+      'Consulte a Matriz de Responsabilidades (MRA) em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\05.2.3 Papéis e Responsabilidades\\MRA Matriz de Resp e Aut do SGQ - Rev 01.xlsx',
+      'Consulte o Organograma Oficial em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\05.3 Papeis, responsabilidades e autoridades\\D 17001 - Organograma Metalfisa Rev01.pdf'
+    ],
+    tips: [
+      'Estas fichas servem de base para a matriz de competências do SGQ.'
+    ],
+    links: [
+      { path: '/sgq/treinamento', label: 'Treinamento' }
+    ]
+  },
+
+  // ── Documentos ISO 9001 ────────────────────────────────────────────────────
+  '/sgq/documentos': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Documentos e Procedimentos (ISO)',
+    icon: 'FileText',
+    description: 'Central de elaboração e controle de procedimentos, instruções de trabalho e registros da qualidade.',
+    steps: [
+      'Selecione o setor na barra lateral e clique em um documento para carregar o editor.',
+      'Use o botão "Carregar Tópicos ISO" para preencher a estrutura regulamentar de 10 cláusulas padrão.',
+      'Escreva utilizando o editor SunEditor. Para auxílio, use o painel "Assistente IA".',
+      'Salve o documento para registrar uma nova revisão no banco de dados.',
+      'Exporte o documento formatado com cabeçalho oficial de análise crítica da MetalFisa para Word (.docx) ou PDF.',
+      'Consulte a Lista Mestre oficial de Documentos do SGQ em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\07.5 Informacao Documentada\\F 110-23 Lista Mestre - Documentos SGQ - Rev 00.xlsx',
+      'Consulte os diretórios de Procedimentos (02 PQ\'s / 03 POP\'s) e Instruções (06 IT\'s) no servidor.'
+    ],
+    tips: [
+      'O Assistente de IA é otimizado para a norma ISO 9001. Você pode selecionar trechos do texto para melhoria.'
+    ],
+    links: [
+      { path: '/sgq/mapeamento-processos', label: 'Mapa de Processos' }
+    ]
+  },
+
+  // ── Padrões de Não Conformidades ───────────────────────────────────────────
+  '/sgq/nao-conformidades': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Padrões Visuais de Não Conformidades',
+    icon: 'AlertCircle',
+    description: 'Cadastro dos padrões fotográficos e critérios de inspeção para guiar os operadores no apontamento do chão de fábrica.',
+    steps: [
+      'Selecione o recurso/máquina que deseja parametrizar.',
+      'Escreva a descrição do desvio (ex: rebarba excessiva, arranhão profundo).',
+      'Defina a gravidade (observação, moderada ou crítica) e o tipo de resposta.',
+      'Insira uma imagem de "Padrão Correto" (OK) e outra de "Padrão Incorreto" (NOK).',
+      'Clique em "Salvar" para disponibilizar esse critério no monitor de conferência do recurso.',
+      'Consulte o documento de referência da norma em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\08.7 Controle de saídas não conformes\\Info 8.7.docx'
+    ],
+    tips: [
+      'Gere o PDF do Padrão Visual para afixar fisicamente próximo à estação de trabalho.'
+    ],
+    links: [
+      { path: '/sgq/gestao-rncs', label: 'Gestão de RNCs' }
+    ]
+  },
+
+  // ── Gestão de RNCs ─────────────────────────────────────────────────────────
+  '/sgq/gestao-rncs': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Registro de Não Conformidades (RNC)',
+    icon: 'Shield',
+    description: 'Processo completo de abertura, tratamento e acompanhamento de desvios e ocorrências de qualidade.',
+    steps: [
+      'Aba Lista de RNCs: Pesquise RNCs ativas por código, OP ou produto e gerencie o status.',
+      'Clique em "Tratar RNC" para abrir o formulário F097 contendo análise de 5W2H.',
+      'Defina as ações de disposição (Retrabalho ou Peça Nova).',
+      'Use o botão "Apontar Tempo" para registrar o tempo gasto no retrabalho do item, detalhando a operação.',
+      'Na aba "Painel de KPIs", analise gráficos de evolução, diagrama de Pareto de defeitos e gravidades.',
+      'Consulte e preencha o Plano de Ação oficial (F 095-22) disponível em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\10.2 Não conformidade e ação corretiva\\F 095-22 Formulário de Plano de Ação (PA) - Rev. 00.xlsx'
+    ],
+    tips: [
+      'Se a disposição for "Peça Nova", clique em "Liberar Reposição" na aba "Peças Solicitadas" e informe o número da nova OP de fabricação.'
+    ],
+    links: [
+      { path: '/sgq/nao-conformidades', label: 'Padrões Visuais' }
+    ]
+  },
+
+  // ── Treinamentos e Processos ───────────────────────────────────────────────
+  '/sgq/treinamento': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Processos e Treinamentos',
+    icon: 'Target',
+    description: 'Mapeamento de fichas de processo e controle de competências do time.',
+    steps: [
+      'Aba Processos: Cadastre os fornecedores, insumos, atividades principais, saídas e clientes internos/externos de cada setor.',
+      'Aba Organograma: Construa a hierarquia organizacional e a divisão de atribuições.',
+      'Aba Matriz de Competências: Acompanhe a capacitação do time para as operações.',
+      'Consulte a Matriz de Competências oficial e registros em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\07.2 Competência'
+    ],
+    tips: [
+      'Manter as fichas atualizadas é fundamental para a transição dos fluxos de trabalho da fábrica.'
+    ],
+    links: [
+      { path: '/sgq/cargos-funcoes', label: 'Cargos e Funções' }
+    ]
+  },
+
+  // ── Controle de Calibração ─────────────────────────────────────────────────
+  '/sgq/calibracoes': {
+    category: 'Qualidade',
+    categoryColor: '#3b82f6',
+    title: 'Controle de Calibração de Instrumentos',
+    icon: 'Calendar',
+    description: 'Monitoramento sistemático das datas de calibração e validade de instrumentos e equipamentos de medição.',
+    steps: [
+      'Consulte a listagem de alertas na aba "Vencimentos". Instrumentos vencidos aparecem em vermelho.',
+      'Clique em "Novo Certificado" para subir o documento em PDF emitido pelo laboratório de calibração externo.',
+      'Na aba "Histórico", acesse e faça o download de todos os certificados antigos vinculados ao ativo.',
+      'Consulte a planilha oficial de controle em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\07.1.5.2 Rastreabilidade de medição\\F-011-17 - Controle de Calibração - Rev.00.xls'
+    ],
+    tips: [
+      'Configurações de notificações integradas no WhatsApp avisam automaticamente a qualidade antes do vencimento.'
+    ],
+    links: [
+      { path: '/sgq/ativos', label: 'Inventário Geral de Ativos' }
     ]
   }
 

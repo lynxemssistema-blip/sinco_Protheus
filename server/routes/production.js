@@ -1237,47 +1237,50 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
         } // fecha: if (operacao || setor)
         // 3. Apply MySQL pre-filter (planned dates)
         if (plannedOpsFilter) {
-            // CORRIGIDO: usa chave op|item|operacao (sem op_sequencia).
-            // MySQL salva op_sequencia='001' (linha base do sc2010), mas os expanded rows
-            // podem ter sequen diferente (ex: '010','020') dependendo do c2_sequen.
-            // Ignorar sequen garante o match correto pelo código de operação.
-            const plannedSet = new Set(plannedOpsFilter.map(p => `${(p.op_numero || '').trim()}|${(p.op_item || '').trim()}|${(p.operacao_codigo || '').trim()}`));
-            ops = ops.filter(row => plannedSet.has(`${row.op}|${row.item_op}|${row.operacao}`));
+            // Re-adding op_sequencia to prevent cross-sequence pollution (e.g., 33/1 bug)
+            const plannedSet = new Set(plannedOpsFilter.map(p => `${(p.op_numero || '').trim()}|${(p.op_item || '').trim()}|${(p.op_sequencia || '').trim()}|${(p.operacao_codigo || '').trim()}`));
+            ops = ops.filter(row => plannedSet.has(`${(row.op || '').trim()}|${(row.item_op || '').trim()}|${(row.sequen || '').trim()}|${(row.operacao || '').trim()}`));
         }
 
-        // 4. Fetch Plans & Appointments from MySQL
+        // 4. Fetch Plans & Appointments from MySQL — chunks paralelos (2 queries por chunk simultâneas)
         const relevantOpNums = [...new Set(ops.map(o => o.op).filter(Boolean))];
         let plans = [], appointments = [];
         if (relevantOpNums.length > 0) {
             const CHUNK = 500;
-            for (let i = 0; i < relevantOpNums.length; i += CHUNK) {
-                const chunk = relevantOpNums.slice(i, i + CHUNK);
-                const ph = chunk.map(() => '?').join(',');
-                const [pr] = await mysqlPool.execute(`SELECT * FROM app_production_planning WHERE op_numero IN (${ph})`, chunk);
+            const chunkResults = await Promise.all(
+                Array.from({ length: Math.ceil(relevantOpNums.length / CHUNK) }, (_, i) => {
+                    const chunk = relevantOpNums.slice(i * CHUNK, (i + 1) * CHUNK);
+                    const ph = chunk.map(() => '?').join(',');
+                    return Promise.all([
+                        mysqlPool.execute(`SELECT * FROM app_production_planning WHERE op_numero IN (${ph})`, chunk),
+                        mysqlPool.execute(`
+                            SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                                   SUM(quantidade) as total_produzido,
+                                   COUNT(*) as num_apontamentos,
+                                   SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
+                                   MIN(data_inicio) as data_real_inicio,
+                                   MAX(data_fim) as data_real_fim,
+                                   MAX(data_fim) as ultimo_apontamento
+                            FROM app_production_appointments
+                            WHERE op_numero IN (${ph})
+                            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                        `, chunk)
+                    ]);
+                })
+            );
+            for (const [[pr], [ar]] of chunkResults) {
                 for (const r of pr) plans.push(r);
-                const [ar] = await mysqlPool.execute(`
-                    SELECT op_numero, op_item, operacao_codigo,
-                           SUM(quantidade) as total_produzido,
-                           COUNT(*) as num_apontamentos,
-                           SUM(CASE WHEN conferencia_status = 'PENDENTE' THEN 1 ELSE 0 END) as pendencias_conferencia,
-                           MIN(data_inicio) as data_real_inicio,
-                           MAX(data_fim) as data_real_fim,
-                           MAX(data_fim) as ultimo_apontamento
-                    FROM app_production_appointments
-                    WHERE op_numero IN (${ph})
-                    GROUP BY op_numero, op_item, operacao_codigo
-                `, chunk);
                 for (const a of ar) appointments.push(a);
             }
         }
 
         // 5. Merge Plans & Appointments (O(1) Maps)
-        const mkKey = o => `${(o.op_numero || '').trim()}|${(o.op_item || '').trim()}|${(o.operacao_codigo || '').trim()}`;
+        const mkKey = o => `${(o.op_numero || '').trim()}|${(o.op_item || '').trim()}|${(o.op_sequencia || '').trim()}|${(o.operacao_codigo || '').trim()}`;
         const plansMap = new Map(plans.map(p => [mkKey(p), p]));
         const apptMap = new Map(appointments.map(a => [mkKey(a), a]));
 
         let mergedOps = ops.map(row => {
-            const key = `${(row.op || '').trim()}|${(row.item_op || '').trim()}|${(row.operacao || '').trim()}`;
+            const key = `${(row.op || '').trim()}|${(row.item_op || '').trim()}|${(row.sequen || '').trim()}|${(row.operacao || '').trim()}`;
             const plan = plansMap.get(key);
             const prog = apptMap.get(key);
             return {
@@ -2668,7 +2671,8 @@ router.post('/appoint', async (req, res) => {
             if (qtdPlanejada > 0) {
                 const [appRows] = await connection.execute(
                     `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                     AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
                      [op_numero, op_item, op_sequencia, operacao_codigo]
                 );
                 const produzido = Number(appRows[0].total) || 0;
@@ -2706,7 +2710,8 @@ router.post('/appoint', async (req, res) => {
                 const prevOp = prevRes.rows[0].prev_operacao;
                 const [prevAppRows] = await connection.execute(
                     `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?`,
+                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                     AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
                     [op_numero, op_item, op_sequencia, prevOp]
                 );
                 const prevProduzido = Number(prevAppRows[0].total) || 0;
@@ -3480,24 +3485,18 @@ CASE
         // 3. Fetch all appointments from MySQL
         const [appointments] = await mysqlPool.query(`
 SELECT
-op_numero, op_item, operacao_codigo,
+op_numero, op_item, op_sequencia, operacao_codigo,
 SUM(quantidade) as total_produzido,
     MAX(data_fim) as ultima_atualizacao
             FROM app_production_appointments
-            GROUP BY op_numero, op_item, operacao_codigo
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
     `);
 
         // Create appointments map for quick lookup
         const appointmentsMap = {};
         appointments.forEach(a => {
-            // Key format: OP_ITEM_SEQ (Note: OP Item from MySQL might need verify)
-            // Ideally match by OP + SEQ. 
-            // Protheus OP is usually "12345601" or "123456" + Item "01"
-            // App OP_NUMERO usually matches "123456" + "01" (if user entered strictly)
-            // Let's assume op_numero in App matches op_num from Protheus query (which is TRIMmed)
-
-            // Note: operacao_codigo in App (01, 05) matches g2_operac (sequencia)
-            const key = `${a.op_numero}_${a.operacao_codigo} `;
+            // Key format: OP_ITEM_SEQ_OPERACAO
+            const key = `${a.op_numero}_${a.op_item}_${a.op_sequencia}_${a.operacao_codigo} `;
             appointmentsMap[key] = a;
         });
 
@@ -3568,8 +3567,8 @@ SUM(quantidade) as total_produzido,
 
             // Add OP to item if exists
             if (row.op && row.item) {
-                // Key matching: OP + Sequence
-                const apptKey = `${row.op}_${row.sequencia} `;
+                // Key matching: OP + Item + Seq (from sc2010 usually 001) + Operacao
+                const apptKey = `${row.op}_${row.item_op}_${row.sequen_op}_${row.sequencia} `;
                 const appt = appointmentsMap[apptKey];
 
                 const qtdApontada = appt ? parseFloat(appt.total_produzido) || 0 : 0;
@@ -4625,6 +4624,16 @@ UPPER(TRIM(usuario)),
 // FUNÇÕES AUXILIARES DE CASCATA
 // ==========================================
 
+function isSeqBefore(seqA, seqB) {
+    if (!seqA || !seqB) return false;
+    const numA = parseInt(seqA.replace(/[^0-9]/g, ''), 10);
+    const numB = parseInt(seqB.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(numA) && !isNaN(numB)) {
+        return numA < numB;
+    }
+    return seqA.trim().localeCompare(seqB.trim()) < 0;
+}
+
 async function processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_gatilho, quantidade_apontada, usuario_original, data_inicio, data_fim, initialStatus) {
     if (op_sequencia !== '001') {
         return; // Apenas inicia a baixa em cascata se for apontamento do produto pai (sequencia '001')
@@ -4644,12 +4653,13 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
 
         const produtoPai = pgRes.rows[0].produto_pai;
 
-        // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai
+        // 1.5 Auto-apontamento das outras operações do PRÓPRIO Produto Pai (apenas anteriores)
         const parentOpsRes = await db.query(`
             SELECT TRIM(g2.g2_operac) as operacao
             FROM public.sg2010 g2
             WHERE btrim(g2.g2_produto) = $1
             AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            ORDER BY g2.g2_operac ASC
         `, [produtoPai]);
 
         // Buscamos a quantidade planejada do pai para segurança de saldo
@@ -4663,12 +4673,13 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
         const parentPlan = parentPlanRes.rows.length > 0 ? Number(parentPlanRes.rows[0].qtd_planejada) || 0 : 0;
 
         for (const popRow of parentOpsRes.rows) {
-            if (!popRow.operacao || popRow.operacao === operacao_gatilho) continue;
+            if (!popRow.operacao || !isSeqBefore(popRow.operacao, operacao_gatilho)) continue;
 
             const [pAppRows] = await connection.execute(`
                 SELECT COALESCE(SUM(quantidade), 0) as total_apontado
                 FROM app_production_appointments
                 WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+                AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
             `, [op_numero, op_item, op_sequencia, popRow.operacao]);
 
             const apontadoPai = Number(pAppRows[0].total_apontado);
@@ -4743,6 +4754,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
                     SELECT COALESCE(SUM(quantidade), 0) as total_apontado
                     FROM app_production_appointments
                     WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ?
+                    AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                 `, [op_numero, opRow.item_op, opRow.sequen_op, opRow.operacao]);
 
                 const apontado = Number(appRows[0].total_apontado);

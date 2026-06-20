@@ -120,7 +120,7 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
                         // Infinite scroll: append new page, deduplicate by composite key
                         setOrders(prev => {
                             const idKey = searchViewMode === 'flat'
-                                ? d => `${d.pedido}-${d.item}`
+                                ? d => `${d.pedido}-${d.item}-${d.op_num || ''}`
                                 : d => d.pedido;
                             const existingIds = new Set(prev.map(idKey));
                             const newRows = data.filter(d => !existingIds.has(idKey(d)));

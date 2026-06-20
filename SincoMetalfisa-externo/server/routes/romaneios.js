@@ -1232,7 +1232,7 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
                     const [aptRows] = await connection.query(`
                         SELECT SUM(quantidade) AS apontado
                         FROM app_production_appointments
-                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND conferencia_status != 'CANCELADO'
+                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                     `, [op_numero, op_item, op_sequencia, operacao_baixa]);
                     
                     const apontado = aptRows[0].apontado || 0;

@@ -8,10 +8,54 @@ const mammoth = require('mammoth');
 const pdf = require('pdf-parse');
 const docx = require('docx');
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+const fs = require('fs');
+const path = require('path');
+
+// Scan a directory for PDF and Word files
+router.post('/scan-folder', async (req, res) => {
+    try {
+        const { folderPath } = req.body;
+        if (!folderPath || !folderPath.trim()) {
+            return res.status(400).json({ error: 'Caminho do diretório é obrigatório.' });
+        }
+
+        const resolvedPath = path.resolve(folderPath.trim());
+        
+        if (!fs.existsSync(resolvedPath)) {
+            return res.status(404).json({ error: 'O caminho especificado não existe.' });
+        }
+
+        const stat = fs.statSync(resolvedPath);
+        if (!stat.isDirectory()) {
+            return res.status(400).json({ error: 'O caminho especificado não é um diretório.' });
+        }
+
+        const files = await fs.promises.readdir(resolvedPath);
+        const filteredFiles = [];
+
+        for (const file of files) {
+            const ext = path.extname(file).toLowerCase();
+            if (['.pdf', '.docx', '.doc'].includes(ext)) {
+                const fullPath = path.join(resolvedPath, file);
+                const fileStat = fs.statSync(fullPath);
+                filteredFiles.push({
+                    name: file,
+                    path: fullPath,
+                    size: fileStat.size
+                });
+            }
+        }
+
+        res.json({ files: filteredFiles });
+    } catch (err) {
+        console.error('❌ Erro ao escanear diretório:', err);
+        res.status(500).json({ error: 'Erro ao escanear diretório: ' + err.message });
+    }
+});
 
 router.post('/document-assist', async (req, res) => {
     try {
-        const { documentContext, selectedText, prompt, modelName, extraContext } = req.body;
+        const { documentContext, selectedText, prompt, modelName, extraContext, selectedFiles } = req.body;
 
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey || apiKey === 'sua_api_key_aqui') {
@@ -25,33 +69,103 @@ router.post('/document-assist', async (req, res) => {
                 temperature: 0.4,
                 topP: 1,
                 topK: 32,
-                maxOutputTokens: 2048,
+                maxOutputTokens: 4096,
+                responseMimeType: "application/json"
             }
         });
 
-        const systemPrompt = `Você é um Assistente especializado em redigir documentos do Sistema de Gestão da Qualidade (SGQ) da MetalFisa.
-O usuário está escrevendo/editando um "Procedimento da Qualidade (PQ)" e precisa da sua ajuda.
-A estrutura padrão deste documento é:
-1. OBJETIVO, 2. ABRANGÊNCIA, 3. SIGLAS, 4. DEFINIÇÕES, 5. RESPONSABILIDADES, 6. PROCEDIMENTOS, 7. INFORMAÇÃO DOCUMENTADA, 8. ABORDAGEM A RISCOS, 9. ANEXOS, 10. HISTÓRICO DE REVISÕES.
+        // Read and parse selected files on the fly
+        let filesContextText = '';
+        if (selectedFiles && Array.isArray(selectedFiles)) {
+            for (const filePath of selectedFiles) {
+                try {
+                    if (fs.existsSync(filePath)) {
+                        const ext = path.extname(filePath).toLowerCase();
+                        let fileText = '';
+                        const fileBuffer = fs.readFileSync(filePath);
+                        
+                        if (ext === '.pdf') {
+                            const data = await pdf(fileBuffer);
+                            fileText = data.text;
+                        } else if (ext === '.docx' || ext === '.doc') {
+                            const result = await mammoth.extractRawText({ buffer: fileBuffer });
+                            fileText = result.value;
+                        }
+                        
+                        if (fileText.trim()) {
+                            filesContextText += `\n--- CONTEÚDO DO ARQUIVO: ${path.basename(filePath)} ---\n${fileText}\n`;
+                        }
+                    }
+                } catch (fileErr) {
+                    console.error(`Erro ao ler arquivo de contexto ${filePath}:`, fileErr);
+                }
+            }
+        }
+
+        if (filesContextText.length > 100000) {
+            filesContextText = filesContextText.substring(0, 100000) + '\n... (conteúdo de arquivos de contexto truncado para economia de tokens)';
+        }
+
+        const systemPrompt = `Você é um Agente de IA com poder de execução total na página de Documentos do SGQ da MetalFisa.
+O usuário está escrevendo/editando um "Procedimento da Qualidade (PQ)" no editor de texto (SunEditor) e você pode interagir com a interface executando comandos.
+
+Sua resposta DEVE ser estritamente no formato JSON estruturado com o seguinte esquema:
+{
+  "suggestion": "Sua resposta explicativa em texto ou HTML formatado de forma simples (p, b, i, ul, li, h2, table) para exibir no histórico de chat do assistente. Se você estiver reescrevendo um trecho ou criando um novo conteúdo, retorne o HTML aqui.",
+  "actions": [
+    { 
+      "type": "SET_SECTOR", 
+      "payload": "Nome do Setor (deve ser um destes exatamente: Geral, Administrativo, Almoxarifado, Comercial, Engenharia, Produção, PCP, Qualidade, RH)" 
+    },
+    { 
+      "type": "SET_CONTENT", 
+      "payload": "Código HTML completo do documento para substituir todo o editor de texto (use quando o usuário pedir para carregar um modelo, criar um novo documento completo ou reescrever tudo)." 
+    },
+    { 
+      "type": "INSERT_CONTENT", 
+      "payload": "Código HTML para ser inserido na posição atual do cursor ou substituir a seleção ativa no editor." 
+    },
+    { 
+      "type": "SET_HEADER", 
+      "payload": { 
+        "code": "CÓDIGO DO DOCUMENTO (ex: PQ 06-01)", 
+        "version": "REVISÃO (ex: 02)", 
+        "date": "DATA DE VIGÊNCIA (ex: 19/06/2026)", 
+        "preparedBy": "Elaborado por (Nome/Função)", 
+        "approvedBy": "Aprovado por (Nome/Função)",
+        "approvedBy2": "Aprovado por 2 (Nome/Função)"
+      } 
+    },
+    { 
+      "type": "SHOW_HEADER", 
+      "payload": true 
+    },
+    { 
+      "type": "SAVE_DOCUMENT" 
+    }
+  ]
+}
+
+Se o usuário apenas fizer uma pergunta geral sobre ISO 9001 ou pedir esclarecimentos, responda preenchendo apenas a chave "suggestion" com a resposta textual e deixe a chave "actions" vazia ([]).
+Se o usuário pedir para gerar, reescrever ou atualizar o documento, preencha o HTML na chave "suggestion" (para exibição no chat) e adicione a ação correspondente (ex: SET_CONTENT ou INSERT_CONTENT) em "actions" para que a alteração seja refletida na tela do editor. Se solicitado a salvar, adicione a ação "SAVE_DOCUMENT" ao final.
 
 Abaixo está o CONTEXTO GERAL (o texto completo do documento atual), o TEXTO SELECIONADO pelo usuário (se houver), e a INSTRUÇÃO do que ele quer.
 
-CONTEXTO DO DOCUMENTO (EM HTML):
+CONTEXTO DO DOCUMENTO GERAL (EM HTML):
 ${documentContext || 'Nenhum contexto.'}
 
-TEXTO SELECIONADO:
+TEXTO SELECIONADO ATUALMENTE:
 ${selectedText || 'Nenhum texto selecionado.'}
 
 INSTRUÇÃO DO USUÁRIO:
 ${prompt}
 
+${filesContextText ? `DOCUMENTOS DE CONTEXTO SELECIONADOS PELO USUÁRIO PARA CONSULTA:\n${filesContextText}` : ''}
+
 ${extraContext && extraContext.type === 'text' ? `CONTEXTO ADICIONAL FORNECIDO EM ANEXO:
 ${extraContext.data}` : ''}
 
-Sua tarefa:
-Forneça a melhoria, correção, ou adição solicitada, respeitando a estrutura do PQ da MetalFisa. 
-Responda APENAS com o texto (ou HTML formatado de forma simples com p, b, i, ul, li) que deve ser inserido ou substituir o texto selecionado. 
-Não inclua explicações extras como "Aqui está sua sugestão:", apenas retorne o conteúdo útil para ser copiado.`;
+Lembre-se: Retorne APENAS o JSON válido conforme a estrutura. Não adicione marcações extras de Markdown na sua resposta.`;
 
         let parts = [{ text: systemPrompt }];
         
@@ -65,9 +179,22 @@ Não inclua explicações extras como "Aqui está sua sugestão:", apenas retorn
         }
 
         const result = await model.generateContent(parts);
-        const responseText = await result.response.text();
+        let responseText = await result.response.text();
 
-        res.json({ suggestion: responseText.trim() });
+        // Trata possíveis marcações de markdown de JSON na resposta
+        responseText = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+
+        try {
+            const parsed = JSON.parse(responseText);
+            res.json(parsed);
+        } catch (e) {
+            console.warn('⚠️ Erro ao converter resposta do Gemini para JSON:', e.message, responseText);
+            // Fallback caso falhe o parse
+            res.json({
+                suggestion: responseText,
+                actions: []
+            });
+        }
 
     } catch (err) {
         console.error('❌ Erro na rota AI /document-assist:', err);

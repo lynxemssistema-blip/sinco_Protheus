@@ -1035,7 +1035,7 @@ router.get('/items/search', async (req, res) => {
 // 1. Listar itens de romaneios com saldo pendente ou já recebido (Filtros avançados)
 router.get('/recebimentos/pendentes', async (req, res) => {
     try {
-        const { search, fornecedor, romaneioId, viewMode, tipoRomaneio } = req.query;
+        const { search, fornecedor, romaneioId, viewMode, tipoRomaneio, pedido } = req.query;
         // viewMode: 'pendentes' ou 'todos'
 
         let query = `
@@ -1075,6 +1075,11 @@ router.get('/recebimentos/pendentes', async (req, res) => {
         if (tipoRomaneio) {
             query += ` AND r.tipo_id = ?`;
             params.push(tipoRomaneio);
+        }
+        
+        if (pedido) {
+            query += ` AND (i.pedido LIKE ? OR i.item_pedido LIKE ?)`;
+            params.push(`%${pedido}%`, `%${pedido}%`);
         }
 
         query += ` GROUP BY i.id, i.romaneio_id, i.codigo_produto, i.descricao_produto, i.quantidade, i.pedido, i.item_pedido, r.cliente_nome, r.cliente_cod, r.data_liberacao, r.status, r.data_previsao_retorno, t.description, t.id`;
@@ -1211,8 +1216,8 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
                         SELECT TRIM(c2_num) as op_numero, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, c2_quant as op_quantidade
                         FROM public.sc2010
                         WHERE (
-                            (c2_pedido = $1 AND c2_itempv = $2)
-                            OR (c2_num = $3 AND c2_item = $4 AND c2_sequen = $5)
+                            (TRIM(c2_pedido) = $1 AND TRIM(c2_itempv) = $2)
+                            OR (TRIM(c2_num) = $3 AND TRIM(c2_item) = $4 AND TRIM(c2_sequen) = $5)
                         )
                         AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
                         LIMIT 1
@@ -1236,7 +1241,7 @@ router.post('/items/:itemId/receber', requirePermission('recebimentos', 'create'
                     const [aptRows] = await connection.query(`
                         SELECT SUM(quantidade) AS apontado
                         FROM app_production_appointments
-                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND conferencia_status != 'CANCELADO'
+                        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ? AND operacao_codigo = ? AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                     `, [op_numero, op_item, op_sequencia, operacao_baixa]);
                     
                     const apontado = aptRows[0].apontado || 0;

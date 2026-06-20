@@ -116,9 +116,10 @@ async function orchestrateHermes({
     // Request context (pedido, item, etc.)
     const reqCtx = buildRequestContext(requestContext);
 
-    // Custom Hermes rules appending
+    const todayISO = new Date().toISOString().split('T')[0];
     const hermesInstructions = `
-\n\n## DIRETRIZES DE EXECUÇÃO DO HERMES:
+
+## DIRETRIZES DE EXECUÇÃO DO HERMES:
 1. Você tem acesso direto para rodar consultas SQL estruturadas usando blocos de código formatados como:
 \`\`\`sql
 [BANCO: postgresql ou mysql]
@@ -129,7 +130,9 @@ SELECT ... (ou UPDATE/INSERT/DELETE se o banco for mysql e autonomia estiver ati
    - App Interno (mysql): Se você precisar atualizar datas de entrega, registrar notas de planejamento ou ajustar saldo, faça comandos de escrita (UPDATE/INSERT), que serão validados pelo validador de autonomia.
 3. Se a autonomia estiver DESATIVADA (leia o status acima), você não conseguirá rodar UPDATE/INSERT no banco interno diretamente. Nesse caso, retorne apenas SELECTs para leitura e sugira as alterações textualmente para que o usuário aprove.
 4. Responda detalhadamente em Português do Brasil.
-5. Você tem acesso a uma ferramenta especial para executar o Motor de Sequenciamento FCS (Capacidade Finita) / Planejamento Inteligente.
+5. Sobre o status de "relatorio-liberacao" ou "Liberação de Corte":
+   - Sempre que for perguntado se uma peça ou pedido foi liberado para corte, use o banco \`mysql\` consultando as tabelas \`app_eng_releases\` (Engenharia) e/ou \`app_pcp_forecasts\` para checar os status de "Liberado para Produção" ou "Corte". O usuário se refere à página "relatorio-liberacao", então você deve investigar o status e histórico do pedido.
+6. Você tem acesso a uma ferramenta especial para executar o Motor de Sequenciamento FCS (Capacidade Finita) / Planejamento Inteligente.
    Para executá-lo, retorne um bloco formatado em JSON exatamente como a seguir:
 \`\`\`pcf
 {
@@ -137,11 +140,9 @@ SELECT ... (ou UPDATE/INSERT/DELETE se o banco for mysql e autonomia estiver ati
   "ops": "*"
 }
 \`\`\`
-   - Use sempre "ops": "*" para planejar TODAS as OPs pendentes (o sistema busca automaticamente no Protheus — NÃO faça SQL para listar OPs).
-   - Se o usuário especificar OPs concretas, use a lista: "ops": ["OP001", "OP002"].
-   - Para a data: se o usuário pediu "hoje", "data de hoje" ou não especificou, use a data atual do sistema no formato YYYY-MM-DD.
-   - NUNCA rode SQL para buscar as OPs antes de gerar o bloco pcf quando o pedido for planejar TODAS as OPs. O motor já faz isso internamente em lotes.
-   - Sempre que for solicitado a rodar o planejamento, sequenciamento, planejamento inteligente ou atualizar o PCP: gere imediatamente o bloco pcf acima e nada mais.
+   - Use sempre "ops": "*" para planejar TODAS as OPs pendentes.
+   - A DATA ATUAL DO SISTEMA HOJE É ${todayISO}. Nunca invente ou assuma datas do passado.
+7. **OBRIGATÓRIO NO FIM DA MENSAGEM**: Sempre sugira 2 ou 3 novas perguntas ou comandos baseados no contexto da conversa atual que o usuário pode te fazer para continuar o fluxo. Ex: "Dicas de próximas perguntas: ...".
 `;
 
     const fullSystemPrompt = `${system_prompt}${schemaText}${reqCtx}${hermesInstructions}`;
@@ -251,9 +252,9 @@ SELECT ... (ou UPDATE/INSERT/DELETE se o banco for mysql e autonomia estiver ati
                 for (let i = 0; i < fcsRequests.length; i++) {
                     let { ops, data_inicio } = fcsRequests[i];
 
-                    // Normalize data_inicio to current date if not valid or requested as "today" / "hoje"
-                    if (!data_inicio || data_inicio === 'today' || data_inicio === 'hoje' || data_inicio === 'NOW') {
-                        data_inicio = new Date().toISOString().split('T')[0];
+                    const todaySysStr = new Date().toISOString().split('T')[0];
+                    if (!data_inicio || data_inicio === 'today' || data_inicio === 'hoje' || data_inicio === 'NOW' || data_inicio < todaySysStr) {
+                        data_inicio = todaySysStr;
                     }
 
                     // If ops is "*" or "ALL", query all pending OPs

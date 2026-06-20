@@ -216,20 +216,21 @@ const GestaoOPsPage = () => {
     const fetchData = async (overrides = {}) => {
         setLoading(true);
         setError(null);
+        // Use overrides or current state/context values
+        const searchFilters = {
+            cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
+            pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
+            produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
+            dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
+            dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
+            dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
+            tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
+            only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
+        };
+        const searchPage = overrides.page || page;
+        const searchViewMode = overrides.viewMode || viewMode;
+
         try {
-            // Use overrides or current state/context values
-            const searchFilters = {
-                cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
-                pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
-                produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
-                dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
-                dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
-                dateType: overrides.dateType !== undefined ? overrides.dateType : filters.dateType,
-                tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
-                only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
-            };
-            const searchPage = overrides.page || page;
-            const searchViewMode = overrides.viewMode || viewMode;
             console.log(`📡 [GestaoOPsPage] Fetching data... Page: ${searchPage}, View: ${searchViewMode}`);
 
             const searchLimit = searchFilters.pedido ? 5000 : limit;

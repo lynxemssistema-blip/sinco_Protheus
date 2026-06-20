@@ -165,13 +165,13 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         if (opNumbers.length > 0) {
             try {
                 const [apptRows] = await mysqlPool.query(`
-                    SELECT op_numero, operacao_codigo, SUM(qtde_produzida) as total_produzido
-                    FROM app_producao_apontamentos
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo, SUM(quantidade) as total_produzido
+                    FROM app_production_appointments
                     WHERE op_numero IN (?)
-                    GROUP BY op_numero, operacao_codigo
+                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
                 `, [opNumbers]);
                 apptRows.forEach(r => {
-                    const key = `${r.op_numero}-${r.operacao_codigo}`;
+                    const key = `${r.op_numero}-${r.op_item}-${r.op_sequencia}-${r.operacao_codigo}`;
                     apontamentosMap[key] = Number(r.total_produzido) || 0;
                 });
             } catch (e) {
@@ -247,6 +247,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         // PRE-ESTUDO: Diagnóstico de capacidade por recurso antes de alocar
         agent_logs.push(`--- PRÉ-ANÁLISE DE GARGALOS DE CAPACIDADE ---`);
         const demandaPorRecurso = {};
+        const demandaPorPeca = {};
         for (const op of opsEncontradas) {
             for (const rot of (roteiroMap[op.produto] || [])) {
                 // Usa mesma lógica da alocação real: max(qtde_feita_protheus, apontamentos_locais)
@@ -256,6 +257,22 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 const qtdPend = Math.max(0, op.qtde - qtdeFeita);
                 if (!demandaPorRecurso[rot.recurso]) demandaPorRecurso[rot.recurso] = 0;
                 demandaPorRecurso[rot.recurso] += qtdPend * rot.tempoMinutos;
+                
+                // Agrupar por peça e recurso para o Top 100
+                const keyPeca = `${op.produto}||${rot.recurso}`;
+                if (!demandaPorPeca[keyPeca]) {
+                    demandaPorPeca[keyPeca] = {
+                        produto: op.produto,
+                        descricao: op.produto_desc,
+                        recurso: rot.recurso,
+                        desc_recurso: descRecursoMap[rot.recurso] || rot.recurso,
+                        quantidade_total: 0,
+                        tempo_total_min: 0,
+                        tempo_unitario_min: rot.tempoMinutos
+                    };
+                }
+                demandaPorPeca[keyPeca].quantidade_total += qtdPend;
+                demandaPorPeca[keyPeca].tempo_total_min += (qtdPend * rot.tempoMinutos);
             }
         }
         for (const [rec, demandaTotal] of Object.entries(demandaPorRecurso)) {
@@ -409,7 +426,7 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
 
             for (let i = 0; i < roteiros.length; i++) {
                 const rot = roteiros[i];
-                const keyApontamento = `${op.op_num}-${rot.operac}`;
+                const keyApontamento = `${op.op_num}-${op.item_op}-${op.sequen}-${rot.operac}`;
                 const qtdeApontada = apontamentosMap[keyApontamento] || 0;
                 const qtdeJaFeita = Math.max(Number(op.qtde_feita) || 0, qtdeApontada);
                 const qtdeRestante = Math.max(0, op.qtde - qtdeJaFeita);
@@ -668,20 +685,49 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                 }
                 const dedupedForecasts = Object.values(forecastByKey);
                 agent_logs.push(`Atualizando previsão de entrega PCP para ${dedupedForecasts.length} pedido(s) associado(s).`);
-                const forecastValues = dedupedForecasts.map(f => [
-                    f.pedido, f.item, f.data_entrega_pcp, f.quantidade_pcp, usuario, 'Automático - Agente FCS', f.op_protheus, f.data_prevista_faturamento
-                ]);
-                // Bug fix: UPSERT para não duplicar forecasts
-                await mysqlPool.query(`
-                    INSERT INTO app_pcp_delivery_forecasts 
-                        (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, op_protheus, data_prevista_faturamento)
-                    VALUES ?
-                    ON DUPLICATE KEY UPDATE
-                        data_prevista_faturamento = VALUES(data_prevista_faturamento),
-                        quantidade_pcp            = VALUES(quantidade_pcp),
-                        usuario                   = VALUES(usuario),
-                        observacao                = VALUES(observacao)
-                `, [forecastValues]);
+                
+                for (const f of dedupedForecasts) {
+                    const cleanPedido = String(f.pedido).trim();
+                    const cleanItem = String(f.item).trim();
+                    const cleanOp = f.op_protheus ? String(f.op_protheus).trim() : null;
+                    
+                    let existingId = null;
+                    
+                    // 1. Tentar encontrar registro existente pela OP
+                    if (cleanOp && cleanOp !== '-') {
+                        const [existOp] = await mysqlPool.query(`SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND TRIM(op_protheus) = ? LIMIT 1`, [cleanPedido, cleanItem, cleanOp]);
+                        if (existOp.length > 0) existingId = existOp[0].id;
+                    }
+                    
+                    // 2. Se não achou por OP e tem data_entrega_pcp, procurar por registro da mesma data sem OP
+                    if (!existingId && f.data_entrega_pcp) {
+                         const [existDate] = await mysqlPool.query(`SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? AND (op_protheus IS NULL OR TRIM(op_protheus) = '' OR TRIM(op_protheus) = '-') LIMIT 1`, [cleanPedido, cleanItem, f.data_entrega_pcp]);
+                         if (existDate.length > 0) existingId = existDate[0].id;
+                    }
+                    
+                    // 3. Se não achou, procurar qualquer registro sem OP para aproveitar
+                    if (!existingId) {
+                         const [existAny] = await mysqlPool.query(`SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (op_protheus IS NULL OR TRIM(op_protheus) = '' OR TRIM(op_protheus) = '-') LIMIT 1`, [cleanPedido, cleanItem]);
+                         if (existAny.length > 0) existingId = existAny[0].id;
+                    }
+
+                    if (existingId) {
+                        // UPDATE: NUNCA altera a data_entrega_pcp original.
+                        await mysqlPool.query(`
+                            UPDATE app_pcp_delivery_forecasts 
+                            SET data_prevista_faturamento = ?, op_protheus = COALESCE(NULLIF(TRIM(op_protheus), ''), ?), 
+                                observacao = IF(observacao IS NULL OR observacao = '', ?, observacao)
+                            WHERE id = ?
+                        `, [f.data_prevista_faturamento, cleanOp, 'Automático - Agente FCS', existingId]);
+                    } else {
+                        // INSERT: Nunca preencher a data_entrega_pcp (uso exclusivo humano)
+                        await mysqlPool.query(`
+                            INSERT INTO app_pcp_delivery_forecasts 
+                            (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, op_protheus, data_prevista_faturamento)
+                            VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
+                        `, [cleanPedido, cleanItem, f.quantidade_pcp, f.usuario || 'Automático - Agente FCS', 'Automático - Agente FCS', cleanOp, f.data_prevista_faturamento]);
+                    }
+                }
             }
             
             agent_logs.push(`Gerando logs de auditoria e rastreabilidade.`);
@@ -695,7 +741,14 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
         }
 
         // 4. GERAR RELATÓRIO ESTRUTURADO
+        
+        const top100PecasGargalo = Object.values(demandaPorPeca)
+            .filter(p => p.tempo_total_min > 0)
+            .sort((a, b) => b.tempo_total_min - a.tempo_total_min)
+            .slice(0, 100);
+
         const report = {
+            top_100_pecas_gargalo: top100PecasGargalo,
             gerado_em: new Date().toISOString(),
             planejador: usuario,
             data_base: dataBaseEfetiva,

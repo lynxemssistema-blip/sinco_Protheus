@@ -13,19 +13,25 @@ try {
 
     # Open read-only
     $workbook = $excel.Workbooks.Open($templatePath, [Type]::Missing, $true)
-    $sheet = $workbook.Sheets.Item("Import XLS")
+    
+    # Attempt to get the sheet by name 'Importação XLS', fallback to first sheet if it fails
+    try {
+        $sheet = $workbook.Sheets.Item("Importação XLS")
+    } catch {
+        $sheet = $workbook.Sheets.Item(1)
+    }
 
-    # Clear old data
-    $sheet.Range("A7:B200").ClearContents()
-    $sheet.Range("H7:H200").ClearContents()
-    $sheet.Range("K7:K200").ClearContents()
+    # Clear old data (A to L just in case)
+    $sheet.Range("A7:L200").ClearContents()
 
     $row = 7
     foreach ($item in $data) {
         $sheet.Cells.Item($row, 1).Value2 = [string]$item.componente
         $sheet.Cells.Item($row, 2).Value2 = [double]$item.qtd_necessaria
-        $sheet.Cells.Item($row, 8).Value2 = [string]$item.material_descricao
-        $sheet.Cells.Item($row, 11).Value2 = [string]$item.recurso_nome
+        # The user only requested A and B, but we can put material in C (3) if available
+        if ($item.material_descricao) {
+            $sheet.Cells.Item($row, 3).Value2 = [string]$item.material_descricao
+        }
         $row++
     }
 

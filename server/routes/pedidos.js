@@ -966,37 +966,52 @@ router.get('/flat', async (req, res) => {
                 productCodes
             ]);
 
-            // Last Operation Enrichment (Protheus sg2010)
+            // Last Operation Enrichment (Protheus sg2010) - Batching
             let lastOpEnrichment = null;
             if (productCodes.length > 0) {
-                lastOpEnrichment = db.query(`
-                    SELECT
-                        TRIM(g2.g2_produto) as produto,
-                        TRIM(g2.g2_recurso) as operacao_final
-                    FROM public.sg2010 g2
-                    WHERE TRIM(g2.g2_produto) = ANY($1::varchar[])
-                    AND COALESCE(g2.d_e_l_e_t_, '') = ''
-                    AND TRIM(g2.g2_codigo) = (
-                        SELECT MAX(TRIM(g2_sub.g2_codigo))
-                        FROM public.sg2010 g2_sub
-                        WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
-                        AND COALESCE(g2_sub.d_e_l_e_t_, '') = ''
-                    )
-                `, [productCodes]);
+                lastOpEnrichment = (async () => {
+                    const CHUNK_SIZE = 500;
+                    const allRows = [];
+                    for (let i = 0; i < productCodes.length; i += CHUNK_SIZE) {
+                        const chunk = productCodes.slice(i, i + CHUNK_SIZE);
+                        const res = await db.query(`
+                            SELECT
+                                TRIM(g2.g2_produto) as produto,
+                                COUNT(g2.g2_operac) as total_operacoes,
+                                MAX(TRIM(g2.g2_operac)) as operacao_final
+                            FROM public.sg2010 g2
+                            WHERE TRIM(g2.g2_produto) = ANY($1::varchar[])
+                            AND COALESCE(g2.d_e_l_e_t_, '') = ''
+                            GROUP BY TRIM(g2.g2_produto)
+                        `, [chunk]);
+                        allRows.push(...res.rows);
+                    }
+                    return { rows: allRows };
+                })();
             }
 
-            // Saldo Produzido Enrichment (MySQL app_production_appointments)
-            const uniqueOpsArr = [...new Set(result.rows.map(r => String(r.op_num || '').trim()).filter(Boolean))];
+            // Saldo Produzido Enrichment (MySQL app_production_appointments) - Batching
+            const uniqueOpsArr = [...new Set(result.rows.map(r => String(r.op_num_completa || '').trim()).filter(Boolean))];
             let saldoProduzidoEnrichment = null;
             if (uniqueOpsArr.length > 0) {
-                const opPlaceholders = uniqueOpsArr.map(() => '?').join(',');
-                saldoProduzidoEnrichment = mysqlPool.query(`
-                    SELECT op_numero, operacao_codigo, SUM(quantidade) as produzido
-                    FROM app_production_appointments
-                    WHERE op_numero IN (${opPlaceholders})
-                    AND conferencia_status != 'CANCELADO'
-                    GROUP BY op_numero, operacao_codigo
-                `, uniqueOpsArr);
+                saldoProduzidoEnrichment = (async () => {
+                    const CHUNK_SIZE = 500;
+                    const allRows = [];
+                    for (let i = 0; i < uniqueOpsArr.length; i += CHUNK_SIZE) {
+                        const chunk = uniqueOpsArr.slice(i, i + CHUNK_SIZE);
+                        const opBase = [...new Set(chunk.map(op => String(op).substring(0,6)))];
+                        const placeholders = opBase.map(() => '?').join(',');
+                        const [rows] = await mysqlPool.query(`
+                            SELECT CONCAT(op_numero, op_item, op_sequencia) as op_full, operacao_codigo, SUM(quantidade) as produzido
+                            FROM app_production_appointments
+                            WHERE op_numero IN (${placeholders})
+                            AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+                            GROUP BY op_full, operacao_codigo
+                        `, opBase);
+                        allRows.push(...rows);
+                    }
+                    return [allRows]; // Mantém o padrão [rows, fields]
+                })();
             }
 
             const [forecastResult, notesResult, docsResult, faturasResult, notasResult, sz1Result, lastOpResult, saldoProdResult] = await Promise.allSettled([
@@ -1059,15 +1074,20 @@ router.get('/flat', async (req, res) => {
             const lastOpMap = {};
             if (lastOpResult && lastOpResult.status === 'fulfilled' && lastOpResult.value) {
                 lastOpResult.value.rows.forEach(r => {
-                    lastOpMap[r.produto] = r.operacao_final;
+                    lastOpMap[r.produto] = {
+                        last: r.operacao_final,
+                        count: parseInt(r.total_operacoes, 10) || 1
+                    };
                 });
             }
 
             // Map Saldo Produzido
-            const saldoProdMap = {}; // { '005959-MO0013': 10 }
+            const saldoProdMap = {}; // { '00415501001-10': 50 }
             if (saldoProdResult && saldoProdResult.status === 'fulfilled' && saldoProdResult.value) {
                 saldoProdResult.value[0].forEach(r => {
-                    saldoProdMap[`${r.op_numero}-${r.operacao_codigo}`] = parseFloat(r.produzido) || 0;
+                    const key = `${r.op_full}-${r.operacao_codigo}`;
+                    if (!saldoProdMap[key]) saldoProdMap[key] = 0;
+                    saldoProdMap[key] += parseFloat(r.produzido) || 0;
                 });
             }
 
@@ -1111,14 +1131,26 @@ router.get('/flat', async (req, res) => {
                         row.pcp_programacoes = [];
                     }
                     
-                    // Saldo Produzido injection
+                    // Saldo Produzido injection (média de todas as operações)
                     row.saldo_produzido = 0;
-                    const finalOp = lastOpMap[String(row.codigo).trim()];
-                    if (row.op_num && finalOp) {
-                        const sKey = `${String(row.op_num).trim()}-${finalOp}`;
-                        if (saldoProdMap[sKey] !== undefined) {
-                            row.saldo_produzido = saldoProdMap[sKey];
-                        }
+                    const opInfo = lastOpMap[String(row.codigo).trim()];
+                    const totalOperacoes = (opInfo && opInfo.count) ? opInfo.count : 1;
+                    
+                    row.last_operacao = opInfo ? opInfo.last : null;
+                    row.total_operacoes = totalOperacoes;
+                    
+                    if (row.op_num_completa) {
+                        const fullOp = String(row.op_num_completa).trim();
+                        let sumProduced = 0;
+                        
+                        // Somar o produzido de todas as operações desta OP
+                        Object.keys(saldoProdMap).forEach(key => {
+                            if (key.startsWith(`${fullOp}-`)) {
+                                sumProduced += saldoProdMap[key];
+                            }
+                        });
+                        
+                        row.saldo_produzido = sumProduced / totalOperacoes;
                     }
 
                 });
@@ -1213,9 +1245,14 @@ router.get('/flat', async (req, res) => {
                 });
             } else { console.error('Error sz1 batch:', sz1Result.reason?.message); }
 
+
             // ── Compute status_tipo_item from batch lookup (replaces SQL LATERAL JOINs) ──
             try {
                 const statusRows = await statusEnrichment;
+                
+                const [releasesRows] = await mysqlPool.query(`SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases`);
+                const globalReleaseSet = new Set(releasesRows.map(r => r.cod));
+
                 const sg1Set = new Set(), sg2Set = new Set(), sz0Set = new Set();
                 statusRows.rows.forEach(r => {
                     if (r.src === 'sg1') sg1Set.add(r.cod.trim());
@@ -1228,7 +1265,12 @@ router.get('/flat', async (req, res) => {
                     const hasRestriction = sz0Set.has(cod);
                     const revDiff = (row.rev_codigo || '').trim() !== (row.c6_rev_cliente || '').trim();
                     const isNew = !sg1Set.has(cod) && !sg2Set.has(cod);
-                    if (isBlocked || hasRestriction) {
+                    const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
+
+                    if (hasGlobalRelease) {
+                        row.status_tipo_item = 'PCP';
+                        row.status_tipo_detalhe = 'Produto liberado manualmente pela Engenharia.';
+                    } else if (isBlocked || hasRestriction) {
                         row.status_tipo_item = 'Restrição';
                         row.status_tipo_detalhe = `${isBlocked ? 'Produto bloqueado (SB1).' : 'Restrição SZ0.'} Rev. MF: ${row.rev_codigo || '-'} / Rev. Cli: ${row.c6_rev_cliente || '-'}`;
                     } else if (revDiff) {
@@ -1238,8 +1280,8 @@ router.get('/flat', async (req, res) => {
                         row.status_tipo_item = 'Novo';
                         row.status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
                     } else {
-                        row.status_tipo_item = 'PCP';
-                        row.status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+                        row.status_tipo_item = 'Engenharia';
+                        row.status_tipo_detalhe = 'Aguardando liberação manual da Engenharia.';
                     }
                 });
             } catch (e) {
@@ -1516,6 +1558,9 @@ router.get('/:id/item-status', async (req, res) => {
              WHERE TRIM(z0_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
         `, [productCodes]);
 
+        const [releasesRows] = await mysqlPool.query(`SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases`);
+        const globalReleaseSet = new Set(releasesRows.map(r => r.cod));
+
         const sg1Set = new Set();
         const sg2Set = new Set();
         const sz0Set = new Set();
@@ -1527,14 +1572,19 @@ router.get('/:id/item-status', async (req, res) => {
 
         // Classify each item using the same hierarchy as /flat and /:id/itens
         const classified = items.map(item => {
+            const cod = String(item.codigo || '').trim();
             const isBlocked     = ['1', 'S', 'T', 'Y'].includes(item.b1_msblql);
-            const hasRestriction = sz0Set.has(item.codigo);
+            const hasRestriction = sz0Set.has(cod);
             const revDiff       = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
-            const isNew         = !sg1Set.has(item.codigo) && !sg2Set.has(item.codigo);
+            const isNew         = !sg1Set.has(cod) && !sg2Set.has(cod);
+            const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
 
             let status_tipo_item, status_tipo_detalhe;
 
-            if (isBlocked || hasRestriction) {
+            if (hasGlobalRelease) {
+                status_tipo_item   = 'PCP';
+                status_tipo_detalhe = 'Produto liberado manualmente pela Engenharia.';
+            } else if (isBlocked || hasRestriction) {
                 status_tipo_item   = 'Restrição';
                 const reason = isBlocked
                     ? 'Produto bloqueado no cadastro SB1 (b1_msblql).'
@@ -1547,8 +1597,8 @@ router.get('/:id/item-status', async (req, res) => {
                 status_tipo_item   = 'Novo';
                 status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
             } else {
-                status_tipo_item   = 'PCP';
-                status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+                status_tipo_item   = 'Engenharia';
+                status_tipo_detalhe = 'Aguardando liberação manual da Engenharia.';
             }
 
             // Return diagnostic payload
@@ -1587,6 +1637,7 @@ router.get('/:id/pdf-data', async (req, res) => {
             SELECT
                 TRIM(c5.c5_num)                                         AS pedido,
                 TRIM(c5.c5_cliente)                                      AS cod_cliente,
+                TRIM(c5.c5_lojacli)                                      AS loja_cliente,
                 TRIM(sa1.a1_nome)                                        AS nome_cliente,
                 c5.c5_emissao                                            AS emissao,
                 TRIM(c6.c6_item)                                         AS item,
@@ -1632,6 +1683,10 @@ router.get('/:id/pdf-data', async (req, res) => {
             return res.status(404).json({ error: 'Pedido não encontrado.' });
         }
 
+        const productCodes = [...new Set(pgResult.rows.map(i => i.codigo).filter(Boolean))];
+        const codCliente = pgResult.rows[0]?.cod_cliente;
+        const lojaCliente = pgResult.rows[0]?.loja_cliente;
+
         // ── Query 2: Notes/Ata from MySQL (only pcp_notes for footer obs) ──
         let notes = [];
         try {
@@ -1645,15 +1700,39 @@ router.get('/:id/pdf-data', async (req, res) => {
             notes = noteRows || [];
         } catch (mysqlErr) {
             console.warn(`[pdf-data/${id}] MySQL notes unavailable:`, mysqlErr.message);
-            // Non-fatal: PDF still generates without notes
         }
 
-        // Attach pcp_notes to items
+        // ── Query 3: sz1010 (Ref/Rev Cliente) ──
+        let sz1Map = {};
+        if (codCliente && productCodes.length > 0) {
+            try {
+                const sz1Result = await db.query(`
+                    SELECT TRIM(z1.z1_produto) as produto,
+                        STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') as ref_cliente,
+                        STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') as rev_cliente
+                    FROM public.sz1010 z1
+                    WHERE z1.z1_cliente = $1 AND z1.z1_loja = $2
+                    AND TRIM(z1.z1_produto) = ANY($3::varchar[])
+                    AND COALESCE(z1.d_e_l_e_t_, '') = ''
+                    GROUP BY TRIM(z1.z1_produto)
+                `, [codCliente, lojaCliente, productCodes]);
+                
+                sz1Result.rows.forEach(r => {
+                    sz1Map[r.produto] = r;
+                });
+            } catch (szErr) {
+                console.warn(`[pdf-data/${id}] PG SZ1 unavailable:`, szErr.message);
+            }
+        }
+
+        // Attach pcp_notes and ref_cliente to items
         const notesMap = {};
         notes.forEach(n => { notesMap[n.item_number] = n; });
         const itens = pgResult.rows.map(row => ({
             ...row,
             pcp_notes: notesMap[String(Number(row.item) || row.item)]?.pcp_notes || '',
+            ref_cliente: sz1Map[row.codigo]?.ref_cliente || null,
+            rev_cliente: sz1Map[row.codigo]?.rev_cliente || null,
             status_tipo_item: 'PCP', // simplified for PDF display
         }));
 
@@ -1885,6 +1964,9 @@ router.get('/:id/itens', async (req, res) => {
             }
 
             // Process Status Item (Calculated in JS instead of lateral joins)
+            const [releasesRows] = await mysqlPool.query(`SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases`);
+            const globalReleaseSet = new Set(releasesRows.map(r => r.cod));
+
             let sg1Set = new Set(), sg2Set = new Set(), sz0Set = new Set();
             if (pgStatusResult.status === 'fulfilled') {
                 pgStatusResult.value.rows.forEach(r => {
@@ -1897,12 +1979,17 @@ router.get('/:id/itens', async (req, res) => {
             }
 
             items.forEach(item => {
+                const cod = String(item.codigo || '').trim();
                 const isBlocked = ['1','S','T','Y'].includes(item.b1_msblql);
-                const hasRestriction = sz0Set.has(item.codigo);
+                const hasRestriction = sz0Set.has(cod);
                 const revDiff = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
-                const isNew = !sg1Set.has(item.codigo) && !sg2Set.has(item.codigo);
+                const isNew = !sg1Set.has(cod) && !sg2Set.has(cod);
+                const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
 
-                if (isBlocked || hasRestriction) {
+                if (hasGlobalRelease) {
+                    item.status_tipo_item = 'PCP';
+                    item.status_tipo_detalhe = 'Produto liberado manualmente pela Engenharia.';
+                } else if (isBlocked || hasRestriction) {
                     item.status_tipo_item = 'Restrição';
                     let detail = isBlocked ? `Produto bloqueado no cadastro (SB1 b1_msblql).` : `Restrição pendente no cadastro (SZ0 status=P).`;
                     item.status_tipo_detalhe = `${detail} Rev. MF: ${item.rev_codigo || '-'} / Rev. Cli: ${item.c6_rev_cliente || '-'}`;
@@ -1913,8 +2000,8 @@ router.get('/:id/itens', async (req, res) => {
                     item.status_tipo_item = 'Novo';
                     item.status_tipo_detalhe = 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.';
                 } else {
-                    item.status_tipo_item = 'PCP';
-                    item.status_tipo_detalhe = 'Item com estrutura existente, liberado para PCP.';
+                    item.status_tipo_item = 'Engenharia';
+                    item.status_tipo_detalhe = 'Aguardando liberação manual da Engenharia.';
                 }
             });
 
@@ -2466,6 +2553,14 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                 let { pedido, item, quantidade_pcp, qtd_total_item } = it;
 
                 if (!pedido || !item || quantidade_pcp === undefined) continue;
+                
+                // Validação de duplicidade para o lote
+                let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
+                let paramsDup = [String(pedido).trim(), String(item).trim(), data_entrega_pcp];
+                const [dupCheck] = await connection.query(queryDup, paramsDup);
+                if (dupCheck.length > 0) {
+                    continue; // Pula se já existir a OP ou a data para o mesmo item
+                }
 
                 if (qtd_total_item !== undefined) {
                     const [existing] = await connection.query(
@@ -2513,6 +2608,15 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             return res.status(400).json({ error: 'Dados incompletos para o planejamento PCP.' });
         }
 
+        // Validação de duplicidade: não pode haver mesma data PCP para o mesmo pedido/item
+        let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
+        let paramsDup = [String(pedido).trim(), String(item).trim(), data_entrega_pcp];
+        
+        const [dupCheck] = await mysqlPool.query(queryDup, paramsDup);
+        if (dupCheck.length > 0) {
+             return res.status(400).json({ error: 'Já existe um registro de Data PCP para este pedido/item nesta data.' });
+        }
+
         // Validação: soma das programações não pode ultrapassar qtd_total_item
         if (qtd_total_item !== undefined) {
             const [existing] = await mysqlPool.query(
@@ -2548,6 +2652,15 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
 
         if (!data_entrega_pcp || quantidade_pcp === undefined) {
             return res.status(400).json({ error: 'Data e quantidade são obrigatórios.' });
+        }
+
+        // Validação de duplicidade
+        let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE id != ? AND TRIM(pedido) = (SELECT TRIM(pedido) FROM app_pcp_delivery_forecasts WHERE id = ?) AND TRIM(item) = (SELECT TRIM(item) FROM app_pcp_delivery_forecasts WHERE id = ?) AND data_entrega_pcp = ? LIMIT 1`;
+        let paramsDup = [id, id, id, data_entrega_pcp];
+        
+        const [dupCheck] = await mysqlPool.query(queryDup, paramsDup);
+        if (dupCheck.length > 0) {
+             return res.status(400).json({ error: 'Já existe um outro registro de Data PCP para este pedido/item nesta data.' });
         }
 
         // Validação: soma das outras programações + nova qtd não pode ultrapassar total
@@ -2632,6 +2745,151 @@ router.delete('/pcp-forecasts/:id', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Error deleting PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+router.post('/pcp-forecasts/balance', async (req, res) => {
+    try {
+        const { items, startDate, endDate, allowedDays, overwrite, usuario } = req.body;
+        
+        if (!items || items.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item selecionado.' });
+        }
+        
+        if (!startDate || !endDate || !allowedDays || allowedDays.length === 0) {
+            return res.status(400).json({ error: 'Parâmetros de balanceamento incompletos.' });
+        }
+
+        const validDays = [];
+        let current = new Date(startDate + 'T12:00:00Z');
+        const end = new Date(endDate + 'T12:00:00Z');
+
+        while (current <= end) {
+            const dayOfWeek = current.getUTCDay();
+            // JS getUTCDay: 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+            if (allowedDays.includes(dayOfWeek)) {
+                validDays.push(current.toISOString().split('T')[0]);
+            }
+            current.setUTCDate(current.getUTCDate() + 1);
+        }
+
+        if (validDays.length === 0) {
+            return res.status(400).json({ error: 'Nenhum dia válido encontrado no período informado.' });
+        }
+
+        // Filter items that actually have a balance
+        const validItems = items.filter(i => {
+            const saldoFaturar = parseFloat(i.qtd_faturar || 0);
+            return saldoFaturar > 0;
+        });
+
+        if (validItems.length === 0) {
+            return res.status(400).json({ error: 'Nenhum dos itens selecionados possui saldo a faturar.' });
+        }
+
+        const connection = await mysqlPool.getConnection();
+
+        try {
+            await connection.beginTransaction();
+
+            // Build a linear list of operations to perform using the exact dates provided by the frontend
+            const operations = [];
+            for (const item of validItems) {
+                // Se a data já veio pré-calculada pelo frontend na visualização (data_pcp), usa ela. 
+                // Se não (chamada via API antiga), faz fallback para a primeira data válida.
+                const dateToAssign = item.data_pcp || validDays[0];
+                operations.push({
+                    dateToAssign,
+                    saldo: parseFloat(item.qtd_faturar || 0),
+                    cleanPedido: String(item.pedido).trim(),
+                    cleanItem: String(item.item).trim()
+                });
+            }
+
+            // Process in batches of 100 to avoid overloading the query length or transaction lock time
+            const BATCH_SIZE = 100;
+            for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+                const chunk = operations.slice(i, i + BATCH_SIZE);
+                
+                // 1. Bulk SELECT to find existing records (inclusive os que possuem OP, para podermos definir a data PCP neles)
+                const conditions = chunk.map(q => `(TRIM(pedido) = ${connection.escape(q.cleanPedido)} AND TRIM(item) = ${connection.escape(q.cleanItem)})`).join(' OR ');
+                
+                const [existingRows] = await connection.query(
+                    `SELECT id, TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp FROM app_pcp_delivery_forecasts 
+                     WHERE (${conditions})`
+                );
+
+                // Armazena todos os registros existentes para esse pedido/item
+                const existingMap = {};
+                for (const row of existingRows) {
+                    // Se houver mais de um, a prioridade é pegar o que tem data_entrega_pcp vazia/nula para preencher
+                    const key = `${row.pedido}_${row.item}`;
+                    if (!existingMap[key]) {
+                        existingMap[key] = [];
+                    }
+                    existingMap[key].push({ id: row.id, date: row.data_entrega_pcp });
+                }
+
+                // 2. Separate into inserts and updates
+                const inserts = [];
+                const updates = [];
+                
+                for (const q of chunk) {
+                    const existingRecords = existingMap[`${q.cleanPedido}_${q.cleanItem}`];
+                    
+                    if (existingRecords && existingRecords.length > 0) {
+                        // Se existe, vamos atualizar todos (ou apenas os sem data se overwrite = false)
+                        let updatedAny = false;
+                        for (const rec of existingRecords) {
+                            if (overwrite || !rec.date) {
+                                updates.push([q.dateToAssign, q.saldo, usuario || 'Balanceamento Automático', 'Modificado por Lote', rec.id]);
+                                updatedAny = true;
+                            }
+                        }
+                        // Se overwrite = false e TODOS já tinham data, não faz nada (não insere duplicado)
+                    } else {
+                        // Não existe nenhum registro, então insere um novo
+                        inserts.push([q.cleanPedido, q.cleanItem, q.dateToAssign, q.saldo, usuario || 'Balanceamento Automático', 'Criado por Lote']);
+                    }
+                }
+
+                // 3. Execute bulk INSERT
+                if (inserts.length > 0) {
+                    await connection.query(
+                        'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao) VALUES ?',
+                        [inserts]
+                    );
+                }
+
+                // 4. Execute bulk UPDATE com CASE WHEN (um único statement)
+                if (updates.length > 0) {
+                    const ids = updates.map(u => u[4]);
+                    const dateCase = updates.map(u => `WHEN ${connection.escape(u[4])} THEN ${connection.escape(u[0])}`).join(' ');
+                    const qtdCase  = updates.map(u => `WHEN ${connection.escape(u[4])} THEN ${connection.escape(u[1])}`).join(' ');
+                    const usuCase  = updates.map(u => `WHEN ${connection.escape(u[4])} THEN ${connection.escape(u[2])}`).join(' ');
+                    const obsCase  = updates.map(u => `WHEN ${connection.escape(u[4])} THEN ${connection.escape(u[3])}`).join(' ');
+                    await connection.query(
+                        `UPDATE app_pcp_delivery_forecasts
+                         SET data_entrega_pcp = CASE id ${dateCase} END,
+                             quantidade_pcp   = CASE id ${qtdCase}  END,
+                             usuario          = CASE id ${usuCase}  END,
+                             observacao       = CASE id ${obsCase}  END
+                         WHERE id IN (${ids.map(id => connection.escape(id)).join(',')})`
+                    );
+                }
+            }
+
+            await connection.commit();
+            res.json({ success: true, processedCount: validItems.length });
+        } catch (txnErr) {
+            await connection.rollback();
+            throw txnErr;
+        } finally {
+            connection.release();
+        }
+
+    } catch (err) {
+        console.error('Error in PCP balance:', err);
         res.status(500).json({ error: err.message });
     }
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Trash2, ShieldAlert, ToggleLeft, ToggleRight, Sparkles, Loader2, Database, HelpCircle, Code, ArrowRight, Send, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Calendar, User, Plus, Edit2, Play, Mail, Phone, Trash, X, Terminal } from 'lucide-react';
-import api from '../services/api';
+import api, { getUsers, getCompanySettings, updateGeneralSettings } from '../services/api';
 import DOMPurify from 'dompurify';
 import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
 
@@ -111,7 +111,8 @@ export default function LynxConfigTab() {
         system_prompt: '',
         modelo: 'gemini-2.5-flash',
         temperature: 0.3,
-        autonomia: 0
+        autonomia: 0,
+        hermes_automation: { types: { whatsapp: false, email: false }, users: [] }
     });
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -155,6 +156,8 @@ export default function LynxConfigTab() {
 
     const messagesEndRef = useRef(null);
 
+    const [usersList, setUsersList] = useState([]);
+
     useEffect(() => {
         loadConfig();
         loadHistory();
@@ -173,14 +176,23 @@ export default function LynxConfigTab() {
         setError(null);
         try {
             const res = await api.get('/hermes/config');
-            if (res.data) {
-                setConfig({
-                    system_prompt: res.data.system_prompt || '',
-                    modelo: res.data.modelo || 'gemini-2.5-flash',
-                    temperature: res.data.temperature !== undefined ? res.data.temperature : 0.3,
-                    autonomia: res.data.autonomia || 0
-                });
+            const compRes = await getCompanySettings();
+            let cConfig = {};
+            if(compRes && compRes.general_config) {
+                cConfig = typeof compRes.general_config === 'string' ? JSON.parse(compRes.general_config) : compRes.general_config;
             }
+            const hAuto = cConfig.hermes_automation || { types: { whatsapp: false, email: false }, users: [] };
+
+            setConfig({
+                system_prompt: res.data?.system_prompt || '',
+                modelo: res.data?.modelo || 'gemini-2.5-flash',
+                temperature: res.data?.temperature !== undefined ? res.data.temperature : 0.3,
+                autonomia: res.data?.autonomia || 0,
+                hermes_automation: hAuto
+            });
+
+            const usersRes = await getUsers();
+            setUsersList(usersRes || []);
         } catch (err) {
             console.error('Erro ao carregar configurações:', err);
             setError(err.response?.data?.error || 'Não foi possível carregar as configurações.');
@@ -238,11 +250,24 @@ export default function LynxConfigTab() {
     // ========= HANDLERS GENERAL CONFIG =========
     async function handleSaveConfig() {
         setSaving(true);
-        setError(null);
         setSuccessMsg('');
         try {
-            await api.put('/hermes/config', config);
-            setSuccessMsg('Configurações padrão do Lynx salvas com sucesso!');
+            await api.put('/hermes/config', {
+                system_prompt: config.system_prompt,
+                modelo: config.modelo,
+                temperature: config.temperature,
+                autonomia: config.autonomia
+            });
+
+            const compRes = await getCompanySettings();
+            let currentGenConfig = {};
+            if(compRes && compRes.general_config) {
+                currentGenConfig = typeof compRes.general_config === 'string' ? JSON.parse(compRes.general_config) : compRes.general_config;
+            }
+            currentGenConfig.hermes_automation = config.hermes_automation;
+            await updateGeneralSettings(currentGenConfig);
+
+            setSuccessMsg('Configurações salvas com sucesso!');
             setTimeout(() => setSuccessMsg(''), 4000);
         } catch (err) {
             console.error(err);
@@ -680,6 +705,73 @@ export default function LynxConfigTab() {
                                         </p>
                                     </div>
                                 </div>
+                                
+                                {/* Automação de Alertas Hermes */}
+                                <div className="mt-8 pt-6 border-t border-slate-200">
+                                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4 uppercase tracking-wider">
+                                        <Sparkles className="w-4 h-4 text-teal-600" />
+                                        Automação de Alertas Hermes (RNCs, Prioridades, etc.)
+                                    </h3>
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                        <div className="flex flex-col gap-2">
+                                            <label className="text-sm font-semibold text-slate-700">Notificar via:</label>
+                                            <div className="flex items-center gap-4">
+                                                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={config.hermes_automation?.types?.whatsapp || false} 
+                                                        onChange={e => setConfig(prev => ({...prev, hermes_automation: {...prev.hermes_automation, types: {...prev.hermes_automation?.types, whatsapp: e.target.checked}}}))} 
+                                                        className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                                    />
+                                                    WhatsApp
+                                                </label>
+                                                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={config.hermes_automation?.types?.email || false} 
+                                                        onChange={e => setConfig(prev => ({...prev, hermes_automation: {...prev.hermes_automation, types: {...prev.hermes_automation?.types, email: e.target.checked}}}))} 
+                                                        className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                                    />
+                                                    E-mail
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            <label className="text-sm font-semibold text-slate-700">Usuários que Receberão Alertas:</label>
+                                            <div className="bg-white border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2">
+                                                {usersList.map(u => (
+                                                    <label key={u.idUsuario} className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={config.hermes_automation?.users?.includes(u.idUsuario) || false}
+                                                            onChange={(e) => {
+                                                                const checked = e.target.checked;
+                                                                setConfig(prev => {
+                                                                    const prevUsers = prev.hermes_automation?.users || [];
+                                                                    const nextUsers = checked ? [...prevUsers, u.idUsuario] : prevUsers.filter(id => id !== u.idUsuario);
+                                                                    return {
+                                                                        ...prev,
+                                                                        hermes_automation: { ...prev.hermes_automation, users: nextUsers }
+                                                                    }
+                                                                });
+                                                            }}
+                                                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium text-slate-700">{u.nome}</span>
+                                                            <span className="text-xs text-slate-500">{u.email || u.telefone || 'Sem contato cadastrado'}</span>
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                                {usersList.length === 0 && <p className="text-xs text-slate-500 p-2">Nenhum usuário encontrado.</p>}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                Os usuários selecionados receberão alertas automáticos gerados pelo Cron Job (RNC) e Prioridades da Ata Viva.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
 
                             <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">

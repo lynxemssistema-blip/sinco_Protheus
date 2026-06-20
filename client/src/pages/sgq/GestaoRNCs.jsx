@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Search, CheckCircle, AlertTriangle, Clock, Filter, Printer, FileText, Camera, X, Mail, TrendingUp, Activity, Wrench } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Shield, Search, CheckCircle, AlertTriangle, Clock, Filter, Printer, FileText, Camera, X, Mail, TrendingUp, Activity, Wrench, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { getAllRncs, updateRnc, getSgqNaoConformidades, getProcessList, getFileUrl, getRncApontamentos, createRncApontamento, deleteRncApontamento } from '../../services/api';
 import { generateRNCPdf, generateSingleRNCPdf } from '../../services/rncPdfGenerator';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,11 +12,12 @@ import {
 
 export default function GestaoRNCs() {
     const { user } = useAuth();
-    const [rncs, setRncs] = useState([]);
     const [allRncs, setAllRncs] = useState([]);
     const [activeTab, setActiveTab] = useState('lista');
     const [loading, setLoading] = useState(false);
     const [statusFilter, setStatusFilter] = useState('');
+    const [searchText, setSearchText] = useState('');
+    const [sortConfig, setSortConfig] = useState({ key: 'data_criacao', dir: 'desc' });
     
     // Treat RNC Modal
     const [treatingRnc, setTreatingRnc] = useState(null);
@@ -80,13 +81,57 @@ export default function GestaoRNCs() {
         loadBaseData();
     }, []);
 
-    useEffect(() => {
-        if (statusFilter) {
-            setRncs(allRncs.filter(r => r.status === statusFilter));
-        } else {
-            setRncs(allRncs);
+    const rncs = useMemo(() => {
+        let list = [...allRncs];
+
+        // Status filter
+        if (statusFilter) list = list.filter(r => r.status === statusFilter);
+
+        // Text search: ID, produto, desc_produto, op, pedido, criado_por, nc_descricao, recurso_inconformidade
+        if (searchText.trim()) {
+            const q = searchText.trim().toLowerCase();
+            list = list.filter(r =>
+                String(r.id).includes(q) ||
+                (r.produto && r.produto.toLowerCase().includes(q)) ||
+                (r.desc_produto && r.desc_produto.toLowerCase().includes(q)) ||
+                (r.op && String(r.op).toLowerCase().includes(q)) ||
+                (r.pedido && String(r.pedido).toLowerCase().includes(q)) ||
+                (r.criado_por && r.criado_por.toLowerCase().includes(q)) ||
+                (r.nc_descricao && r.nc_descricao.toLowerCase().includes(q)) ||
+                (r.recurso_inconformidade && r.recurso_inconformidade.toLowerCase().includes(q))
+            );
         }
-    }, [statusFilter, allRncs]);
+
+        // Column sort
+        if (sortConfig.key) {
+            list.sort((a, b) => {
+                let va = a[sortConfig.key];
+                let vb = b[sortConfig.key];
+                // Null / undefined always go last
+                if (va == null && vb == null) return 0;
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                // Numeric
+                if (typeof va === 'number' && typeof vb === 'number') {
+                    return sortConfig.dir === 'asc' ? va - vb : vb - va;
+                }
+                // Date strings
+                const da = Date.parse(va);
+                const db = Date.parse(vb);
+                if (!isNaN(da) && !isNaN(db)) {
+                    return sortConfig.dir === 'asc' ? da - db : db - da;
+                }
+                // String
+                va = String(va).toLowerCase();
+                vb = String(vb).toLowerCase();
+                if (va < vb) return sortConfig.dir === 'asc' ? -1 : 1;
+                if (va > vb) return sortConfig.dir === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return list;
+    }, [allRncs, statusFilter, searchText, sortConfig]);
 
     const loadBaseData = async () => {
         try {
@@ -454,6 +499,33 @@ export default function GestaoRNCs() {
         return null;
     };
 
+    const handleSort = (key) => {
+        setSortConfig(prev =>
+            prev.key === key
+                ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+                : { key, dir: 'asc' }
+        );
+    };
+
+    const SortableHeader = ({ label, colKey, className = '' }) => {
+        const isActive = sortConfig.key === colKey;
+        return (
+            <th
+                className={`px-4 py-3 font-semibold cursor-pointer select-none hover:bg-slate-100 transition-colors group ${className}`}
+                onClick={() => handleSort(colKey)}
+            >
+                <span className="flex items-center gap-1">
+                    {label}
+                    <span className={`transition-colors ${isActive ? 'text-indigo-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                        {isActive
+                            ? (sortConfig.dir === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)
+                            : <ChevronsUpDown className="w-3.5 h-3.5" />}
+                    </span>
+                </span>
+            </th>
+        );
+    };
+
     const getStatusBadge = (status) => {
         if (status === 'CONCLUIDO') return <span className="px-2 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-[10px] font-bold flex items-center gap-1 w-max"><CheckCircle className="w-3 h-3"/> CONCLUÍDO</span>;
         if (status === 'EM ANDAMENTO') return <span className="px-2 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-full text-[10px] font-bold flex items-center gap-1 w-max"><Clock className="w-3 h-3"/> EM ANDAMENTO</span>;
@@ -511,20 +583,44 @@ export default function GestaoRNCs() {
 
             {activeTab === 'lista' && (
                 <>
-                    <div className="bg-white rounded-lg shadow-sm border p-4 flex gap-3 items-center">
-                        <div className="flex items-center gap-2 font-medium text-sm text-slate-600">
-                            <Filter className="w-4 h-4" /> Filtro de Status:
+                    <div className="bg-white rounded-lg shadow-sm border p-4 flex flex-wrap gap-3 items-center">
+                        {/* Search */}
+                        <div className="relative flex-1 min-w-[220px]">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Buscar por ID, OP, Produto, NC, Recurso..."
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                                className="w-full pl-9 pr-9 py-2 border rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 transition-shadow"
+                            />
+                            {searchText && (
+                                <button
+                                    onClick={() => setSearchText('')}
+                                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
-                        <select 
-                            className="border rounded px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                        {/* Status filter */}
+                        <div className="flex items-center gap-2 font-medium text-sm text-slate-600">
+                            <Filter className="w-4 h-4" />
+                        </div>
+                        <select
+                            className="border rounded px-3 py-2 text-sm outline-none focus:border-indigo-500"
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
                         >
-                            <option value="">Todas as RNCs</option>
+                            <option value="">Todos os Status</option>
                             <option value="ABERTO">Abertas</option>
                             <option value="EM ANDAMENTO">Em Andamento</option>
                             <option value="CONCLUIDO">Concluídas</option>
                         </select>
+                        {/* Result count */}
+                        <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-1.5 rounded-lg">
+                            {rncs.length} resultado{rncs.length !== 1 ? 's' : ''}
+                        </span>
                         <div className="ml-auto flex items-center gap-2">
                             <button onClick={handlePrint} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded text-sm font-bold border border-slate-200 hover:bg-slate-200 transition-colors flex items-center gap-1">
                                 <Printer className="w-4 h-4" />
@@ -545,17 +641,17 @@ export default function GestaoRNCs() {
                     ) : (
                         <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
                             <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 text-slate-600 border-b">
+                                <thead className="bg-slate-50 text-slate-600 border-b text-xs">
                                     <tr>
-                                        <th className="px-4 py-3 font-semibold">ID</th>
-                                        <th className="px-4 py-3 font-semibold">Status</th>
+                                        <SortableHeader label="ID" colKey="id" />
+                                        <SortableHeader label="Status" colKey="status" />
                                         <th className="px-4 py-3 font-semibold">Reposição</th>
-                                        <th className="px-4 py-3 font-semibold">Produto</th>
-                                        <th className="px-4 py-3 font-semibold">Rastreabilidade</th>
-                                        <th className="px-4 py-3 font-semibold">Problema / Máquina</th>
-                                        <th className="px-4 py-3 font-semibold">Criado Por</th>
-                                        <th className="px-4 py-3 font-semibold">Prazo Planejado</th>
-                                        <th className="px-4 py-3 font-semibold">Tempo Gasto</th>
+                                        <SortableHeader label="Produto" colKey="produto" />
+                                        <SortableHeader label="OP" colKey="op" />
+                                        <SortableHeader label="Problema / Máquina" colKey="nc_descricao" />
+                                        <SortableHeader label="Criado Por" colKey="criado_por" />
+                                        <SortableHeader label="Prazo" colKey="data_limite" />
+                                        <SortableHeader label="Tempo" colKey="tempo_gasto_total" />
                                         <th className="px-4 py-3 font-semibold text-right">Ação</th>
                                     </tr>
                                 </thead>

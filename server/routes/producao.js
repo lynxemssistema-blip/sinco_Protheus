@@ -642,6 +642,7 @@ router.get('/vertical-pendencias', async (req, res) => {
                SUM(quantidade) as total_produzido
         FROM app_production_appointments
         WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
       `, [...opCodes, ...opCodOperacoes]);
       appointments = aRows;
@@ -700,7 +701,7 @@ router.get('/vertical-pendencias', async (req, res) => {
       finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) >= new Date(`${String(plan_inicio_de)}T00:00:00`));
     }
     if (plan_inicio_ate) {
-      finalList = finalList.filter(r => r.planejamento_inicio && new Date(r.planejamento_inicio) <= new Date(`${String(plan_inicio_ate)}T23:59:59`));
+      finalList = finalList.filter(r => !r.planejamento_inicio || new Date(r.planejamento_inicio) <= new Date(`${String(plan_inicio_ate)}T23:59:59`));
     }
     if (plan_fim_de) {
       finalList = finalList.filter(r => r.planejamento_fim && new Date(r.planejamento_fim) >= new Date(`${String(plan_fim_de)}T00:00:00`));
@@ -724,7 +725,7 @@ router.get('/vertical/:operacao', async (req, res) => {
   try {
     let { operacao } = req.params;
     operacao = String(operacao).split('-')[0].trim();
-    const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate } = req.query;
+    const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate, status, sort_key, sort_dir } = req.query;
 
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(   parseInt(req.query.limit) || 200, 500);
@@ -744,8 +745,14 @@ router.get('/vertical/:operacao', async (req, res) => {
       if (plan_fim_de)    { mysqlQuery += ` AND data_planejada_fim >= ?`;    mysqlParams.push(`${plan_fim_de} 00:00:00`); }
       if (plan_fim_ate)   { mysqlQuery += ` AND data_planejada_fim <= ?`;    mysqlParams.push(`${plan_fim_ate} 23:59:59`); }
       const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
-      if (plannedOps.length === 0) return res.json({ data: [], pagination: { page, limit, hasMore: false, total: 0 } });
-      opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim().padStart(6, '0')).slice(0, 5000);
+      if (plannedOps.length === 0) {
+        // Nenhum planejamento no período para este recurso — não bloquear.
+        // Exibe todas as OPs do Protheus sem restrição de data local.
+        console.log(`ℹ️ [VERTICAL] Sem dados em app_production_planning para ${operacao} no período. Exibindo todas as OPs do Protheus.`);
+        opFilterFromMySQL = null;
+      } else {
+        opFilterFromMySQL = plannedOps.map(o => String(o.op_numero).trim().padStart(6, '0')).slice(0, 5000);
+      }
     }
 
     // ETAPA 1: routing map (for enrichment and BOM lookup)
@@ -781,7 +788,7 @@ router.get('/vertical/:operacao', async (req, res) => {
     if (inactiveSql) sc2Conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
 
     if (op) {
-      sc2Conditions.push(`c2.c2_num = $${sc2Count++}`);
+      sc2Conditions.push(`TRIM(c2.c2_num) = $${sc2Count++}`);
       sc2Params.push(String(op).trim().padStart(6, '0'));
     }
     if (pedido) {
@@ -848,12 +855,11 @@ router.get('/vertical/:operacao', async (req, res) => {
       sc2Count++;
     }
     if (opFilterFromMySQL && opFilterFromMySQL.length > 0) {
-      sc2Conditions.push(`c2.c2_num = ANY($${sc2Count++})`);
+      sc2Conditions.push(`TRIM(c2.c2_num) = ANY($${sc2Count++})`);
       sc2Params.push(opFilterFromMySQL);
     }
 
     const sc2Where = `WHERE ${sc2Conditions.join(' AND ')}`;
-    sc2Params.push(limit, offset);
 
     // Main query: INNER JOIN sg2010 replaces the huge ANY($produtos) array
     const pgQuery = `
@@ -892,8 +898,7 @@ router.get('/vertical/:operacao', async (req, res) => {
       LEFT JOIN public.sb1010 b1
         ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
       ${sc2Where}
-      ORDER BY c6.c6_entreg ASC NULLS LAST, c2.c2_pedido ASC, c2.c2_num ASC
-      LIMIT $${sc2Count++} OFFSET $${sc2Count++}
+      LIMIT 5000
     `;
 
     const verticalClient = await db.connect();
@@ -945,6 +950,7 @@ router.get('/vertical/:operacao', async (req, res) => {
                MAX(data_fim) as ultima_data, GROUP_CONCAT(DISTINCT usuario SEPARATOR ', ') as usuarios
         FROM app_production_appointments
         WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
       `, [...opCodes, ...opCodOperacoes]);
       appointments = aRows;
@@ -971,6 +977,60 @@ router.get('/vertical/:operacao', async (req, res) => {
       }
     }
 
+    // Roteiro completo por produto para identificar operação anterior e posterior
+    let fullRoutingMap = {};
+    if (codigosProdutos.length > 0) {
+      try {
+        const fullRoteiroResult = await db.query(`
+          SELECT TRIM(g2.g2_produto) AS produto, TRIM(g2.g2_operac) AS operacao_codigo, TRIM(g2.g2_recurso) AS recurso_codigo
+          FROM public.sg2010 g2
+          WHERE TRIM(g2.g2_produto) = ANY($1) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+          ORDER BY g2.g2_produto ASC, g2.g2_operac ASC
+        `, [codigosProdutos]);
+        fullRoteiroResult.rows.forEach(r => {
+          if (!fullRoutingMap[r.produto]) fullRoutingMap[r.produto] = [];
+          fullRoutingMap[r.produto].push({ operacao_codigo: r.operacao_codigo, recurso_codigo: r.recurso_codigo });
+        });
+      } catch (e) { /* não bloqueia */ }
+    }
+
+    // Mapa rowKey -> operacao anterior e posterior
+    const prevOpMap = {};
+    const nextOpMap = {};
+    opsList.forEach(opRow => {
+      const currentEntry = routingMap[opRow.produto]?.[0];
+      if (!currentEntry) return;
+      const allOps = fullRoutingMap[opRow.produto] || [];
+      const idx = allOps.findIndex(op => op.operacao_codigo === currentEntry.operacao_codigo);
+      if (idx > 0) {
+        prevOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`] = allOps[idx - 1];
+      }
+      if (idx !== -1 && idx < allOps.length - 1) {
+        nextOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`] = allOps[idx + 1];
+      }
+    });
+
+    // Busca apontamentos das operações adjacentes (anteriores e próximas)
+    const adjacentOpCodes = [...new Set([
+      ...Object.values(prevOpMap).map(o => o.operacao_codigo),
+      ...Object.values(nextOpMap).map(o => o.operacao_codigo)
+    ].filter(Boolean))];
+    let adjacentAppointments = [];
+    if (opCodes.length > 0 && adjacentOpCodes.length > 0) {
+      try {
+        const adjOpPH = adjacentOpCodes.map(() => '?').join(',');
+        const [adjARows] = await mysqlPool.query(
+          `SELECT op_numero, op_item, operacao_codigo, SUM(quantidade) AS total_produzido
+           FROM app_production_appointments
+           WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${adjOpPH})
+           AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+           GROUP BY op_numero, op_item, operacao_codigo`,
+          [...opCodes, ...adjacentOpCodes]
+        );
+        adjacentAppointments = adjARows;
+      } catch (e) { /* não bloqueia */ }
+    }
+
     // Merge final
     const enrichedList = opsList.map(opRow => {
       const p = plans.find(plan =>
@@ -983,15 +1043,15 @@ router.get('/vertical/:operacao', async (req, res) => {
       );
       const qtd_planejada = parseFloat(opRow.qtd_op) || 0;
       const qtd_apontada  = a ? (parseFloat(a.total_produzido) || 0) : 0;
-      let status = 'PENDENTE';
-      if (qtd_apontada >= qtd_planejada && qtd_planejada > 0) status = 'CONCLUIDO';
-      else if (qtd_apontada > 0) status = 'PARCIAL';
+      let itemStatus = 'PENDENTE';
+      if (qtd_apontada >= qtd_planejada && qtd_planejada > 0) itemStatus = 'CONCLUIDO';
+      else if (qtd_apontada > 0) itemStatus = 'PARCIAL';
       const docs = docsMap[opRow.produto] || [];
       const rawP = (opRow.raw_pedido || '').trim();
       const rawO = (opRow.obs_venda  || '').trim();
       return {
         ...opRow,
-        status,
+        status: itemStatus,
         pedido: rawP || (rawO.match(/^\d+/)?.[0] || ''),
         planejamento_inicio: p ? p.data_planejada_inicio : null,
         planejamento_fim:    p ? p.data_planejada_fim    : null,
@@ -1003,14 +1063,47 @@ router.get('/vertical/:operacao', async (req, res) => {
         primeiro_arquivo: docs.length > 0 ? docs[0].url_arquivo : null,
         arquivos: docs,
         tempad: Math.round((parseFloat(opRow.g2_tempad) || 0) * 1000) / 1000,
-        setup:  parseFloat(opRow.g2_setup) || 0
+        setup:  parseFloat(opRow.g2_setup) || 0,
+        op_anterior: (() => {
+          const prevOp = prevOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`];
+          if (!prevOp) return null;
+          const pa = adjacentAppointments.find(a => a.op_numero === opRow.op && a.op_item === opRow.item_op && a.operacao_codigo === prevOp.operacao_codigo);
+          const qtd_pl = parseFloat(opRow.qtd_op) || 0;
+          const qtd_ap = pa ? (parseFloat(pa.total_produzido) || 0) : 0;
+          const st = qtd_ap >= qtd_pl && qtd_pl > 0 ? 'CONCLUIDO' : qtd_ap > 0 ? 'PARCIAL' : 'PENDENTE';
+          return {
+            operacao_codigo: prevOp.operacao_codigo,
+            recurso_codigo: prevOp.recurso_codigo,
+            qtd_apontada: qtd_ap,
+            status: st
+          };
+        })(),
+        op_proxima: (() => {
+          const nextOp = nextOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`];
+          if (!nextOp) return null;
+          const na = adjacentAppointments.find(a => a.op_numero === opRow.op && a.op_item === opRow.item_op && a.operacao_codigo === nextOp.operacao_codigo);
+          const qtd_pl = parseFloat(opRow.qtd_op) || 0;
+          const qtd_ap = na ? (parseFloat(na.total_produzido) || 0) : 0;
+          const st = qtd_ap >= qtd_pl && qtd_pl > 0 ? 'CONCLUIDO' : qtd_ap > 0 ? 'PARCIAL' : 'PENDENTE';
+          return {
+            operacao_codigo: nextOp.operacao_codigo,
+            recurso_codigo: nextOp.recurso_codigo,
+            qtd_apontada: qtd_ap,
+            status: st
+          };
+        })()
       };
     });
 
     // Filtro Final por Datas Planejadas na própria operação (Timezone Safe)
     const toYMD = (d) => {
       if (!d) return null;
-      try { return new Date(d).toISOString().substring(0, 10); } catch (e) { return null; }
+      try {
+        const dateObj = new Date(d);
+        if (isNaN(dateObj.getTime())) return null;
+        const tzOffset = dateObj.getTimezoneOffset() * 60000;
+        return new Date(dateObj.getTime() - tzOffset).toISOString().substring(0, 10);
+      } catch (e) { return null; }
     };
 
     let finalList = enrichedList;
@@ -1018,7 +1111,7 @@ router.get('/vertical/:operacao', async (req, res) => {
       finalList = finalList.filter(r => toYMD(r.planejamento_inicio) && toYMD(r.planejamento_inicio) >= String(plan_inicio_de));
     }
     if (plan_inicio_ate) {
-      finalList = finalList.filter(r => toYMD(r.planejamento_inicio) && toYMD(r.planejamento_inicio) <= String(plan_inicio_ate));
+      finalList = finalList.filter(r => !toYMD(r.planejamento_inicio) || toYMD(r.planejamento_inicio) <= String(plan_inicio_ate));
     }
     if (plan_fim_de) {
       finalList = finalList.filter(r => toYMD(r.planejamento_fim) && toYMD(r.planejamento_fim) >= String(plan_fim_de));
@@ -1027,13 +1120,65 @@ router.get('/vertical/:operacao', async (req, res) => {
       finalList = finalList.filter(r => toYMD(r.planejamento_fim) && toYMD(r.planejamento_fim) <= String(plan_fim_ate));
     }
 
-    const hasMore = finalList.length >= limit;
+    // Apply Status Filter
+    if (status && status !== 'ALL') {
+      if (status === 'ABERTOS') {
+        finalList = finalList.filter(r => r.status !== 'CONCLUIDO');
+      } else {
+        finalList = finalList.filter(r => r.status === status);
+      }
+    }
+
+    // Apply Sorting
+    finalList.sort((a, b) => {
+      const sKey = sort_key || 'data_entrega';
+      const sDir = sort_dir === 'desc' ? 'desc' : 'asc';
+      
+      if (sKey === 'planejamento_inicio') {
+        const dateA = a.planejamento_inicio ? new Date(a.planejamento_inicio).getTime() : (sDir === 'asc' ? Infinity : -Infinity);
+        const dateB = b.planejamento_inicio ? new Date(b.planejamento_inicio).getTime() : (sDir === 'asc' ? Infinity : -Infinity);
+        if (dateA !== dateB) return sDir === 'asc' ? dateA - dateB : dateB - dateA;
+        return a.op.localeCompare(b.op);
+      }
+      if (sKey === 'data_entrega') {
+        const dateA = a.data_entrega ? new Date(a.data_entrega).getTime() : (sDir === 'asc' ? Infinity : -Infinity);
+        const dateB = b.data_entrega ? new Date(b.data_entrega).getTime() : (sDir === 'asc' ? Infinity : -Infinity);
+        if (dateA !== dateB) return sDir === 'asc' ? dateA - dateB : dateB - dateA;
+        return a.op.localeCompare(b.op);
+      }
+
+      let aVal = a[sKey];
+      let bVal = b[sKey];
+
+      if (sKey === 'progresso') {
+        aVal = a.qtd_op > 0 ? (a.qtd_apontada / a.qtd_op) : 0;
+        bVal = b.qtd_op > 0 ? (b.qtd_apontada / b.qtd_op) : 0;
+      }
+
+      if (aVal === bVal) {
+        return a.op.localeCompare(b.op); // Fallback para manter consistência
+      }
+      if (aVal === null || aVal === undefined) return 1;
+      if (bVal === null || bVal === undefined) return -1;
+      
+      if (typeof aVal === 'string') {
+        return sDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sDir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+
+    const total = finalList.length;
+    const offsetCalc = (page - 1) * limit;
+    const paginatedList = finalList.slice(offsetCalc, offsetCalc + limit);
+    const hasMore = (offsetCalc + limit) < total;
+
     res.json({
-      data: finalList,
-      pagination: { page, limit, hasMore, total: hasMore ? null : offset + finalList.length }
+      data: paginatedList,
+      pagination: { page, limit, hasMore, total }
     });
 
   } catch (err) {
+    require('fs').writeFileSync('vertical_error.txt', String(err.stack || err.message));
     console.error('❌ [VERTICAL ROUTE ERROR] message:', err.message);
     console.error('❌ [VERTICAL ROUTE ERROR] code:', err.code);
     if (err.code === '53300' || err.code === '53100') {
@@ -1340,6 +1485,7 @@ router.get('/op-roteiro-saldo', async (req, res) => {
         FROM app_production_appointments
         WHERE op_numero = ? AND op_item = ? AND op_sequencia = ?
         AND operacao_codigo IN (${placeholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY operacao_codigo
       `, [op.trim().padStart(6, '0'), item.trim(), (sequencia || '001').trim(), ...opCodOperacoes]);
       appointments = aRows;

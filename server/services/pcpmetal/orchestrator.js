@@ -98,7 +98,7 @@ async function orchestrate({ userMessage, requestContext = {}, pageData = null, 
 
         send({ type: 'step', icon: '💬', message: `Consultando modelo **${analystAgent.modelo || 'gemini-2.5-flash'}**...` });
         const analystPrompt = buildSystemPrompt(analystAgent, { ...requestContext, orderContext }, schemaRows);
-        const analystQuestion = `Pergunta do usuário: "${userMessage}"${historyContext}\n\nGenere as consultas SQL necessárias para obter TODOS os dados relevantes para responder essa pergunta. Execute no máximo ${MAX_SQL_ROUNDS} consultas. Formato: \`\`\`sql\n[BANCO: postgresql ou mysql]\nSELECT...\n\`\`\``;
+        const analystQuestion = `Pergunta do usuário: "${userMessage}"${historyContext}\n\nGenere as consultas SQL necessárias. Se o usuário pedir para alterar/atualizar algo, você pode gerar comandos UPDATE, INSERT ou DELETE apenas no MySQL. Execute no máximo ${MAX_SQL_ROUNDS} consultas. Formato: \`\`\`sql\n[BANCO: postgresql ou mysql]\nSELECT ou UPDATE...\n\`\`\``;
 
         const analystResponse = await askGemini(analystPrompt, analystQuestion, analystAgent.modelo);
 
@@ -121,10 +121,25 @@ async function orchestrate({ userMessage, requestContext = {}, pageData = null, 
                 data: { banco, sql }
             });
             try {
-                const result = await runQuery(banco, sql);
-                queryResults.push({ banco, sql, rows: result.rows, rowCount: result.rowCount, error: null });
-                executedSQLs.push({ banco, sql, rowCount: result.rowCount });
-                send({ type: 'step', icon: '✅', message: `Consulta ${i + 1} retornou **${result.rowCount}** linha(s)` });
+                const isDml = /^(UPDATE|INSERT|DELETE)\s/i.test(sql.trim());
+                const permissionGranted = /(autorizado|pode fazer|pode executar|aprovo|sim|atualize|execute|confirmo)/i.test(userMessage);
+
+                if (isDml && !permissionGranted) {
+                    const msg = 'SQL de alteração gerado, aguardando permissão do usuário. Peça permissão antes de executar.';
+                    queryResults.push({ banco, sql, rows: [{ aviso: msg }], rowCount: 0, error: null });
+                    executedSQLs.push({ banco, sql, aviso: msg });
+                    send({ type: 'step', icon: '⚠️', message: `Consulta ${i + 1} (DML) requer autorização para executar.` });
+                } else if (isDml && banco === 'postgresql') {
+                    const msg = 'Não é permitido executar alterações no Protheus (PostgreSQL).';
+                    queryResults.push({ banco, sql, rows: [{ erro: msg }], rowCount: 0, error: msg });
+                    executedSQLs.push({ banco, sql, error: msg });
+                    send({ type: 'step', icon: '❌', message: `Consulta ${i + 1} bloqueada: ${msg}` });
+                } else {
+                    const result = await runQuery(banco, sql);
+                    queryResults.push({ banco, sql, rows: result.rows, rowCount: result.rowCount, error: null });
+                    executedSQLs.push({ banco, sql, rowCount: result.rowCount });
+                    send({ type: 'step', icon: '✅', message: `Consulta ${i + 1} retornou **${result.rowCount}** linha(s)` });
+                }
             } catch (err) {
                 queryResults.push({ banco, sql, rows: [], rowCount: 0, error: err.message });
                 executedSQLs.push({ banco, sql, error: err.message });
@@ -152,6 +167,12 @@ async function orchestrate({ userMessage, requestContext = {}, pageData = null, 
 
     // Monta bloco de dados: prioriza pageData, depois resultados de SQL
     let dataBlock = '';
+    
+    // Inject page-specific instructions
+    if (requestContext.page === 'visao-geral') {
+        dataBlock += `\n[INSTRUÇÃO IMPORTANTE - VISÃO GERAL]: A data de hoje deve ser considerada sempre como a "Data de Corte". Isso significa que TODOS os pedidos, OPs ou itens que NÃO ESTÃO CONCLUÍDOS e possuem datas anteriores a hoje devem gerar ALERTAS CLAROS (estão atrasados). Destaque isso proativamente, especialmente se o usuário for do setor de PCP.\n`;
+    }
+
     if (pageData && (pageData.ops?.length || pageData.selectedOps?.length)) {
         const opsParaAnalise = pageData.selectedOps?.length > 0 ? pageData.selectedOps : pageData.ops;
         const preview = JSON.stringify((opsParaAnalise || []).slice(0, 100), null, 2);
@@ -169,10 +190,10 @@ async function orchestrate({ userMessage, requestContext = {}, pageData = null, 
     }
     if (!dataBlock) dataBlock = 'Nenhum dado disponível.';
 
-    const finalQuestion = `Pergunta original: "${userMessage}"${historyContext}\n\n${dataBlock}\n\nElabore um relatório técnico completo de PCP em Markdown com: Resumo Executivo, Análise de Prazo, Quantidade Faltante, Estratégia e Alertas. Responda em Português (Brasil).`;
+    const finalQuestion = `Pergunta original: "${userMessage}"${historyContext}\n\n${dataBlock}\n\nResponda diretamente à pergunta do usuário em Português (Brasil). IMPORTANTE: (1) O seu estilo de conversa deve ser como num bate-papo, natural e contextualizado. (2) Se o usuário pedir expressamente um 'relatório técnico', gere um relatório completo em Markdown. Caso contrário, apenas responda o que foi perguntado de forma clara e fluída. (3) Sempre que solicitado ou se o usuário falar sobre atrasos e planejamento, ofereça proativamente ideias estratégicas de como ajustar a produção.`;
 
 
-    send({ type: 'step', icon: '💬', message: `Gerando relatório com **${strategistAgent.modelo || 'gemini-2.5-flash'}**...` });
+    send({ type: 'step', icon: '🤖', message: `Processando resposta com **${strategistAgent.modelo || 'gemini-2.5-flash'}**...` });
     const finalAnswer = await askGemini(strategistPrompt, finalQuestion, strategistAgent.modelo);
 
     // ---- STEP 5: Log conversation ----

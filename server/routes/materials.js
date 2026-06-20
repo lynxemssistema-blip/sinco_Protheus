@@ -128,35 +128,39 @@ router.post('/explosion', async (req, res) => {
         const pgRes = await db.query(query, [produto_codigo, quantidade_pedido]);
         let materiais = pgRes.rows;
 
-        // Enrichment: Buscar status de compra (Postgres)
-        // OtimizaÃ§Ã£o: Fazer query de compras para os materiais retornados
-        // Para simplificar, faremos um loop ou uma query WHERE IN
+        // Enrichment: Buscar status de compra em BATCH (1 query para todos os materiais)
+        const codigosMp = [...new Set(
+            materiais.filter(m => ['MP', 'ME', 'MC', 'BN'].includes(m.tipo)).map(m => m.componente)
+        )];
 
-        // Vamos agrupar por operaÃ§Ã£o no backend
+        const comprasMap = new Map();
+        if (codigosMp.length > 0) {
+            const comprasBatch = await db.query(`
+                SELECT DISTINCT ON (TRIM(b1.b1_cod))
+                    TRIM(b1.b1_cod)                                              AS componente,
+                    TRIM(c1.c1_num)                                              AS sc_numero,
+                    TRIM(c7.c7_num)                                              AS pc_numero,
+                    TRIM(d1.d1_doc)                                              AS nf_numero,
+                    TO_CHAR(TO_DATE(NULLIF(c7.c7_datprf,''), 'YYYYMMDD'), 'YYYY-MM-DD') AS data_entrega,
+                    c7.c7_preco::numeric                                         AS preco_unitario
+                FROM sb1010 b1
+                LEFT JOIN sc1010 c1 ON TRIM(c1.c1_produto) = TRIM(b1.b1_cod) AND COALESCE(c1.d_e_l_e_t_, '') = ''
+                LEFT JOIN sc7010 c7 ON TRIM(c7.c7_numsc) = TRIM(c1.c1_num) AND TRIM(c7.c7_itemsc) = TRIM(c1.c1_item) AND COALESCE(c7.d_e_l_e_t_, '') = ''
+                LEFT JOIN sd1010 d1 ON TRIM(d1.d1_pedido) = TRIM(c7.c7_num) AND TRIM(d1.d1_itempc) = TRIM(c7.c7_item) AND COALESCE(d1.d_e_l_e_t_, '') = ''
+                WHERE TRIM(b1.b1_cod) = ANY($1)
+                ORDER BY TRIM(b1.b1_cod), c1.c1_datprf DESC NULLS LAST
+            `, [codigosMp]);
+            for (const row of comprasBatch.rows) {
+                comprasMap.set(row.componente.trim(), row);
+            }
+        }
+
         const porOperacao = {};
 
         for (const mat of materiais) {
-            // Se for materia prima (MP, ME, MC), buscar dados de compra
             if (['MP', 'ME', 'MC', 'BN'].includes(mat.tipo)) {
-
-                // Query de compras simplificada (pega a mais recente)
-                const compraRes = await db.query(`
-                    SELECT 
-                        TRIM(c1.c1_num) as sc_numero,
-                        TRIM(c7.c7_num) as pc_numero,
-                        TRIM(d1.d1_doc) as nf_numero,
-                         TO_CHAR(TO_DATE(c7.c7_datprf, 'YYYYMMDD'), 'YYYY-MM-DD') as data_entrega,
-                        c7.c7_preco::numeric as preco_unitario
-                    FROM sb1010 b1
-                    LEFT JOIN sc1010 c1 ON TRIM(c1.c1_produto) = TRIM(b1.b1_cod) AND COALESCE(c1.d_e_l_e_t_, '') = ''
-                    LEFT JOIN sc7010 c7 ON TRIM(c7.c7_numsc) = TRIM(c1.c1_num) AND TRIM(c7.c7_itemsc) = TRIM(c1.c1_item) AND COALESCE(c7.d_e_l_e_t_, '') = ''
-                    LEFT JOIN sd1010 d1 ON TRIM(d1.d1_pedido) = TRIM(c7.c7_num) AND TRIM(d1.d1_itempc) = TRIM(c7.c7_item) AND COALESCE(d1.d_e_l_e_t_, '') = ''
-                    WHERE TRIM(b1.b1_cod) = $1
-                    ORDER BY c1.c1_datprf DESC LIMIT 1
-                `, [mat.componente]);
-
-                if (compraRes.rows.length > 0) {
-                    const compra = compraRes.rows[0];
+                const compra = comprasMap.get((mat.componente || '').trim());
+                if (compra) {
                     mat.status_compra = compra.nf_numero ? 'RECEBIDO' : (compra.pc_numero ? 'PEDIDO_COMPRA' : (compra.sc_numero ? 'SOLICITACAO' : 'PENDENTE'));
                     mat.compra = compra;
                 } else {
@@ -517,6 +521,9 @@ router.post('/bulk-explosion', async (req, res) => {
 // GET /api/materials/mrp-items - Busca leve de itens com saldo a faturar (sem enriquecimento)
 router.get('/mrp-items', async (req, res) => {
     try {
+        const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        
         const {
             cliente = '', pedido = '', produto = '',
             dataInicial = '', dataFinal = '', dateType = 'pedido',
@@ -532,7 +539,7 @@ router.get('/mrp-items', async (req, res) => {
         let where = `WHERE COALESCE(c5.d_e_l_e_t_, '') = ''
           AND c5.c5_tipo <> 'B'
           AND COALESCE(c6.d_e_l_e_t_, '') = ''
-          AND (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0)) > 0`;
+          AND (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0)) > 0` + getInactiveFilter('c5.c5_num');
 
         if (cliente) { where += ` AND sa1.a1_nome ILIKE '%' || $${pc} || '%'`; params.push(cliente); pc++; }
         if (pedido)  { where += ` AND TRIM(c5.c5_num) = $${pc}`;              params.push(pedido.trim().padStart(6, '0')); pc++; }

@@ -623,6 +623,7 @@ router.get('/vertical-pendencias', async (req, res) => {
                SUM(quantidade) as total_produzido
         FROM app_production_appointments
         WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
       `, [...opCodes, ...opCodOperacoes]);
       appointments = aRows;
@@ -895,6 +896,7 @@ router.get('/vertical/:operacao', async (req, res) => {
                GROUP_CONCAT(DISTINCT usuario SEPARATOR ', ') as usuarios
         FROM app_production_appointments
         WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
       `, [...opCodes, ...opCodOperacoes]);
       appointments = aRows;
@@ -1305,6 +1307,7 @@ router.get('/op-roteiro-saldo', async (req, res) => {
         FROM app_production_appointments
         WHERE op_numero = ? AND op_item = ? AND op_sequencia = ?
         AND operacao_codigo IN (${placeholders})
+        AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY operacao_codigo
       `, [op.trim().padStart(6, '0'), item.trim(), (sequencia || '001').trim(), ...opCodOperacoes]);
       appointments = aRows;

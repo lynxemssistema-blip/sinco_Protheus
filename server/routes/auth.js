@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const mysql = require('mysql2/promise');
+const db = require('../services/mysqlService');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 require('dotenv').config();
@@ -14,14 +14,6 @@ if (!SECRET_KEY) {
     process.exit(1);
 }
 
-const dbConfig = {
-    host: process.env.MYSQL_HOST,
-    user: process.env.MYSQL_USER,
-    password: process.env.MYSQL_PASS,
-    database: process.env.MYSQL_DB,
-    port: 3306
-};
-
 // Login Route
 router.post('/login', async (req, res) => {
     const { login, senha } = req.body;
@@ -30,11 +22,8 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ error: 'Login e senha são obrigatórios' });
     }
 
-    let connection;
     try {
-        connection = await mysql.createConnection(dbConfig);
-
-        const [rows] = await connection.execute(
+        const [rows] = await db.execute(
             'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, Senha FROM usuario WHERE Login = ?',
             [login]
         );
@@ -54,11 +43,10 @@ router.post('/login', async (req, res) => {
         } else {
             passwordMatch = (senha === user.Senha);
             
-            // Auto-migration: hash the password and update it in the database
             if (passwordMatch) {
                 try {
                     const hashedPwd = await bcrypt.hash(senha, 10);
-                    await connection.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPwd, user.idUsuario]);
+                    await db.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPwd, user.idUsuario]);
                 } catch (migrationError) {
                     console.warn('Falha na migração da senha para bcrypt (provavelmente a coluna Senha é muito curta):', migrationError.message);
                 }
@@ -99,8 +87,6 @@ router.post('/login', async (req, res) => {
             fs.appendFileSync('auth_debug.txt', new Date().toISOString() + ' | ERRO 500 LOGIN | ' + JSON.stringify(req.body) + ' | ' + error.message + '\n' + error.stack + '\n\n');
         } catch(e){}
         res.status(500).json({ error: 'Erro interno do servidor', detail: error.message });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 
@@ -109,10 +95,7 @@ router.post('/recuperar-senha', async (req, res) => {
     const { email } = req.body; // 'email' parameter acts as generic contact info (email or phone) from frontend
     if (!email) return res.status(400).json({ error: 'O E-mail ou WhatsApp é obrigatório' });
 
-    let connection;
     try {
-        connection = await mysql.createConnection(dbConfig);
-        
         // Clean phone number if it looks like one (keep only numbers)
         const isPhone = /^[0-9()\-\s+]+$/.test(email) && email.replace(/\D/g, '').length >= 10;
         const cleanContact = isPhone ? email.replace(/\D/g, '') : email;
@@ -120,9 +103,9 @@ router.post('/recuperar-senha', async (req, res) => {
         let rows = [];
         if (isPhone) {
             // Find by whatsapp (removing non-digits from DB column just to match safely, or simply match right-padded/unpadded)
-            [rows] = await connection.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE whatsapp LIKE ? OR telefone LIKE ?', [`%${cleanContact.slice(-8)}%`, `%${cleanContact.slice(-8)}%`]);
+            [rows] = await db.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE whatsapp LIKE ? OR telefone LIKE ?', [`%${cleanContact.slice(-8)}%`, `%${cleanContact.slice(-8)}%`]);
         } else {
-            [rows] = await connection.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE email = ?', [email]);
+            [rows] = await db.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE email = ?', [email]);
         }
         
         if (rows.length === 0) {
@@ -136,7 +119,8 @@ router.post('/recuperar-senha', async (req, res) => {
         const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
 
         // Update DB with hashed temp password
-        await connection.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, user.idUsuario || (user.Login ? await connection.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [user.Login]).then(res => res[0][0].idUsuario) : null)]);
+        const targetUserId = user.idUsuario || (user.Login ? await db.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [user.Login]).then(res => res[0][0].idUsuario) : null);
+        await db.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, targetUserId]);
 
         // Send via WhatsApp if matched phone, otherwise via Email
         if (isPhone && user.whatsapp) {
@@ -184,8 +168,6 @@ router.post('/recuperar-senha', async (req, res) => {
     } catch (err) {
         console.error('Erro ao recuperar senha:', err);
         res.status(500).json({ error: 'Erro no servidor ao processar a recuperação de senha.' });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 
@@ -234,12 +216,9 @@ router.post('/update-email', authenticateToken, async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'O E-mail é obrigatório para prosseguir.' });
 
-    let connection;
     try {
-        connection = await mysql.createConnection(dbConfig);
-        
         // Verifica Unicidade
-        const [existingEmail] = await connection.execute(
+        const [existingEmail] = await db.execute(
             'SELECT idUsuario FROM usuario WHERE email = ? AND idUsuario <> ?',
             [email, req.user.id]
         );
@@ -248,14 +227,12 @@ router.post('/update-email', authenticateToken, async (req, res) => {
             return res.status(409).json({ error: 'Desculpe, este e-mail já está sendo utilizado por outro usuário no sistema Metalfisa.' });
         }
 
-        await connection.execute('UPDATE usuario SET email = ? WHERE idUsuario = ?', [email, req.user.id]);
+        await db.execute('UPDATE usuario SET email = ? WHERE idUsuario = ?', [email, req.user.id]);
         
         res.json({ message: 'E-mail cadastrado com sucesso! Acesso Liberado.' });
     } catch (err) {
         console.error('Erro ao registrar e-mail obrigatorio:', err);
         res.status(500).json({ error: 'Erro no servidor ao validar o e-mail.' });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 
@@ -266,21 +243,18 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ error: 'Todos os campos de cadastro são requeridos.' });
     }
 
-    let connection;
     try {
-        connection = await mysql.createConnection(dbConfig);
-        
         // Check availability
-        const [existingLogin] = await connection.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [login]);
+        const [existingLogin] = await db.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [login]);
         if (existingLogin.length > 0) return res.status(409).json({ error: 'Infelizmente o nome de usuário (Login) escolhido já está registrado.' });
 
-        const [existingEmail] = await connection.execute('SELECT idUsuario FROM usuario WHERE email = ?', [email]);
+        const [existingEmail] = await db.execute('SELECT idUsuario FROM usuario WHERE email = ?', [email]);
         if (existingEmail.length > 0) return res.status(409).json({ error: 'Este endereço de E-mail já está em uso em nossa base.' });
 
         const hashedPwd = await bcrypt.hash(senha, 10);
 
         // Insert as pending (aprovado = 0) with a standard role
-        await connection.execute(
+        await db.execute(
             'INSERT INTO usuario (NomeCompleto, Login, Senha, email, aprovado, TipoUsuario) VALUES (?, ?, ?, ?, 0, "Basico")',
             [nome, login, hashedPwd, email]
         );
@@ -289,8 +263,6 @@ router.post('/register', async (req, res) => {
     } catch (err) {
         console.error('Erro de Sign Up:', err);
         res.status(500).json({ error: 'Erro interno ao realizar cadastro.' });
-    } finally {
-        if (connection) await connection.end();
     }
 });
 

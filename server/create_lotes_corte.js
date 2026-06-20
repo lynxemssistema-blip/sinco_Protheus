@@ -13,9 +13,9 @@ async function createTables() {
                 usuario VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'Aguardando',
                 observacao TEXT
-            );
+            ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
         `);
-        
+
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_lotes_corte_itens (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -23,12 +23,13 @@ async function createTables() {
                 pedido_pai VARCHAR(50) NOT NULL,
                 item_pai VARCHAR(50) NOT NULL,
                 produto_pai VARCHAR(100) NOT NULL,
+                op_numero VARCHAR(100),
                 componente VARCHAR(100) NOT NULL,
                 componente_descricao VARCHAR(255),
                 qtd_necessaria DECIMAL(18,6) NOT NULL,
                 status VARCHAR(50) DEFAULT 'Pendente',
                 FOREIGN KEY (lote_corte_id) REFERENCES app_lotes_corte(id) ON DELETE CASCADE
-            );
+            ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
         `);
 
         // Alter table if it already exists to add status column
@@ -40,6 +41,18 @@ async function createTables() {
                 console.log("Coluna 'status' já existe em app_lotes_corte_itens.");
             } else {
                 console.error("Erro ao adicionar coluna 'status':", err.message);
+            }
+        }
+
+        // Alter table to add op_numero column (missing from original schema)
+        try {
+            await mysqlPool.query(`ALTER TABLE app_lotes_corte_itens ADD COLUMN op_numero VARCHAR(100) AFTER produto_pai`);
+            console.log("Coluna 'op_numero' adicionada a app_lotes_corte_itens.");
+        } catch(err) {
+            if (err.code === 'ER_DUP_FIELDNAME') {
+                console.log("Coluna 'op_numero' já existe em app_lotes_corte_itens.");
+            } else {
+                console.error("Erro ao adicionar coluna 'op_numero':", err.message);
             }
         }
         

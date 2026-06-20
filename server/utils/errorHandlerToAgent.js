@@ -41,7 +41,9 @@ async function handleSystemError(req, errorBody) {
 
         lastErrorSent[userId] = now;
 
-        const erroInfo = typeof errorBody === 'object' ? (errorBody.error || errorBody.message || JSON.stringify(errorBody)) : errorBody;
+        const erroInfo = typeof errorBody === 'object'
+            ? (errorBody.details || errorBody.error || errorBody.message || JSON.stringify(errorBody))
+            : errorBody;
         const rota = req.originalUrl;
         const stringErro = String(erroInfo).substring(0, 500);
 

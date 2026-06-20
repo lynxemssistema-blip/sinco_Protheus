@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const db = require('../db'); // Protheus PG connection
+const { emitHermesAlert } = require('../services/hermes/proactiveCron');
 
 const toNumber = (value) => {
     if (value === null || value === undefined || value === '') return 0;
@@ -920,6 +921,11 @@ router.post('/processos/:id/apontar', async (req, res) => {
         }
 
         await connection.commit();
+
+        try {
+            // Emite feed do Hermes informando do apontamento
+            emitHermesAlert(`🛠️ **Apontamento registrado**: Usuário **${usuario}** produziu **${qtd}** peças da OS **${item.IdOrdemServico || '?'}** (Processo: ${proc.IdProcesso})`, 'production');
+        } catch (e) { console.error('Erro ao emitir alerta:', e); }
 
         res.json({
             success: true,

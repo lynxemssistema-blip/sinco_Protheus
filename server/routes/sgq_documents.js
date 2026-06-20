@@ -32,6 +32,119 @@ async function initTables() {
     try {
         await mysqlPool.query(createDocsTableQuery);
         await mysqlPool.query(createSectorsTableQuery);
+        
+        // Verifica e adiciona a coluna deleted_at na tabela sgq_documents caso não exista
+        const [columns] = await mysqlPool.query(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'sgq_documents' 
+              AND COLUMN_NAME = 'deleted_at'
+        `);
+        if (columns.length === 0) {
+            await mysqlPool.query('ALTER TABLE sgq_documents ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL');
+            console.log('✅ Coluna "deleted_at" adicionada à tabela sgq_documents para Soft Delete.');
+        }
+
+        // Cria a tabela de log de auditoria do SGQ
+        const createAuditLogTableQuery = `
+            CREATE TABLE IF NOT EXISTS app_sgq_audit_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                table_name VARCHAR(100) NOT NULL,
+                action VARCHAR(20) NOT NULL,
+                record_id INT NOT NULL,
+                old_values LONGTEXT,
+                new_values LONGTEXT,
+                user_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await mysqlPool.query(createAuditLogTableQuery);
+
+        // Cria a tabela de Ação Corretiva/Preventiva (CAPA) relacionada a RNCs
+        const createCapaTableQuery = `
+            CREATE TABLE IF NOT EXISTS app_sgq_capa (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                rnc_id INT,
+                descricao TEXT NOT NULL,
+                analise_causa_raiz TEXT,
+                plano_acao TEXT NOT NULL,
+                responsavel VARCHAR(100),
+                data_limite DATE,
+                avaliacao_eficacia TEXT,
+                status VARCHAR(50) DEFAULT 'ABERTO',
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (rnc_id) REFERENCES app_sgq_rncs(id) ON DELETE CASCADE
+            )
+        `;
+        await mysqlPool.query(createCapaTableQuery);
+
+        // Criação de Triggers de Auditoria para sgq_documents (usando CONCAT para compatibilidade)
+        await mysqlPool.query('DROP TRIGGER IF EXISTS after_sgq_documents_insert');
+        await mysqlPool.query(`
+            CREATE TRIGGER after_sgq_documents_insert
+            AFTER INSERT ON sgq_documents
+            FOR EACH ROW
+            BEGIN
+                INSERT INTO app_sgq_audit_log (table_name, action, record_id, new_values)
+                VALUES ('sgq_documents', 'INSERT', NEW.id, CONCAT(
+                    '{"id":', NEW.id,
+                    ',"title":', IF(NEW.title IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.title, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"sector":', IF(NEW.sector IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.sector, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"code":', IF(NEW.code IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.code, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"version":', IF(NEW.version IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.version, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    '}'
+                ));
+            END
+        `);
+
+        await mysqlPool.query('DROP TRIGGER IF EXISTS after_sgq_documents_update');
+        await mysqlPool.query(`
+            CREATE TRIGGER after_sgq_documents_update
+            AFTER UPDATE ON sgq_documents
+            FOR EACH ROW
+            BEGIN
+                INSERT INTO app_sgq_audit_log (table_name, action, record_id, old_values, new_values)
+                VALUES ('sgq_documents', 'UPDATE', NEW.id, 
+                    CONCAT(
+                        '{"id":', OLD.id,
+                        ',"title":', IF(OLD.title IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.title, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"sector":', IF(OLD.sector IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.sector, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"code":', IF(OLD.code IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.code, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"version":', IF(OLD.version IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.version, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        '}'
+                    ),
+                    CONCAT(
+                        '{"id":', NEW.id,
+                        ',"title":', IF(NEW.title IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.title, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"sector":', IF(NEW.sector IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.sector, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"code":', IF(NEW.code IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.code, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        ',"version":', IF(NEW.version IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(NEW.version, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                        '}'
+                    )
+                );
+            END
+        `);
+
+        await mysqlPool.query('DROP TRIGGER IF EXISTS after_sgq_documents_delete');
+        await mysqlPool.query(`
+            CREATE TRIGGER after_sgq_documents_delete
+            AFTER DELETE ON sgq_documents
+            FOR EACH ROW
+            BEGIN
+                INSERT INTO app_sgq_audit_log (table_name, action, record_id, old_values)
+                VALUES ('sgq_documents', 'DELETE', OLD.id, CONCAT(
+                    '{"id":', OLD.id,
+                    ',"title":', IF(OLD.title IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.title, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"sector":', IF(OLD.sector IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.sector, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"code":', IF(OLD.code IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.code, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    ',"version":', IF(OLD.version IS NULL, 'null', CONCAT('"', REPLACE(REPLACE(OLD.version, '\\\\', '\\\\\\\\'), '"', '\\\\"'), '"')),
+                    '}'
+                ));
+            END
+        `);
+
         // Seed defaults only if table is empty
         const [rows] = await mysqlPool.query('SELECT COUNT(*) as cnt FROM sgq_sectors');
         if (rows[0].cnt === 0) {
@@ -130,10 +243,12 @@ router.post('/', async (req, res) => {
 // GET all documents summary
 router.get('/', async (req, res) => {
     try {
-        // We do not send full content to make the listing fast
+        // Filtra para carregar apenas documentos ativos (não deletados logicamente)
         const [rows] = await mysqlPool.query(
             `SELECT id, title, sector, code, version, updated_at 
-             FROM sgq_documents ORDER BY updated_at DESC`
+             FROM sgq_documents 
+             WHERE deleted_at IS NULL 
+             ORDER BY updated_at DESC`
         );
         res.json(rows);
     } catch (err) {
@@ -145,7 +260,10 @@ router.get('/', async (req, res) => {
 // GET specific document with content
 router.get('/:id', async (req, res) => {
     try {
-        const [rows] = await mysqlPool.query('SELECT * FROM sgq_documents WHERE id = ?', [req.params.id]);
+        const [rows] = await mysqlPool.query(
+            'SELECT * FROM sgq_documents WHERE id = ? AND deleted_at IS NULL', 
+            [req.params.id]
+        );
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Documento não encontrado.' });
         }
@@ -156,11 +274,14 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// DELETE a document
+// DELETE a document (SOFT DELETE para auditoria e controle ISO 9001)
 router.delete('/:id', async (req, res) => {
     try {
-        await mysqlPool.query('DELETE FROM sgq_documents WHERE id = ?', [req.params.id]);
-        res.json({ message: 'Documento excluído com sucesso.' });
+        await mysqlPool.query(
+            'UPDATE sgq_documents SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', 
+            [req.params.id]
+        );
+        res.json({ message: 'Documento excluído logicamente (enviado para lixeira).' });
     } catch (err) {
         console.error('❌ Erro no DELETE sgq_documents:', err);
         res.status(500).json({ error: err.message });

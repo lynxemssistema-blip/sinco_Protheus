@@ -1,4 +1,4 @@
-// Módulo de Manutenção de Equipamentos
+// Módulo de Manutenção de Equipamentos (Nodemon trigger comment)
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
@@ -13,7 +13,10 @@ router.get('/maquinas', async (req, res) => {
         const query = `
             SELECT m.*, 
                    c.nome AS categoria_nome, 
-                   s.nome AS setor_nome
+                   s.nome AS setor_nome,
+                   (SELECT o.sintoma FROM pcp_manutencao_ordens o 
+                    WHERE o.id_maquina = m.id AND o.status IN ('SOLICITADA','EM_ANDAMENTO','AGUARDANDO_PECA') 
+                    ORDER BY o.id DESC LIMIT 1) AS motivo_parada
             FROM pcp_manutencao_maquinas m
             LEFT JOIN pcp_manutencao_categorias c ON m.id_categoria = c.id
             LEFT JOIN pcp_setores s ON m.id_setor = s.id

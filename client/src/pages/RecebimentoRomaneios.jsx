@@ -21,6 +21,7 @@ export default function RecebimentoRomaneios() {
         fornecedor: '',
         romaneioId: '',
         tipoRomaneio: '',
+        pedido: '',
         viewMode: 'pendentes' // 'pendentes' | 'todos'
     }, '@metalfisa:romaneio_rec_filters');
 
@@ -64,6 +65,7 @@ export default function RecebimentoRomaneios() {
             if (filters.fornecedor) params.append('fornecedor', filters.fornecedor);
             if (filters.romaneioId) params.append('romaneioId', filters.romaneioId);
             if (filters.tipoRomaneio) params.append('tipoRomaneio', filters.tipoRomaneio);
+            if (filters.pedido) params.append('pedido', filters.pedido);
             params.append('viewMode', filters.viewMode);
 
             const { data } = await api.get(`/romaneios/recebimentos/pendentes?${params.toString()}`);
@@ -85,6 +87,7 @@ export default function RecebimentoRomaneios() {
             if (filters.fornecedor) params.append('fornecedor', filters.fornecedor);
             if (filters.romaneioId) params.append('romaneioId', filters.romaneioId);
             if (filters.tipoRomaneio) params.append('tipoRomaneio', filters.tipoRomaneio);
+            if (filters.pedido) params.append('pedido', filters.pedido);
             params.append('viewMode', filters.viewMode);
 
             const { data } = await api.get(`/romaneios/recebimentos/pendentes?${params.toString()}`);
@@ -101,15 +104,15 @@ export default function RecebimentoRomaneios() {
 
     const handleSearch = (e) => {
         e.preventDefault();
-        if (!filters.search && !filters.fornecedor && !filters.romaneioId) {
-            toast.warning('Por favor, informe um Fornecedor, Produto ou Romaneio para realizar a busca.');
+        if (!filters.search && !filters.fornecedor && !filters.romaneioId && !filters.pedido) {
+            toast.warning('Por favor, informe um Fornecedor, Produto, Romaneio ou Pedido para realizar a busca.');
             return;
         }
         carregarItens();
     };
 
     const handleClearFilters = () => {
-        setFilters({ search: '', fornecedor: '', romaneioId: '', tipoRomaneio: '', viewMode: 'pendentes' });
+        setFilters({ search: '', fornecedor: '', romaneioId: '', tipoRomaneio: '', pedido: '', viewMode: 'pendentes' });
         // O useEffect não vai pegar o reset de texto, então forçamos carregarItens sem params textuais:
         setTimeout(() => carregarItens(), 100);
     };
@@ -431,6 +434,18 @@ export default function RecebimentoRomaneios() {
                             value={filters.search}
                             onChange={handleFilterChange}
                             placeholder="Código ou Descrição..."
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
+
+                    <div className="w-32">
+                        <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Ped / Item</label>
+                        <input
+                            type="text"
+                            name="pedido"
+                            value={filters.pedido || ''}
+                            onChange={handleFilterChange}
+                            placeholder="Ex: 123456"
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
                         />
                     </div>

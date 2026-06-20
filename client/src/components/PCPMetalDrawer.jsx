@@ -1,7 +1,43 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Bot, Send, Loader2, ChevronDown, ChevronUp, Database, CheckCircle2, AlertCircle, Cpu } from 'lucide-react';
+import { X, Bot, Send, Loader2, ChevronDown, ChevronUp, Database, CheckCircle2, AlertCircle, Cpu, Pin, PinOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import DOMPurify from 'dompurify';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+function PCPMetalChart({ config }) {
+    if (!config || !config.data || !config.type) return null;
+    return (
+        <div className="my-4 border border-slate-200 rounded-xl bg-white p-4 shadow-sm">
+            {config.title && <h4 className="font-bold text-sm mb-4 text-slate-700 text-center">{config.title}</h4>}
+            <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                    {config.type === 'bar' ? (
+                        <BarChart data={config.data}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey={config.xKey} tick={{fontSize: 10}} stroke="#94a3b8" />
+                            <YAxis tick={{fontSize: 10}} stroke="#94a3b8" />
+                            <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                            <Legend wrapperStyle={{fontSize: '11px'}} />
+                            {config.series.map((s, i) => <Bar key={i} dataKey={s.key} name={s.name || s.key} fill={s.color || '#3b82f6'} radius={[4,4,0,0]} />)}
+                        </BarChart>
+                    ) : config.type === 'line' ? (
+                        <LineChart data={config.data}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey={config.xKey} tick={{fontSize: 10}} stroke="#94a3b8" />
+                            <YAxis tick={{fontSize: 10}} stroke="#94a3b8" />
+                            <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                            <Legend wrapperStyle={{fontSize: '11px'}} />
+                            {config.series.map((s, i) => <Line key={i} type="monotone" dataKey={s.key} name={s.name || s.key} stroke={s.color || '#3b82f6'} strokeWidth={3} activeDot={{r: 6}} />)}
+                        </LineChart>
+                    ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-slate-400">Tipo de gráfico '{config.type}' não suportado.</div>
+                    )}
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+}
+
 // ── Inline Markdown renderer ──────────────────────────────────────────────────
 function renderInline(text) {
     if (!text) return '';
@@ -14,20 +50,64 @@ function renderInline(text) {
 
 function RenderMarkdown({ text }) {
     if (!text) return null;
+    
+    // Parse JSON chart blocks
+    const blocks = [];
     const lines = text.split('\n');
+    let inChartBlock = false;
+    let chartJsonStr = '';
+    let currText = '';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().startsWith('```json-chart')) {
+            if (currText) {
+                blocks.push({ type: 'markdown', content: currText });
+                currText = '';
+            }
+            inChartBlock = true;
+            chartJsonStr = '';
+        } else if (inChartBlock && line.trim() === '```') {
+            inChartBlock = false;
+            try {
+                const config = JSON.parse(chartJsonStr);
+                blocks.push({ type: 'chart', config });
+            } catch (e) {
+                blocks.push({ type: 'markdown', content: `❌ Erro ao renderizar gráfico: JSON inválido.\n\n\`\`\`json\n${chartJsonStr}\n\`\`\`` });
+            }
+            chartJsonStr = '';
+        } else if (inChartBlock) {
+            chartJsonStr += line + '\n';
+        } else {
+            currText += line + '\n';
+        }
+    }
+    if (currText) blocks.push({ type: 'markdown', content: currText });
+
     return (
-        <div className="prose prose-sm max-w-none text-slate-800 space-y-1">
-            {lines.map((line, i) => {
-                if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-bold text-slate-900 mt-3 mb-1">{line.slice(4)}</h3>;
-                if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-blue-800 mt-4 mb-1 border-b border-blue-100 pb-1">{line.slice(3)}</h2>;
-                if (line.startsWith('# ')) return <h1 key={i} className="text-lg font-bold text-blue-900 mt-4 mb-2">{line.slice(2)}</h1>;
-                if (line.startsWith('- ') || line.startsWith('* '))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2)), { ADD_ATTR: ['class'] }) }} /></div>;
-                if (/^\d+\./.test(line))
-                    return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, '')), { ADD_ATTR: ['class'] }) }} /></div>;
-                if (line.startsWith('```')) return null;
-                if (!line.trim()) return <div key={i} className="h-1" />;
-                return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line), { ADD_ATTR: ['class'] }) }} />;
+        <div className="space-y-4">
+            {blocks.map((block, bIdx) => {
+                if (block.type === 'chart') {
+                    return <PCPMetalChart key={bIdx} config={block.config} />;
+                }
+                
+                const mdLines = block.content.split('\n');
+                return (
+                    <div key={bIdx} className="prose prose-sm max-w-none text-slate-800 space-y-1">
+                        {mdLines.map((line, i) => {
+                            if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-bold text-slate-900 mt-3 mb-1">{line.slice(4)}</h3>;
+                            if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-blue-800 mt-4 mb-1 border-b border-blue-100 pb-1">{line.slice(3)}</h2>;
+                            if (line.startsWith('# ')) return <h1 key={i} className="text-lg font-bold text-blue-900 mt-4 mb-2">{line.slice(2)}</h1>;
+                            if (line.startsWith('- ') || line.startsWith('* '))
+                                return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.slice(2)), { ADD_ATTR: ['class'] }) }} /></div>;
+                            if (/^\d+\./.test(line))
+                                return <div key={i} className="flex gap-2 text-sm"><span className="text-blue-500 font-bold min-w-[16px]">{line.match(/^\d+/)[0]}.</span><span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line.replace(/^\d+\.\s*/, '')), { ADD_ATTR: ['class'] }) }} /></div>;
+                            if (line.startsWith('```')) return null;
+                            if (!line.trim()) return <div key={i} className="h-1" />;
+                            return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(line), { ADD_ATTR: ['class'] }) }} />;
+                        })}
+                    </div>
+                );
             })}
         </div>
     );
@@ -112,6 +192,7 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
     const { user } = useAuth();
     const userId = user?.idUsuario || user?.id;
 
+    const [isPinned, setIsPinned] = useState(window.innerWidth >= 1024);
     const [messages, setMessages] = useState([]);
     // historico = lightweight [{role:'user'|'agent', text}] for Gemini context
     const [historico, setHistorico] = useState([]);
@@ -176,10 +257,29 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
         if (!isOpen && abortRef.current) abortRef.current.abort();
     }, [isOpen]);
 
-    const handleSend = async () => {
-        if (!input.trim() || loading) return;
-        const question = input.trim();
-        setInput('');
+    // Push layout content when pinned
+    useEffect(() => {
+        const mainEl = document.querySelector('main');
+        if (!mainEl) return;
+        
+        // 576px is max-w-xl (36rem)
+        if (isOpen && isPinned) {
+            mainEl.style.paddingRight = '576px';
+            mainEl.style.transition = 'padding-right 300ms ease-in-out';
+        } else {
+            mainEl.style.paddingRight = '';
+        }
+
+        return () => {
+            mainEl.style.paddingRight = '';
+        };
+    }, [isOpen, isPinned]);
+
+    const handleSend = async (forcedText = null) => {
+        const textToSend = typeof forcedText === 'string' ? forcedText : input.trim();
+        if (!textToSend || loading) return;
+        const question = textToSend;
+        if (typeof forcedText !== 'string') setInput('');
 
         // Append user message to UI and history
         setMessages(prev => [...prev, { role: 'user', text: question }]);
@@ -303,12 +403,14 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
     const histCount = historico.filter(h => h.role === 'user').length;
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-stretch justify-end pointer-events-none">
+        <div className={`fixed inset-0 z-[200] flex items-stretch justify-end pointer-events-none`}>
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm pointer-events-auto" onClick={onClose} />
+            {!isPinned && (
+                <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm pointer-events-auto" onClick={onClose} />
+            )}
 
             {/* Drawer */}
-            <div className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-right duration-300">
+            <div className={`relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-right duration-300 ${isPinned ? 'border-l border-slate-200' : ''}`}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-700 to-blue-900 text-white shrink-0">
@@ -337,6 +439,13 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
                                 Limpar
                             </button>
                         )}
+                        <button 
+                            onClick={() => setIsPinned(!isPinned)} 
+                            title={isPinned ? "Desafixar" : "Fixar janela"}
+                            className={`p-2 hover:bg-white/10 rounded-lg transition-colors ml-1 ${isPinned ? 'bg-white/20' : ''}`}
+                        >
+                            {isPinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                        </button>
                         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors ml-1">
                             <X className="w-5 h-5" />
                         </button>

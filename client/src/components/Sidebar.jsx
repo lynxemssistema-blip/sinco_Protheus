@@ -9,6 +9,38 @@ import logo from '../assets/metalfisa-logo.png';
 import ChangePasswordModal from './ChangePasswordModal';
 import './Sidebar.css';
 
+const NavItem = ({ to, icon: Icon, label, isCollapsed, isActive, isMobile, setIsOpen }) => (
+    <Link
+        to={to}
+        title={isCollapsed ? label : ''} // Tooltip on collapse
+        className={`tech-nav-item ${isActive ? 'active' : ''} ${isCollapsed ? 'justify-center px-2' : ''}`}
+        onClick={() => isMobile && setIsOpen(false)}
+    >
+        <Icon className={`tech-icon ${isCollapsed ? 'mr-0' : ''}`} strokeWidth={1.5} />
+        {!isCollapsed && <span>{label}</span>}
+    </Link>
+);
+
+const GroupTitle = ({ label, id, isOpen, isCollapsed, onToggle }) => (
+    <div
+        className={`tech-group-title flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} cursor-pointer hover:text-white transition-colors`}
+        onClick={() => onToggle(id)}
+        title={isCollapsed ? label : ''}
+    >
+        {!isCollapsed && <span>{label}</span>}
+        {isCollapsed ? (
+            // Mini version: simple dot or line to indicate group
+            <div className="w-full h-px bg-slate-700 my-2 relative group-hover:bg-slate-500">
+                <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 p-0.5 bg-slate-800 rounded-full">
+                    {isOpen ? <ChevronDown className="w-2 h-2 text-slate-500" /> : <ChevronRight className="w-2 h-2 text-slate-500" />}
+                </div>
+            </div>
+        ) : (
+            isOpen ? <ChevronDown className="w-3 h-3 opacity-50" /> : <ChevronRight className="w-3 h-3 opacity-50" />
+        )}
+    </div>
+);
+
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const location = useLocation();
     const { user, logout, hasPermission, isAdmin } = useAuth();
@@ -48,27 +80,20 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
     // Initialize expanded groups based on active route and device
     useEffect(() => {
-        const initial = {};
-        let foundActive = false;
-
-        MENU_GROUPS.forEach(group => {
-            // Check if this group contains the active route
-            const hasActive = group.items.some(item => item.path === location.pathname);
-
-            if (hasActive) {
-                initial[group.id] = true;
-                foundActive = true;
-            } else {
-                // On mobile, default to closed. On desktop, default to open.
-                initial[group.id] = !isMobile;
-            }
+        setExpandedGroups(prev => {
+            const next = { ...prev };
+            MENU_GROUPS.forEach(group => {
+                const hasActive = group.items.some(item => item.path === location.pathname);
+                if (hasActive) {
+                    next[group.id] = true;
+                } else if (next[group.id] === undefined) {
+                    // Initialize only if not already set
+                    next[group.id] = !isMobile;
+                }
+            });
+            return next;
         });
-
-        // If no active link found (e.g. root), maybe open first group on mobile? 
-        // Or just keep all closed. Let's keep logic simple.
-
-        setExpandedGroups(initial);
-    }, [isMobile, location.pathname]); // Update when route changes too (auto-expand)
+    }, [isMobile, location.pathname]);
 
     const toggleGroup = (groupId) => {
         setExpandedGroups(prev => ({
@@ -119,37 +144,6 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
     const isActive = (path) => location.pathname === path;
 
-    const NavItem = ({ to, icon: Icon, label }) => (
-        <Link
-            to={to}
-            title={isCollapsed ? label : ''} // Tooltip on collapse
-            className={`tech-nav-item ${isActive(to) ? 'active' : ''} ${isCollapsed ? 'justify-center px-2' : ''}`}
-            onClick={() => isMobile && setIsOpen(false)}
-        >
-            <Icon className={`tech-icon ${isCollapsed ? 'mr-0' : ''}`} strokeWidth={1.5} />
-            {!isCollapsed && <span>{label}</span>}
-        </Link>
-    );
-
-    const GroupTitle = ({ label, id, isOpen, onToggle }) => (
-        <div
-            className={`tech-group-title flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} cursor-pointer hover:text-white transition-colors`}
-            onClick={() => onToggle(id)}
-            title={isCollapsed ? label : ''}
-        >
-            {!isCollapsed && <span>{label}</span>}
-            {isCollapsed ? (
-                // Mini version: simple dot or line to indicate group
-                <div className="w-full h-px bg-slate-700 my-2 relative group-hover:bg-slate-500">
-                    <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 p-0.5 bg-slate-800 rounded-full">
-                        {isOpen ? <ChevronDown className="w-2 h-2 text-slate-500" /> : <ChevronRight className="w-2 h-2 text-slate-500" />}
-                    </div>
-                </div>
-            ) : (
-                isOpen ? <ChevronDown className="w-3 h-3 opacity-50" /> : <ChevronRight className="w-3 h-3 opacity-50" />
-            )}
-        </div>
-    );
 
     // Helper to check visibility (default true if config is empty/loading or key missing)
     const isVisible = (itemId) => {
@@ -231,11 +225,23 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                                 placeholder="Pesquisar..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-slate-800 border-none text-white text-sm rounded-lg pl-9 pr-3 py-2 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-500"
+                                className="w-full bg-slate-800 border-none text-white text-sm rounded-lg pl-9 pr-3 py-2 focus:ring-1 focus:ring-[#FFB536] outline-none transition-all placeholder:text-slate-500"
                             />
                         </div>
                     </div>
                 )}
+                
+                {/* Voltar ao Site Button (Global for all pages) */}
+                <div className="px-4 py-3 border-b border-slate-700/50">
+                    <Link 
+                        to="/"
+                        className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold transition-all shadow-md hover:-translate-y-0.5 ${isCollapsed ? 'px-0' : 'px-4'}`}
+                        title="Ir para o site Metalfisa"
+                    >
+                        <ChevronLeft className="w-4 h-4 flex-shrink-0" />
+                        {!isCollapsed && <span className="uppercase text-xs tracking-wider">Site Metalfisa</span>}
+                    </Link>
+                </div>
 
                 {/* Navigation Scroll Area */}
                 <nav className="flex-1 tech-scroll py-4 space-y-1 overflow-y-auto">
@@ -266,6 +272,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                                     label={group.label}
                                     id={group.id}
                                     isOpen={isExpanded}
+                                    isCollapsed={isCollapsed}
                                     onToggle={toggleGroup}
                                 />
                                 <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
@@ -275,6 +282,10 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                                             to={item.path}
                                             icon={item.icon}
                                             label={item.label}
+                                            isCollapsed={isCollapsed}
+                                            isActive={isActive(item.path)}
+                                            isMobile={isMobile}
+                                            setIsOpen={setIsOpen}
                                         />
                                     ))}
                                 </div>
@@ -292,13 +303,13 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         className={`w-full flex items-center gap-3 px-3 py-2.5 mb-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all group ${isCollapsed ? 'justify-center px-2' : ''
                             }`}
                     >
-                        <HelpCircle className="h-4 w-4 flex-shrink-0 group-hover:text-blue-400 transition-colors" />
+                        <HelpCircle className="h-4 w-4 flex-shrink-0 group-hover:text-[#FFB536] transition-colors" />
                         {!isCollapsed && (
                             <span className="text-xs font-bold">Central de Ajuda</span>
                         )}
                     </button>
                     <div className={`tech-user-card group ${isCollapsed ? 'justify-center p-0 bg-transparent border-0' : ''}`}>
-                        <div className="tech-avatar h-9 w-9 flex items-center justify-center font-bold text-sm bg-slate-800 text-blue-400 ring-1 ring-white/10 overflow-hidden">
+                        <div className="tech-avatar h-9 w-9 flex items-center justify-center font-bold text-sm bg-slate-800 text-[#FFB536] ring-1 ring-white/10 overflow-hidden">
                             {user?.fotoUsuario ? (
                                 <img src={user.fotoUsuario} alt="User" className="w-full h-full object-cover" />
                             ) : (
@@ -315,7 +326,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={() => setIsChangePasswordOpen(true)}
-                                    className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors"
+                                    className="p-1.5 text-slate-500 hover:text-[#FFB536] transition-colors"
                                     title="Alterar Senha"
                                 >
                                     <Key className="h-4 w-4" />

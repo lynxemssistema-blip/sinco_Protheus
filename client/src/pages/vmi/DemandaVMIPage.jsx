@@ -896,7 +896,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                 </td>
                 <td className="px-4 py-2 font-mono text-xs text-center font-bold text-blue-600">{r.saldo_entregar ? fmtNum(r.saldo_entregar) : '-'}</td>
                 <td className="px-4 py-2 text-[11px] text-center text-slate-500">{fmtDatePT(r.data_entrega_comercial) || <span className="text-slate-300">-</span>}</td>
-                <td className="px-4 py-2 text-[11px] text-center text-violet-600 font-semibold">{fmtDatePT(r.data_entrega_pcp) || <span className="text-slate-300">-</span>}</td>
+                <td className="px-4 py-2 text-[11px] text-center text-teal-600 font-semibold">{fmtDatePT(r.data_entrega_pcp) || <span className="text-slate-300">-</span>}</td>
                 <td className="px-4 py-2 text-[11px] text-center text-emerald-600 font-semibold">{fmtDatePT(r.data_prevista_faturamento) || <span className="text-slate-300">-</span>}</td>
                 <td className="px-4 py-2 text-[11px] font-bold text-indigo-600">{r.rev_metalfisa || '-'}</td>
                 {/* <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]" title={r.produto_pai}>{r.produto_pai}</td> */}
@@ -1076,7 +1076,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                             </td>
                             <td className="px-4 py-2 font-mono text-xs text-center font-bold text-blue-600">{r.saldo_entregar ? fmtNum(r.saldo_entregar) : '-'}</td>
                             <td className="px-4 py-2 text-[11px] text-center text-slate-500">{fmtDatePT(r.data_entrega_comercial) || <span className="text-slate-300">-</span>}</td>
-                            <td className="px-4 py-2 text-[11px] text-center text-violet-600 font-semibold">{fmtDatePT(r.data_entrega_pcp) || <span className="text-slate-300">-</span>}</td>
+                            <td className="px-4 py-2 text-[11px] text-center text-teal-600 font-semibold">{fmtDatePT(r.data_entrega_pcp) || <span className="text-slate-300">-</span>}</td>
                             <td className="px-4 py-2 text-[11px] text-center text-emerald-600 font-semibold">{fmtDatePT(r.data_prevista_faturamento) || <span className="text-slate-300">-</span>}</td>
                             <td className="px-4 py-2 text-[11px] font-bold text-indigo-600">{r.rev_metalfisa || '-'}</td>
                             {/* <td className="px-4 py-2 text-[10px] text-slate-400 border-r border-slate-100 truncate max-w-[180px]">

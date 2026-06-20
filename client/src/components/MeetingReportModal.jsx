@@ -5,7 +5,7 @@ import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import ProductImageModal from './ProductImageModal';
 
-export default function MeetingReportModal({ isOpen, onClose, orders, filteredData, globalMode = false }) {
+export default function MeetingReportModal({ isOpen, onClose, orders, filteredData, globalMode = false, selectedItemsForAta = [] }) {
     const [attendees, setAttendees] = useState('');
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -39,18 +39,22 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
 
         const getLatestNoteDate = (group) => {
             let maxDate = 0;
-            Object.values(group.items).flat().forEach(note => {
-                const d = new Date(note.created_at).getTime();
-                if (d > maxDate) maxDate = d;
+            Object.values(group.items).forEach(itemData => {
+                itemData.notes.forEach(note => {
+                    const d = new Date(note.created_at).getTime();
+                    if (d > maxDate) maxDate = d;
+                });
             });
             return maxDate;
         };
 
         const getEarliestNoteDate = (group) => {
             let minDate = Infinity;
-            Object.values(group.items).flat().forEach(note => {
-                const d = new Date(note.created_at).getTime();
-                if (d < minDate) minDate = d;
+            Object.values(group.items).forEach(itemData => {
+                itemData.notes.forEach(note => {
+                    const d = new Date(note.created_at).getTime();
+                    if (d < minDate) minDate = d;
+                });
             });
             return minDate === Infinity ? 0 : minDate;
         }
@@ -117,23 +121,38 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                         };
                     }
                     const key = note.item_number || 'GERAL';
-                    if (!grouped[orderNum].items[key]) grouped[orderNum].items[key] = [];
-                    grouped[orderNum].items[key].push(note);
+                    if (!grouped[orderNum].items[key]) grouped[orderNum].items[key] = { notes: [], productCode: note.product_code, isSelected: false };
+                    grouped[orderNum].items[key].notes.push(note);
                 });
             } else {
                 orders.forEach(orderNum => {
                     const orderInfo = filteredData?.find(d => d.pedido === orderNum);
                     if (orderInfo) {
                         const orderNotes = notes.filter(n => n.order_number === orderNum);
-                        if (orderNotes.length > 0) {
+                        const selectedForOrder = selectedItemsForAta ? selectedItemsForAta.filter(i => String(i.pedido).trim() === String(orderNum).trim()) : [];
+                        
+                        if (orderNotes.length > 0 || selectedForOrder.length > 0) {
                             grouped[orderNum] = {
                                 info: orderInfo,
                                 items: {}
                             };
+                            
+                            // Include explicitly selected items
+                            selectedForOrder.forEach(selItem => {
+                                const key = selItem.item ? String(selItem.item).trim() : 'GERAL';
+                                if (!grouped[orderNum].items[key]) {
+                                    grouped[orderNum].items[key] = { notes: [], productCode: selItem.codigo || selItem.produto || null, isSelected: true };
+                                } else {
+                                    grouped[orderNum].items[key].isSelected = true;
+                                }
+                            });
+
                             orderNotes.forEach(note => {
                                 const key = note.item_number || 'GERAL';
-                                if (!grouped[orderNum].items[key]) grouped[orderNum].items[key] = [];
-                                grouped[orderNum].items[key].push(note);
+                                if (!grouped[orderNum].items[key]) {
+                                    grouped[orderNum].items[key] = { notes: [], productCode: note.product_code, isSelected: false };
+                                }
+                                grouped[orderNum].items[key].notes.push(note);
                             });
                         }
                     }
@@ -282,7 +301,7 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
                 {/* Header */}
-                <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl">
+                <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
                         <Printer className="w-5 h-5 text-blue-600" />
                         Gerar Ata de Reunião
@@ -292,11 +311,9 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                     </div>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-100">
-
-                    {/* Input Config & Sorting */}
-                    <div className="bg-white p-4 rounded-lg shadow-sm mb-6 w-full max-w-4xl mx-auto flex flex-col md:flex-row gap-4">
+                {/* Input Config & Sorting (Fixed Header) */}
+                <div className="bg-white p-4 border-b shadow-sm shrink-0 w-full flex justify-center print:hidden z-10">
+                    <div className="w-full max-w-4xl flex flex-col md:flex-row gap-4">
                         <div className="flex-1">
                             <label className="block text-sm font-bold text-slate-700 mb-2">Participantes da Reunião</label>
                             <div className="relative">
@@ -348,7 +365,11 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                 {new Date().toLocaleDateString()}
                             </div>
                         </div>
+                        </div>
                     </div>
+
+                {/* Body (Scrollable Area) */}
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-100 relative">
 
                     {/* Preview Area (This is what gets printed) */}
                     <div id="meeting-report-content" className="bg-white p-8 shadow-lg min-h-[600px] report-container max-w-[210mm] mx-auto">
@@ -437,11 +458,13 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                     <div className="text-sm text-slate-400 italic">Sem anotações registradas.</div>
                                                 )}
 
-                                                {Object.entries(group.items).sort().map(([itemKey, notes]) => {
-                                                    const visibleNotes = showResolved ? notes : notes.filter(n => !n.is_resolved);
-                                                    if (visibleNotes.length === 0) return null;
+                                                {Object.entries(group.items).sort().map(([itemKey, itemData]) => {
+                                                    const visibleNotes = showResolved ? itemData.notes : itemData.notes.filter(n => !n.is_resolved);
+                                                    
+                                                    // Show if it has notes, OR if it was explicitly selected by the user
+                                                    if (visibleNotes.length === 0 && !itemData.isSelected) return null;
 
-                                                    const productCode = notes[0]?.product_code;
+                                                    const productCode = itemData.productCode;
 
                                                     return (
                                                         <div key={itemKey} className="note-group mb-4 last:mb-0">
@@ -466,11 +489,14 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                             </div>
 
                                                             <div className="space-y-2 pl-2">
+                                                                {visibleNotes.length === 0 && (
+                                                                    <div className="text-xs text-slate-400 italic py-1">Nenhuma anotação... clique no + para adicionar.</div>
+                                                                )}
                                                                 {visibleNotes.map(note => (
-                                                                    <div key={note.id} className={`note-item relative pl-3 border-l-2 ${note.is_resolved ? 'border-green-200 note-resolved' : 'border-red-400 note-pending'}`}>
+                                                                    <div key={note.id} className={`note-item relative pl-3 border-l-2 ${note.is_resolved ? 'border-green-200 note-resolved' : 'border-amber-400 note-pending'}`}>
                                                                         {editingNoteId === note.id ? (
                                                                             /* Editing Mode */
-                                                                            <div className="flex flex-col gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200 print:hidden no-print mt-1 mb-2">
+                                                                            <div className="flex flex-col gap-2 p-3 bg-amber-50 rounded-lg border border-amber-200 print:hidden no-print mt-1 mb-2">
                                                                                 <textarea
                                                                                     className="w-full text-sm p-3 border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-amber-400 outline-none"
                                                                                     rows={3}
@@ -487,13 +513,30 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                                                 </div>
                                                                             </div>
                                                                         ) : (
-                                                                            /* View Mode */
-                                                                            <div className="flex justify-between items-start group">
-                                                                                <div className="text-sm text-slate-800 pr-4 flex-1">
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <span className={`whitespace-pre-wrap font-medium ${note.is_resolved ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                                                                                            {note.note_text}
-                                                                                        </span>
+                                                                            /* View Mode as Task */
+                                                                            <div className="flex justify-between items-start group mt-1 mb-2">
+                                                                                <div className="flex items-start gap-3 flex-1 pr-4">
+                                                                                    {/* Task Checkbox */}
+                                                                                    <div className="pt-0.5 print:hidden">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={note.is_resolved}
+                                                                                            onChange={() => note.is_resolved ? null : handleResolve(note.id)}
+                                                                                            onClick={(e) => {
+                                                                                                if(note.is_resolved) {
+                                                                                                    e.preventDefault();
+                                                                                                }
+                                                                                            }}
+                                                                                            className="w-4 h-4 text-green-600 bg-white border-gray-300 rounded cursor-pointer hover:ring-2 hover:ring-green-200 transition-shadow"
+                                                                                            title={note.is_resolved ? "Tarefa concluída" : "Marcar como concluída"}
+                                                                                            readOnly={note.is_resolved}
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div className="text-sm text-slate-800 flex-1">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <span className={`whitespace-pre-wrap font-medium ${note.is_resolved ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                                                                                {note.note_text}
+                                                                                            </span>
                                                                                         {/* Product Image Icon */}
                                                                                         {note.product_code && (
                                                                                             <button
@@ -516,19 +559,11 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                                                         <span className="mx-1">|</span>
                                                                                         {note.created_by} em {new Date(note.created_at).toLocaleString()}
                                                                                     </div>
+                                                                                    </div>
                                                                                 </div>
 
                                                                                 {/* Actions */}
                                                                                 <div className="flex items-center gap-1 opacity-10 group-hover:opacity-100 transition-opacity print:hidden no-print">
-                                                                                    {!note.is_resolved && (
-                                                                                        <button
-                                                                                            onClick={() => handleResolve(note.id)}
-                                                                                            className="text-xs text-green-600 hover:bg-green-50 p-1.5 rounded"
-                                                                                            title="Marcar como Resolvido"
-                                                                                        >
-                                                                                            <CheckCircle className="w-4 h-4" />
-                                                                                        </button>
-                                                                                    )}
                                                                                     <button
                                                                                         onClick={() => startEditing(note)}
                                                                                         className="text-xs text-amber-500 hover:bg-amber-50 p-1.5 rounded"

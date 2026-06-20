@@ -242,6 +242,7 @@ app.use('/api/email', require('./routes/email'));
 
 // Sales Notes Route (Ata Viva)
 app.use('/api/sales/notes', require('./routes/sales_notes'));
+app.use('/api/ata-viva', require('./routes/ataViva'));
 
 // Sinco Route (Ordem de Serviço)
 app.use('/api/sinco', require('./routes/sinco'));
@@ -276,6 +277,9 @@ app.use('/api/faturamento', require('./routes/faturamento'));
 
 // Financeiro Dashboard
 app.use('/api/financeiro', require('./routes/financeiro'));
+
+// PCP Geral - Liberação e Execução de Programas por Máquina
+app.use('/api/pcp/programas', require('./routes/pcpProgramas'));
 
 // System Settings
 app.use('/api/settings', require('./routes/system_settings'));
@@ -449,6 +453,10 @@ startFaturamentoCron();
 
 const { startHermesScheduler } = require('./services/hermes/scheduler');
 startHermesScheduler();
+
+const { startProactiveMonitor, setSocketIo } = require('./services/hermes/proactiveCron');
+setSocketIo(io);
+startProactiveMonitor();
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);

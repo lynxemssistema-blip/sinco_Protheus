@@ -4,6 +4,7 @@ const db = require('../services/mysqlService');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { emitHermesAlert } = require('../services/hermes/proactiveCron');
 
 // Alter tables to add reposicao_op column and image/image_caption columns
 (async () => {
@@ -11,6 +12,12 @@ const fs = require('fs');
         await db.query(`ALTER TABLE app_sgq_rncs ADD COLUMN reposicao_op VARCHAR(50) DEFAULT NULL`);
         console.log('✅ Coluna reposicao_op adicionada à tabela app_sgq_rncs com sucesso (ou já existia).');
     } catch (e) {}
+
+    try {
+        await db.query(`ALTER TABLE app_sgq_rncs ADD COLUMN numero_rnc VARCHAR(100) DEFAULT NULL`);
+        console.log('✅ Coluna numero_rnc adicionada à tabela app_sgq_rncs.');
+    } catch (e) {}
+
 
     try {
         await db.query(`ALTER TABLE app_sgq_processos ADD COLUMN image TEXT DEFAULT NULL`);
@@ -375,12 +382,45 @@ router.post('/rncs', async (req, res) => {
             observacao, imagem_evidencia, criado_por, f097_dados, fotos_registro, data_limite
         } = req.body;
 
+        // --- Auto-numbering from general_config ---
+        let numero_rnc = null;
+        try {
+            const [cfgRows] = await db.query('SELECT general_config FROM app_company_settings WHERE id = 1 LIMIT 1');
+            if (cfgRows.length > 0 && cfgRows[0].general_config) {
+                const gc = typeof cfgRows[0].general_config === 'string'
+                    ? JSON.parse(cfgRows[0].general_config)
+                    : cfgRows[0].general_config;
+
+                const rncCfg = gc?.sgq_rnc_config;
+                if (rncCfg && rncCfg.format) {
+                    const seq = parseInt(rncCfg.next_seq) || 1;
+                    const now = new Date();
+
+                    // Build number from format template
+                    numero_rnc = rncCfg.format
+                        .replace('{YEAR}', now.getFullYear())
+                        .replace('{MONTH}', String(now.getMonth() + 1).padStart(2, '0'))
+                        .replace(/\{SEQ:(\d+)\}/, (_, n) => String(seq).padStart(parseInt(n), '0'))
+                        .replace('{SEQ}', String(seq).padStart(4, '0'));
+
+                    // Increment next_seq atomically
+                    const updatedGc = { ...gc, sgq_rnc_config: { ...rncCfg, next_seq: seq + 1 } };
+                    await db.query(
+                        'UPDATE app_company_settings SET general_config = ? WHERE id = 1',
+                        [JSON.stringify(updatedGc)]
+                    );
+                }
+            }
+        } catch (cfgErr) {
+            console.warn('[RNC] Erro ao ler configuração de numeração, usando ID como fallback:', cfgErr.message);
+        }
+
         const [result] = await db.query(
             `INSERT INTO app_sgq_rncs (
                 pedido, op, item_op, sequen_op, produto, desc_produto, cliente,
                 recurso_origem, recurso_inconformidade, nao_conformidade_id,
-                observacao, imagem_evidencia, criado_por, status, f097_dados, fotos_registro, data_limite
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ABERTO', ?, ?, ?)`,
+                observacao, imagem_evidencia, criado_por, status, f097_dados, fotos_registro, data_limite, numero_rnc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ABERTO', ?, ?, ?, ?)`,
             [
                 pedido || null, op || null, item_op || null, sequen_op || null,
                 produto || null, desc_produto || null, cliente || null,
@@ -389,15 +429,22 @@ router.post('/rncs', async (req, res) => {
                 imagem_evidencia || null, criado_por || 'Operador',
                 f097_dados ? (typeof f097_dados === 'string' ? f097_dados : JSON.stringify(f097_dados)) : null,
                 fotos_registro ? (typeof fotos_registro === 'string' ? fotos_registro : JSON.stringify(fotos_registro)) : null,
-                data_limite || null
+                data_limite || null,
+                numero_rnc
             ]
         );
-        res.status(201).json({ message: 'RNC criada com sucesso.', id: result.insertId });
+
+        try {
+            emitHermesAlert(`🚨 **Nova RNC Aberta**: RNC **${numero_rnc || result.insertId}** gerada por **${criado_por || 'Operador'}** para o produto **${produto}** (OS/Pedido: ${op || pedido}).`, 'rnc');
+        } catch (e) { console.error('Erro ao emitir alerta de RNC:', e); }
+
+        res.status(201).json({ message: 'RNC criada com sucesso.', id: result.insertId, numero_rnc });
     } catch (error) {
         console.error('Erro ao criar RNC:', error);
         res.status(500).json({ error: 'Erro ao criar RNC.' });
     }
 });
+
 
 // PUT /api/sgq/rncs/:id
 router.put('/rncs/:id', async (req, res) => {
