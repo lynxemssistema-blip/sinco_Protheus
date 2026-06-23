@@ -27,8 +27,8 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
 
     useEffect(() => {
         if (isOpen) {
-            setPedido(initialPedido || '');
-            setItem(initialItem || '');
+            setPedido(initialPedido !== undefined && initialPedido !== null ? String(initialPedido) : '');
+            setItem(initialItem !== undefined && initialItem !== null ? String(initialItem) : '');
         }
     }, [isOpen, initialPedido, initialItem]);
 
@@ -420,7 +420,7 @@ const EngineeringReleaseModal = ({ isOpen, onClose, structure, routesMap, codigo
                         <div>
                             <label className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5 block flex items-center justify-between">
                                 <span>Nº Pedido <span className="text-gray-400 font-normal">(opcional)</span></span>
-                                {initialPedido && pedido === initialPedido && (
+                                {initialPedido && String(pedido) === String(initialPedido) && (
                                     <span className="text-[10px] text-emerald-600 font-semibold normal-case bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                         Origem
                                     </span>

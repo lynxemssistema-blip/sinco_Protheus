@@ -306,8 +306,9 @@ const EngineeringOrdersPage = () => {
     const viewMode = 'flat';
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState(null);
-    const [totalPages, setTotalPages] = useState(1);
+    const [hasNextPage, setHasNextPage] = useState(true);
     const limit = 100;
 
     // Tipo frontend filter (multi-select) — default: Revisão, Restrição, Novo
@@ -336,6 +337,19 @@ const EngineeringOrdersPage = () => {
     // UI states for interactions
     const [pinnedRow, setPinnedRow] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+    // Reference to track previous filter state and avoid double-fetching
+    const prevFiltersRef = useRef({
+        cliente: orderFilters.cliente,
+        pedido: orderFilters.pedido,
+        produto: orderFilters.produto,
+        dataInicial: orderFilters.dataInicial,
+        dataFinal: orderFilters.dataFinal,
+        dateType: orderFilters.dateType,
+        only_active: orderFilters.only_active,
+        tipo_item: tipoFilter.join(','),
+        emissaoFilter: emissaoFilter
+    });
 
     const fetchActiveTimer = async () => {
         try {
@@ -401,6 +415,7 @@ const EngineeringOrdersPage = () => {
         dataFinal: orderFilters.dataFinal,
         dateType: orderFilters.dateType,
         only_active: orderFilters.only_active,
+        tipo_item: tipoFilter.join(','),
     };
 
     const setFilters = (val) => {
@@ -431,7 +446,13 @@ const EngineeringOrdersPage = () => {
     };
     const getSelectedItemsList = () => filteredOrders
         .filter(i => selectedItems.has(`${i.pedido}-${i.item}`))
-        .map(i => ({ pedido: i.pedido, item: i.item }));
+        .map(i => ({
+            pedido: i.pedido,
+            item: i.item,
+            codigo: i.codigo,
+            quantidade: i.quantidade,
+            status_tipo_item: i.status_tipo_item || 'PCP'
+        }));
 
     // Filtered view: chained frontend filters (tipo + emissão)
     const filteredOrders = orders.filter(item => {
@@ -469,11 +490,15 @@ const EngineeringOrdersPage = () => {
     });
 
     const fetchData = async (overrides = {}) => {
-        setLoading(true);
+        const searchPage = overrides.page || page;
+        if (searchPage === 1) {
+            setLoading(true);
+        } else {
+            setLoadingMore(true);
+        }
         setError(null);
         try {
             const searchFilters = { ...filters, ...overrides };
-            const searchPage = overrides.page || page;
             const result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit });
             const { data, meta } = result;
             if (searchPage === 1) {
@@ -484,7 +509,7 @@ const EngineeringOrdersPage = () => {
                     return [...prev.filter(p => !newIds.has(`${p.pedido}-${p.item}`)), ...data];
                 });
             }
-            setTotalPages(Math.ceil(meta.total / limit));
+            setHasNextPage(meta.hasNextPage);
         } catch (err) {
             const serverError = err.response?.data;
             const errorMsg = serverError
@@ -493,14 +518,76 @@ const EngineeringOrdersPage = () => {
             setError(`Erro ao carregar dados: ${errorMsg}`);
         } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
     };
 
+    // Unified effect to handle filters, pagination, and avoid race conditions or double fetches
     useEffect(() => {
-        fetchData();
+        const currentFilters = {
+            cliente: orderFilters.cliente,
+            pedido: orderFilters.pedido,
+            produto: orderFilters.produto,
+            dataInicial: orderFilters.dataInicial,
+            dataFinal: orderFilters.dataFinal,
+            dateType: orderFilters.dateType,
+            only_active: orderFilters.only_active,
+            tipo_item: tipoFilter.join(','),
+            emissaoFilter: emissaoFilter
+        };
+
+        const filtersChanged = 
+            currentFilters.cliente !== prevFiltersRef.current.cliente ||
+            currentFilters.pedido !== prevFiltersRef.current.pedido ||
+            currentFilters.produto !== prevFiltersRef.current.produto ||
+            currentFilters.dataInicial !== prevFiltersRef.current.dataInicial ||
+            currentFilters.dataFinal !== prevFiltersRef.current.dataFinal ||
+            currentFilters.dateType !== prevFiltersRef.current.dateType ||
+            currentFilters.only_active !== prevFiltersRef.current.only_active ||
+            currentFilters.tipo_item !== prevFiltersRef.current.tipo_item ||
+            currentFilters.emissaoFilter !== prevFiltersRef.current.emissaoFilter;
+
+        prevFiltersRef.current = currentFilters;
+
+        if (filtersChanged) {
+            // Reset page to 1 on any filter change.
+            // If already on page 1, fetch immediately.
+            // If not on page 1, setPage(1) will update state and trigger this effect again.
+            if (page === 1) {
+                fetchData({ page: 1 });
+            } else {
+                setPage(1);
+            }
+        } else {
+            // If filters did not change, it's just a pagination update.
+            fetchData();
+        }
+        
         fetchActiveTimer();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, viewMode, filters.only_active]);
+    }, [
+        page, 
+        viewMode, 
+        orderFilters.cliente, 
+        orderFilters.pedido, 
+        orderFilters.produto, 
+        orderFilters.dataInicial, 
+        orderFilters.dataFinal, 
+        orderFilters.dateType, 
+        orderFilters.only_active, 
+        tipoFilter, 
+        emissaoFilter
+    ]);
+
+    // Auto-load all batches sequentially (no need to scroll, same as /visao-geral)
+    useEffect(() => {
+        if (loading || loadingMore) return;
+        if (!hasNextPage) return;
+        const timer = setTimeout(() => {
+            setPage(prev => prev + 1);
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [loading, loadingMore, hasNextPage]);
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
@@ -677,7 +764,7 @@ const EngineeringOrdersPage = () => {
             case 'codigo':
                 return (
                     <a
-                        href={`/estrutura/${encodeURIComponent(item.codigo)}`}
+                        href={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 text-xs font-mono"
@@ -1117,10 +1204,10 @@ const EngineeringOrdersPage = () => {
 
     const handleScroll = useCallback((e) => {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
-        if (scrollHeight - scrollTop <= clientHeight * 1.5 && !loading && page < totalPages) {
-            setPage(page + 1);
+        if (scrollHeight - scrollTop <= clientHeight * 1.5 && !loading && hasNextPage) {
+            setPage(prev => prev + 1);
         }
-    }, [loading, page, totalPages]);
+    }, [loading, hasNextPage]);
 
     const visibleCols = colConfig.filter(c => c.visible !== false && (canViewFinancials || !['valor_unitario', 'valor_total'].includes(c.key)));
 
@@ -1429,7 +1516,7 @@ const EngineeringOrdersPage = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                        {loading ? (
+                        {loading && page === 1 ? (
                             <tr>
                                 <td colSpan={visibleCols.length} className="px-6 py-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2">
@@ -1498,7 +1585,7 @@ const EngineeringOrdersPage = () => {
             </div>
 
             {/* Infinite Scroll Indicator */}
-            {loading && page > 1 && (
+            {loadingMore && (
                 <div className="p-4 bg-gray-50 flex items-center justify-center border-t border-gray-100">
                     <div className="flex items-center gap-2 text-gray-500">
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -1507,7 +1594,7 @@ const EngineeringOrdersPage = () => {
                 </div>
             )}
             
-            {!loading && !error && orders.length > 0 && page >= totalPages && (
+            {!loading && !loadingMore && !error && orders.length > 0 && !hasNextPage && (
                 <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-center print:hidden">
                     <span className="text-sm text-gray-400">
                         Todos os {orders.length} registros foram carregados.

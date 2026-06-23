@@ -890,39 +890,39 @@ export default function VerticalAppointmentPage() {
                 <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex-1 flex flex-col min-h-0">
                     <div className="overflow-auto flex-1 min-h-0">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-20 shadow-sm">
                                 <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-50">
-                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky left-0 z-20 bg-slate-50 min-w-[160px]" onClick={() => requestSort('op')}>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 left-0 z-30 bg-slate-50 min-w-[160px]" onClick={() => requestSort('op')}>
                                         <div className="flex items-center gap-1">Ordem de Produção {getSortIcon('op')}</div>
                                     </th>
-                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky left-[160px] z-20 bg-slate-50 min-w-[100px] border-l border-slate-200" onClick={() => requestSort('pedido')}>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 left-[160px] z-30 bg-slate-50 min-w-[100px] border-l border-slate-200" onClick={() => requestSort('pedido')}>
                                         <div className="flex items-center gap-1">Pedido {getSortIcon('pedido')}</div>
                                     </th>
-                                    <th className="p-3 sticky left-[260px] z-20 bg-slate-50 min-w-[180px] border-l border-slate-200">Cliente</th>
-                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky left-[440px] z-20 bg-slate-50 min-w-[260px] border-l border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" onClick={() => requestSort('produto')}>
+                                    <th className="p-3 sticky top-0 left-[260px] z-30 bg-slate-50 min-w-[180px] border-l border-slate-200">Cliente</th>
+                                    <th className="p-3 cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 left-[440px] z-30 bg-slate-50 min-w-[260px] border-l border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" onClick={() => requestSort('produto')}>
                                         <div className="flex items-center gap-1">Produto {getSortIcon('produto')}</div>
                                     </th>
-                                    <th className="p-3 text-center w-10">PDF</th>
-                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('planejamento_inicio')}>
+                                    <th className="p-3 text-center w-10 sticky top-0 z-20 bg-slate-50">PDF</th>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-20 bg-slate-50" onClick={() => requestSort('planejamento_inicio')}>
                                         <div className="flex items-center justify-center gap-1">Planejamento {getSortIcon('planejamento_inicio')}</div>
                                     </th>
-                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('progresso')}>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-20 bg-slate-50" onClick={() => requestSort('progresso')}>
                                         <div className="flex items-center justify-center gap-1">Produção {getSortIcon('progresso')}</div>
                                     </th>
-                                    <th className="p-3 text-center">Tempos</th>
-                                    <th className="p-3 text-center" title="Status da operação anterior no roteiro do produto">
+                                    <th className="p-3 text-center sticky top-0 z-20 bg-slate-50">Tempos</th>
+                                    <th className="p-3 text-center sticky top-0 z-20 bg-slate-50" title="Status da operação anterior no roteiro do produto">
                                         <div className="flex items-center justify-center gap-1">Op. Ant.</div>
                                     </th>
-                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('recurso_codigo')}>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-20 bg-slate-50" onClick={() => requestSort('recurso_codigo')}>
                                         <div className="flex items-center justify-center gap-1">Op. Atual {getSortIcon('recurso_codigo')}</div>
                                     </th>
-                                    <th className="p-3 text-center" title="Status da próxima operação no roteiro do produto">
+                                    <th className="p-3 text-center sticky top-0 z-20 bg-slate-50" title="Status da próxima operação no roteiro do produto">
                                         <div className="flex items-center justify-center gap-1">Op. Prox.</div>
                                     </th>
-                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => requestSort('status')}>
+                                    <th className="p-3 text-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-20 bg-slate-50" onClick={() => requestSort('status')}>
                                         <div className="flex items-center justify-center gap-1">Status {getSortIcon('status')}</div>
                                     </th>
-                                    <th className="p-3 text-right">Ações</th>
+                                    <th className="p-3 text-right sticky top-0 z-20 bg-slate-50">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">

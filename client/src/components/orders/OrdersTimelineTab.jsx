@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Calendar, Mail, Send, FileText, CheckCircle, AlertCircle, Loader2, 
     ChevronDown, ChevronRight, Download, Eye, EyeOff, LayoutGrid, ListFilter,
-    User, Folder, Tag, X, Plus, Trash2, Database, Filter
+    User, Folder, Tag, X, Plus, Trash2, Database, Filter, FileSpreadsheet
 } from 'lucide-react';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { api } from '../../services/api';
 import { toast } from 'react-toastify';
 import { logoBase64 } from '../../services/metalfisaLogoBase64';
@@ -49,10 +50,15 @@ export default function OrdersTimelineTab({ filters }) {
                     pedido: filters.pedido || '',
                     cliente: filters.cliente || '',
                     produto: filters.produto || '',
+                    pedcli: filters.pedcli || '',
                     dataInicial: filters.dataInicial || '',
                     dataFinal: filters.dataFinal || '',
                     dateType: filters.dateType || 'entrega',
-                    only_active: filters.only_active !== undefined ? String(filters.only_active) : 'true'
+                    only_active: filters.only_active !== undefined ? String(filters.only_active) : 'true',
+                    tipo_item: filters.tipo_item || '',
+                    op_status: filters.op_status || '',
+                    sortBy: filters.sortBy || 'emissao',
+                    sortOrder: filters.sortOrder || 'DESC'
                 };
             const res = await api.get('/pcp-refinado/cronograma', { params });
             setData(res.data || []);
@@ -220,7 +226,7 @@ export default function OrdersTimelineTab({ filters }) {
                     progresso_faturamento: Math.round(sumFaturamento / count),
                     total_itens: totalItems
                 };
-            }).sort((a, b) => b.pedido.localeCompare(a.pedido));
+            });
         }
     }, [data, viewMode]);
 
@@ -292,7 +298,9 @@ export default function OrdersTimelineTab({ filters }) {
         const titleMain = 'CRONOGRAMA DE ENTREGA E PRODUÇÃO';
         const titleSub  = target.type === 'client'
             ? `Cliente: ${target.name}  |  Progresso: ${progressLabel}`
-            : `Pedido: ${target.pedido || ''}  |  Cliente: ${target.cliente || ''}  |  Progresso: ${progressLabel}`;
+            : target.type === 'all'
+                ? `Filtros Ativos  |  Progresso: ${progressLabel}`
+                : `Pedido: ${target.pedido || ''}  |  Cliente: ${target.cliente || ''}  |  Progresso: ${progressLabel}`;
 
         let startY = drawCronogramaHeader(doc, pageWidth, titleMain, titleSub);
 
@@ -300,6 +308,24 @@ export default function OrdersTimelineTab({ filters }) {
         const itemsList = [];
         if (target.type === 'client') {
             (target.pedidos || []).forEach(p => {
+                (p.itens || []).forEach(it => {
+                    itemsList.push({
+                        pedido:              p.pedido,
+                        ped_cliente:         it.pedido_cliente || '-',
+                        cod_prod_cliente:     it.cod_prod_cliente || '-',
+                        produto:             it.produto,
+                        descricao:           it.descricao,
+                        qtd_vendida:         it.qtd_vendida,
+                        qtd_faturada:        it.qtd_faturada,
+                        data_entrega:        formatDate(it.data_entrega),
+                        data_pcp:            formatDate(it.data_entrega_pcp),
+                        data_faturamento:    formatDate(it.data_prevista_faturamento),
+                        progresso:           `${getItemProgress(it)}%`,
+                    });
+                });
+            });
+        } else if (target.type === 'all') {
+            data.forEach(p => {
                 (p.itens || []).forEach(it => {
                     itemsList.push({
                         pedido:              p.pedido,
@@ -398,8 +424,98 @@ export default function OrdersTimelineTab({ filters }) {
 
         return {
             blob:     doc.output('blob'),
-            fileName: `Cronograma_${target.name || target.pedido}.pdf`,
+            fileName: target.type === 'all' ? `Cronograma_Geral.pdf` : `Cronograma_${target.name || target.pedido}.pdf`,
         };
+    };
+
+    // Export Node / Group to Excel
+    const exportNodeToExcel = (target, type) => {
+        const itemsList = [];
+        if (type === 'client') {
+            (target.pedidos || []).forEach(p => {
+                (p.itens || []).forEach(it => {
+                    itemsList.push({
+                        'Pedido': p.pedido,
+                        'Cliente': target.name || '-',
+                        'Ped. Cliente': it.pedido_cliente || '-',
+                        'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                        'Produto': it.produto,
+                        'Descrição': it.descricao,
+                        'Qtd. Vendida': Number(it.qtd_vendida) || 0,
+                        'Qtd. Faturada': Number(it.qtd_faturada) || 0,
+                        'Entrega Comercial': formatDate(it.data_entrega),
+                        'Dt. PCP': formatDate(it.data_entrega_pcp),
+                        'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                        'Progresso': `${getItemProgress(it)}%`,
+                    });
+                });
+            });
+        } else if (type === 'all') {
+            data.forEach(p => {
+                (p.itens || []).forEach(it => {
+                    itemsList.push({
+                        'Pedido': p.pedido,
+                        'Cliente': p.cliente || '-',
+                        'Ped. Cliente': it.pedido_cliente || '-',
+                        'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                        'Produto': it.produto,
+                        'Descrição': it.descricao,
+                        'Qtd. Vendida': Number(it.qtd_vendida) || 0,
+                        'Qtd. Faturada': Number(it.qtd_faturada) || 0,
+                        'Entrega Comercial': formatDate(it.data_entrega),
+                        'Dt. PCP': formatDate(it.data_entrega_pcp),
+                        'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                        'Progresso': `${getItemProgress(it)}%`,
+                    });
+                });
+            });
+        } else {
+            (target.itens || []).forEach(it => {
+                itemsList.push({
+                    'Pedido': target.pedido,
+                    'Cliente': target.cliente || '-',
+                    'Ped. Cliente': it.pedido_cliente || '-',
+                    'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                    'Produto': it.produto,
+                    'Descrição': it.descricao,
+                    'Qtd. Vendida': Number(it.qtd_vendida) || 0,
+                    'Qtd. Faturada': Number(it.qtd_faturada) || 0,
+                    'Entrega Comercial': formatDate(it.data_entrega),
+                    'Dt. PCP': formatDate(it.data_entrega_pcp),
+                    'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                    'Progresso': `${getItemProgress(it)}%`,
+                });
+            });
+        }
+
+        if (itemsList.length === 0) {
+            toast.warning('Nenhum item válido para exportar.');
+            return;
+        }
+
+        const worksheet = XLSX.utils.json_to_sheet(itemsList);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Cronograma');
+
+        // Auto-size columns slightly
+        worksheet['!cols'] = [
+            { wch: 15 }, // Pedido
+            { wch: 35 }, // Cliente
+            { wch: 18 }, // Ped. Cliente
+            { wch: 22 }, // Cód. Prod. Cliente
+            { wch: 20 }, // Produto
+            { wch: 45 }, // Descrição
+            { wch: 15 }, // Qtd. Vendida
+            { wch: 15 }, // Qtd. Faturada
+            { wch: 20 }, // Entrega Comercial
+            { wch: 15 }, // Dt. PCP
+            { wch: 22 }, // Previsão Faturamento
+            { wch: 12 }, // Progresso
+        ];
+
+        const fileName = type === 'all' ? `Cronograma_Geral.xlsx` : `Cronograma_${target.name || target.pedido}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        toast.success('Cronograma exportado para Excel!');
     };
 
     // Open Email Modal and set target
@@ -612,19 +728,55 @@ export default function OrdersTimelineTab({ filters }) {
                     </label>
                 </div>
 
-                {/* Toggle: Todos do banco vs filtro atual */}
-                <button
-                    onClick={() => setLoadAll(v => !v)}
-                    title={loadAll ? 'Clique para usar somente os filtros atuais' : 'Clique para carregar TODOS os pedidos ativos do banco, ignorando filtros'}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-semibold transition-all shadow-sm ${
-                        loadAll
-                            ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700'
-                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                    }`}
-                >
-                    {loadAll ? <Database className="w-3.5 h-3.5" /> : <Filter className="w-3.5 h-3.5" />}
-                    {loadAll ? 'Todos do Banco' : 'Filtro Atual'}
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* Toggle: Todos do banco vs filtro atual */}
+                    <button
+                        onClick={() => setLoadAll(v => !v)}
+                        title={loadAll ? 'Clique para usar somente os filtros atuais' : 'Clique para carregar TODOS os pedidos ativos do banco, ignorando filtros'}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-semibold active:scale-[0.98] transition-all shadow-sm ${
+                            loadAll
+                                ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700'
+                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                        }`}
+                    >
+                        {loadAll ? <Database className="w-3.5 h-3.5" /> : <Filter className="w-3.5 h-3.5" />}
+                        {loadAll ? 'Todos do Banco' : 'Filtro Atual'}
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            if (data.length === 0) {
+                                toast.warning('Nenhum dado para exportar.');
+                                return;
+                            }
+                            const docResult = generateTimelinePDF({ type: 'all' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(docResult.blob);
+                            link.download = docResult.fileName;
+                            link.click();
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:scale-[0.98] rounded shadow-sm transition-all"
+                        title="Baixar Cronograma Geral em PDF"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                        PDF Geral
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            if (data.length === 0) {
+                                toast.warning('Nenhum dado para exportar.');
+                                return;
+                            }
+                            exportNodeToExcel(null, 'all');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-white border border-emerald-300 hover:bg-emerald-50 active:scale-[0.98] rounded shadow-sm transition-all"
+                        title="Exportar Cronograma Geral para Excel"
+                    >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Excel Geral
+                    </button>
+                </div>
             </div>
 
             {/* Content Table / Tree */}
@@ -740,6 +892,14 @@ export default function OrdersTimelineTab({ filters }) {
                                                 >
                                                     <Download className="w-3.5 h-3.5" />
                                                     PDF
+                                                </button>
+                                                <button
+                                                    onClick={() => exportNodeToExcel(node, viewMode)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded shadow-sm transition-colors"
+                                                    title="Exportar para Excel"
+                                                >
+                                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                                    Excel
                                                 </button>
                                             </div>
                                         </div>

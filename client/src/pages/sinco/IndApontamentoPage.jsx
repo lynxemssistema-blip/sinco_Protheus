@@ -574,7 +574,7 @@ export default function IndApontamentoPage({ embedded = false }) {
                                             <td className="p-3">
                                                 <div className="flex items-center gap-2">
                                                     <div>
-                                                        <Link to={`/estrutura/${encodeURIComponent(op.cod_produto_op.trim())}`} className="font-mono text-xs text-blue-600 font-semibold hover:underline" title="Ver Árvore do Produto (Estrutura/BOM)">
+                                                        <Link to={`/estrutura/${encodeURIComponent(op.cod_produto_op.trim())}?pedido=${encodeURIComponent(op.pedido_venda || '')}&item=${encodeURIComponent(op.item_op || '')}`} className="font-mono text-xs text-blue-600 font-semibold hover:underline" title="Ver Árvore do Produto (Estrutura/BOM)">
                                                             {op.cod_produto_op}
                                                         </Link>
                                                     </div>

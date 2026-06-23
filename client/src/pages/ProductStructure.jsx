@@ -495,15 +495,22 @@ const ProductStructure = () => {
                 />
 
                 {/* Modal de Liberação de Engenharia */}
-                <EngineeringReleaseModal
-                    isOpen={showReleaseModal}
-                    onClose={() => setShowReleaseModal(false)}
-                    structure={structure}
-                    routesMap={routes}
-                    codigo={codigo}
-                    initialPedido={location.state?.pedido}
-                    initialItem={location.state?.item}
-                />
+                {(() => {
+                    const searchParams = new URLSearchParams(location.search);
+                    const queryPedido = searchParams.get('pedido') || '';
+                    const queryItem = searchParams.get('item') || '';
+                    return (
+                        <EngineeringReleaseModal
+                            isOpen={showReleaseModal}
+                            onClose={() => setShowReleaseModal(false)}
+                            structure={structure}
+                            routesMap={routes}
+                            codigo={codigo}
+                            initialPedido={location.state?.pedido || queryPedido}
+                            initialItem={location.state?.item || queryItem}
+                        />
+                    );
+                })()}
             </div>
         </div>
     );

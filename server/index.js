@@ -16,6 +16,7 @@ const { getCorporateEmailTemplate } = require('./utils/emailTemplate');
 const mysqlService = require('./services/mysqlService');
 const { calcularKPIMeuCanal } = require('./routes/meucanal');
 const { sendText: waSend, logEmailSent, msgMeuCanal } = require('./services/whatsapp');
+const whatsappAiAgent = require('./services/whatsappAiAgent');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -91,6 +92,8 @@ app.use(cors({
         const allowedOrigins = [
             process.env.CORS_ORIGIN,
             'https://metalfisa.lynxems.com.br',
+            'https://sincometal.metalfisa.com.br',
+            'http://sincometal.metalfisa.com.br',
             'http://192.168.1.77:3001',
             'http://localhost:5173',
             'http://localhost:5174',
@@ -296,6 +299,9 @@ app.use('/api/monitoramento', require('./routes/monitoramento'));
 // PCP Refinado route
 app.use('/api/pcp-refinado', require('./routes/pcpRefinado'));
 
+// Calendário de Atividades route
+app.use('/api/calendario', require('./routes/calendario'));
+
 // WinSCP
 app.use('/api/winscp', require('./routes/winscp'));
 
@@ -323,6 +329,7 @@ app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/co
 app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/romaneios'), { maxAge: '7d' }));
 app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/certificados'), { maxAge: '7d' }));
 app.use('/uploads/sgq_ajuda', express.static(path.join(__dirname, 'uploads/sgq_ajuda'), { maxAge: '7d' }));
+app.use('/uploads/whatsapp', express.static(path.join(__dirname, 'uploads/whatsapp'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 
 // Rota de Health Check
@@ -354,6 +361,28 @@ app.get(/(.*)/, (req, res) => {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+});
+
+
+// ==========================================
+// CRON JOB - AGENTE DE IA MONITORAMENTO WHATSAPP
+// ==========================================
+cron.schedule('0 15 * * *', async () => {
+    console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
+    try {
+        const [groups] = await mysqlService.query(
+            'SELECT grupo_nome, grupo_jid FROM app_whatsapp_grupos_monitorados WHERE grupo_jid IS NOT NULL'
+        );
+        for (const group of groups) {
+            try {
+                await whatsappAiAgent.sendDailySummaryToGroup(group.grupo_nome, group.grupo_jid);
+            } catch (groupErr) {
+                console.error(`[CRON WhatsApp AI] Falha ao processar grupo "${group.grupo_nome}":`, groupErr.message);
+            }
+        }
+    } catch (err) {
+        console.error('[CRON WhatsApp AI] Erro geral ao executar rotina:', err.message);
+    }
 });
 
 

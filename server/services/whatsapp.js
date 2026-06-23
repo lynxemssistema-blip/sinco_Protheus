@@ -27,6 +27,7 @@ try { mysqlPool = require('./mysqlService'); } catch (e) { /* sem db, logs ignor
 
 function normalizePhone(raw) {
     if (!raw) return null;
+    if (String(raw).includes('@')) return String(raw);
     const digits = String(raw).replace(/\D/g, '');
     if (digits.length === 10 || digits.length === 11) return '55' + digits;
     if (digits.length === 12 || digits.length === 13) return digits;

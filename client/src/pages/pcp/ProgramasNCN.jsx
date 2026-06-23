@@ -47,6 +47,7 @@ export default function ProgramasNCN() {
     // State do Modal
     const [showFormProg, setShowFormProg] = useState(false);
     const [editingProgId, setEditingProgId] = useState(null);
+    const [editingProgram, setEditingProgram] = useState(null);
     const [progForm, setProgForm] = useState({
         maquina_id: '',
         nome_programa: '',
@@ -168,6 +169,7 @@ export default function ProgramasNCN() {
 
             setShowFormProg(false);
             setEditingProgId(null);
+            setEditingProgram(null);
             setProgForm({
                 maquina_id: '',
                 nome_programa: '',
@@ -236,6 +238,7 @@ export default function ProgramasNCN() {
             notas_instrucoes: prog.notas_instrucoes || ''
         });
         setEditingProgId(prog.id);
+        setEditingProgram(prog);
         setShowFormProg(true);
     };
 
@@ -372,6 +375,14 @@ export default function ProgramasNCN() {
             });
     }, [programas, searchQuery, filterMaquinaId, filterStatus]);
 
+    const canChangeMachine = useMemo(() => {
+        if (!editingProgId) return true;
+        if (!editingProgram) return false;
+        const concluidas = Number(editingProgram.chapas_concluidas || 0);
+        const emAndamento = Number(editingProgram.chapas_em_andamento || 0);
+        return concluidas === 0 && emAndamento === 0;
+    }, [editingProgId, editingProgram]);
+
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
             <style>{`
@@ -401,6 +412,7 @@ export default function ProgramasNCN() {
                 <button
                     onClick={() => {
                         setEditingProgId(null);
+                        setEditingProgram(null);
                         setProgForm({
                             maquina_id: '',
                             nome_programa: '',
@@ -719,6 +731,7 @@ export default function ProgramasNCN() {
                                 onClick={() => {
                                     setShowFormProg(false);
                                     setEditingProgId(null);
+                                    setEditingProgram(null);
                                 }}
                                 className="text-slate-400 hover:text-red-500 hover:bg-slate-100 p-1.5 rounded-lg transition-all"
                             >
@@ -736,8 +749,12 @@ export default function ProgramasNCN() {
                                         required
                                         value={progForm.maquina_id}
                                         onChange={e => setProgForm({...progForm, maquina_id: e.target.value})}
-                                        className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500 bg-white"
-                                        disabled={!!editingProgId}
+                                        className={`w-full border rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500 bg-white ${
+                                            !canChangeMachine 
+                                                ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed' 
+                                                : 'border-slate-300 text-slate-800'
+                                        }`}
+                                        disabled={!canChangeMachine}
                                     >
                                         <option value="">Selecione uma máquina...</option>
                                         {maquinas.map(m => (
@@ -746,6 +763,25 @@ export default function ProgramasNCN() {
                                             </option>
                                         ))}
                                     </select>
+                                    {editingProgId && (
+                                        <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-medium leading-normal">
+                                            {canChangeMachine ? (
+                                                <>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0 animate-pulse" />
+                                                    <span className="text-green-600">
+                                                        Permitido alterar o equipamento pois nenhuma chapa deste lote foi iniciada.
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                                                    <span className="text-amber-600">
+                                                        Equipamento bloqueado pois já existem chapas em execução ou concluídas.
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Nome do Programa */}
@@ -965,6 +1001,7 @@ export default function ProgramasNCN() {
                                     onClick={() => {
                                         setShowFormProg(false);
                                         setEditingProgId(null);
+                                        setEditingProgram(null);
                                     }}
                                     className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold"
                                 >

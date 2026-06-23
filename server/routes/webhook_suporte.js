@@ -130,11 +130,81 @@ router.post('/suporte-ia', async (req, res) => {
             // Log util para dev
             console.log(`[AI Suporte] Mensagem recebida no grupo: ${groupSubject || 'Desconhecido'} (${remoteJid})`);
             
+            if (groupSubject) {
+                // Check if this group is registered in our monitored groups table
+                const [monitored] = await mysqlPool.query(
+                    'SELECT id FROM app_whatsapp_grupos_monitorados WHERE grupo_nome = ? OR grupo_jid = ?',
+                    [groupSubject, remoteJid]
+                );
+
+                if (monitored.length > 0) {
+                    // Update the JID in case it wasn't set yet
+                    await mysqlPool.query(
+                        'UPDATE app_whatsapp_grupos_monitorados SET grupo_jid = ? WHERE grupo_nome = ? AND grupo_jid IS NULL',
+                        [remoteJid, groupSubject]
+                    );
+
+                    const messageId = (data.key && data.key.id) || messageKey.id || null;
+                    const remetenteFone = (messageKey.participant || data.participant || '').split('@')[0] || null;
+
+                    let midiaUrl = null;
+                    if (msg && msg.imageMessage && imagePart && imagePart.inlineData && imagePart.inlineData.data) {
+                        try {
+                            const uploadDir = path.join(__dirname, '../uploads/whatsapp');
+                            if (!fs.existsSync(uploadDir)) {
+                                fs.mkdirSync(uploadDir, { recursive: true });
+                            }
+                            const fileName = `${messageId || Date.now()}.jpg`;
+                            const filePath = path.join(uploadDir, fileName);
+                            fs.writeFileSync(filePath, Buffer.from(imagePart.inlineData.data, 'base64'));
+                            midiaUrl = fileName;
+                            console.log(`[WhatsApp Monitor] Imagem do grupo salva com sucesso em: ${filePath}`);
+                        } catch (writeErr) {
+                            console.error('[WhatsApp Monitor] Erro ao salvar imagem no disco:', writeErr.message);
+                        }
+                    }
+
+                    // Save the message
+                    await mysqlPool.query(
+                        `INSERT INTO app_whatsapp_mensagens_recebidas 
+                         (grupo_nome, grupo_jid, remetente_nome, remetente_fone, mensagem, tipo_midia, midia_url, id_mensagem)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE grupo_nome = grupo_nome`,
+                        [
+                            groupSubject,
+                            remoteJid,
+                            data.pushName || 'Desconhecido',
+                            remetenteFone,
+                            text || '[Mídia ou Mensagem Vazia]',
+                            (msg && msg.imageMessage) ? 'image' : 'text',
+                            midiaUrl,
+                            messageId
+                        ]
+                    );
+
+                    // Broadcast via Socket.io
+                    const io = req.app.get('io');
+                    if (io) {
+                        io.emit('whatsapp_nova_mensagem', {
+                            grupo_nome: groupSubject,
+                            grupo_jid: remoteJid,
+                            remetente_nome: data.pushName || 'Desconhecido',
+                            remetente_fone: remetenteFone,
+                            mensagem: text || '[Mídia ou Mensagem Vazia]',
+                            tipo_midia: (msg && msg.imageMessage) ? 'image' : 'text',
+                            midia_url: midiaUrl,
+                            recebido_em: new Date(),
+                            id_mensagem: messageId
+                        });
+                    }
+                }
+            }
+
             if (groupSubject && groupSubject !== SUPORTE_GROUP_NAME) {
-                return res.status(200).send('OK'); // Ignora silenciosamente outros grupos
+                return res.status(200).send('OK'); // Ignora outros grupos (ou conclui se monitorado)
             }
         } catch (err) {
-            console.warn('[AI Suporte] Nao foi possivel validar nome do grupo, prosseguindo por fallback (CORS/API error).');
+            console.warn('[AI Suporte] Nao foi possivel validar nome do grupo, prosseguindo por fallback:', err.message);
         }
 
         const userName = data.pushName || 'Usuário Lynx';

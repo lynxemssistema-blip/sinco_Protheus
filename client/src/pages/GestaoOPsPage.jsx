@@ -912,7 +912,7 @@ const GestaoOPsPage = () => {
             <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.visual_op || item.op_num || '-'}</td>
             <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">
                 <Link
-                    to={`/estrutura/${encodeURIComponent(item.codigo)}`}
+                    to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
                     state={{ from: location.pathname }}
                     className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                 >
@@ -1462,7 +1462,7 @@ const GestaoOPsPage = () => {
                                                                                                     <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.visual_op || item.op_num || '-'}</td>
                                                                                                     <td className="px-4 py-2 font-mono text-xs">
                                                                                                         <Link
-                                                                                                            to={`/estrutura/${encodeURIComponent(item.codigo)}`}
+                                                                                                            to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || order.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
                                                                                                             state={{ from: location.pathname }}
                                                                                                             className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                                                                                                         >

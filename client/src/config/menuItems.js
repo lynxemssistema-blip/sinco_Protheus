@@ -14,6 +14,7 @@ export const MENU_GROUPS = [
         label: 'Meu Painel',
         items: [
             { id: 'meu_canal', label: 'Meu Canal (KPIs)', path: '/dashboard', icon: BarChart2 },
+            { id: 'calendario_atividades', label: 'Calendário de Atividades', path: '/calendario-atividades', icon: Calendar },
             { id: 'painel_tv', label: 'Painel de TV (Frontend)', path: '/painel-producao', icon: Monitor }
         ]
     },

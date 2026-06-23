@@ -138,7 +138,7 @@ const FlatItemRow = ({
                     );
                     case 'codigo': return (
                         <td key={col.key} className="px-3 py-2 font-mono text-xs whitespace-nowrap bg-inherit min-w-[140px] max-w-[140px] w-[140px] truncate">
-                            <Link to={`/estrutura/${encodeURIComponent(item.codigo)}`} state={{ from: locationPathname, pedido: item.pedido, item: item.item }} className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
+                            <Link to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`} state={{ from: locationPathname, pedido: item.pedido, item: item.item }} className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
                                 {item.codigo} <Layers className="h-3 w-3" />
                             </Link>
                         </td>

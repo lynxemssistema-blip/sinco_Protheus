@@ -5,6 +5,34 @@ const db = require('../db');
 const { analisarRelatorioFCS } = require('../services/geminiPcpService');
 const { runFcsSequencing } = require('../services/fcsEngine');
 const { rebuildDailyOccupancyCache } = require('../services/occupancyCacheService');
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+
+// ── Forecast cache (módulo) — TTL 60s, evita fetch MySQL por requisição ────
+let _fcCache = { map: new Map(), expiresAt: 0 };
+async function getForecastMapCached() {
+    if (Date.now() < _fcCache.expiresAt) return _fcCache.map;
+    const map = new Map();
+    try {
+        const [rows] = await mysqlPool.query(`
+            SELECT TRIM(pedido) as pedido, TRIM(item) as item,
+                   MAX(data_entrega_pcp) as data_entrega_pcp,
+                   MAX(data_prevista_faturamento) as data_prevista_faturamento
+            FROM app_pcp_delivery_forecasts
+            WHERE pedido IS NOT NULL AND item IS NOT NULL
+            GROUP BY TRIM(pedido), TRIM(item)
+        `);
+        for (const row of rows) {
+            map.set(`${row.pedido}|${row.item}`, {
+                data_entrega_pcp: row.data_entrega_pcp || null,
+                data_prevista_faturamento: row.data_prevista_faturamento || null
+            });
+        }
+    } catch (err) {
+        console.error('getForecastMapCached error:', err.message);
+    }
+    _fcCache = { map, expiresAt: Date.now() + 60_000 };
+    return map;
+}
 
 // GET /api/pcp-refinado/recursos - Fetch all resources from Protheus and their capacities from MySQL
 router.get('/recursos', async (req, res) => {
@@ -889,58 +917,261 @@ router.get('/rastreabilidade', async (req, res) => {
 router.get('/cronograma', async (req, res) => {
     let pgClient;
     try {
-        const { pedido, cliente, produto, dataInicial, dataFinal, dateType, only_active } = req.query;
+        const { 
+            pedido, cliente, produto, pedcli, dataInicial, dataFinal, 
+            dateType = 'entrega', only_active = 'true', tipo_item = '', 
+            op_status = '', sortBy = 'emissao', sortOrder = 'DESC' 
+        } = req.query;
+
         pgClient = await db.connect();
         await pgClient.query("SET LOCAL statement_timeout = '55000'");
 
-        let whereClauses = [
-            "COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')",
-            "COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')"
-        ];
+        const params = [];
+        let paramCount = 1;
 
-        if (only_active !== 'false') {
-            // Filtra itens sem saldo a faturar (qtd_vendida - qtd_entregue <= 0)
-            whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
+        const inactiveFilter = await getInactiveOrdersFilter();
+        const inactiveFilterSql = inactiveFilter('c5.c5_num');
 
-            // Filtra pedidos encerrados: c5_nota preenchido significa pedido fechado/faturado no Protheus.
-            // Mantém pedidos sem c5_nota, OU pedidos com c5_nota mas que ainda tenham itens com saldo.
-            whereClauses.push(`(
-                COALESCE(c5.c5_nota, '') = ''
-                OR EXISTS (
-                    SELECT 1 FROM public.sc6010 c6x
-                    WHERE TRIM(c6x.c6_num) = TRIM(c5.c5_num)
-                      AND COALESCE(c6x.d_e_l_e_t_, '') IN ('', ' ')
-                      AND (c6x.c6_qtdven - c6x.c6_qtdent) > 0
-                )
-            )`);
+        let whereSql = "COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ') AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ') AND COALESCE(sb1.b1_msblql, '') NOT IN ('1','S','T','Y')" + inactiveFilterSql;
+
+        if (only_active === 'true') {
+            whereSql += " AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)";
         }
+
         if (pedido) {
             const pedidoList = String(pedido).split(',')
-                .map(p => p.trim().replace(/[^a-zA-Z0-9]/g, ''))
+                .map(p => p.trim())
                 .filter(p => p.length > 0)
                 .map(p => p.padStart(6, '0'));
 
             if (pedidoList.length === 1) {
-                whereClauses.push(`TRIM(c5.c5_num) = '${pedidoList[0]}'`);
+                whereSql += ` AND TRIM(c5.c5_num) = $${paramCount}`;
+                params.push(pedidoList[0]);
+                paramCount++;
             } else if (pedidoList.length > 1) {
-                const values = pedidoList.map(p => `'${p}'`).join(',');
-                whereClauses.push(`TRIM(c5.c5_num) IN (${values})`);
+                const placeholders = pedidoList.map((_, i) => `$${paramCount + i}`).join(', ');
+                whereSql += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
+                params.push(...pedidoList);
+                paramCount += pedidoList.length;
             }
         }
-        if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
-        if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
 
-        if (dataInicial && dataFinal) {
-            const di = dataInicial.replace(/-/g, '');
-            const df = dataFinal.replace(/-/g, '');
-            if (dateType === 'entrega') {
-                whereClauses.push(`c6.c6_entreg BETWEEN '${di}' AND '${df}'`);
+        if (cliente) {
+            const resTemp = await pgClient.query(
+                `SELECT a1_cod, a1_loja FROM public.sa1010 WHERE COALESCE(d_e_l_e_t_, '') = '' AND a1_nome ILIKE $1 LIMIT 5000`, 
+                [`%${cliente}%`]
+            );
+            const clienteMatches = resTemp.rows;
+            if (clienteMatches.length === 0) {
+                return res.json([]);
+            }
+            const inValues = clienteMatches.map(m => `('${m.a1_cod}', '${m.a1_loja}')`).join(', ');
+            whereSql += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
+        }
+
+        if (produto) {
+            whereSql += ` AND c6.c6_produto ILIKE '%' || $${paramCount} || '%'`;
+            params.push(produto);
+            paramCount++;
+        }
+
+        if (pedcli) {
+            whereSql += ` AND c6.c6_pedcli ILIKE '%' || $${paramCount} || '%'`;
+            params.push(pedcli);
+            paramCount++;
+        }
+
+        if (tipo_item) {
+            const tipos = tipo_item.split(',').filter(Boolean);
+            if (tipos.length > 0) {
+                const tipoConditions = [];
+                
+                if (tipos.includes('Restrição')) {
+                    tipoConditions.push(`(
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    )`);
+                }
+                if (tipos.includes('Revisão')) {
+                    tipoConditions.push(`(COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, ''))`);
+                }
+                if (tipos.includes('Novo')) {
+                    tipoConditions.push(`(NOT EXISTS (
+                        SELECT 1 FROM public.sg1010 sg1
+                        WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM public.sg2010 sg2
+                        WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                    ))`);
+                }
+                if (tipos.includes('PCP')) {
+                    tipoConditions.push(`(NOT (
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    ) AND COALESCE(c6.c6_xrevm, '') = COALESCE(c6.c6_xrevc, '') 
+                      AND (
+                        EXISTS (
+                            SELECT 1 FROM public.sg1010 sg1
+                            WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sg2010 sg2
+                            WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                        )
+                    ))`);
+                }
+                
+                if (tipoConditions.length > 0) {
+                    whereSql += ` AND (${tipoConditions.join(' OR ')})`;
+                }
+            }
+        }
+
+        if (op_status === 'com_op') {
+            whereSql += ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+        } else if (op_status === 'sem_op') {
+            whereSql += ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+        }
+
+        if (dataInicial || dataFinal) {
+            if (dateType === 'nf') {
+                whereSql += ` AND EXISTS (
+                    SELECT 1 FROM public.sd2010 d2_ex
+                    JOIN public.sf2010 f2_ex 
+                        ON f2_ex.f2_doc = d2_ex.d2_doc 
+                        AND f2_ex.f2_serie = d2_ex.d2_serie 
+                        AND COALESCE(f2_ex.d_e_l_e_t_, '') = ''
+                    WHERE d2_ex.d2_pedido = c5.c5_num 
+                      AND d2_ex.d2_itempv = c6.c6_item
+                      AND COALESCE(d2_ex.d_e_l_e_t_, '') = ''
+                `;
+                if (dataInicial) {
+                    whereSql += ` AND f2_ex.f2_emissao >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereSql += ` AND f2_ex.f2_emissao <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
+                whereSql += `)`;
+            } else if (dateType === 'entrega') {
+                if (dataInicial) {
+                    whereSql += ` AND c6.c6_entreg >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereSql += ` AND c6.c6_entreg <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
+            } else if (dateType === 'entrega_pcp') {
+                // Handled in fcJoin below
             } else {
-                whereClauses.push(`c5.c5_emissao BETWEEN '${di}' AND '${df}'`);
+                // Default: emissao
+                if (dataInicial) {
+                    whereSql += ` AND c5.c5_emissao >= $${paramCount}`;
+                    params.push(dataInicial.replace(/-/g, ''));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereSql += ` AND c5.c5_emissao <= $${paramCount}`;
+                    params.push(dataFinal.replace(/-/g, ''));
+                    paramCount++;
+                }
             }
         }
 
-        const whereSql = whereClauses.join(' AND ');
+        const forecastMap = await getForecastMapCached();
+        const needsFcJoin = (sortBy === 'entrega_pcp' || sortBy === 'prev_fat') ||
+                            (dateType === 'entrega_pcp' && (dataInicial || dataFinal));
+
+        let fcJoin = '';
+        if (needsFcJoin && forecastMap.size > 0) {
+            const fcPedidos = [], fcItems = [], fcDatas = [], fcPrevFats = [];
+            for (const [key, val] of forecastMap) {
+                const [p, i] = key.split('|');
+                fcPedidos.push(p);
+                fcItems.push(i);
+                fcDatas.push(val.data_entrega_pcp ? new Date(val.data_entrega_pcp) : null);
+                fcPrevFats.push(val.data_prevista_faturamento ? new Date(val.data_prevista_faturamento) : null);
+            }
+            const fcBase = paramCount;
+            params.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
+            paramCount += 4;
+
+            fcJoin = `
+                LEFT JOIN (
+                    SELECT * FROM unnest(
+                        $${fcBase}::text[], $${fcBase+1}::text[],
+                        $${fcBase+2}::timestamp[], $${fcBase+3}::timestamp[]
+                    ) AS t(fc_pedido, fc_item, data_entrega_pcp, data_prevista_faturamento)
+                ) fc ON fc.fc_pedido = TRIM(c6.c6_num) AND fc.fc_item = TRIM(c6.c6_item)
+            `;
+
+            if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
+                if (dataInicial) {
+                    whereSql += ` AND fc.data_entrega_pcp >= $${paramCount}::timestamp`;
+                    params.push(new Date(dataInicial));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereSql += ` AND fc.data_entrega_pcp <= $${paramCount}::timestamp`;
+                    params.push(new Date(dataFinal + 'T23:59:59'));
+                    paramCount++;
+                }
+            }
+        } else if (needsFcJoin) {
+            if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
+                whereSql += ' AND FALSE';
+            }
+        }
+
+        const sortDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+        let orderClause = '';
+        if (sortBy === 'entrega') {
+            orderClause = `ORDER BY NULLIF(TRIM(c6.c6_entreg), '') ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'emissao') {
+            orderClause = `ORDER BY c5.c5_emissao ${sortDir}, c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'entrega_pcp') {
+            orderClause = fcJoin
+                ? `ORDER BY CASE WHEN fc.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, fc.data_entrega_pcp ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
+                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'prev_fat') {
+            orderClause = fcJoin
+                ? `ORDER BY CASE WHEN fc.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, fc.data_prevista_faturamento ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
+                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
+        } else if (sortBy === 'pedido') {
+            orderClause = `ORDER BY c5.c5_num ${sortDir}, c6.c6_item ASC`;
+        } else if (sortBy === 'cliente') {
+            orderClause = `ORDER BY a1.a1_nome ${sortDir}, c5.c5_num DESC, c6.c6_item ASC`;
+        } else {
+            orderClause = `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
+        }
+
         const pgQuery = `
             SELECT 
                 TRIM(c5.c5_num) AS pedido,
@@ -952,7 +1183,16 @@ router.get('/cronograma', async (req, res) => {
                 TRIM(c6.c6_produto) AS produto,
                 TRIM(c6.c6_descri) AS descricao,
                 c6.c6_qtdven AS qtd_vendida,
-                c6.c6_qtdent AS qtd_entregue
+                c6.c6_qtdent AS qtd_entregue,
+                TRIM(c6.c6_pedcli) AS pedido_cliente,
+                (
+                    SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ')
+                    FROM public.sz1010 z1
+                    WHERE COALESCE(z1.d_e_l_e_t_, '') IN ('', ' ')
+                      AND TRIM(z1.z1_cliente) = TRIM(c5.c5_cliente)
+                      AND TRIM(z1.z1_loja) = TRIM(c5.c5_lojacli)
+                      AND TRIM(z1.z1_produto) = TRIM(c6.c6_produto)
+                ) AS cod_prod_cliente
             FROM public.sc6010 c6
             JOIN public.sc5010 c5 
                 ON COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
@@ -961,18 +1201,23 @@ router.get('/cronograma', async (req, res) => {
                 ON COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(a1.a1_cod) = TRIM(c5.c5_cliente)
                 AND TRIM(a1.a1_loja) = TRIM(c5.c5_lojacli)
+            LEFT JOIN public.sb1010 sb1
+                ON COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
+                AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
+            ${fcJoin}
             WHERE ${whereSql}
-            ORDER BY c5.c5_num, c6.c6_item
+            ${orderClause}
         `;
 
-        const pgResult = await pgClient.query(pgQuery);
+        const pgResult = await pgClient.query(pgQuery, params);
         const rows = pgResult.rows;
 
         if (rows.length === 0) {
             return res.json([]);
         }
 
-        // Build pedidos Map
+        // Build pedidos Map and preserve order from SQL query
+        const orderedPedidos = [];
         const pedidosMap = {};
         const allPedidoNums = [];
         rows.forEach(row => {
@@ -987,6 +1232,7 @@ router.get('/cronograma', async (req, res) => {
                     data_entrega: row.data_entrega,
                     itens: []
                 };
+                orderedPedidos.push(pedidosMap[num]);
             }
             pedidosMap[num].itens.push({
                 item: row.item,
@@ -998,43 +1244,25 @@ router.get('/cronograma', async (req, res) => {
                 data_emissao: row.data_emissao,
                 data_entrega_pcp: null,
                 data_prevista_faturamento: null,
+                pedido_cliente: row.pedido_cliente,
+                cod_prod_cliente: row.cod_prod_cliente,
                 progresso_granular: 0,
                 progresso_agregado: 0,
                 ops: []
             });
         });
 
-        // 1. Fetch Forecasts from MySQL
-        try {
-            const uniquePedidos = [...new Set(allPedidoNums)];
-            const [forecasts] = await mysqlPool.query(`
-                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento
-                FROM app_pcp_delivery_forecasts
-                WHERE pedido IN (${uniquePedidos.map(() => '?').join(',')})
-            `, uniquePedidos);
-
-            const forecastMap = {};
-            forecasts.forEach(f => {
-                forecastMap[`${f.pedido}_${f.item}`] = {
-                    data_entrega_pcp: f.data_entrega_pcp,
-                    data_prevista_faturamento: f.data_prevista_faturamento
-                };
+        // Map forecasts back to items from cached forecastMap
+        orderedPedidos.forEach(p => {
+            p.itens.forEach(item => {
+                const key = `${p.pedido}|${item.item}`;
+                const f = forecastMap.get(key);
+                if (f) {
+                    item.data_entrega_pcp = f.data_entrega_pcp;
+                    item.data_prevista_faturamento = f.data_prevista_faturamento;
+                }
             });
-
-            // Map forecasts back to items
-            Object.values(pedidosMap).forEach(p => {
-                p.itens.forEach(item => {
-                    const key = `${p.pedido}_${item.item}`;
-                    const f = forecastMap[key];
-                    if (f) {
-                        item.data_entrega_pcp = f.data_entrega_pcp;
-                        item.data_prevista_faturamento = f.data_prevista_faturamento;
-                    }
-                });
-            });
-        } catch (err) {
-            console.error('⚠️ Erro ao buscar previsões de entrega:', err.message);
-        }
+        });
 
         // 2. Fetch OPs — direct filter on c2_pedido for speed
         const uniquePedidosPG = [...new Set(allPedidoNums)];
@@ -1167,7 +1395,7 @@ router.get('/cronograma', async (req, res) => {
         }
 
         // Attach operations and calculate progress
-        Object.values(pedidosMap).forEach(p => {
+        orderedPedidos.forEach(p => {
             p.itens.forEach(item => {
                 const k = `${p.pedido}_${item.item}`;
                 const itemOps = opsPorPedidoItem[k] || [];
@@ -1236,7 +1464,7 @@ router.get('/cronograma', async (req, res) => {
             });
         });
 
-        res.json(Object.values(pedidosMap));
+        res.json(orderedPedidos);
     } catch (err) {
         console.error('⚠️ Erro no endpoint /cronograma:', err);
         require('fs').writeFileSync('error_log.txt', 'ERRO NO CRONOGRAMA:\n' + err.stack);

@@ -967,13 +967,32 @@ router.get('/flat', async (req, res) => {
             ]);
 
             // Last Operation Enrichment (Protheus sg2010) - Batching
+            // Fetch all child OP sequences in Protheus (PG)
+            const opBaseList = [...new Set(result.rows.map(r => String(r.op_num || '').trim()).filter(Boolean))];
+            let treeOpsResult = { rows: [] };
+            if (opBaseList.length > 0) {
+                try {
+                    treeOpsResult = await db.query(`
+                        SELECT TRIM(c2_num) as op_num, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, TRIM(c2_produto) as produto, c2_quant::numeric as op_qtd
+                        FROM public.sc2010
+                        WHERE c2_num = ANY($1::varchar[])
+                        AND COALESCE(d_e_l_e_t_, '') = ''
+                    `, [opBaseList]);
+                } catch (treeErr) {
+                    console.error('Error fetching tree OPs:', treeErr);
+                }
+            }
+
+            const childProductCodes = treeOpsResult.rows.map(r => r.produto);
+            const allProductCodes = [...new Set([...productCodes, ...childProductCodes])];
+
             let lastOpEnrichment = null;
-            if (productCodes.length > 0) {
+            if (allProductCodes.length > 0) {
                 lastOpEnrichment = (async () => {
                     const CHUNK_SIZE = 500;
                     const allRows = [];
-                    for (let i = 0; i < productCodes.length; i += CHUNK_SIZE) {
-                        const chunk = productCodes.slice(i, i + CHUNK_SIZE);
+                    for (let i = 0; i < allProductCodes.length; i += CHUNK_SIZE) {
+                        const chunk = allProductCodes.slice(i, i + CHUNK_SIZE);
                         const res = await db.query(`
                             SELECT
                                 TRIM(g2.g2_produto) as produto,
@@ -991,23 +1010,21 @@ router.get('/flat', async (req, res) => {
             }
 
             // Saldo Produzido Enrichment (MySQL app_production_appointments) - Batching
-            const uniqueOpsArr = [...new Set(result.rows.map(r => String(r.op_num_completa || '').trim()).filter(Boolean))];
             let saldoProduzidoEnrichment = null;
-            if (uniqueOpsArr.length > 0) {
+            if (opBaseList.length > 0) {
                 saldoProduzidoEnrichment = (async () => {
                     const CHUNK_SIZE = 500;
                     const allRows = [];
-                    for (let i = 0; i < uniqueOpsArr.length; i += CHUNK_SIZE) {
-                        const chunk = uniqueOpsArr.slice(i, i + CHUNK_SIZE);
-                        const opBase = [...new Set(chunk.map(op => String(op).substring(0,6)))];
-                        const placeholders = opBase.map(() => '?').join(',');
+                    for (let i = 0; i < opBaseList.length; i += CHUNK_SIZE) {
+                        const chunk = opBaseList.slice(i, i + CHUNK_SIZE);
+                        const placeholders = chunk.map(() => '?').join(',');
                         const [rows] = await mysqlPool.query(`
                             SELECT CONCAT(op_numero, op_item, op_sequencia) as op_full, operacao_codigo, SUM(quantidade) as produzido
                             FROM app_production_appointments
                             WHERE op_numero IN (${placeholders})
                             AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
                             GROUP BY op_full, operacao_codigo
-                        `, opBase);
+                        `, chunk);
                         allRows.push(...rows);
                     }
                     return [allRows]; // Mantém o padrão [rows, fields]
@@ -1131,7 +1148,7 @@ router.get('/flat', async (req, res) => {
                         row.pcp_programacoes = [];
                     }
                     
-                    // Saldo Produzido injection (média de todas as operações)
+                    // Saldo Produzido injection (média ponderada de todas as operações da árvore da OP)
                     row.saldo_produzido = 0;
                     const opInfo = lastOpMap[String(row.codigo).trim()];
                     const totalOperacoes = (opInfo && opInfo.count) ? opInfo.count : 1;
@@ -1139,18 +1156,32 @@ router.get('/flat', async (req, res) => {
                     row.last_operacao = opInfo ? opInfo.last : null;
                     row.total_operacoes = totalOperacoes;
                     
-                    if (row.op_num_completa) {
-                        const fullOp = String(row.op_num_completa).trim();
-                        let sumProduced = 0;
+                    if (row.op_num) {
+                        const baseOp = String(row.op_num).trim();
+                        const sequences = treeOpsResult.rows.filter(r => r.op_num === baseOp);
                         
-                        // Somar o produzido de todas as operações desta OP
-                        Object.keys(saldoProdMap).forEach(key => {
-                            if (key.startsWith(`${fullOp}-`)) {
-                                sumProduced += saldoProdMap[key];
-                            }
+                        let totalWeightedPlanned = 0;
+                        let totalWeightedProduced = 0;
+                        
+                        sequences.forEach(op => {
+                            const count = lastOpMap[op.produto] ? lastOpMap[op.produto].count : 1;
+                            const fullOpKey = `${op.op_num}${op.op_item}${op.op_sequencia}`;
+                            
+                            totalWeightedPlanned += op.op_qtd * count;
+                            
+                            let sumProduced = 0;
+                            Object.keys(saldoProdMap).forEach(key => {
+                                if (key.startsWith(`${fullOpKey}-`)) {
+                                    sumProduced += saldoProdMap[key];
+                                }
+                            });
+                            totalWeightedProduced += Math.min(op.op_qtd * count, sumProduced);
                         });
                         
-                        row.saldo_produzido = sumProduced / totalOperacoes;
+                        if (totalWeightedPlanned > 0) {
+                            const pct = totalWeightedProduced / totalWeightedPlanned;
+                            row.saldo_produzido = pct * (parseFloat(row.op_qtd) || 0);
+                        }
                     }
 
                 });
@@ -1655,7 +1686,8 @@ router.get('/:id/pdf-data', async (req, res) => {
                 TRIM(c2.c2_num)                                          AS op_num,
                 TRIM(c2.c2_tpop)                                         AS op_tipo,
                 c2.c2_quant::numeric(18,2)                               AS op_qtd,
-                NULLIF(TRIM(COALESCE(c5.c5_mennota,'') || ' ' || COALESCE(c5.c5_zobs,'')), '') AS observacoes_gerais
+                NULLIF(TRIM(COALESCE(c5.c5_mennota,'') || ' ' || COALESCE(c5.c5_zobs,'')), '') AS observacoes_gerais,
+                sb1.b1_msblql                                            AS b1_msblql
             FROM public.sc5010 c5
             JOIN public.sc6010 c6
                 ON COALESCE(c6.d_e_l_e_t_, '') = ''
@@ -1725,16 +1757,64 @@ router.get('/:id/pdf-data', async (req, res) => {
             }
         }
 
+        // ── Query 4: PG Status (SG1, SG2, SZ0) and Global Releases ──
+        let sg1Set = new Set(), sg2Set = new Set(), sz0Set = new Set(), globalReleaseSet = new Set();
+        if (productCodes.length > 0) {
+            try {
+                const paddedCodes = productCodes.map(c => c.padEnd(15, ' '));
+                const pgStatusResult = await db.query(`
+                    SELECT 'sg1' as type, TRIM(g1_cod) as cod FROM public.sg1010 WHERE g1_cod = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sg2' as type, TRIM(g2_produto) as cod FROM public.sg2010 WHERE g2_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sz0' as type, TRIM(z0_produto) as cod FROM public.sz0010 WHERE z0_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                `, [paddedCodes]);
+
+                pgStatusResult.rows.forEach(r => {
+                    if (r.type === 'sg1') sg1Set.add(r.cod);
+                    if (r.type === 'sg2') sg2Set.add(r.cod);
+                    if (r.type === 'sz0') sz0Set.add(r.cod);
+                });
+
+                const [releasesRows] = await mysqlPool.query(`SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases`);
+                releasesRows.forEach(r => globalReleaseSet.add(r.cod));
+            } catch (statusErr) {
+                console.warn(`[pdf-data/${id}] PG status/releases unavailable:`, statusErr.message);
+            }
+        }
+
         // Attach pcp_notes and ref_cliente to items
         const notesMap = {};
         notes.forEach(n => { notesMap[n.item_number] = n; });
-        const itens = pgResult.rows.map(row => ({
-            ...row,
-            pcp_notes: notesMap[String(Number(row.item) || row.item)]?.pcp_notes || '',
-            ref_cliente: sz1Map[row.codigo]?.ref_cliente || null,
-            rev_cliente: sz1Map[row.codigo]?.rev_cliente || null,
-            status_tipo_item: 'PCP', // simplified for PDF display
-        }));
+        const itens = pgResult.rows.map(row => {
+            const cod = String(row.codigo || '').trim();
+            const isBlocked = ['1','S','T','Y'].includes(row.b1_msblql);
+            const hasRestriction = sz0Set.has(cod);
+            const revDiff = (row.rev_codigo || '') !== (row.c6_rev_cliente || '');
+            const isNew = !sg1Set.has(cod) && !sg2Set.has(cod);
+            const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
+
+            let status_tipo_item;
+            if (hasGlobalRelease) {
+                status_tipo_item = 'PCP';
+            } else if (isBlocked || hasRestriction) {
+                status_tipo_item = 'Restrição';
+            } else if (revDiff) {
+                status_tipo_item = 'Revisão';
+            } else if (isNew) {
+                status_tipo_item = 'Novo';
+            } else {
+                status_tipo_item = 'PCP';
+            }
+
+            return {
+                ...row,
+                pcp_notes: notesMap[String(Number(row.item) || row.item)]?.pcp_notes || '',
+                ref_cliente: sz1Map[row.codigo]?.ref_cliente || null,
+                rev_cliente: sz1Map[row.codigo]?.rev_cliente || null,
+                status_tipo_item,
+            };
+        });
 
         // Build capa from first row
         const first = pgResult.rows[0];
@@ -1823,8 +1903,86 @@ router.get('/:id/itens', async (req, res) => {
 
             const codCliente = items[0]?.cod_cliente;
             const lojaCliente = items[0]?.loja_cliente;
+            const opBaseList = [...new Set(items.map(r => String(r.op_num || '').trim()).filter(Boolean))];
 
-            const [notesResult, docsResult, nfResult, sz1Result, pgStatusResult] = await Promise.allSettled([
+            const opEnrichmentPromise = (async () => {
+                let treeOpsResult = { rows: [] };
+                if (opBaseList.length > 0) {
+                    try {
+                        treeOpsResult = await db.query(`
+                            SELECT TRIM(c2_num) as op_num, TRIM(c2_item) as op_item, TRIM(c2_sequen) as op_sequencia, TRIM(c2_produto) as produto, c2_quant::numeric as op_qtd
+                            FROM public.sc2010
+                            WHERE c2_num = ANY($1::varchar[])
+                            AND COALESCE(d_e_l_e_t_, '') = ''
+                        `, [opBaseList]);
+                    } catch (treeErr) {
+                        console.error('Error fetching tree OPs in itens:', treeErr);
+                    }
+                }
+                const childProductCodes = treeOpsResult.rows.map(r => r.produto);
+                const allProductCodes = [...new Set([...productCodes, ...childProductCodes])];
+                
+                let lastOpMap = {};
+                if (allProductCodes.length > 0) {
+                    try {
+                        const CHUNK_SIZE = 500;
+                        const allRows = [];
+                        for (let i = 0; i < allProductCodes.length; i += CHUNK_SIZE) {
+                            const chunk = allProductCodes.slice(i, i + CHUNK_SIZE);
+                            const res = await db.query(`
+                                SELECT
+                                    TRIM(g2.g2_produto) as produto,
+                                    COUNT(g2.g2_operac) as total_operacoes,
+                                    MAX(TRIM(g2.g2_operac)) as operacao_final
+                                FROM public.sg2010 g2
+                                WHERE TRIM(g2.g2_produto) = ANY($1::varchar[])
+                                AND COALESCE(g2.d_e_l_e_t_, '') = ''
+                                GROUP BY TRIM(g2.g2_produto)
+                            `, [chunk]);
+                            allRows.push(...res.rows);
+                        }
+                        allRows.forEach(r => {
+                            lastOpMap[r.produto] = {
+                                last: r.operacao_final,
+                                count: parseInt(r.total_operacoes, 10) || 1
+                            };
+                        });
+                    } catch (lastOpErr) {
+                        console.error('Error fetching last ops in itens:', lastOpErr);
+                    }
+                }
+                return { treeOpsResult, lastOpMap };
+            })();
+
+            const saldoProdPromise = (async () => {
+                const saldoProdMap = {};
+                if (opBaseList.length > 0) {
+                    try {
+                        const CHUNK_SIZE = 500;
+                        for (let i = 0; i < opBaseList.length; i += CHUNK_SIZE) {
+                            const chunk = opBaseList.slice(i, i + CHUNK_SIZE);
+                            const placeholders = chunk.map(() => '?').join(',');
+                            const [rows] = await mysqlPool.query(`
+                                SELECT CONCAT(op_numero, op_item, op_sequencia) as op_full, operacao_codigo, SUM(quantidade) as produzido
+                                FROM app_production_appointments
+                                WHERE op_numero IN (${placeholders})
+                                AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+                                GROUP BY op_full, operacao_codigo
+                            `, chunk);
+                            rows.forEach(r => {
+                                const key = `${r.op_full}-${r.operacao_codigo}`;
+                                if (!saldoProdMap[key]) saldoProdMap[key] = 0;
+                                saldoProdMap[key] += parseFloat(r.produzido) || 0;
+                            });
+                        }
+                    } catch (saldoProdErr) {
+                        console.error('Error fetching saldo produzido in itens:', saldoProdErr);
+                    }
+                }
+                return saldoProdMap;
+            })();
+
+            const [notesResult, docsResult, nfResult, sz1Result, pgStatusResult, opEnrichmentResult, saldoProdResult] = await Promise.allSettled([
                 // 1. Notes
                 mysqlPool.query('SELECT * FROM app_sales_order_item_notes WHERE pedido = ?', [id]),
                 // 2. Docs
@@ -1875,7 +2033,11 @@ router.get('/:id/itens', async (req, res) => {
                     SELECT 'sg2' as type, TRIM(g2_produto) as cod FROM public.sg2010 WHERE g2_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
                     UNION ALL
                     SELECT 'sz0' as type, TRIM(z0_produto) as cod FROM public.sz0010 WHERE z0_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
-                `, [paddedCodes]) : Promise.resolve({ rows: [] })
+                `, [paddedCodes]) : Promise.resolve({ rows: [] }),
+                // 6. Child OPs & Last operations
+                opEnrichmentPromise,
+                // 7. Saldo Produzido
+                saldoProdPromise
             ]);
 
             // Merge Notes
@@ -2061,6 +2223,19 @@ router.get('/:id/itens', async (req, res) => {
                 console.error('Error merging PCP forecasts:', err);
             }
 
+            // Unpack OP and Saldo Produzido results
+            let treeOpsResult = { rows: [] };
+            let lastOpMap = {};
+            if (opEnrichmentResult.status === 'fulfilled') {
+                treeOpsResult = opEnrichmentResult.value.treeOpsResult;
+                lastOpMap = opEnrichmentResult.value.lastOpMap;
+            }
+
+            let saldoProdMap = {};
+            if (saldoProdResult.status === 'fulfilled') {
+                saldoProdMap = saldoProdResult.value;
+            }
+
             // Converter datas de Protheus string (YYYYMMDD) para formato legível (DD/MM/YY) p/ Frontend
             const parseDateStr = (dStr) => {
                 if (!dStr || dStr.trim() === '' || dStr.length < 8) return null;
@@ -2073,6 +2248,42 @@ router.get('/:id/itens', async (req, res) => {
                     item.notas_fiscais.forEach(nf => {
                         nf.emissao = parseDateStr(nf.emissao_raw);
                     });
+                }
+
+                // Compute saldo_produzido (weighted progress of all operations in the OP tree)
+                item.saldo_produzido = 0;
+                const opInfo = lastOpMap[String(item.codigo).trim()];
+                const totalOperacoes = (opInfo && opInfo.count) ? opInfo.count : 1;
+                
+                item.last_operacao = opInfo ? opInfo.last : null;
+                item.total_operacoes = totalOperacoes;
+                
+                if (item.op_num) {
+                    const baseOp = String(item.op_num).trim();
+                    const sequences = treeOpsResult.rows.filter(r => r.op_num === baseOp);
+                    
+                    let totalWeightedPlanned = 0;
+                    let totalWeightedProduced = 0;
+                    
+                    sequences.forEach(op => {
+                        const count = lastOpMap[op.produto] ? lastOpMap[op.produto].count : 1;
+                        const fullOpKey = `${op.op_num}${op.op_item}${op.op_sequencia}`;
+                        
+                        totalWeightedPlanned += op.op_qtd * count;
+                        
+                        let sumProduced = 0;
+                        Object.keys(saldoProdMap).forEach(key => {
+                            if (key.startsWith(`${fullOpKey}-`)) {
+                                sumProduced += saldoProdMap[key];
+                            }
+                        });
+                        totalWeightedProduced += Math.min(op.op_qtd * count, sumProduced);
+                    });
+                    
+                    if (totalWeightedPlanned > 0) {
+                        const pct = totalWeightedProduced / totalWeightedPlanned;
+                        item.saldo_produzido = pct * (parseFloat(item.op_qtd) || 0);
+                    }
                 }
             });
         }

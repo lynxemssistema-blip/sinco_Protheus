@@ -117,6 +117,7 @@ const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/Capacid
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
 const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
 const TVDashboard = React.lazy(() => import('./pages/TVDashboard'));
+const CalendarioAtividades = React.lazy(() => import('./pages/CalendarioAtividades'));
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -727,6 +728,13 @@ function App() {
                                         <Route path="/vmi/historico" element={
                                             <Layout fullWidth={true}>
                                                 <VMIHistoricoPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* Calendário de Atividades Route */}
+                                        <Route path="/calendario-atividades" element={
+                                            <Layout fullWidth={true}>
+                                                <CalendarioAtividades />
                                             </Layout>
                                         } />
 
