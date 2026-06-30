@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, Package, FileText, Bot, Printer, Factory, ClipboardList, MoreVertical, LayoutList, Image as ImageIcon, ShoppingCart, CheckSquare, X, Save, History, BarChart2, ChevronUp, ChevronDown } from 'lucide-react';
 import { getPedidosFlat, api, getProdutos, createFaturamentoSolicitacao, getProductDocs, getFileUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
+import { downloadBlob } from '../utils/downloadHelper';
 import useStickyState from '../hooks/useStickyState';
 
 import ProductImageModal from '../components/ProductImageModal';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
 import { BillingForecastInput } from '../components/orders/BillingForecastInput';
 import FinancialView from '../components/orders/FinancialView';
+import LabelPrintModal from '../components/orders/LabelPrintModal';
 
 const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
     return (
@@ -96,8 +99,16 @@ const ItensAFaturar = () => {
     const [selectedItems, setSelectedItems] = useState({}); // { 'pedido-item': orderObject }
     const [isCartModalOpen, setIsCartModalOpen] = useState(false);
     const [cartQuantities, setCartQuantities] = useState({}); // { 'pedido-item': qty }
+    const [cartApontamentos, setCartApontamentos] = useState({}); // { 'pedido-item': boolean }
+    const [cartApontarQuantities, setCartApontarQuantities] = useState({}); // { 'pedido-item': qty }
     const [cartObservacao, setCartObservacao] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+    const [confirmationData, setConfirmationData] = useState(null);
+
+    // --- LABEL PRINT STATE ---
+    const [showLabelModal, setShowLabelModal] = useState(false);
 
     const fetchData = async (overrides = {}) => {
         const searchPage = overrides.page || page;
@@ -384,10 +395,29 @@ const ItensAFaturar = () => {
             const copy = { ...prev };
             if (copy[key]) {
                 delete copy[key];
+                setCartApontamentos(aPrev => {
+                    const aCopy = { ...aPrev };
+                    delete aCopy[key];
+                    return aCopy;
+                });
+                setCartQuantities(qPrev => {
+                    const qCopy = { ...qPrev };
+                    delete qCopy[key];
+                    return qCopy;
+                });
+                setCartApontarQuantities(aqPrev => {
+                    const aqCopy = { ...aqPrev };
+                    delete aqCopy[key];
+                    return aqCopy;
+                });
             } else {
                 copy[key] = row;
-                // Pré-preenche com a quantidade máxima correta por OP para não ultrapassar o saldo
-                setCartQuantities(qPrev => ({ ...qPrev, [key]: calcMaxQtd(row) }));
+                const defaultQty = calcMaxQtd(row);
+                setCartQuantities(qPrev => ({ ...qPrev, [key]: defaultQty }));
+                setCartApontarQuantities(aqPrev => ({ ...aqPrev, [key]: defaultQty }));
+                if (row.op_num_completa || row.op_num) {
+                    setCartApontamentos(aPrev => ({ ...aPrev, [key]: true }));
+                }
             }
             return copy;
         });
@@ -400,7 +430,24 @@ const ItensAFaturar = () => {
         if (allSelected) {
             setSelectedItems(prev => {
                 const copy = { ...prev };
-                availableRows.forEach(r => delete copy[r._row_key]);
+                availableRows.forEach(r => {
+                    delete copy[r._row_key];
+                    setCartApontamentos(aPrev => {
+                        const aCopy = { ...aPrev };
+                        delete aCopy[r._row_key];
+                        return aCopy;
+                    });
+                    setCartQuantities(qPrev => {
+                        const qCopy = { ...qPrev };
+                        delete qCopy[r._row_key];
+                        return qCopy;
+                    });
+                    setCartApontarQuantities(aqPrev => {
+                        const aqCopy = { ...aqPrev };
+                        delete aqCopy[r._row_key];
+                        return aqCopy;
+                    });
+                });
                 return copy;
             });
         } else {
@@ -408,11 +455,20 @@ const ItensAFaturar = () => {
                 const copy = { ...prev };
                 availableRows.forEach(r => {
                     copy[r._row_key] = r;
-                    setCartQuantities(qPrev => ({ ...qPrev, [r._row_key]: calcMaxQtd(r) }));
+                    const defaultQty = calcMaxQtd(r);
+                    setCartQuantities(qPrev => ({ ...qPrev, [r._row_key]: defaultQty }));
+                    setCartApontarQuantities(aqPrev => ({ ...aqPrev, [r._row_key]: defaultQty }));
+                    if (r.op_num_completa || r.op_num) {
+                        setCartApontamentos(aPrev => ({ ...aPrev, [r._row_key]: true }));
+                    }
                 });
                 return copy;
             });
         }
+    };
+
+    const handleCartApontamentoChange = (key, value) => {
+        setCartApontamentos(prev => ({ ...prev, [key]: value }));
     };
 
     const handleCartQuantityChange = (key, value, maxVal) => {
@@ -424,6 +480,14 @@ const ItensAFaturar = () => {
         setCartQuantities(prev => ({ ...prev, [key]: val }));
     };
 
+    const handleCartApontarQuantityChange = (key, value) => {
+        let val = parseFloat(value);
+        if (isNaN(val)) val = '';
+        if (val !== '' && val < 0) val = 0;
+
+        setCartApontarQuantities(prev => ({ ...prev, [key]: val }));
+    };
+
     const handleSubmitFaturamento = async () => {
         const itemsToSubmit = Object.values(selectedItems).map(row => {
             const key = row._row_key;
@@ -431,6 +495,8 @@ const ItensAFaturar = () => {
             return {
                 ...row,
                 quantidade_solicitada: cartQuantities[key] || 0,
+                executar_apontamento: !!cartApontamentos[key],
+                quantidade_apontamento: cartApontarQuantities[key] !== undefined ? cartApontarQuantities[key] : (cartQuantities[key] || 0),
                 pcp_forecast_id: prog?.id || null,
                 pcp_data_entrega: prog?.data_entrega_pcp || null,
                 pcp_serie_cliente: prog?.serie_cliente || null,
@@ -466,15 +532,22 @@ const ItensAFaturar = () => {
 
         setIsSubmitting(true);
         try {
-            await createFaturamentoSolicitacao({
+            const responseData = await createFaturamentoSolicitacao({
                 usuario: user?.nome || 'Sistema',
                 observacao: cartObservacao,
                 items: itemsToSubmit
             });
-            toast.success('Solicitação de Faturamento gerada com sucesso!');
+            
+            // Salvar e exibir a confirmação síncrona do Protheus
+            setConfirmationData(responseData);
+            setShowConfirmationModal(true);
+
             setIsCartModalOpen(false);
             setSelectedItems({});
             setCartObservacao('');
+            setCartQuantities({});
+            setCartApontarQuantities({});
+            setCartApontamentos({});
             
             // Recarrega os dados pra certificar que está ok (opcional, o saldo só cai depois da NF faturada mesmo)
             fetchData();
@@ -495,6 +568,106 @@ const ItensAFaturar = () => {
             return acc + qty * unit;
         }, 0);
     }, [selectedItems, cartQuantities]);
+
+    const handleExportExcel = () => {
+        if (filteredRows.length === 0) {
+            toast.warning('Nenhum dado disponível para exportação.');
+            return;
+        }
+
+        setExporting(true);
+        setTimeout(() => {
+            try {
+                // Map column headers and extract values
+                const exportData = filteredRows.map(row => {
+                    const prog = row._pcp_prog;
+                    
+                    const baseData = {
+                        'Pedido': row.pedido,
+                        'Item': row.item,
+                        'OP Original': row.op_num_completa || '',
+                        'Código Produto': row.codigo,
+                        'Descrição': row.descricao,
+                        'Cliente': row.nome_cliente,
+                        'Emissão': formatProtheusDate(row.emissao),
+                        'Ped. Cli': row.ped_cliente || '',
+                        'Desenho Cli.': row.ref_cliente || ''
+                    };
+
+                    // Financial columns (conditional)
+                    if (canViewFinancials) {
+                        baseData['V. Unit (R$)'] = parseFloat(row.valor_unitario) || 0;
+                        baseData['V. Total (R$)'] = parseFloat(row.valor_total) || 0;
+                    }
+
+                    // Quantities
+                    baseData['Qtd Tot.'] = parseFloat(row.quantidade) || 0;
+                    baseData['Qtd Entr.'] = parseFloat(row.qtd_entreg) || 0;
+                    baseData['Saldo'] = parseFloat(row.qtd_faturar) || 0;
+                    
+                    // Dates and PCP
+                    baseData['Dt. Entrega'] = row.entrega ? formatProtheusDate(row.entrega) : '';
+                    baseData['Data PCP'] = prog?.data_entrega_pcp ? new Date(prog.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '';
+                    baseData['Prev. Fat.'] = row.data_prevista_faturamento ? formatProtheusDate(row.data_prevista_faturamento) : '';
+                    
+                    // Series & Lote
+                    baseData['Série Cli.'] = prog?.serie_cliente || '';
+                    baseData['Série MF'] = prog?.serie_metalfisa || '';
+                    baseData['Nº Série'] = prog?.numero_serie || '';
+                    baseData['Lote'] = prog?.lote || '';
+                    
+                    // Status and NF/Solicitacoes info
+                    let statusLabel = 'A Faturar';
+                    if (parseFloat(row.qtd_faturar) <= 0) statusLabel = 'Faturado 100%';
+                    else if (parseFloat(row.qtd_entreg) > 0) statusLabel = 'Fat. Parcial';
+                    baseData['Status'] = statusLabel;
+
+                    // Faturamentos Solicitados
+                    const faturamentosValidos = Array.isArray(row.faturamentos_solicitados)
+                        ? row.faturamentos_solicitados.filter(fat => {
+                            if (fat.pcp_forecast_id) return prog && fat.pcp_forecast_id == prog.id;
+                            return true;
+                        })
+                        : [];
+                    baseData['Fat. Solicitados'] = faturamentosValidos.map(fat => `${fat.numero_solicitacao} (${parseFloat(fat.quantidade_solicitada).toLocaleString()})`).join(', ');
+
+                    // NFs Anteriores
+                    const nfs = Array.isArray(row.notas_fiscais) ? row.notas_fiscais.filter(nf => nf && nf.nota && nf.nota.trim()) : [];
+                    baseData['NFs Anteriores'] = nfs.map(nf => nf.nota).join(', ');
+
+                    return baseData;
+                });
+
+                // Generate worksheet
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
+                
+                // Define column widths dynamically
+                const colWidths = Object.keys(exportData[0] || {}).map(key => {
+                    const maxLength = Math.max(
+                        key.length,
+                        ...exportData.map(item => String(item[key] || '').length)
+                    );
+                    return { wch: Math.min(maxLength + 3, 50) }; // Max width 50, padding 3
+                });
+                worksheet['!cols'] = colWidths;
+
+                // Generate workbook
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Itens a Faturar');
+
+                // Trigger file download using SheetJS which internally manages browser downloads correctly
+                const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                downloadBlob(blob, `itens_a_faturar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                toast.success('Relatório em Excel gerado com sucesso!');
+            } catch (err) {
+                console.error(err);
+                toast.error('Erro ao gerar relatório.');
+            } finally {
+                setExporting(false);
+            }
+        }, 50);
+    };
 
     return (
         <div className="p-2 md:p-4 lg:p-6 w-full h-[calc(100vh-64px)] flex flex-col animate-fadeIn relative">
@@ -554,6 +727,8 @@ const ItensAFaturar = () => {
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
                                             <th className="px-4 py-3 font-semibold">Cliente / Ped. Cli / Des. Cli</th>
                                             <th className="px-4 py-3 font-semibold text-right">Saldo Faturar</th>
+                                            <th className="px-4 py-3 font-semibold text-center w-28">Apontar Prod.?</th>
+                                            <th className="px-4 py-3 font-semibold text-center w-48">Qtd. Apontar</th>
                                             <th className="px-4 py-3 font-semibold text-right w-40">Qtd. Solicitada</th>
                                             <th className="px-4 py-3 font-semibold text-center w-10">Ação</th>
                                         </tr>
@@ -578,7 +753,7 @@ const ItensAFaturar = () => {
                                                         {order._pcp_prog?.data_entrega_pcp ? new Date(order._pcp_prog.data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-xs text-indigo-600 font-medium">
-                                                        {order._pcp_prog?.serie_cliente || <span className="text-gray-300">—</span>}
+                                                        {order._pcp_prog?.grid_entrega_pcp || order._pcp_prog?.serie_cliente || <span className="text-gray-300">—</span>}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-xs text-indigo-600 font-medium">
                                                         {order._pcp_prog?.serie_metalfisa || <span className="text-gray-300">—</span>}
@@ -589,8 +764,8 @@ const ItensAFaturar = () => {
                                                     <td className="px-4 py-2 text-center">
                                                         {(order._pcp_prog?.lote || order._pcp_prog?.numero_lote) ? (
                                                             <div className="text-xs text-indigo-600">
-                                                                {order._pcp_prog.lote && <div className="font-medium">{order._pcp_prog.lote}</div>}
-                                                                {order._pcp_prog.numero_lote && <div className="text-[10px] text-gray-500">{order._pcp_prog.numero_lote}</div>}
+                                                                 {order._pcp_prog.lote && <div className="font-medium">{order._pcp_prog.lote}</div>}
+                                                                 {order._pcp_prog.numero_lote && <div className="text-[10px] text-gray-500">{order._pcp_prog.numero_lote}</div>}
                                                             </div>
                                                         ) : <span className="text-gray-300 text-[10px]">—</span>}
                                                     </td>
@@ -603,6 +778,62 @@ const ItensAFaturar = () => {
                                                     </td>
                                                     <td className="px-4 py-2 text-right font-bold text-gray-600">
                                                         {maxQtd.toLocaleString()}
+                                                    </td>
+                                                     <td className="px-4 py-2 text-center">
+                                                         {order.op_num_completa || order.op_num ? (
+                                                             <input
+                                                                 type="checkbox"
+                                                                 className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                                                                 checked={cartApontamentos[key] ?? true}
+                                                                 onChange={(e) => handleCartApontamentoChange(key, e.target.checked)}
+                                                             />
+                                                         ) : (
+                                                             <span className="text-gray-400 text-[10px]">— (Sem OP)</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        {order.op_num_completa || order.op_num ? (
+                                                            <div className="flex flex-col items-center gap-1">
+                                                                <input
+                                                                    type="number"
+                                                                    min="0.01"
+                                                                    step="0.01"
+                                                                    className="w-24 px-2 py-1 text-right text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow disabled:bg-gray-100 disabled:text-gray-400"
+                                                                    value={cartApontarQuantities[key] ?? ''}
+                                                                    disabled={!(cartApontamentos[key] ?? true)}
+                                                                    onChange={(e) => handleCartApontarQuantityChange(key, e.target.value)}
+                                                                />
+                                                                {(cartApontamentos[key] ?? true) && (
+                                                                    <div className="flex flex-col gap-0.5 mt-0.5">
+                                                                        <div className="flex justify-center gap-1.5 text-[9px]">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleCartApontarQuantityChange(key, order.op_qtd || 0)}
+                                                                                className="px-1 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 rounded transition-colors"
+                                                                                title={`Preencher com a quantidade total planejada da OP (${order.op_qtd || 0})`}
+                                                                            >
+                                                                                Total ({order.op_qtd || 0})
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleCartApontarQuantityChange(key, cartQuantities[key] || 0)}
+                                                                                className="px-1 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 rounded transition-colors"
+                                                                                title="Preencher com a mesma quantidade solicitada de faturamento"
+                                                                            >
+                                                                                Parcial ({cartQuantities[key] || 0})
+                                                                            </button>
+                                                                        </div>
+                                                                        {order.saldo_produzido !== undefined && (
+                                                                            <div className="text-[9px] text-gray-400 text-center font-medium">
+                                                                                Apontado: {parseFloat(order.saldo_produzido).toLocaleString()}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-gray-300 text-xs">—</span>
+                                                        )}
                                                     </td>
                                                     <td className="px-4 py-2 text-right">
                                                         <div className="flex items-center justify-end">
@@ -669,6 +900,118 @@ const ItensAFaturar = () => {
                 </div>
             )}
 
+            {/* MODAL DE CONFIRMAÇÃO DO PROTHEUS */}
+            {showConfirmationModal && confirmationData && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-gray-100 transform transition-all">
+                        {/* Header com base no status do Protheus */}
+                        <div className={`p-6 text-white flex flex-col items-center gap-2 ${
+                            !confirmationData.apontamento 
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-700' 
+                                : confirmationData.apontamento.sucesso 
+                                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600' 
+                                    : 'bg-gradient-to-r from-amber-500 to-orange-600'
+                        }`}>
+                            <div className="p-3 bg-white/20 rounded-full">
+                                {!confirmationData.apontamento ? (
+                                    <FileText className="h-8 w-8 text-white" />
+                                ) : confirmationData.apontamento.sucesso ? (
+                                    <CheckSquare className="h-8 w-8 text-white" />
+                                ) : (
+                                    <AlertCircle className="h-8 w-8 text-white" />
+                                )}
+                            </div>
+                            <h2 className="text-xl font-bold text-center mt-2">
+                                {!confirmationData.apontamento 
+                                    ? 'Solicitação Gerada' 
+                                    : confirmationData.apontamento.sucesso 
+                                        ? 'Faturamento & Apontamento Concluídos' 
+                                        : 'Solicitação Criada com Avisos'}
+                            </h2>
+                            <p className="text-xs text-white/80">
+                                Nº {confirmationData.numero_solicitacao}
+                            </p>
+                        </div>
+                        
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            <div className="text-sm text-gray-600">
+                                A solicitação de faturamento foi registrada com sucesso no sistema.
+                            </div>
+
+                            {/* Informações de Apontamento no Protheus */}
+                            {confirmationData.apontamento && (
+                                <div className={`p-4 rounded-xl border text-sm ${
+                                    confirmationData.apontamento.sucesso 
+                                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' 
+                                        : 'bg-amber-50/50 border-amber-200 text-amber-900'
+                                }`}>
+                                    <div className="font-bold mb-1 flex items-center gap-1.5">
+                                        {confirmationData.apontamento.sucesso ? (
+                                            <>
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                                                Apontamento no Protheus OK!
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                                Apontamento Pendente (Protheus)
+                                            </>
+                                        )}
+                                    </div>
+                                    <div className="text-xs leading-relaxed mt-2 bg-white/60 p-2.5 rounded-lg border border-black/5 font-mono overflow-x-auto max-h-[150px]">
+                                        {confirmationData.apontamento.sucesso ? (
+                                            <div>
+                                                O apontamento de produção foi realizado com sucesso para as OPs enviadas.
+                                                <pre className="mt-1 text-[10px] text-gray-500">
+                                                    {JSON.stringify(confirmationData.apontamento.resposta, null, 2)}
+                                                </pre>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                Ocorreu um erro no retorno da integração com o Protheus:
+                                                <div className="mt-1 font-bold text-red-600">
+                                                    {confirmationData.apontamento.erro || 'Erro desconhecido'}
+                                                </div>
+                                                {confirmationData.apontamento.detalhe && (
+                                                    <pre className="mt-1 text-[10px] text-gray-500 bg-gray-50 p-1.5 rounded">
+                                                        {typeof confirmationData.apontamento.detalhe === 'object' 
+                                                            ? JSON.stringify(confirmationData.apontamento.detalhe, null, 2) 
+                                                            : String(confirmationData.apontamento.detalhe)}
+                                                    </pre>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {!confirmationData.apontamento && (
+                                <div className="p-4 rounded-xl border border-blue-150 bg-blue-50/30 text-blue-900 text-sm">
+                                    <div className="font-semibold mb-1">Nenhum Apontamento de Produção Solicitado.</div>
+                                    <div className="text-xs text-gray-500">
+                                        Os itens desta solicitação não continham ordens de produção ativas ou a opção de apontamento não foi selecionada pelo operador.
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 bg-gray-50/50 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowConfirmationModal(false);
+                                    setConfirmationData(null);
+                                }}
+                                className="px-5 py-2.5 text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 rounded-xl transition-all shadow-sm"
+                            >
+                                Fechar Confirmação
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden relative">
                 {canViewFinancialTab && (
                     <div className="flex border-b border-gray-200 bg-slate-50/80 px-4 shrink-0 gap-1">
@@ -709,7 +1052,21 @@ const ItensAFaturar = () => {
                     </div>
 
                     <div className="flex gap-2">
-                         <Link to="/vendas/faturamento-historico" className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap">
+                        <button
+                            type="button"
+                            onClick={handleExportExcel}
+                            disabled={exporting || filteredRows.length === 0}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm px-4 py-2 flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap disabled:opacity-50"
+                            title="Exportar dados filtrados do grid para Excel"
+                        >
+                            {exporting ? (
+                                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <FileText className="h-4 w-4" />
+                            )}
+                            Exportar Excel
+                        </button>
+                        <Link to="/vendas/faturamento-historico" className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap">
                             <History className="h-4 w-4 text-blue-600" /> Histórico de Solicitações
                         </Link>
                     </div>
@@ -1132,6 +1489,15 @@ const ItensAFaturar = () => {
                         <ShoppingCart className="h-5 w-5" />
                         Avançar e Revisar
                     </button>
+
+                    <button
+                        onClick={() => setShowLabelModal(true)}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl px-5 py-2.5 flex items-center gap-2 transition-transform shadow-lg hover:scale-105"
+                        title="Imprimir etiquetas de identificação dos itens selecionados"
+                    >
+                        <Printer className="h-5 w-5" />
+                        Etiquetas
+                    </button>
                 </div>
             )}
 
@@ -1141,6 +1507,14 @@ const ItensAFaturar = () => {
                     to { transform: translate(-50%, 0); opacity: 1; }
                 }
             `}</style>
+
+            {/* LABEL PRINT MODAL */}
+            {showLabelModal && Object.values(selectedItems).length > 0 && (
+                <LabelPrintModal
+                    items={Object.values(selectedItems)}
+                    onClose={() => setShowLabelModal(false)}
+                />
+            )}
         </div>
     );
 };

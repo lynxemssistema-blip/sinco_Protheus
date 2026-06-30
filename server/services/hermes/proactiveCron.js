@@ -38,6 +38,9 @@ async function startProactiveMonitor() {
     // Varredura de pedidos RNC em aberto (A cada 4 horas)
     cron.schedule('0 */4 * * *', async () => {
         try {
+            const { isWeekendOrHoliday } = require('../../utils/dateHelper');
+            if (isWeekendOrHoliday()) return;
+
             console.log('🤖 [Hermes Proactive] Verificando RNCs pendentes...');
             const { rows: rncs } = await db.query(`
                 SELECT 
@@ -79,6 +82,9 @@ async function startProactiveMonitor() {
     // Roda a cada 2 horas (0 0/2 * * *)
     cron.schedule('0 */2 * * *', async () => {
         try {
+            const { isWeekendOrHoliday } = require('../../utils/dateHelper');
+            if (isWeekendOrHoliday()) return;
+
             console.log('🤖 [Hermes Proactive] Iniciando varredura bimestral de Gargalos de Planejamento...');
             
             const [atrasos] = await mysqlService.query(`

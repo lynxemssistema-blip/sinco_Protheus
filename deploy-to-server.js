@@ -76,9 +76,13 @@ async function deploy() {
         if (install.stderr) console.log('   WARN:', install.stderr.slice(-300));
         console.log('✅ npm install concluído!\n');
 
-        // Restart PM2
+        // Restart PM2 — usa o nome do processo (metalfisa_producao) pois o servidor
+        // não usa ecosystem.config.js diretamente no pm2 start
         console.log('🔄 Reiniciando aplicação com PM2...');
-        const pm2 = await ssh.execCommand('pm2 restart ecosystem.config.js --update-env 2>&1 || pm2 start ecosystem.config.js 2>&1');
+        const pm2 = await ssh.execCommand(
+            'pm2 restart metalfisa_producao --update-env 2>&1 || ' +
+            'pm2 restart all --update-env 2>&1'
+        );
         console.log(pm2.stdout || pm2.stderr);
         console.log('✅ PM2 reiniciado!\n');
 

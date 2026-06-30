@@ -9,14 +9,14 @@ router.use((req, res, next) => {
     next();
 });
 
-// POST /api/materials/explosion - ExplosÃ£o de Materiais
+// POST /api/materials/explosion - Explosão de Materiais
 router.post('/explosion', async (req, res) => {
     try {
         const { pedido, produto_codigo, quantidade_pedido } = req.body;
 
         console.log('ðŸ’¥ [EXPLOSION] Calculando materiais referecia:', { pedido, produto: produto_codigo, qtd: quantidade_pedido });
 
-        // Se o produto nÃ£o for informado, mas temos o pedido, buscar items do pedido
+        // Se o produto não for informado, mas temos o pedido, buscar items do pedido
         if (!produto_codigo && pedido) {
             const itemsQuery = `
                 SELECT 
@@ -36,10 +36,10 @@ router.post('/explosion', async (req, res) => {
             });
         }
 
-        // Query Recursiva de ExplosÃ£o (Postgres)
+        // Query Recursiva de Explosão (Postgres)
         const query = `
             WITH RECURSIVE estrutura AS (
-                -- NÃ­vel 0 (produto pai)
+                -- Nível 0 (produto pai)
                 SELECT 
                     0 as nivel,
                     TRIM(g1.g1_cod) as produto_pai,
@@ -54,7 +54,7 @@ router.post('/explosion', async (req, res) => {
                 
                 UNION ALL
                 
-                -- NÃ­veis subsequentes (recursÃ£o)
+                -- Níveis subsequentes (recursão)
                 SELECT
                     e.nivel + 1,
                     TRIM(e.componente) as produto_pai,
@@ -80,7 +80,7 @@ router.post('/explosion', async (req, res) => {
                 e.operacao,
                 e.revisao,
                 
-                -- Dados da operaÃ§Ã£o (SG2)
+                -- Dados da operação (SG2)
                 TRIM(g2.g2_operac) as codigo_operacao,
                 TRIM(h1.h1_descri) as descricao_operacao,
                 g2.g2_setup::numeric as tempo_setup,
@@ -173,13 +173,13 @@ router.post('/explosion', async (req, res) => {
             if (!porOperacao[opKey]) {
                 porOperacao[opKey] = {
                     operacao: opKey,
-                    descricao: mat.descricao_operacao || 'SEM OPERAÃ‡ÃƒO DEFINIDA',
+                    descricao: mat.descricao_operacao || 'SEM OPERAÇÃO DEFINIDA',
                     materiais: [],
                     resumo: { total_itens: 0, materiais_em_falta: 0 }
                 };
             }
 
-            // Calcular necessidade lÃ­quida
+            // Calcular necessidade líquida
             mat.necessidade_liquida = Math.max(0, mat.qtd_total - mat.saldo_disponivel);
 
             porOperacao[opKey].materiais.push(mat);
@@ -212,7 +212,7 @@ router.get('/dashboard', async (req, res) => {
             LIMIT 50
         `);
 
-        // Buscar totais de solicitaÃ§Ãµes
+        // Buscar totais de solicitações
         const [solicitacoes] = await mysqlPool.execute(`
             SELECT status, COUNT(*) as qtd 
             FROM app_solicitacoes_almoxarifado 
@@ -231,19 +231,19 @@ router.get('/dashboard', async (req, res) => {
 
 // POST /api/materials/upload-needs - Salvar necessidades calculadas (Alertas)
 router.post('/upload-needs', async (req, res) => {
-    // Implementar lÃ³gica de salvar na tabela app_material_necessidades
+    // Implementar lógica de salvar na tabela app_material_necessidades
     // ...
     res.json({ message: 'Necessidades atualizadas com sucesso' });
 });
 
-// GET /api/materials/where-used/:productCode - Onde Ã© Usado (Busca Reversa)
+// GET /api/materials/where-used/:productCode - Onde é Usado (Busca Reversa)
 router.get('/where-used/:productCode', async (req, res) => {
     try {
         const { productCode } = req.params;
 
-        console.log(`ðŸ” [WHERE-USED] Buscando onde Ã© usado: ${productCode}`);
+        console.log(`ðŸ” [WHERE-USED] Buscando onde é usado: ${productCode}`);
 
-        // Primeiro, buscar informaÃ§Ãµes bÃ¡sicas do produto
+        // Primeiro, buscar informações básicas do produto
         const productInfoQuery = `
             SELECT 
                 TRIM(b1_cod) as codigo,
@@ -258,17 +258,17 @@ router.get('/where-used/:productCode', async (req, res) => {
 
         if (productInfoRes.rows.length === 0) {
             return res.status(404).json({
-                error: 'Produto nÃ£o encontrado',
+                error: 'Produto não encontrado',
                 productCode
             });
         }
 
         const productInfo = productInfoRes.rows[0];
 
-        // Query Recursiva INVERSA (Ascendente) - Busca onde o produto Ã© usado
+        // Query Recursiva INVERSA (Ascendente) - Busca onde o produto é usado
         const query = `
             WITH RECURSIVE onde_usado AS (
-                -- NÃ­vel 0: produtos que utilizam diretamente o componente pesquisado
+                -- Nível 0: produtos que utilizam diretamente o componente pesquisado
                 SELECT 
                     0 as nivel,
                     TRIM(g1.g1_comp) as componente,
@@ -280,7 +280,7 @@ router.get('/where-used/:productCode', async (req, res) => {
                 
                 UNION ALL
                 
-                -- NÃ­veis subsequentes: produtos que utilizam os produtos do nÃ­vel anterior
+                -- Níveis subsequentes: produtos que utilizam os produtos do nível anterior
                 SELECT
                     ou.nivel + 1,
                     TRIM(ou.produto_pai) as componente,
@@ -375,7 +375,7 @@ router.get('/where-used/:productCode', async (req, res) => {
             }
         }
 
-        // Agrupar por nÃ­vel para facilitar visualizaÃ§Ã£o
+        // Agrupar por nível para facilitar visualização
         const porNivel = {};
         result.rows.forEach(row => {
             if (!porNivel[row.nivel]) {
@@ -384,7 +384,7 @@ router.get('/where-used/:productCode', async (req, res) => {
             porNivel[row.nivel].push(row);
         });
 
-        console.log(`âœ… [WHERE-USED] Encontrados ${result.rows.length} usos em ${Object.keys(porNivel).length} nÃ­veis`);
+        console.log(`✅ [WHERE-USED] Encontrados ${result.rows.length} usos em ${Object.keys(porNivel).length} níveis`);
 
         res.json({
             productCode: productInfo.codigo,
@@ -403,16 +403,16 @@ router.get('/where-used/:productCode', async (req, res) => {
     }
 });
 
-// POST /api/materials/bulk-explosion - ExplosÃ£o Aglutinada (Bulk MRP)
+// POST /api/materials/bulk-explosion - Explosão Aglutinada (Bulk MRP)
 router.post('/bulk-explosion', async (req, res) => {
     try {
         const { items } = req.body; // Array de { produto, qtd_total }
         
         if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ error: 'Nenhum item fornecido para explosÃ£o.' });
+            return res.status(400).json({ error: 'Nenhum item fornecido para explosão.' });
         }
 
-        console.log(`ðŸ’¥ [BULK EXPLOSION] Iniciando explosÃ£o para ${items.length} itens base...`);
+        console.log(`ðŸ’¥ [BULK EXPLOSION] Iniciando explosão para ${items.length} itens base...`);
 
         // Transforma os itens em JSON string para passar pro Postgres jsonb_to_recordset
         const itemsJson = JSON.stringify(items);

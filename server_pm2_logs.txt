@@ -2,303 +2,303 @@
 /home/sinco/.pm2/logs/metalfisa-producao-error.log last 150 lines:
 
 /home/sinco/.pm2/logs/metalfisa-producao-out.log last 150 lines:
-📡 [2026-05-21T15:19:46.013Z] GET /api/produtos/MTT-0140/roteiro from 192.168.1.146
-📡 [2026-05-21T15:19:46.018Z] GET /api/produtos/MTT-0141/roteiro from 192.168.1.146
-🔧 [ROTEIRO] 0 operações para produto MTT-0140
-🔧 [ROTEIRO] 0 operações para produto MTT-0141
-🔧 [ROTEIRO] 2 operações para produto MT4-31621
-🔧 [ROTEIRO] 2 operações para produto MT4-31632
-🔧 [ROTEIRO] 4 operações para produto MT3-14945
-📡 [2026-05-21T15:19:46.134Z] GET /api/docs/MT3-14945 from 192.168.1.146
-📡 [2026-05-21T15:19:46.174Z] GET /api/docs/view?path=%2Fmnt%2Fengenharia%2Fdesenhos%2FGE+TRANSPORTES%2FMT3-14945.pdf from 192.168.1.146
-📄 Abrindo arquivo em: /mnt/engenharia/desenhos/GE TRANSPORTES/MT3-14945.pdf
-📡 [2026-05-21T15:19:53.227Z] GET /api/avisos/nao-concluidos/34 from 192.168.1.169
-📡 [2026-05-21T15:19:53.689Z] GET /api/avisos/nao-concluidos/32 from 192.168.1.139
-📡 [2026-05-21T15:19:55.010Z] GET /api/avisos/nao-concluidos/20 from 192.168.1.143
-📡 [2026-05-21T15:19:55.856Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:19:58.054Z] GET /api/produtos/MTB-0168/roteiro from 192.168.1.146
-📡 [2026-05-21T15:19:58.062Z] GET /api/produtos/MTC-0648/roteiro from 192.168.1.146
-🔧 [ROTEIRO] 0 operações para produto MTB-0168
-🔧 [ROTEIRO] 0 operações para produto MTC-0648
-📡 [2026-05-21T15:19:58.691Z] GET /api/avisos/nao-concluidos/19 from 192.168.1.195
-📡 [2026-05-21T15:19:59.087Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:19:59.530Z] GET /api/avisos/nao-concluidos/11 from 192.168.1.138
-📡 [2026-05-21T15:20:04.260Z] GET /api/avisos/nao-concluidos/69 from 192.168.1.110
-📡 [2026-05-21T15:20:06.485Z] GET /api/avisos/nao-concluidos/9 from 192.168.1.135
-📡 [2026-05-21T15:20:13.393Z] GET /api/avisos/nao-concluidos/37 from 192.168.1.162
-[dotenv@17.2.3] injecting env (18) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+  - Chunk 20 size: 31260 chars (~31 KB)
+  - Wrote chunk 20 (500 rows)
+  - Chunk 21 size: 30454 chars (~30 KB)
+  - Wrote chunk 21 (500 rows)
+  - Chunk 22 size: 30399 chars (~30 KB)
+  - Wrote chunk 22 (500 rows)
+  - Chunk 23 size: 31093 chars (~30 KB)
+  - Wrote chunk 23 (500 rows)
+  - Chunk 24 size: 32118 chars (~31 KB)
+  - Wrote chunk 24 (500 rows)
+  - Chunk 25 size: 33846 chars (~33 KB)
+  - Wrote chunk 25 (500 rows)
+  - Chunk 26 size: 31998 chars (~31 KB)
+  - Wrote chunk 26 (500 rows)
+  - Chunk 27 size: 22766 chars (~22 KB)
+  - Wrote chunk 27 (352 rows)
+✅ [OCCUPANCY CACHE] Rebuilt cache successfully in 10027ms. Total rows cached: 13352
+📡 [2026-06-23T21:32:54.774Z] GET /api/ata-viva/prioridades-tv from 192.168.1.77
+[AI Suporte Error Tracker] Erro salvo no DB e notificação enviada para Edson Manoel ((31) 99557-4906) sobre a rota /api/ata-viva/prioridades-tv
+[dotenv@17.2.3] injecting env (18) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
 🔄 [DEBUG] Montando rota /api/producao...
 🔄 [DEBUG] Carregando arquivo routes/producao.js
 ✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
 🚀🚀🚀 STOCK.JS FILE LOADED - VERSION 2026-01-20 13:47 🚀🚀🚀
 🔄 [DEBUG] Montando rota /api/materials...
 ✅ [DEBUG] Rotas de Materiais montadas.
 🔄 [DEBUG] Montando rota /api/production...
 ✅ [DEBUG] Rota /api/production montada.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
 ✅ [Reports] Loading Sales Planning Routes...
 🔄 [DEBUG] Loading Sinco Routes...
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
 ✅ [MONITORAMENTO] Cron job de métricas do sistema iniciado (A cada 1 hora).
 [CRON] Iniciando agendador de Relatório Diário de Faturamento...
+[HermesScheduler] Inicializando agendador do Hermes...
+🤖 [Hermes Proactive] Serviço de Monitoramento Autônomo ativado.
 Servidor rodando na porta 3001
 📡 Acesso na rede: http://192.168.1.77:3001
 
 🔍 [DEBUG] Rotas Registradas (Updated):
 ⚠️ Unable to print routes - router not initialized
-🟢 [Socket.io] Nova conexão estabelecida: 4JzXMH8k3g-Px2dOAAAB
-🟢 Usuário 34 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: LVrMm_ZfK_LXziiLAAAE
-🟢 [Socket.io] Nova conexão estabelecida: TPshr3VP0E6oStFBAAAF
-🟢 Usuário 71 entrou na sala do socket.
-🟢 Usuário 56 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: 1Sgwb0KktqjApHXZAAAH
-🟢 Usuário 38 entrou na sala do socket.
-📡 [2026-05-21T15:20:16.894Z] GET /api/avisos/nao-concluidos/38 from 192.168.1.178
-🟢 [Socket.io] Nova conexão estabelecida: xol1fZEXVqqbkH90AAAJ
-🟢 Usuário 69 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: _w3zFuZ1ebNo97cBAAAM
-🟢 Usuário 7 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: xSTp-zePVcEEnUMsAAAN
-🟢 Usuário 32 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: VF8z99MTsko3Rc-jAAAP
-🟢 Usuário 7 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: ry_Fa5-DtSL3D9EfAAAS
-🟢 [Socket.io] Nova conexão estabelecida: VAkI9p6Fgkfel_ChAAAT
-🟢 Usuário 37 entrou na sala do socket.
-🟢 Usuário 7 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: Ev8D4sVa8Pu-dyDpAAAV
-🟢 Usuário 37 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: bVKtCULSpY2yxXQ0AAAX
-🟢 Usuário 9 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: kuQV8SMMnkRikQEGAAAZ
-🟢 Usuário 18 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: SEdoLKq-buwIg6BiAAAb
-🟢 Usuário 20 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: jpgZh0ilYm6K6vWQAAAe
-🟢 [Socket.io] Nova conexão estabelecida: vewhbb82eY1S7ADsAAAf
-🟢 Usuário 11 entrou na sala do socket.
-🟢 Usuário 8 entrou na sala do socket.
+✅ Conectado ao MySQL Remoto com sucesso!
 ✅ Tabela produtos_docs verificada/criada no MySQL remoto.
-🟢 [Socket.io] Nova conexão estabelecida: NWb5PrrDBzd-263GAAAh
-🟢 Usuário 81 entrou na sala do socket.
-🟢 [Socket.io] Nova conexão estabelecida: HE_uLHUS-BjCX-IIAAAj
-🟢 Usuário 81 entrou na sala do socket.
-✅ [DB] Tabela app_engineering_timesheets verificada.
-🟢 [Socket.io] Nova conexão estabelecida: nviBzyjrd_8TMmQCAAAl
-🟢 Usuário 19 entrou na sala do socket.
 ✅ [Email Service] Tabela de Auditoria app_emails verificada/criada.
 ✅ [SINCO APONTAMENTO] Tabela app_os_material_entregas verificada/criada.
-✅ [Users Service] Migration check skipped (MySQL 5.6 compatibility).
-✅ Conectado ao MySQL Remoto com sucesso!
-✅ Inactive orders tables and settings initialized.
+✅ [DB] Tabela app_engineering_timesheets verificada.
+[HermesScheduler] 0 tarefa(s) agendada(s) com sucesso.
+⏳ [OCCUPANCY CACHE] Rebuilding daily occupancy cache...
+Step 1: DB Connect: 44.262ms
 ✅ PCP Releases table initialized
-✅ Tabelas de avisos, grupos e mídia verificadas/atualizadas.
-✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
-✅ Tabela app_produto_ata verificada/criada.
-[Romaneios] Estrutura do banco de dados verificada/atualizada.
+✅ Inactive orders tables and settings initialized.
 ✅ Engineering Releases table initialized
-🟢 [Socket.io] Nova conexão estabelecida: XIDIplM16wvglHQeAAAn
-🟢 Usuário 46 entrou na sala do socket.
 ✅ Engineering BOM tables initialized
+✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
+Step 1: Fetch OPs from PG: 327ms
+Fetched 50000 OPs from Postgres.
+✅ Tabela app_produto_ata verificada/criada.
+✅ Tabelas de avisos verificadas/atualizadas.
+[Romaneios] Estrutura do banco de dados verificada/atualizada.
+📡 [2026-06-23T21:33:08.773Z] GET /api/ata-viva/prioridades-tv from 192.168.1.152
+Step 2: Fetch routing: 501.102ms
+🟢 [Socket.io] Nova conexão estabelecida: w4xJoWZ40XJP5FDAAAAB
 ✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.
 ✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.
-📡 [2026-05-21T15:20:19.504Z] GET /api/engineering-releases/next-code from 192.168.1.146
-✅ [PCPMetal] Tabelas verificadas/criadas com sucesso.
+✅ [Hermes] Tabelas verificadas/criadas com sucesso.
 ✅ [Romaneios] Tabela app_romaneios_nfs verificada/criada.
-📡 [2026-05-21T15:20:19.569Z] GET /api/docs/MT3-14945 from 192.168.1.146
+✅ [PCPMetal] Tabelas verificadas/criadas com sucesso.
 ✅ [Romaneios] codigo_produto trimmed nos itens existentes.
-📡 [2026-05-21T15:20:19.643Z] GET /api/docs/view?path=%2Fmnt%2Fengenharia%2Fdesenhos%2FGE+TRANSPORTES%2FMT3-14945.pdf from 192.168.1.146
-📄 Abrindo arquivo em: /mnt/engenharia/desenhos/GE TRANSPORTES/MT3-14945.pdf
-📡 [2026-05-21T15:20:19.677Z] POST /api/engineering-releases/save-network from 192.168.1.146
-📡 [2026-05-21T15:20:19.760Z] POST /api/email/send from 192.168.1.146
-📡 [2026-05-21T15:20:22.640Z] POST /api/engineering-releases/log from 192.168.1.146
-📡 [2026-05-21T15:20:23.710Z] GET /api/avisos/nao-concluidos/32 from 192.168.1.139
-📡 [2026-05-21T15:20:24.515Z] GET /api/avisos/nao-concluidos/46 from 192.168.1.112
-📡 [2026-05-21T15:20:25.005Z] GET /api/avisos/nao-concluidos/18 from 192.168.1.157
-📡 [2026-05-21T15:20:25.512Z] GET /api/avisos/nao-concluidos/8 from 192.168.1.163
-📡 [2026-05-21T15:20:25.850Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:20:27.357Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:20:29.856Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:20:29.992Z] GET /api/users?setor=ENGENHARIA from 192.168.1.146
-📡 [2026-05-21T15:20:29.999Z] GET /api/engineering-bom/004831/01 from 192.168.1.146
-📡 [2026-05-21T15:20:30.002Z] GET /api/pedidos/004831/items/01/history from 192.168.1.146
-📡 [2026-05-21T15:20:30.047Z] GET /api/engineering-bom/004831/01/history from 192.168.1.146
-📡 [2026-05-21T15:20:33.394Z] GET /api/monitoramento/dba/snapshot from 192.168.1.162
-📡 [2026-05-21T15:20:33.402Z] GET /api/avisos/nao-concluidos/37 from 192.168.1.162
-📡 [2026-05-21T15:20:34.074Z] GET /api/avisos/nao-concluidos/81 from 192.168.1.153
-📡 [2026-05-21T15:20:34.146Z] GET /api/avisos/nao-concluidos/81 from 192.168.1.153
-📡 [2026-05-21T15:20:34.267Z] GET /api/avisos/nao-concluidos/69 from 192.168.1.110
-📡 [2026-05-21T15:20:40.789Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:20:41.251Z] GET /api/avisos/nao-concluidos/56 from 192.168.1.133
-📡 [2026-05-21T15:20:42.760Z] GET /api/avisos/nao-concluidos/71 from 192.168.1.175
-📡 [2026-05-21T15:20:43.387Z] GET /api/avisos/nao-concluidos/37 from 192.168.1.162
-📡 [2026-05-21T15:20:49.104Z] GET /api/production?planned_date_start=2026-05-01&planned_date_end=2026-05-31 from 192.168.1.162
-🎯 [PRODUCTION ROUTER] Hit: GET /?planned_date_start=2026-05-01&planned_date_end=2026-05-31
-📡 [2026-05-21T15:20:49.539Z] GET /api/pedidos/flat?cliente=&pedido=4586&produto=&dataInicial=&dataFinal=&dateType=pedido&only_active=true&page=1&limit=100 from 192.168.1.146
-📡 [DEBUG] /api/pedidos/flat chamado (Versão: 27/02/2026 09:45)
-[production GET /] 500 OPs + 1791 rows (c/roteiro) em 3398ms
-📡 [2026-05-21T15:20:53.534Z] GET /api/pedidos/004586/items/01/history from 192.168.1.146
-📡 [2026-05-21T15:20:53.542Z] GET /api/users?setor=ENGENHARIA from 192.168.1.146
-📡 [2026-05-21T15:20:53.548Z] GET /api/engineering-bom/004586/01 from 192.168.1.146
-📡 [2026-05-21T15:20:53.579Z] GET /api/engineering-bom/004586/01/history from 192.168.1.146
-📡 [2026-05-21T15:20:53.687Z] GET /api/avisos/nao-concluidos/32 from 192.168.1.139
-📡 [2026-05-21T15:20:54.218Z] GET /api/avisos/nao-concluidos/34 from 192.168.1.169
-📡 [2026-05-21T15:20:55.015Z] GET /api/avisos/nao-concluidos/20 from 192.168.1.143
-📡 [2026-05-21T15:20:55.855Z] GET /api/avisos/nao-concluidos/7 from 192.168.1.146
-📡 [2026-05-21T15:20:58.694Z] GET /api/avisos/nao-concluidos/19 from 192.168.1.195
-📡 [2026-05-21T15:20:59.525Z] GET /api/avisos/nao-concluidos/11 from 192.168.1.138
-at Server.emit (node:events:524:28)
-    at Server.<anonymous> (/usr/lib/node_modules/pm2/node_modules/@pm2/io/build/main/metrics/httpMetrics.js:167:33)
-    at parserOnIncoming (node:_http_server:1141:12)
-    at HTTPParser.parserOnHeadersComplete (node:_http_common:118:17)
-❌ Erro na extração de dados: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 20.600667086s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"20s"}]
-⚠️ Falha na extração de IA (continuando cadastro sem metadados): [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 20.600667086s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"20s"}]
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/15 KG GOLD PLUS = MT2-2359/MT6-5889.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/15 KG GOLD PLUS = MT2-2359/MT6-5889.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/MT2-2925 - CONJ 15KG GOLD PLUS V2/MT4-27173.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/15 KG GOLD PLUS = MT2-2359/MT6-5889.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/MT2-2925 - CONJ 15KG GOLD PLUS V2/MT4-27173.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/15 KG GOLD PLUS = MT2-2359/MT6-5889.pdf'
-Erro ao servir arquivo: ENOENT: no such file or directory, stat '/mnt/engenharia/desenhos/INDUSTRIAL ATILLA/MT2-2925 - CONJ 15KG GOLD PLUS V2/MT4-27173.pdf'
-Error: Not allowed by CORS
-    at origin (/var/www/metalfisa/server/index.js:77:22)
-    at /var/www/metalfisa/server/node_modules/cors/lib/index.js:219:13
-    at optionsCallback (/var/www/metalfisa/server/node_modules/cors/lib/index.js:199:9)
-    at corsMiddleware (/var/www/metalfisa/server/node_modules/cors/lib/index.js:204:7)
-    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
-    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
-    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
-    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
-    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
-    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
-    at Function.handle (/var/www/metalfisa/server/node_modules/express/lib/application.js:177:15)
-    at Server.app (/var/www/metalfisa/server/node_modules/express/lib/express.js:38:9)
-    at Server.<anonymous> (/var/www/metalfisa/server/node_modules/engine.io/build/server.js:648:34)
-    at Server.<anonymous> (/var/www/metalfisa/server/node_modules/socket.io/dist/index.js:330:28)
-    at Server.emit (node:events:524:28)
-    at Server.<anonymous> (/usr/lib/node_modules/pm2/node_modules/@pm2/io/build/main/metrics/httpMetrics.js:167:33)
-    at parserOnIncoming (node:_http_server:1141:12)
-    at HTTPParser.parserOnHeadersComplete (node:_http_common:118:17)
+📡 [2026-06-23T21:34:25.123Z] GET /painel-producao from 192.168.1.152
+🔴 [Socket.io] Cliente desconectado: w4xJoWZ40XJP5FDAAAAB
+📡 [2026-06-23T21:34:25.137Z] GET /painel-producao from 192.168.1.152
+📡 [2026-06-23T21:34:25.150Z] GET /painel-producao from 192.168.1.152
+🟢 [Socket.io] Nova conexão estabelecida: EGYgho7C1LmcC2vXAAAE
+🔴 [Socket.io] Cliente desconectado: EGYgho7C1LmcC2vXAAAE
+📡 [2026-06-23T21:34:25.189Z] GET /assets/index-BEqU2QfV.js from 192.168.1.152
+📡 [2026-06-23T21:34:25.195Z] GET /assets/index-DRJJ-Y8W.css from 192.168.1.152
+📡 [2026-06-23T21:34:25.346Z] GET /assets/clock-BTRbT2Bm.js from 192.168.1.152
+📡 [2026-06-23T21:34:25.349Z] GET /assets/TVDashboard-DfU_IGzt.js from 192.168.1.152
+📡 [2026-06-23T21:34:25.354Z] GET /assets/check-BaaacttL.js from 192.168.1.152
+📡 [2026-06-23T21:34:25.360Z] GET /api/sgq/processos from 192.168.1.152
+📡 [2026-06-23T21:34:25.368Z] GET /api/users/my-permissions from 192.168.1.152
+📡 [2026-06-23T21:34:25.373Z] GET /api/company from 192.168.1.152
+📡 [2026-06-23T21:34:25.377Z] GET /assets/metalfisa-logo-CKHxsuE7.png from 192.168.1.152
+📡 [2026-06-23T21:34:25.384Z] GET /api/ata-viva/prioridades-tv from 192.168.1.152
+🟢 [Socket.io] Nova conexão estabelecida: oM7xC0xMjGSVbSxMAAAG
+[dotenv@17.2.3] injecting env (18) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+🔄 [DEBUG] Montando rota /api/producao...
+🔄 [DEBUG] Carregando arquivo routes/producao.js
+✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+🚀🚀🚀 STOCK.JS FILE LOADED - VERSION 2026-01-20 13:47 🚀🚀🚀
+🔄 [DEBUG] Montando rota /api/materials...
+✅ [DEBUG] Rotas de Materiais montadas.
+🔄 [DEBUG] Montando rota /api/production...
+✅ [DEBUG] Rota /api/production montada.
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+✅ [Reports] Loading Sales Planning Routes...
+🔄 [DEBUG] Loading Sinco Routes...
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+✅ [MONITORAMENTO] Cron job de métricas do sistema iniciado (A cada 1 hora).
+[CRON] Iniciando agendador de Relatório Diário de Faturamento...
+[HermesScheduler] Inicializando agendador do Hermes...
+🤖 [Hermes Proactive] Serviço de Monitoramento Autônomo ativado.
+Servidor rodando na porta 3001
+📡 Acesso na rede: http://192.168.1.77:3001
+
+🔍 [DEBUG] Rotas Registradas (Updated):
+⚠️ Unable to print routes - router not initialized
+🟢 [Socket.io] Nova conexão estabelecida: HLkwZfAqPX_NP4CQAAAB
+✅ Conectado ao MySQL Remoto com sucesso!
+✅ [DB] Tabela app_engineering_timesheets verificada.
+✅ [Email Service] Tabela de Auditoria app_emails verificada/criada.
+✅ Tabela produtos_docs verificada/criada no MySQL remoto.
+✅ [SINCO APONTAMENTO] Tabela app_os_material_entregas verificada/criada.
+[HermesScheduler] 0 tarefa(s) agendada(s) com sucesso.
+⏳ [OCCUPANCY CACHE] Rebuilding daily occupancy cache...
+Step 1: DB Connect: 44.014ms
+✅ PCP Releases table initialized
+✅ Inactive orders tables and settings initialized.
+✅ Engineering Releases table initialized
+✅ Engineering BOM tables initialized
+✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
+Step 1: Fetch OPs from PG: 377.121ms
+Fetched 50000 OPs from Postgres.
+✅ Tabela app_produto_ata verificada/criada.
+[Romaneios] Estrutura do banco de dados verificada/atualizada.
+✅ Tabelas de avisos verificadas/atualizadas.
+Step 2: Fetch routing: 502.854ms
+✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.
+✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.
+✅ [Romaneios] Tabela app_romaneios_nfs verificada/criada.
+✅ [Romaneios] codigo_produto trimmed nos itens existentes.
+✅ [Hermes] Tabelas verificadas/criadas com sucesso.
+✅ [PCPMetal] Tabelas verificadas/criadas com sucesso.
+Step 3: Fetch planning from MySQL: 3.040s
+Step 4: Fetch appointments from MySQL: 1.129s
+Step 5: Fetch configs from MySQL: 145.138ms
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+[2026-06-23T20:08:17.073Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:08:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
+Erro ao buscar pedidos inativos: MySQL pool acquire/execute timeout
+[2026-06-23T20:11:05.178Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:11:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-06-23T20:13:10.057Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:13:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
+[2026-06-23T20:15:01.214Z] [PID: 234798] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:15:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
+Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
 [AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
 [AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1020:23
-❌ [VERTICAL ROUTE ERROR] message: canceling statement due to statement timeout
-❌ [VERTICAL ROUTE ERROR] code: 57014
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-❌ [VERTICAL ROUTE ERROR] message: canceling statement due to statement timeout
-❌ [VERTICAL ROUTE ERROR] code: 57014
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-Erro ao criar romaneio SGQ: Error: Incorrect date value: '' for column 'previsao_retorno' at row 1
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
     at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
-    at /var/www/metalfisa/server/routes/sgq_romaneios.js:79:35
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
     at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_TRUNCATED_WRONG_VALUE',
-  errno: 1292,
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
   sql: '\n' +
-    '            INSERT INTO sgq_romaneios (numero, data_envio, previsao_retorno, fornecedor_id, destinatario, responsavel, observacao, status)\n' +
-    "            VALUES ('ROM-SGQ-002', '2026-05-21', '', 1, 'MQT SERVICE METROLOGIA', 'Tais Mariane Lima', '', 'aberto')\n" +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
     '        ',
-  sqlState: '22007',
-  sqlMessage: "Incorrect date value: '' for column 'previsao_retorno' at row 1"
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
 }
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
+    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
+  sql: '\n' +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
+    '        ',
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+}
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
+    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
+  sql: '\n' +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
+    '        ',
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+}
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
+    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
+  sql: '\n' +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
+    '        ',
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+}
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
+    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
+  sql: '\n' +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
+    '        ',
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+}
+Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
+    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
+    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
+    at /var/www/metalfisa/server/routes/ataViva.js:27:43
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ER_BAD_FIELD_ERROR',
+  errno: 1054,
+  sql: '\n' +
+    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
+    '            FROM app_pcp_delivery_forecasts\n' +
+    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
+    '               OR (data_entrega_pcp < CURDATE())\n' +
+    '        ',
+  sqlState: '42S22',
+  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+}
 [AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1021:23
-[production GET /] ERROR: canceling statement due to statement timeout error: canceling statement due to statement timeout
-    at /var/www/metalfisa/server/node_modules/pg-pool/index.js:45:11
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async /var/www/metalfisa/server/routes/production.js:1021:23
-❌ Erro na extração de dados: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-Please retry in 54.316416272s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"54s"}]
-⚠️ Falha na extração de IA (continuando cadastro sem metadados): [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-Please retry in 54.316416272s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"54s"}]
-❌ Erro na extração de dados: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-Please retry in 42.418015634s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"42s"}]
-⚠️ Falha na extração de IA (continuando cadastro sem metadados): [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-Please retry in 42.418015634s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"42s"}]
-❌ Erro na extração de dados: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 36.294913488s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"36s"}]
-⚠️ Falha na extração de IA (continuando cadastro sem metadados): [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 36.294913488s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"36s"}]
-❌ Erro na extração de dados: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 32.8480196s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"32s"}]
-⚠️ Falha na extração de IA (continuando cadastro sem metadados): [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
-* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
-Please retry in 32.8480196s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"32s"}]
+❌ [OCCUPANCY CACHE] Error rebuilding daily occupancy cache: Error: MySQL pool acquire/execute timeout
+    at Timeout._onTimeout (/var/www/metalfisa/server/services/mysqlService.js:59:31)
+    at listOnTimeout (node:internal/timers:581:17)
+    at process.processTimers (node:internal/timers:519:7) {
+  code: 'POOL_TIMEOUT'
+}
 [AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'

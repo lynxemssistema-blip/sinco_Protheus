@@ -8,7 +8,7 @@ let content = fs.readFileSync(target, 'utf8');
 try {
   let decoded = content;
   
-  // We notice 'GestÃƒÆ’Ã‚Â£o' => needs 3 levels of win1252 to utf8 decoding.
+  // We notice 'GestÃÆ’Ã‚Â£o' => needs 3 levels of win1252 to utf8 decoding.
   let loops = 0;
   while (decoded.includes('Ã') && loops < 5) {
       let buf = iconv.encode(decoded, 'win1252');

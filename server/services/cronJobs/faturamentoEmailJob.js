@@ -137,6 +137,11 @@ const runJob = async (isTest = false, testEmail = null) => {
 const init = () => {
     // Roda todos os dias às 18:01
     cron.schedule('1 18 * * *', () => {
+        const { isWeekendOrHoliday } = require('../../utils/dateHelper');
+        if (isWeekendOrHoliday()) {
+            console.log('[Agendador] Hoje é final de semana ou feriado. Notificação de faturamentos pendentes pulada.');
+            return;
+        }
         runJob(false);
     });
     console.log('⏳ [Agendador] Rotina de Faturamento Pendente registrada para as 18:01 diariamente.');

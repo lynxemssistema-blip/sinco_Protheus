@@ -130,7 +130,7 @@ const PCPExportTab = () => {
             const response = await api.post(
                 '/pcp/export',
                 payload,
-                { responseType: 'arraybuffer' }
+                { responseType: 'arraybuffer', timeout: 300000 }
             );
 
             const blob = new Blob([response.data], {
@@ -142,8 +142,12 @@ const PCPExportTab = () => {
             const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
             a.href = url;
             a.download = `lista_materiais_${stamp}.xlsx`;
+            document.body.appendChild(a);
             a.click();
-            URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 30000);
         } catch (err) {
             alert('Erro ao gerar exportação. Verifique o console.');
             console.error('[PCPExportTab] Erro export:', err);

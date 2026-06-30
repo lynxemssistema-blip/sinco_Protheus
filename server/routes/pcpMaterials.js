@@ -192,36 +192,59 @@ router.post('/export', async (req, res) => {
 
         // ── Query 1: BOM consolidada (aglutinada) ─────────────────────────────
         const bomQuery = `
-            WITH RECURSIVE estrutura AS (
+            WITH RECURSIVE has_solda AS (
+                SELECT DISTINCT TRIM(g2_produto) as produto
+                FROM sg2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2_recurso) = 'MO0020'
+            ),
+            estrutura AS (
                 SELECT
                     0                                      AS nivel,
-                    CAST(p.produto AS VARCHAR(30))         AS produto_raiz,
-                    CAST(p.produto AS VARCHAR(30))         AS produto_pai,
-                    CAST(p.produto AS VARCHAR(30))         AS componente,
+                    CAST(p.produto AS TEXT)                AS produto_raiz,
+                    CAST(p.produto AS TEXT)                AS produto_pai,
+                    CAST(p.produto AS TEXT)                AS componente,
                     1::numeric                             AS qtd_unitaria,
-                    p.quantidade::numeric                  AS qtd_total
+                    p.quantidade::numeric                  AS qtd_total,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
+                    AS TEXT) AS recurso,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
+                    AS TEXT) AS recurso_desc
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
+                LEFT JOIN has_solda hs ON hs.produto = TRIM(p.produto)
                 WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 
                 SELECT
                     e.nivel + 1,
-                    CAST(TRIM(e.produto_raiz) AS VARCHAR(30)),
-                    CAST(TRIM(e.componente)   AS VARCHAR(30)) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp)     AS VARCHAR(30)) AS componente,
+                    CAST(TRIM(e.produto_raiz) AS TEXT),
+                    CAST(TRIM(e.componente)   AS TEXT) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)     AS TEXT) AS componente,
                     g1.g1_quant::numeric,
-                    e.qtd_total * g1.g1_quant::numeric
+                    e.qtd_total * g1.g1_quant::numeric,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
+                    AS TEXT) AS recurso,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
+                    AS TEXT) AS recurso_desc
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON  TRIM(g1.g1_cod) = TRIM(e.componente)
                     AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN has_solda hs 
+                    ON hs.produto = TRIM(g1.g1_cod)
                 WHERE e.nivel < 10
             )
             SELECT
                 e.componente,
                 TRIM(sb1.b1_desc) AS descricao,
                 TRIM(sb1.b1_um)   AS unidade,
+                e.recurso,
+                e.recurso_desc,
                 SUM(e.qtd_total)  AS qtd_total
             FROM estrutura e
             LEFT JOIN sb1010 sb1
@@ -232,42 +255,63 @@ router.post('/export', async (req, res) => {
                 WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
                   AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
             )
-            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um
+            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um, e.recurso, e.recurso_desc
             ORDER BY e.componente
         `;
 
         // ── Query 2: BOM detalhada (sem aglutinar — linha por produto pai) ────
         const bomDetalhadaQuery = `
-            WITH RECURSIVE estrutura AS (
+            WITH RECURSIVE has_solda AS (
+                SELECT DISTINCT TRIM(g2_produto) as produto
+                FROM sg2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2_recurso) = 'MO0020'
+            ),
+            estrutura AS (
                 SELECT
                     0                                      AS nivel,
-                    CAST(p.produto AS VARCHAR(30))         AS produto_raiz,
-                    CAST(p.descricao_pai AS VARCHAR(120))  AS descricao_raiz,
-                    CAST(p.pedido   AS VARCHAR(20))        AS pedido,
-                    CAST(p.cliente  AS VARCHAR(80))        AS cliente,
-                    CAST(p.produto AS VARCHAR(30))         AS produto_pai,
-                    CAST(p.produto AS VARCHAR(30))         AS componente,
+                    CAST(p.produto AS TEXT)                AS produto_raiz,
+                    CAST(p.descricao_pai AS TEXT)          AS descricao_raiz,
+                    CAST(p.pedido   AS TEXT)               AS pedido,
+                    CAST(p.cliente  AS TEXT)               AS cliente,
+                    CAST(p.produto AS TEXT)                AS produto_pai,
+                    CAST(p.produto AS TEXT)                AS componente,
                     1::numeric                             AS qtd_unitaria,
-                    p.quantidade::numeric                  AS qtd_total
+                    p.quantidade::numeric                  AS qtd_total,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
+                    AS TEXT) AS recurso,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
+                    AS TEXT) AS recurso_desc
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
+                LEFT JOIN has_solda hs ON hs.produto = TRIM(p.produto)
                 WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 
                 SELECT
                     e.nivel + 1,
-                    CAST(TRIM(e.produto_raiz)   AS VARCHAR(30)),
-                    CAST(TRIM(e.descricao_raiz) AS VARCHAR(120)),
-                    CAST(TRIM(e.pedido)         AS VARCHAR(20)),
-                    CAST(TRIM(e.cliente)        AS VARCHAR(80)),
-                    CAST(TRIM(e.componente)     AS VARCHAR(30)) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp)       AS VARCHAR(30)) AS componente,
+                    CAST(TRIM(e.produto_raiz)   AS TEXT),
+                    CAST(TRIM(e.descricao_raiz) AS TEXT),
+                    CAST(TRIM(e.pedido)         AS TEXT),
+                    CAST(TRIM(e.cliente)        AS TEXT),
+                    CAST(TRIM(e.componente)     AS TEXT) AS produto_pai,
+                    CAST(TRIM(g1.g1_comp)       AS TEXT) AS componente,
                     g1.g1_quant::numeric,
-                    e.qtd_total * g1.g1_quant::numeric
+                    e.qtd_total * g1.g1_quant::numeric,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
+                    AS TEXT) AS recurso,
+                    CAST(
+                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
+                    AS TEXT) AS recurso_desc
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON  TRIM(g1.g1_cod) = TRIM(e.componente)
                     AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN has_solda hs 
+                    ON hs.produto = TRIM(g1.g1_cod)
                 WHERE e.nivel < 10
             )
             SELECT
@@ -278,6 +322,8 @@ router.post('/export', async (req, res) => {
                 e.componente,
                 TRIM(sb1.b1_desc) AS descricao,
                 TRIM(sb1.b1_um)   AS unidade,
+                e.recurso,
+                e.recurso_desc,
                 e.qtd_total
             FROM estrutura e
             LEFT JOIN sb1010 sb1
@@ -291,32 +337,46 @@ router.post('/export', async (req, res) => {
             ORDER BY e.produto_raiz, e.componente
         `;
 
-        // ── Executar queries em paralelo ──────────────────────────────────────
-        const jsonPayload = JSON.stringify(itemsPayload);
-        const [result, detalhadaResult] = await Promise.all([
-            db.query(bomQuery,          [jsonPayload]),
-            db.query(bomDetalhadaQuery, [jsonPayload]),
-        ]);
+        // ── Executar em lotes para evitar timeout do banco ────────────────────
+        const BATCH_SIZE = 10;
+        const allDetalhadaRows = [];
 
-        // Consolidar aba 1
-        for (const row of result.rows) {
-            const key = row.componente;
-            const qtdTotal = parseFloat(row.qtd_total) || 0;
-
-            if (consolidado.has(key)) {
-                consolidado.get(key).quantidade += qtdTotal;
-            } else {
-                consolidado.set(key, {
-                    codigo: row.componente,
-                    descricao: row.descricao || '',
-                    unidade: row.unidade || 'UN',
-                    quantidade: qtdTotal,
-                });
+        const client = await db.connect();
+        try {
+            await client.query("SET statement_timeout = '120000'"); // 2 min por lote
+            for (let i = 0; i < itemsPayload.length; i += BATCH_SIZE) {
+                const batch = itemsPayload.slice(i, i + BATCH_SIZE);
+                const jsonPayload = JSON.stringify(batch);
+                const [result, detalhadaResult] = await Promise.all([
+                    client.query(bomQuery,          [jsonPayload]),
+                    client.query(bomDetalhadaQuery, [jsonPayload]),
+                ]);
+                // Consolidar aba 1 incrementalmente
+                for (const row of result.rows) {
+                    const key = `${row.componente}|${row.recurso || ''}`;
+                    const qtdTotal = parseFloat(row.qtd_total) || 0;
+                    if (consolidado.has(key)) {
+                        consolidado.get(key).quantidade += qtdTotal;
+                    } else {
+                        consolidado.set(key, {
+                            codigo: row.componente,
+                            descricao: row.descricao || '',
+                            unidade: row.unidade || 'UN',
+                            quantidade: qtdTotal,
+                            recurso: row.recurso || '',
+                            recurso_desc: row.recurso_desc || '',
+                        });
+                    }
+                }
+                allDetalhadaRows.push(...detalhadaResult.rows);
+                console.log(`[PCP Export] Lote ${Math.floor(i/BATCH_SIZE)+1}/${Math.ceil(itemsPayload.length/BATCH_SIZE)} processado (${batch.length} itens)`);
             }
+        } finally {
+            client.release();
         }
 
         // Produtos sem estrutura (selecionados que não geraram nenhum material)
-        const produtosComMaterial = new Set(detalhadaResult.rows.map(r => r.produto_raiz));
+        const produtosComMaterial = new Set(allDetalhadaRows.map(r => r.produto_raiz));
         const semEstrutura = itemsPayload.filter(i => !produtosComMaterial.has(i.produto));
 
         // ── Helpers para estilo de aba ────────────────────────────────────────
@@ -356,65 +416,78 @@ router.post('/export', async (req, res) => {
         workbook.creator  = 'MetalFisa PCP';
         workbook.created  = new Date();
 
-        // ════════════════════════════════════════════════════════════════════
-        // ABA 1 — Lista de Materiais (Consolidada / Aglutinada)
-        // ════════════════════════════════════════════════════════════════════
-        const sheet = workbook.addWorksheet('Lista de Materiais', {
-            views: [{ state: 'frozen', ySplit: 3 }],
-        });
-
-        sheet.columns = [
-            { key: 'codigo',   width: 20 },
-            { key: 'descricao',width: 50 },
-            { key: 'unidade',  width: 12 },
-            { key: 'qtd',      width: 18 },
-            { key: '_empty',   width: 5  },
-        ];
-
-        sheet.mergeCells('A1:D1');
-        styleTitleCell(
-            sheet.getCell('A1'),
-            `Lista de Materiais (Consolidada) — Gerada em ${dataGeracao}`,
-            4, sheet
-        );
-
-        sheet.mergeCells('A2:D2');
-        const sum2 = sheet.getCell('A2');
-        sum2.value = `${items.length} produto(s) selecionado(s) | ${consolidado.size} matéria(s)-prima(s)`;
-        sum2.font  = { italic: true, size: 9, color: { argb: 'FF555555' } };
-        sum2.alignment = { horizontal: 'center', vertical: 'middle' };
-        sheet.getRow(2).height = 16;
-
-        const hRow1 = sheet.getRow(3);
-        ['Código', 'Descrição', 'Unidade', 'Qtde Total'].forEach((h, i) => {
-            hRow1.getCell(i + 1).value = h;
-        });
-        styleHeaderRow(hRow1, 4);
-
         const sortedRows = Array.from(consolidado.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
-        sortedRows.forEach((mat, idx) => {
-            const row = sheet.addRow([mat.codigo, mat.descricao, mat.unidade, mat.quantidade]);
-            row.height = 17;
-            if (idx % 2 === 1) {
-                row.eachCell({ includeEmpty: false }, cell => {
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } };
-                });
-            }
-            row.getCell(4).numFmt = '#,##0.000';
-            row.getCell(4).alignment = { horizontal: 'right' };
-            row.getCell(3).alignment = { horizontal: 'center' };
-        });
+        const soldaRows = sortedRows.filter(r => r.recurso === 'MO0020');
+        const outrosRows = sortedRows.filter(r => r.recurso !== 'MO0020');
 
-        if (sortedRows.length > 0) {
-            const tr = sheet.addRow(['', 'TOTAL DE ITENS DISTINTOS:', '', sortedRows.length]);
-            tr.getCell(2).font = { bold: true };
-            tr.getCell(4).font = { bold: true };
-            tr.getCell(4).alignment = { horizontal: 'right' };
-            tr.height = 20;
-        }
+        // Helper para gerar as abas consolidadas
+        const createConsolidatedSheet = (sheetName, titleText, rows) => {
+            const sh = workbook.addWorksheet(sheetName, {
+                views: [{ state: 'frozen', ySplit: 3 }],
+            });
+
+            sh.columns = [
+                { key: 'codigo',   width: 20 },
+                { key: 'descricao',width: 50 },
+                { key: 'unidade',  width: 12 },
+                { key: 'qtd',      width: 18 },
+                { key: '_empty',   width: 5  },
+            ];
+
+            sh.mergeCells('A1:D1');
+            styleTitleCell(
+                sh.getCell('A1'),
+                titleText,
+                4, sh
+            );
+
+            sh.mergeCells('A2:D2');
+            const subTitle = sh.getCell('A2');
+            subTitle.value = `${items.length} produto(s) selecionado(s) | ${rows.length} matéria(s)-prima(s)`;
+            subTitle.font  = { italic: true, size: 9, color: { argb: 'FF555555' } };
+            subTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+            sh.getRow(2).height = 16;
+
+            const hRow = sh.getRow(3);
+            ['Código', 'Descrição', 'Unidade', 'Qtde Total'].forEach((h, i) => {
+                hRow.getCell(i + 1).value = h;
+            });
+            styleHeaderRow(hRow, 4);
+
+            rows.forEach((mat, idx) => {
+                const r = sh.addRow([mat.codigo, mat.descricao, mat.unidade, mat.quantidade]);
+                r.height = 17;
+                if (idx % 2 === 1) {
+                    r.eachCell({ includeEmpty: false }, cell => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } };
+                    });
+                }
+                r.getCell(4).numFmt = '#,##0.000';
+                r.getCell(4).alignment = { horizontal: 'right' };
+                r.getCell(3).alignment = { horizontal: 'center' };
+            });
+
+            if (rows.length > 0) {
+                const tr = sh.addRow(['', 'TOTAL DE ITENS DISTINTOS:', '', rows.length]);
+                tr.getCell(2).font = { bold: true };
+                tr.getCell(4).font = { bold: true };
+                tr.getCell(4).alignment = { horizontal: 'right' };
+                tr.height = 20;
+            }
+        };
 
         // ════════════════════════════════════════════════════════════════════
-        // ABA 2 — Detalhado (sem aglutinar — linha por produto pai)
+        // ABA 1 — Lista de Materiais - Solda (Consolidada / Aglutinada)
+        // ════════════════════════════════════════════════════════════════════
+        createConsolidatedSheet('Materiais - Solda', `Lista de Materiais (Solda - MO0020) — Gerada em ${dataGeracao}`, soldaRows);
+
+        // ════════════════════════════════════════════════════════════════════
+        // ABA 2 — Lista de Materiais - Outros (Consolidada / Aglutinada)
+        // ════════════════════════════════════════════════════════════════════
+        createConsolidatedSheet('Materiais - Outros', `Lista de Materiais (Outros Processos) — Gerada em ${dataGeracao}`, outrosRows);
+
+        // ════════════════════════════════════════════════════════════════════
+        // ABA 3 — Detalhado (sem aglutinar — linha por produto pai)
         // ════════════════════════════════════════════════════════════════════
         const sheetDet = workbook.addWorksheet('Detalhado', {
             views: [{ state: 'frozen', ySplit: 3 }],
@@ -428,31 +501,37 @@ router.post('/export', async (req, res) => {
             { key: 'componente',    width: 18 },
             { key: 'descricao',     width: 46 },
             { key: 'unidade',       width: 10 },
+            { key: 'recurso',       width: 16 },
+            { key: 'recurso_desc',  width: 30 },
             { key: 'qtd',           width: 16 },
             { key: '_empty',        width: 4  },
         ];
 
-        sheetDet.mergeCells('A1:H1');
+        sheetDet.mergeCells('A1:J1');
         styleTitleCell(
             sheetDet.getCell('A1'),
             `Detalhado de Materiais (Por Produto Pai) — Gerado em ${dataGeracao}`,
-            8, sheetDet
+            10, sheetDet
         );
 
-        sheetDet.mergeCells('A2:H2');
+        sheetDet.mergeCells('A2:J2');
         const sd2 = sheetDet.getCell('A2');
-        sd2.value = `${detalhadaResult.rows.length} linha(s) | ${items.length} produto(s) selecionado(s)`;
+        sd2.value = `${allDetalhadaRows.length} linha(s) | ${items.length} produto(s) selecionado(s)`;
         sd2.font  = { italic: true, size: 9, color: { argb: 'FF555555' } };
         sd2.alignment = { horizontal: 'center', vertical: 'middle' };
         sheetDet.getRow(2).height = 16;
 
         const hRowDet = sheetDet.getRow(3);
-        ['Pedido', 'Cliente', 'Produto Pai', 'Desc. Produto Pai', 'Componente', 'Descrição Componente', 'Un', 'Quantidade'].forEach((h, i) => {
+        [
+            'Pedido', 'Cliente', 'Produto Pai', 'Desc. Produto Pai', 
+            'Componente', 'Descrição Componente', 'Un', 
+            'Cód. Recurso', 'Desc. Recurso', 'Quantidade'
+        ].forEach((h, i) => {
             hRowDet.getCell(i + 1).value = h;
         });
-        styleHeaderRow(hRowDet, 8);
+        styleHeaderRow(hRowDet, 10);
 
-        detalhadaResult.rows.forEach((row, idx) => {
+        allDetalhadaRows.forEach((row, idx) => {
             const r = sheetDet.addRow([
                 row.pedido         || '',
                 row.cliente        || '',
@@ -461,6 +540,8 @@ router.post('/export', async (req, res) => {
                 row.componente     || '',
                 row.descricao      || '',
                 row.unidade        || 'UN',
+                row.recurso        || '',
+                row.recurso_desc   || '',
                 parseFloat(row.qtd_total) || 0,
             ]);
             r.height = 17;
@@ -470,9 +551,10 @@ router.post('/export', async (req, res) => {
                     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } };
                 });
             }
-            r.getCell(8).numFmt = '#,##0.000';
-            r.getCell(8).alignment = { horizontal: 'right' };
+            r.getCell(10).numFmt = '#,##0.000';
+            r.getCell(10).alignment = { horizontal: 'right' };
             r.getCell(7).alignment = { horizontal: 'center' };
+            r.getCell(8).alignment = { horizontal: 'center' };
         });
 
         // ════════════════════════════════════════════════════════════════════

@@ -35,10 +35,11 @@ const LandingPage = () => {
             {/* Hero Section */}
             <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
                 <div className="absolute inset-0 z-0">
-                    <img 
-                        src="https://metalfisa.com.br/site-2022/wp-content/uploads/2022/05/1.jpg" 
-                        alt="Hero Background" 
+                    <img
+                        src="https://metalfisa.com.br/site-2022/wp-content/uploads/2022/05/1.jpg"
+                        alt="Hero Background"
                         className="w-full h-full object-cover opacity-15"
+                        onError={(e) => { e.target.style.display = 'none'; }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-b from-white via-white/80 to-blue-50/90" />
                 </div>
@@ -103,7 +104,7 @@ const LandingPage = () => {
                         ].map((srv, idx) => (
                             <div key={idx} className="group overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:shadow-xl hover:border-blue-200 transition-all duration-300">
                                 <div className="h-48 w-full overflow-hidden">
-                                    <img src={srv.img} alt={srv.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                    <img src={srv.img} alt={srv.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.classList.add('bg-gradient-to-br', 'from-slate-200', 'to-slate-300'); }} />
                                 </div>
                                 <div className="p-6">
                                     <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all">

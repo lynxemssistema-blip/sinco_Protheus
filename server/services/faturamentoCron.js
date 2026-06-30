@@ -13,6 +13,9 @@ async function startFaturamentoCron() {
     // Roda a cada minuto
     cron.schedule('* * * * *', async () => {
         try {
+            const { isWeekendOrHoliday } = require('../utils/dateHelper');
+            if (isWeekendOrHoliday()) return;
+
             const now = new Date();
             const currentHourMin = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             const currentDay = now.getDay(); // 0: Dom, 1: Seg, ..., 6: Sab

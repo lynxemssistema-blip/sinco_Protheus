@@ -11,6 +11,70 @@ const ExcelJS = require('exceljs');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 
+// Helper to get authorized orders for external users
+async function getAuthorizedOrders(req) {
+    if (!req.user || !req.user.id) return { isExternal: false, allowedOrders: [] };
+
+    try {
+        const [userRows] = await mysqlPool.query(
+            'SELECT TipoUsuario, pedidos_autorizados FROM usuario WHERE idUsuario = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0) return { isExternal: false, allowedOrders: [] };
+
+        const user = userRows[0];
+        
+        // Check if role is CLI or profile is configured as external in company settings
+        let isExternal = (user.TipoUsuario === 'CLI');
+        
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (configRows.length > 0 && configRows[0].general_config) {
+            try {
+                const config = typeof configRows[0].general_config === 'string' 
+                    ? JSON.parse(configRows[0].general_config) 
+                    : configRows[0].general_config;
+                const profiles = config.custom_profiles || [];
+                const userProfile = profiles.find(p => p.code === user.TipoUsuario);
+                if (userProfile && userProfile.tipoPerfil === 'externo') {
+                    isExternal = true;
+                }
+            } catch (e) {
+                console.error('Error parsing general_config:', e);
+            }
+        }
+
+        if (!isExternal) {
+            return { isExternal: false, allowedOrders: [] };
+        }
+
+        const allowedOrders = (user.pedidos_autorizados || '')
+            .split(',')
+            .map(p => p.trim())
+            .filter(p => p.length > 0);
+
+        return { isExternal: true, allowedOrders };
+    } catch (err) {
+        console.error('Error checking external user permissions:', err);
+        return { isExternal: false, allowedOrders: [] };
+    }
+}
+
+// Middleware to restrict single order endpoints
+async function checkOrderAccess(req, res, next) {
+    const pedido = req.params.id || req.params.pedido;
+    if (!pedido) return next();
+
+    const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
+    if (isExternal) {
+        const cleanPedido = pedido.trim();
+        if (!allowedOrders.includes(cleanPedido)) {
+            return res.status(403).json({ error: 'Acesso Negado: Você não tem permissão para visualizar este pedido.' });
+        }
+    }
+    next();
+}
+
 // ── Forecast cache (módulo) — TTL 60s, evita fetch MySQL por requisição ────
 let _fcCache = { map: new Map(), expiresAt: 0 };
 async function getForecastMapCached() {
@@ -71,9 +135,25 @@ router.get('/', async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        // Construção dinâmica de filtros
         const getInactiveFilter = await getInactiveOrdersFilter();
+
+        // Construção dinâmica de filtros
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + getInactiveFilter('c5.c5_num');
+
+        // Restringir visibilidade de pedidos para usuários externos
+        const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
+        if (isExternal) {
+            if (allowedOrders.length === 0) {
+                whereClause += ' AND 1=0';
+            } else {
+                const sanitized = allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+                if (sanitized.length === 0) {
+                    whereClause += ' AND 1=0';
+                } else {
+                    whereClause += ` AND TRIM(c5.c5_num) IN (${sanitized.map(o => `'${o}'`).join(',')})`;
+                }
+            }
+        }
 
         // Filtra fora os "Vermelhos" (Faturados) - Optional now for Performance
         if (only_active === 'true') {
@@ -393,6 +473,25 @@ router.get('/flat', async (req, res) => {
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
         let countWhereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
+
+        // Restringir visibilidade de pedidos para usuários externos
+        const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
+        if (isExternal) {
+            if (allowedOrders.length === 0) {
+                whereClause += ' AND 1=0';
+                countWhereClause += ' AND 1=0';
+            } else {
+                const sanitized = allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+                if (sanitized.length === 0) {
+                    whereClause += ' AND 1=0';
+                    countWhereClause += ' AND 1=0';
+                } else {
+                    const orderFilter = ` AND TRIM(c5.c5_num) IN (${sanitized.map(o => `'${o}'`).join(',')})`;
+                    whereClause += orderFilter;
+                    countWhereClause += orderFilter;
+                }
+            }
+        }
 
         if (only_active === 'true') {
             // Keep only the direct item-level saldo filter — fast index scan on c6 columns.
@@ -1538,7 +1637,7 @@ router.post('/snapshot-fabrica', async (req, res) => {
 // GET /api/pedidos/:id/item-status
 // Returns lightweight status classification (Restrição/Revisão/Novo/PCP) per item.
 // Used by the Visão Geral tree-mode expand to show the correct status badge.
-router.get('/:id/item-status', async (req, res) => {
+router.get('/:id/item-status', checkOrderAccess, async (req, res) => {
     try {
         const pedido = String(req.params.id || '').trim();
         if (!pedido) {
@@ -1658,7 +1757,7 @@ router.get('/:id/item-status', async (req, res) => {
 // GET /api/pedidos/:id/pdf-data  ── Lean endpoint for PDF generation only
 // Returns only what orderPdfGenerator.js needs: PG core fields + MySQL notes
 // Avoids the 8 enrichment queries of /:id/itens, preventing MySQL connection exhaustion
-router.get('/:id/pdf-data', async (req, res) => {
+router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
     try {
         const id = String(req.params.id || '').trim();
         if (!id) return res.status(400).json({ error: 'Parâmetro pedido inválido.' });
@@ -1837,7 +1936,7 @@ router.get('/:id/pdf-data', async (req, res) => {
 });
 
 // GET /api/pedidos/:id/itens
-router.get('/:id/itens', async (req, res) => {
+router.get('/:id/itens', checkOrderAccess, async (req, res) => {
     try {
         const id = String(req.params.id || '').trim();
 
@@ -2512,7 +2611,7 @@ router.post('/batch/items/notes', async (req, res) => {
     }
 });
 
-router.get('/:pedido/items/notes', async (req, res) => {
+router.get('/:pedido/items/notes', checkOrderAccess, async (req, res) => {
     try {
         const { pedido } = req.params;
         const [rows] = await mysqlPool.query(
@@ -2655,7 +2754,7 @@ router.delete('/:pedido/items/:item/notes', async (req, res) => {
     }
 });
 
-router.get('/:pedido/items/:item/notes/history', async (req, res) => {
+router.get('/:pedido/items/:item/notes/history', checkOrderAccess, async (req, res) => {
     try {
         const { pedido, item } = req.params;
         const [rows] = await mysqlPool.query(
@@ -2670,7 +2769,7 @@ router.get('/:pedido/items/:item/notes/history', async (req, res) => {
     }
 });
 
-router.get('/:pedido/checklist-print', async (req, res) => {
+router.get('/:pedido/checklist-print', checkOrderAccess, async (req, res) => {
     try {
         const { pedido } = req.params;
 
@@ -2716,7 +2815,7 @@ router.get('/:pedido/checklist-print', async (req, res) => {
     }
 });
 
-router.get('/:pedido/items/:item/history', async (req, res) => {
+router.get('/:pedido/items/:item/history', checkOrderAccess, async (req, res) => {
     try {
         const { pedido, item } = req.params;
         const [rows] = await mysqlPool.query(
@@ -3105,7 +3204,7 @@ router.post('/pcp-forecasts/balance', async (req, res) => {
     }
 });
 
-router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
+router.get('/items/:pedido/:item/pcp-forecasts/history', checkOrderAccess, async (req, res) => {
     try {
         const { pedido, item } = req.params;
         const [rows] = await mysqlPool.query(
@@ -3125,7 +3224,7 @@ router.get('/items/:pedido/:item/pcp-forecasts/history', async (req, res) => {
 // O sistema explode toda a estrutura (SG1) e puxa o roteiro (SG2), mapeando 
 // as quantidades com base na quantidade vendida do pedido de venda (SC6).
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/op-mirror/:id', async (req, res) => {
+router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
     let client;
     try {
         client = await db.connect();
@@ -3403,7 +3502,7 @@ router.get('/op-mirror/:id', async (req, res) => {
 // Exporta componentes com operação MO0013 para o template Espelho OS-Corte.xls
 // Retorna um ZIP contendo: template preenchido + Excel de resumo
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/op-mirror/:id/export-laser', async (req, res) => {
+router.get('/op-mirror/:id/export-laser', checkOrderAccess, async (req, res) => {
     try {
         const { id } = req.params;
 

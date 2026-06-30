@@ -46,10 +46,9 @@ router.get('/list', async (req, res) => {
         const [inativos] = await mysql.query("SELECT pedido_numero FROM app_pedidos_inativos");
         const inativosSet = new Set(inativos.map(i => i.pedido_numero.trim()));
 
-        // Busca do Protheus todos os pedidos (LIMIT 1000 por performance, podemos otimizar com filtros do client)
         const searchQuery = req.query.q || '';
         let sql = `
-            SELECT 
+            SELECT
                 TRIM(c5.c5_num) AS pedido,
                 TRIM(c5.c5_cliente) AS cliente_cod,
                 TRIM(sa1.a1_nome) AS cliente_nome,
@@ -67,14 +66,25 @@ router.get('/list', async (req, res) => {
 
         sql += ` ORDER BY c5.c5_emissao DESC LIMIT 1000`;
 
-        const result = await protheus.query(sql, params);
-        
-        const pedidos = result.rows.map(row => ({
-            pedido: row.pedido,
-            cliente_nome: row.cliente_nome,
-            emissao: row.emissao,
-            ativo: !inativosSet.has(row.pedido)
-        }));
+        let pedidos = [];
+        try {
+            const result = await protheus.query(sql, params);
+            pedidos = result.rows.map(row => ({
+                pedido: row.pedido,
+                cliente_nome: row.cliente_nome,
+                emissao: row.emissao,
+                ativo: !inativosSet.has(row.pedido)
+            }));
+        } catch (pgErr) {
+            // Protheus unavailable (common in dev environment) — return inactive list only
+            console.warn('[pedidos-status/list] Protheus indisponível:', pgErr.message);
+            pedidos = Array.from(inativosSet).map(pedido => ({
+                pedido,
+                cliente_nome: '',
+                emissao: '',
+                ativo: false,
+            }));
+        }
 
         res.json(pedidos);
     } catch (err) {

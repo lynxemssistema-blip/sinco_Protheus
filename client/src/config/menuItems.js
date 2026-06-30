@@ -1,5 +1,5 @@
 import {
-    LayoutDashboard, ShoppingCart, Settings as SettingsIcon, Menu, Package,
+    LayoutDashboard, ShoppingCart, Settings as SettingsIcon, Menu, Package, Printer,
     Factory, Truck, LogOut, BarChart, Calendar, FileText, Building2,
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
@@ -223,6 +223,7 @@ export const MENU_GROUPS = [
         items: [
             { id: 'avisos', label: 'Avisos e Mensagens', path: '/avisos', icon: MessageSquare },
             { id: 'config', label: 'Configurações', path: '/configuracoes', icon: SettingsIcon },
+            { id: 'config_etiquetas', label: 'Configurações: Aba Etiquetas', path: '#', icon: Printer, hidden: true },
             { id: 'protheus-estudo', label: 'Estudo SQL Protheus', path: '/admin/protheus-estudo', icon: Database },
             { id: 'ajuda', label: 'Central de Ajuda', path: '/ajuda', icon: HelpCircle }
         ]

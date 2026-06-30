@@ -150,9 +150,19 @@ const initDB = async () => {
                 pcp_numero_serie VARCHAR(150) NULL,
                 pcp_lote VARCHAR(100) NULL,
                 pcp_numero_lote VARCHAR(150) NULL,
+                quantidade_apontamento DECIMAL(18,6) NULL,
+                executar_apontamento TINYINT(1) DEFAULT 0,
                 FOREIGN KEY (solicitacao_id) REFERENCES app_faturamento_solicitacoes(id) ON DELETE CASCADE
             )
         `);
+
+        // Migration query in case table exists
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN quantidade_apontamento DECIMAL(18,6) NULL");
+        } catch (e) {}
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN executar_apontamento TINYINT(1) DEFAULT 0");
+        } catch (e) {}
 
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_faturamento_auditoria (
@@ -232,7 +242,7 @@ router.post('/solicitacoes', async (req, res) => {
         // 2. Inserir itens (batch)
         const validItems = items.filter(it => it.quantidade_solicitada && it.quantidade_solicitada > 0);
         if (validItems.length > 0) {
-            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
             const values = validItems.flatMap(it => [
                 solicitacaoId,
                 String(it.pedido).trim(),
@@ -251,12 +261,14 @@ router.post('/solicitacoes', async (req, res) => {
                 it.pcp_serie_metalfisa || null,
                 it.pcp_numero_serie || null,
                 it.pcp_lote || null,
-                it.pcp_numero_lote || null
+                it.pcp_numero_lote || null,
+                it.quantidade_apontamento !== undefined && it.quantidade_apontamento !== null ? parseFloat(it.quantidade_apontamento) : null,
+                it.executar_apontamento ? 1 : 0
             ]);
             await connection.query(
                 `INSERT INTO app_faturamento_solicitacao_itens
                  (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, pedido_cliente, desenho_cliente, nome_cliente, valor_unitario, valor_total,
-                  pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_numero_serie, pcp_lote, pcp_numero_lote)
+                  pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_numero_serie, pcp_lote, pcp_numero_lote, quantidade_apontamento, executar_apontamento)
                  VALUES ${placeholders}`,
                 values
             );
@@ -266,6 +278,87 @@ router.post('/solicitacoes', async (req, res) => {
         
         // Log Assíncrono fora da transação principal para não bloquear
         registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }).catch(console.error);
+
+        // 3. Apontamento de Produção no Protheus (Síncrono)
+        const apontarItems = validItems.filter(it => it.executar_apontamento && (it.op_num_completa || it.op_num));
+        let apontamentoResult = null;
+        if (apontarItems.length > 0) {
+            try {
+                const axios = require('axios');
+                const https = require('https');
+                
+                const payload = {
+                    data: {
+                        CFILANT: "0101",
+                        EMPRESA: "01",
+                        NOPER: 3,
+                        apontamentosOrdensProducao: apontarItems.map(it => {
+                            const op = String(it.op_num_completa || it.op_num || '').trim();
+                            const qtdApontar = it.quantidade_apontamento !== undefined && it.quantidade_apontamento !== null
+                                ? parseFloat(it.quantidade_apontamento)
+                                : parseFloat(it.quantidade_solicitada);
+                            return {
+                                C2_OP: op,
+                                C2_PRODUTO: String(it.codigo || it.codigo_produto || '').trim(),
+                                C2_QUANT: qtdApontar
+                            };
+                        })
+                    }
+                };
+
+                console.log(`[PROTHEUS APONTAMENTO] Enviando payload síncrono para ${solicitacaoId}:`, JSON.stringify(payload));
+
+                const agent = new https.Agent({ rejectUnauthorized: false });
+                const response = await axios.post(
+                    'https://192.168.1.60:47500/ordem-producao/apontamento-simples',
+                    payload,
+                    { 
+                        httpsAgent: agent,
+                        timeout: 15000
+                    }
+                );
+
+                console.log(`[PROTHEUS APONTAMENTO] Resposta síncrona recebida para ${solicitacaoId}:`, response.status, response.data);
+                
+                await registrarAuditoria(
+                    mysqlPool, 
+                    solicitacaoId, 
+                    null, 
+                    usuario || 'Sistema', 
+                    'APONTAMENTO_PROTHEUS_SUCESSO', 
+                    { 
+                        payload: payload.data,
+                        resposta: response.data 
+                    }
+                );
+
+                apontamentoResult = {
+                    sucesso: true,
+                    resposta: response.data
+                };
+            } catch (err) {
+                console.error(`[PROTHEUS APONTAMENTO] Falha síncrona ao executar apontamento para ${solicitacaoId}:`, err.message);
+                const errorDetail = err.response?.data || err.message;
+                
+                await registrarAuditoria(
+                    mysqlPool, 
+                    solicitacaoId, 
+                    null, 
+                    usuario || 'Sistema', 
+                    'APONTAMENTO_PROTHEUS_ERRO', 
+                    { 
+                        erro: err.message,
+                        detalhe: errorDetail 
+                    }
+                );
+
+                apontamentoResult = {
+                    sucesso: false,
+                    erro: err.message,
+                    detalhe: errorDetail
+                };
+            }
+        }
 
         // Disparo de e-mail e WhatsApp assíncrono para os usuários configurados
         (async () => {
@@ -369,7 +462,8 @@ router.post('/solicitacoes', async (req, res) => {
             success: true, 
             message: 'Solicitação gerada com sucesso!',
             numero_solicitacao,
-            id: solicitacaoId 
+            id: solicitacaoId,
+            apontamento: apontamentoResult
         });
 
     } catch (error) {

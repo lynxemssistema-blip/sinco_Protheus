@@ -380,18 +380,18 @@ router.put('/:id/execucoes/concluir', async (req, res) => {
         }
 
         const execId = active[0].id;
-        const horaInicio = new Date(active[0].hora_inicio);
-        const horaFim = new Date();
-        const diffSeconds = Math.max(1, Math.round((horaFim - horaInicio) / 1000));
 
         // Atualizar execução
         await mysqlPool.query(`
             UPDATE pcp_programas_execucoes
             SET hora_fim = CURRENT_TIMESTAMP,
-                tempo_realizado_segundos = ?,
+                tempo_realizado_segundos = TIMESTAMPDIFF(SECOND, hora_inicio, CURRENT_TIMESTAMP),
                 status = 'CONCLUIDA'
             WHERE id = ?
-        `, [diffSeconds, execId]);
+        `, [execId]);
+
+        const [updatedExec] = await mysqlPool.query(`SELECT tempo_realizado_segundos FROM pcp_programas_execucoes WHERE id = ?`, [execId]);
+        const finalSeconds = updatedExec[0]?.tempo_realizado_segundos || 1;
 
         // Verificar se todas as chapas do programa foram concluídas
         const [prog] = await mysqlPool.query(`SELECT quantidade_vezes FROM pcp_programas_liberados WHERE id = ?`, [id]);
@@ -408,7 +408,7 @@ router.put('/:id/execucoes/concluir', async (req, res) => {
         const io = req.app.get('io');
         if (io) io.emit('tv:programas_atualizados');
 
-        res.json({ success: true, tempo_realizado_segundos: diffSeconds, total_concluidas: totalConcluidas });
+        res.json({ success: true, tempo_realizado_segundos: finalSeconds, total_concluidas: totalConcluidas });
     } catch (err) {
         console.error("Erro ao concluir execução de chapa:", err);
         res.status(500).json({ error: "Erro interno ao concluir chapa." });
@@ -517,6 +517,11 @@ router.get('/relatorio-horas', async (req, res) => {
                 p.criado_por,
                 p.turno_previsao,
                 p.status,
+                p.tipo_execucao,
+                p.terceirizado_empresa,
+                p.terceirizado_escopo,
+                p.terceirizado_data_envio,
+                p.terceirizado_data_retorno,
                 m.nome AS maquina_nome,
                 m.tag_identificacao AS maquina_tag,
                 COALESCE(SUM(e.tempo_realizado_segundos), 0) AS total_realizado_segundos,
@@ -554,6 +559,11 @@ router.get('/relatorio-horas', async (req, res) => {
                 turno_previsao: r.turno_previsao,
                 criado_por: r.criado_por,
                 status: r.status,
+                tipo_execucao: r.tipo_execucao,
+                terceirizado_empresa: r.terceirizado_empresa,
+                terceirizado_escopo: r.terceirizado_escopo,
+                terceirizado_data_envio: r.terceirizado_data_envio,
+                terceirizado_data_retorno: r.terceirizado_data_retorno,
                 
                 // Formatos amigáveis
                 tempo_previsto_unitario: r.tempo_previsto,
@@ -642,19 +652,19 @@ router.put('/:id/paradas/concluir', async (req, res) => {
         }
 
         const paradaId = active[0].id;
-        const dataInicio = new Date(active[0].data_inicio);
-        const dataFim = new Date();
-        const diffSeconds = Math.max(1, Math.round((dataFim - dataInicio) / 1000));
 
         await mysqlPool.query(`
             UPDATE pcp_programas_paradas
             SET data_fim = CURRENT_TIMESTAMP,
-                tempo_segundos = ?,
+                tempo_segundos = TIMESTAMPDIFF(SECOND, data_inicio, CURRENT_TIMESTAMP),
                 status = 'CONCLUIDA'
             WHERE id = ?
-        `, [diffSeconds, paradaId]);
+        `, [paradaId]);
 
-        res.json({ success: true, tempo_segundos: diffSeconds });
+        const [updatedParada] = await mysqlPool.query(`SELECT tempo_segundos FROM pcp_programas_paradas WHERE id = ?`, [paradaId]);
+        const finalParadaSeconds = updatedParada[0]?.tempo_segundos || 1;
+
+        res.json({ success: true, tempo_segundos: finalParadaSeconds });
     } catch (err) {
         console.error("Erro ao concluir parada de máquina:", err);
         res.status(500).json({ error: "Erro interno ao concluir parada." });
@@ -690,6 +700,46 @@ router.put('/:id/concluir', async (req, res) => {
     } catch (err) {
         console.error("Erro ao concluir programa manualmente:", err);
         res.status(500).json({ error: "Erro interno ao concluir programa." });
+    }
+});
+
+// 13. Atualizar Dados de Terceirização
+// PUT /api/pcp/programas/:id/terceirizacao
+router.put('/:id/terceirizacao', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            tipo_execucao,
+            terceirizado_empresa,
+            terceirizado_escopo,
+            terceirizado_data_envio,
+            terceirizado_data_retorno
+        } = req.body;
+
+        await mysqlPool.query(`
+            UPDATE pcp_programas_liberados
+            SET tipo_execucao = ?,
+                terceirizado_empresa = ?,
+                terceirizado_escopo = ?,
+                terceirizado_data_envio = ?,
+                terceirizado_data_retorno = ?
+            WHERE id = ?
+        `, [
+            tipo_execucao || 'INTERNA',
+            tipo_execucao === 'TERCEIRIZADA' ? terceirizado_empresa : null,
+            tipo_execucao === 'TERCEIRIZADA' ? terceirizado_escopo : null,
+            tipo_execucao === 'TERCEIRIZADA' ? terceirizado_data_envio : null,
+            tipo_execucao === 'TERCEIRIZADA' ? terceirizado_data_retorno : null,
+            id
+        ]);
+
+        const io = req.app.get('io');
+        if (io) io.emit('tv:programas_atualizados');
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Erro ao atualizar dados de terceirização:", err);
+        res.status(500).json({ error: "Erro interno ao atualizar terceirização." });
     }
 });
 

@@ -170,6 +170,16 @@ app.get('/api/rh/curriculos/download/:filename', (req, res) => {
     res.download(filePath);
 });
 
+// ── Rota pública: download do Print Agent (sem auth — navegador não envia JWT em <a download>) ──
+app.get('/api/labels/download-agent', (req, res) => {
+    const fs = require('fs');
+    const agentPath = path.resolve(__dirname, '../client/public/MetalFisa-Print-Agent.ems');
+    if (!fs.existsSync(agentPath)) {
+        return res.status(404).json({ error: 'MetalFisa-Print-Agent.ems não encontrado.' });
+    }
+    res.download(agentPath, 'MetalFisa-Print-Agent.ems');
+});
+
 // Protected API routes — require valid JWT token
 app.use('/api', authenticateToken);
 
@@ -222,6 +232,9 @@ console.log('✅ [DEBUG] Rotas de Materiais montadas.');
 
 // PCP - Exportação de Materiais
 app.use('/api/pcp', require('./routes/pcpMaterials'));
+
+// Labels — Impressão de Etiquetas PPLB/EPL2
+app.use('/api/labels', require('./routes/labels'));
 
 // Production Route
 console.log('🔄 [DEBUG] Montando rota /api/production...');
@@ -368,8 +381,13 @@ app.get(/(.*)/, (req, res) => {
 // CRON JOB - AGENTE DE IA MONITORAMENTO WHATSAPP
 // ==========================================
 cron.schedule('0 15 * * *', async () => {
-    console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
     try {
+        const { isWeekendOrHoliday } = require('./utils/dateHelper');
+        if (isWeekendOrHoliday()) {
+            console.log('[CRON] Hoje é final de semana ou feriado. Relatório diário do Agente de IA para WhatsApp pulado.');
+            return;
+        }
+        console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
         const [groups] = await mysqlService.query(
             'SELECT grupo_nome, grupo_jid FROM app_whatsapp_grupos_monitorados WHERE grupo_jid IS NOT NULL'
         );
@@ -390,8 +408,13 @@ cron.schedule('0 15 * * *', async () => {
 // CRON JOBS AUTOMATIZADOS - MEU CANAL
 // ==========================================
 cron.schedule('0 6,15 * * *', async () => {
-    console.log('[CRON] Iniciando rotina de disparo de e-mails/WhatsApp Meu Canal...');
     try {
+        const { isWeekendOrHoliday } = require('./utils/dateHelper');
+        if (isWeekendOrHoliday()) {
+            console.log('[CRON] Hoje é final de semana ou feriado. Rotina de Meu Canal pulada.');
+            return;
+        }
+        console.log('[CRON] Iniciando rotina de disparo de e-mails/WhatsApp Meu Canal...');
         const [respRows] = await mysqlService.query(`
             SELECT DISTINCT u.idUsuario as id, u.Login, u.NomeCompleto, u.email, u.whatsapp
             FROM pcp_setor_responsaveis sr

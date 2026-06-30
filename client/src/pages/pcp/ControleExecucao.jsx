@@ -4,9 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
     Play, Square, CheckCircle, Clock, Search, Filter, 
     TrendingUp, BarChart2, Factory, User, Check, AlertTriangle, 
-    Calendar, RefreshCw, Plus, ArrowLeftRight, Octagon, Zap, X, RotateCcw
+    Calendar, RefreshCw, Plus, ArrowLeftRight, Octagon, Zap, X, RotateCcw,
+    Truck, Download, Building
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
 
 // Auxiliares de tempo
 function formatSeconds(totalSecs) {
@@ -83,10 +85,21 @@ export default function ControleExecucao() {
     // Parada Form State (Modal/Modal Inline)
     const [reportingParada, setReportingParada] = useState(null); // { progId, chapaNum }
     const [apontamentoProg, setApontamentoProg] = useState(null);
+    const [chapaFilter, setChapaFilter] = useState('PENDENTES_ANDAMENTO_PARADAS');
 
     const [paradaForm, setParadaForm] = useState({
         motivo: MOTIVOS_PARADA[0],
         observacoes: ''
+    });
+
+    // Terceirização Form State
+    const [terceirizacaoProg, setTerceirizacaoProg] = useState(null);
+    const [terceirizacaoForm, setTerceirizacaoForm] = useState({
+        tipo_execucao: 'INTERNA',
+        terceirizado_empresa: '',
+        terceirizado_escopo: '',
+        terceirizado_data_envio: '',
+        terceirizado_data_retorno: ''
     });
 
     // Relatório State
@@ -324,6 +337,63 @@ export default function ControleExecucao() {
         }
     };
 
+    // Abrir Modal de Terceirização
+    const handleOpenTerceirizacao = (prog) => {
+        setTerceirizacaoProg(prog);
+        setTerceirizacaoForm({
+            tipo_execucao: prog.tipo_execucao || 'INTERNA',
+            terceirizado_empresa: prog.terceirizado_empresa || '',
+            terceirizado_escopo: prog.terceirizado_escopo || '',
+            terceirizado_data_envio: prog.terceirizado_data_envio ? new Date(prog.terceirizado_data_envio).toISOString().substring(0, 10) : '',
+            terceirizado_data_retorno: prog.terceirizado_data_retorno ? new Date(prog.terceirizado_data_retorno).toISOString().substring(0, 10) : ''
+        });
+    };
+
+    // Salvar Terceirização
+    const handleSaveTerceirizacao = async (e) => {
+        e.preventDefault();
+        try {
+            await api.put(`/pcp/programas/${terceirizacaoProg.id}/terceirizacao`, terceirizacaoForm);
+            toast.success("Dados de terceirização salvos com sucesso!");
+            setTerceirizacaoProg(null);
+            loadProgramasMaquina(selectedMaquinaId);
+        } catch (err) {
+            console.error(err);
+            toast.error("Erro ao salvar dados de terceirização.");
+        }
+    };
+
+    // Exportar Relatório Excel
+    const handleExportRelatorio = () => {
+        if (!filteredRelatorio || filteredRelatorio.length === 0) {
+            toast.warning("Nenhum dado para exportar.");
+            return;
+        }
+
+        const dataToExport = filteredRelatorio.map(r => ({
+            "Equipamento": r.maquina_nome,
+            "Programa": r.nome_programa,
+            "Turno": `Turno ${r.turno_previsao}`,
+            "Status": r.status,
+            "Chapas Concluídas": `${r.chapas_concluidas} de ${r.total_chapas}`,
+            "Tempo Previsto": r.tempo_previsto_total,
+            "Tempo Realizado": r.tempo_realizado_total,
+            "Tempo Parado": r.tempo_parada_total,
+            "Eficiência Bruta (%)": r.eficiencia,
+            "Eficiência Líquida (%)": r.eficiencia_liquida,
+            "Tipo Execução": r.tipo_execucao || 'INTERNA',
+            "Empresa Terceirizada": r.terceirizado_empresa || '-',
+            "Data Envio": r.terceirizado_data_envio ? new Date(r.terceirizado_data_envio).toLocaleDateString('pt-BR') : '-',
+            "Data Retorno": r.terceirizado_data_retorno ? new Date(r.terceirizado_data_retorno).toLocaleDateString('pt-BR') : '-',
+            "Escopo": r.terceirizado_escopo || '-'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Relatório Técnico");
+        XLSX.writeFile(wb, `Relatorio_Tecnico_PCP_${new Date().getTime()}.xlsx`);
+    };
+
     // Filtragem de programas do operador
     const filteredProgramas = useMemo(() => {
         return programas.filter(p => {
@@ -524,6 +594,7 @@ export default function ControleExecucao() {
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                                             <th className="px-5 py-4 w-12 text-center">ID</th>
+                                            <th className="px-5 py-4 w-16 text-center" title="Sequência/Prioridade de Execução">Seq.</th>
                                             <th className="px-5 py-4 w-28 text-center">Status</th>
                                             <th className="px-5 py-4">Programa CNC</th>
                                             <th className="px-5 py-4">Equipamento</th>
@@ -546,6 +617,17 @@ export default function ControleExecucao() {
                                             return (
                                                 <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors">
                                                     <td className="px-5 py-4 text-center font-bold text-slate-400 font-mono">#{prog.id}</td>
+                                                    <td className="px-5 py-4 text-center">
+                                                        {prog.ordem_execucao > 0 ? (
+                                                            <div className="flex justify-center items-center">
+                                                                <span className="flex items-center justify-center w-7 h-7 bg-red-600 text-white font-black rounded-lg shadow-sm text-xs">
+                                                                    {prog.ordem_execucao}
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-300 font-bold">-</span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-5 py-4 text-center">
                                                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border tracking-wider inline-block ${
                                                             prog.status === 'CONCLUIDO' ? 'bg-green-50 text-green-700 border-green-200' :
@@ -602,6 +684,18 @@ export default function ControleExecucao() {
                                                                 <Check size={10} /> Assinar Recebimento
                                                             </button>
                                                         )}
+                                                        <div className="mt-2 border-t border-slate-100 pt-2">
+                                                            <button
+                                                                onClick={() => handleOpenTerceirizacao(prog)}
+                                                                className={`text-[9px] font-bold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 transition-colors ${
+                                                                    prog.tipo_execucao === 'TERCEIRIZADA' 
+                                                                    ? 'text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100'
+                                                                    : 'text-slate-500 bg-slate-50 border border-slate-200 hover:bg-slate-100'
+                                                                }`}
+                                                            >
+                                                                <Truck size={10} /> {prog.tipo_execucao === 'TERCEIRIZADA' ? 'Terceirizada' : 'Terceirizar'}
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                     <td className="px-5 py-4 text-center">
                                                         {prog.recebedor_nome ? (
@@ -726,6 +820,12 @@ export default function ControleExecucao() {
                         </div>
 
                         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                            <button
+                                onClick={handleExportRelatorio}
+                                className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700 transition-colors shadow-sm"
+                            >
+                                <Download size={12} /> Exportar Excel
+                            </button>
                             <button
                                 onClick={loadRelatorio}
                                 className="flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors"
@@ -872,7 +972,22 @@ export default function ControleExecucao() {
 
                             {/* Listagem de Chapas Planejadas */}
                             <div className="space-y-4">
-                                <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Chapas do Lote</h4>
+                                <div className="flex flex-wrap items-center justify-between gap-4">
+                                    <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Chapas do Lote</h4>
+                                    
+                                    <select
+                                        value={chapaFilter}
+                                        onChange={(e) => setChapaFilter(e.target.value)}
+                                        className="text-xs border border-slate-300 rounded-lg p-2 bg-white font-semibold text-slate-700 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm"
+                                    >
+                                        <option value="PENDENTES_ANDAMENTO_PARADAS">Ocultar Concluídas (Padrão)</option>
+                                        <option value="TODOS">Mostrar Todas</option>
+                                        <option value="PENDENTE">Apenas Pendentes</option>
+                                        <option value="EM_ANDAMENTO">Apenas Em Andamento</option>
+                                        <option value="PARADA">Apenas Paradas</option>
+                                        <option value="CONCLUIDA">Apenas Concluídas</option>
+                                    </select>
+                                </div>
                                 
                                 <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
                                     {(() => {
@@ -897,7 +1012,35 @@ export default function ControleExecucao() {
                                         const progExecs = execucoes[apontamentoProg.id] || [];
                                         const progParadas = paradas[apontamentoProg.id] || [];
 
-                                        return chapasArray.map((chapa, index) => {
+                                        const filteredChapasArray = chapasArray.filter((chapa, index) => {
+                                            const chapaCodigo = chapa.codigo || `Chapa ${index + 1}`;
+                                            const exec = progExecs.find(e => e.chapa_numero === chapaCodigo);
+                                            const paradaAtiva = progParadas.find(p => p.chapa_numero === chapaCodigo && p.status === 'EM_ANDAMENTO');
+
+                                            let chapaStatus = 'PENDENTE';
+                                            if (exec) {
+                                                if (exec.status === 'CONCLUIDA') {
+                                                    chapaStatus = 'CONCLUIDA';
+                                                } else if (exec.status === 'EM_ANDAMENTO') {
+                                                    chapaStatus = paradaAtiva ? 'PARADA' : 'EM_ANDAMENTO';
+                                                }
+                                            }
+
+                                            if (chapaFilter === 'TODOS') return true;
+                                            if (chapaFilter === 'PENDENTES_ANDAMENTO_PARADAS') return chapaStatus !== 'CONCLUIDA';
+                                            return chapaStatus === chapaFilter;
+                                        });
+
+                                        if (filteredChapasArray.length === 0) {
+                                            return (
+                                                <div className="p-8 text-center text-slate-400 italic text-xs">
+                                                    Nenhuma chapa encontrada para o filtro atual.
+                                                </div>
+                                            );
+                                        }
+
+                                        return filteredChapasArray.map((chapa) => {
+                                            const index = chapasArray.indexOf(chapa);
                                             const chapaCodigo = chapa.codigo || `Chapa ${index + 1}`;
                                             const tempoPrevistoChapa = chapa.tempo || apontamentoProg.tempo_previsto || '00:00:00';
                                             
@@ -1275,6 +1418,119 @@ export default function ControleExecucao() {
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-xl text-xs transition-colors shadow-sm"
                             >
                                 Confirmar Recebimento
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* MODAL DE TERCEIRIZAÇÃO */}
+            {terceirizacaoProg && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+                    <form onSubmit={handleSaveTerceirizacao} className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-scale-up">
+                        <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
+                            <h3 className="font-black text-base flex items-center gap-2">
+                                <Truck className="text-teal-400 w-5 h-5" />
+                                Gestão de Execução / Terceirização
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setTerceirizacaoProg(null)}
+                                className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-1.5 rounded-lg transition-all"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                            <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                                Programa: <strong className="text-slate-800">{terceirizacaoProg.nome_programa}</strong>
+                            </p>
+                            
+                            <div>
+                                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5">
+                                    Tipo de Execução
+                                </label>
+                                <select
+                                    value={terceirizacaoForm.tipo_execucao}
+                                    onChange={(e) => setTerceirizacaoForm({ ...terceirizacaoForm, tipo_execucao: e.target.value })}
+                                    className="w-full text-xs border border-slate-300 rounded-lg p-2.5 bg-white font-bold text-slate-700 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                >
+                                    <option value="INTERNA">Interna (Nossa Fábrica)</option>
+                                    <option value="TERCEIRIZADA">Terceirizada (Fornecedor Externo)</option>
+                                </select>
+                            </div>
+
+                            {terceirizacaoForm.tipo_execucao === 'TERCEIRIZADA' && (
+                                <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 animate-fade-in">
+                                    <div>
+                                        <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                            <Building size={12} className="text-slate-400" /> Empresa Contratada
+                                        </label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={terceirizacaoForm.terceirizado_empresa}
+                                            onChange={(e) => setTerceirizacaoForm({ ...terceirizacaoForm, terceirizado_empresa: e.target.value })}
+                                            placeholder="Nome do fornecedor / empresa"
+                                            className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-semibold"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                            <Octagon size={12} className="text-slate-400" /> Escopo do Serviço
+                                        </label>
+                                        <textarea
+                                            value={terceirizacaoForm.terceirizado_escopo}
+                                            onChange={(e) => setTerceirizacaoForm({ ...terceirizacaoForm, terceirizado_escopo: e.target.value })}
+                                            placeholder="Descreva o que o fornecedor fará (Corte, dobra, pintura...)"
+                                            rows="3"
+                                            className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-medium"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                                <Calendar size={12} className="text-slate-400" /> Data de Envio
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={terceirizacaoForm.terceirizado_data_envio}
+                                                onChange={(e) => setTerceirizacaoForm({ ...terceirizacaoForm, terceirizado_data_envio: e.target.value })}
+                                                className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-semibold cursor-pointer"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                                <Calendar size={12} className="text-slate-400" /> Data de Retorno
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={terceirizacaoForm.terceirizado_data_retorno}
+                                                onChange={(e) => setTerceirizacaoForm({ ...terceirizacaoForm, terceirizado_data_retorno: e.target.value })}
+                                                className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-semibold cursor-pointer"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-slate-50 border-t border-slate-200 p-5 flex justify-end gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setTerceirizacaoProg(null)}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="submit"
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-xl text-xs transition-colors shadow-sm"
+                            >
+                                Salvar Configuração
                             </button>
                         </div>
                     </form>

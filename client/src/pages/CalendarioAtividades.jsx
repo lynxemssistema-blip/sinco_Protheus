@@ -4,7 +4,7 @@ import api from '../services/api';
 import {
     Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus,
     CheckCircle2, Clock, MessageSquare, FileText, CheckSquare,
-    User, AlertCircle, Eye, RefreshCw, X, HelpCircle, Package, UserPlus, Sparkles, ListTodo
+    User, AlertCircle, Eye, RefreshCw, X, HelpCircle, Package, UserPlus, Sparkles, ListTodo, Edit, Trash2
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -97,6 +97,24 @@ export default function CalendarioAtividades() {
     const [selectedUserIds, setSelectedUserIds] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusConfirm, setStatusConfirm] = useState(null); // { id, concluido, grupoId }
+    
+    // Persistir preferência de exibir concluídos
+    const [showCompleted, setShowCompleted] = useState(() => {
+        try {
+            const saved = localStorage.getItem('calendario_show_completed');
+            return saved ? JSON.parse(saved) : false;
+        } catch (e) {
+            return false;
+        }
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('calendario_show_completed', JSON.stringify(showCompleted));
+        } catch (e) {
+            // Silencioso
+        }
+    }, [showCompleted]);
 
     // --- WhatsApp Monitored Groups States ---
     const [activeTab, setActiveTab] = useState('atividades'); // 'atividades' | 'whatsapp'
@@ -278,9 +296,9 @@ export default function CalendarioAtividades() {
 
         let activeSocket = null;
         import('socket.io-client').then(({ io }) => {
-            const socketUrl = 'http://192.168.1.77:3001';
+            const socketUrl = window.location.origin;
                 
-            const newSocket = io(socketUrl);
+            const newSocket = io(socketUrl, { transports: ['websocket', 'polling'] });
             activeSocket = newSocket;
 
             newSocket.on('connect', () => {
@@ -449,9 +467,43 @@ export default function CalendarioAtividades() {
     }, [events]);
 
     // Toggle custom activity status
-    const handleToggleStatus = async (id, currentStatus, grupoId) => {
+    // Toggle custom/ataviva activity status
+    const handleToggleStatus = async (id, currentStatus, grupoId, tipo) => {
         const newStatus = !currentStatus;
         
+        if (tipo === 'ataviva') {
+            try {
+                await api.put(`/ata-viva/tarefas/${id}/status`, { 
+                    status: newStatus ? 'CONCLUIDO' : 'PENDENTE',
+                    usuario: user?.nome || 'Sistema'
+                });
+                toast.success(newStatus ? 'Ata Viva concluída!' : 'Ata Viva marcada como pendente.');
+                
+                // Atualizar estado de eventos locais
+                setEvents(prev => prev.map(ev => {
+                    if (ev.tipo === 'ataviva' && ev.dbId === id) {
+                        return { ...ev, concluido: newStatus };
+                    }
+                    return ev;
+                }));
+
+                // Atualizar dayDetails
+                setDayDetails(prev => ({
+                    ...prev,
+                    atividades: prev.atividades.map(act => {
+                        if (act.tipo === 'ataviva' && act.id === id) {
+                            return { ...act, concluido: newStatus };
+                        }
+                        return act;
+                    })
+                }));
+            } catch (err) {
+                console.error('Erro ao atualizar status da Ata Viva:', err);
+                toast.error('Erro ao atualizar status da tarefa da Ata Viva.');
+            }
+            return;
+        }
+
         // If it is part of a group and is being completed, ask if we want to complete all
         if (grupoId && newStatus) {
             setStatusConfirm({ id, concluido: newStatus, grupoId });
@@ -485,6 +537,65 @@ export default function CalendarioAtividades() {
             toast.error('Erro ao atualizar status da atividade.');
         }
     };
+
+    // Edit Ata Viva text
+    const handleEditAtaViva = async (task) => {
+        const novoTexto = window.prompt('Editar texto da tarefa da Ata Viva:', task.titulo || task.texto_tarefa);
+        if (novoTexto === null) return;
+        
+        const textoTrim = novoTexto.trim();
+        if (!textoTrim) {
+            toast.warning('O texto da tarefa não pode ser vazio.');
+            return;
+        }
+
+        try {
+            await api.put(`/ata-viva/tarefas/${task.id}`, { texto_tarefa: textoTrim });
+            toast.success('Tarefa da Ata Viva editada com sucesso!');
+
+            // Atualizar localmente events
+            setEvents(prev => prev.map(ev => {
+                if (ev.tipo === 'ataviva' && ev.dbId === task.id) {
+                    return { ...ev, titulo: textoTrim };
+                }
+                return ev;
+            }));
+
+            // Atualizar localmente dayDetails
+            setDayDetails(prev => ({
+                ...prev,
+                atividades: prev.atividades.map(act => {
+                    if (act.tipo === 'ataviva' && act.id === task.id) {
+                        return { ...act, titulo: textoTrim, texto_tarefa: textoTrim };
+                    }
+                    return act;
+                })
+            }));
+        } catch (err) {
+            console.error('Erro ao editar tarefa da Ata Viva:', err);
+            toast.error('Erro ao editar tarefa da Ata Viva.');
+        }
+    };
+
+    // Delete Ata Viva task
+    const handleDeleteAtaViva = async (id) => {
+        if (!window.confirm('Deseja realmente excluir esta tarefa da Ata Viva?')) return;
+        try {
+            await api.delete(`/ata-viva/tarefas/${id}`);
+            toast.success('Tarefa da Ata Viva excluída com sucesso!');
+            
+            // Remover localmente de events e dayDetails
+            setEvents(prev => prev.filter(ev => !(ev.tipo === 'ataviva' && ev.dbId === id)));
+            setDayDetails(prev => ({
+                ...prev,
+                atividades: prev.atividades.filter(act => !(act.tipo === 'ataviva' && act.id === id))
+            }));
+        } catch (err) {
+            console.error('Erro ao excluir tarefa da Ata Viva:', err);
+            toast.error('Erro ao excluir tarefa da Ata Viva.');
+        }
+    };
+
 
     const handleConfirmStatus = async (baixarTodos) => {
         if (!statusConfirm) return;
@@ -558,6 +669,15 @@ export default function CalendarioAtividades() {
             return new Date(b.criado_em) - new Date(a.criado_em);
         });
     }, [dayDetails.atividades]);
+
+    const completedCount = useMemo(() => {
+        return dayDetails.atividades.filter(act => act.concluido).length;
+    }, [dayDetails.atividades]);
+
+    const visibleActivities = useMemo(() => {
+        if (showCompleted) return sortedActivities;
+        return sortedActivities.filter(act => !act.concluido);
+    }, [sortedActivities, showCompleted]);
 
     return (
         <div className="flex-1 flex flex-col h-[calc(100vh-60px)] md:h-[calc(100vh-24px)] bg-slate-50 overflow-hidden">
@@ -759,105 +879,150 @@ export default function CalendarioAtividades() {
                             
                             {/* Activities List */}
                             <div>
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                                    <Clock className="w-4 h-4" />
-                                    Lista de Atividades
-                                </h4>
+                                <div className="flex items-center justify-between mb-3 w-full">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                        <Clock className="w-4 h-4" />
+                                        Lista de Atividades
+                                    </h4>
+                                    {completedCount > 0 && (
+                                        <button
+                                            onClick={() => setShowCompleted(!showCompleted)}
+                                            className="text-[10px] font-bold text-slate-500 hover:text-orange-600 bg-slate-100 hover:bg-orange-50 border border-slate-200 hover:border-orange-200 px-2 py-1 rounded-lg transition-all flex items-center gap-1 active:scale-95 shadow-sm"
+                                        >
+                                            <Eye className="w-3.5 h-3.5" />
+                                            {showCompleted ? 'Ocultar Concluídas' : `Mostrar Concluídas (${completedCount})`}
+                                        </button>
+                                    )}
+                                </div>
 
                                 {detailsLoading ? (
                                     <div className="py-8 text-center text-slate-400 text-sm">Carregando atividades...</div>
                                 ) : sortedActivities.length > 0 ? (
                                     <div className="space-y-3">
-                                        {sortedActivities.map((act) => {
-                                            const isCreator = act.idRemetente === user?.id;
+                                        {visibleActivities.length > 0 ? (
+                                            visibleActivities.map((act) => {
+                                                const isCreator = act.idRemetente === user?.id;
 
-                                            let icon = <CheckSquare className="w-4 h-4" />;
-                                            let badgeColor = 'bg-orange-50 border-orange-100 text-orange-700'; // Custom Activity
-                                            let label = 'Custom';
+                                                let icon = <CheckSquare className="w-4 h-4" />;
+                                                let badgeColor = 'bg-orange-50 border-orange-100 text-orange-700'; // Custom Activity
+                                                let label = 'Custom';
 
-                                            if (act.tipo === 'ataviva') {
-                                                icon = <FileText className="w-4 h-4" />;
-                                                badgeColor = 'bg-emerald-50 border-emerald-100 text-emerald-700';
-                                                label = 'Ata Viva';
-                                            } else if (act.tipo === 'aviso') {
-                                                icon = <MessageSquare className="w-4 h-4" />;
-                                                badgeColor = 'bg-cyan-50 border-cyan-100 text-cyan-700';
-                                                label = 'Aviso';
-                                            }
+                                                if (act.tipo === 'ataviva') {
+                                                    icon = <FileText className="w-4 h-4" />;
+                                                    badgeColor = 'bg-emerald-50 border-emerald-100 text-emerald-700';
+                                                    label = 'Ata Viva';
+                                                } else if (act.tipo === 'aviso') {
+                                                    icon = <MessageSquare className="w-4 h-4" />;
+                                                    badgeColor = 'bg-cyan-50 border-cyan-100 text-cyan-700';
+                                                    label = 'Aviso';
+                                                }
 
-                                            return (
-                                                <div
-                                                    key={`${act.tipo}-${act.id}`}
-                                                    className={`p-4 rounded-xl border transition-all flex items-start gap-3 bg-white shadow-sm hover:shadow-md
-                                                        ${act.concluido ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}
-                                                    `}
-                                                >
-                                                    {/* Action check button for custom tasks */}
-                                                    {act.tipo === 'custom' ? (
-                                                        <button
-                                                            onClick={() => handleToggleStatus(act.id, act.concluido, act.grupo_id)}
-                                                            className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-orange-500
-                                                                ${act.concluido 
-                                                                    ? 'bg-slate-400 border-slate-400 text-white' 
-                                                                    : 'bg-white border-slate-300 hover:border-orange-500 text-transparent'
-                                                                }
-                                                            `}
-                                                        >
-                                                            <CheckCircle2 className="w-4 h-4" />
-                                                        </button>
-                                                    ) : (
-                                                        <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${act.concluido ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                                            {icon}
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
-                                                                {label}
-                                                            </span>
-                                                            {act.concluido && (
-                                                                <span className="bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                                                    Concluído
-                                                                </span>
+                                                return (
+                                                    <div
+                                                        key={`${act.tipo}-${act.id}`}
+                                                        className={`p-4 rounded-xl border transition-all flex items-start justify-between gap-3 bg-white shadow-sm hover:shadow-md
+                                                            ${act.concluido ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}
+                                                        `}
+                                                    >
+                                                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                            {/* Action check button for custom and ataviva tasks */}
+                                                            {act.tipo === 'custom' || act.tipo === 'ataviva' ? (
+                                                                <button
+                                                                    onClick={() => handleToggleStatus(act.id, act.concluido, act.grupo_id, act.tipo)}
+                                                                    className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-orange-500 shrink-0
+                                                                        ${act.concluido 
+                                                                            ? 'bg-slate-400 border-slate-400 text-white' 
+                                                                            : 'bg-white border-slate-300 hover:border-orange-500 text-transparent'
+                                                                        }
+                                                                    `}
+                                                                >
+                                                                    <CheckCircle2 className="w-4 h-4" />
+                                                                </button>
+                                                            ) : (
+                                                                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${act.concluido ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                                                    {icon}
+                                                                </div>
                                                             )}
+
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                                                                        {label}
+                                                                    </span>
+                                                                    {act.concluido && (
+                                                                        <span className="bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                                                            Concluído
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                
+                                                                <p className={`text-slate-800 text-sm font-semibold break-words leading-relaxed ${act.concluido ? 'line-through text-slate-400' : ''}`}>
+                                                                    {act.titulo}
+                                                                </p>
+
+                                                                {/* Meta information */}
+                                                                {act.tipo === 'custom' && (
+                                                                    <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2 items-center">
+                                                                        <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+                                                                            <User className="w-3.5 h-3.5 text-slate-400" />
+                                                                            De: {act.idRemetente === user?.id ? 'Você' : act.remetenteNome || 'Usuário'}
+                                                                        </span>
+                                                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+                                                                            Para: {act.idDestinatario === user?.id ? 'Você' : act.destinatarioNome || 'Usuário'}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+
+                                                                {act.tipo === 'ataviva' && (
+                                                                    <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2">
+                                                                        {act.pedido && <span>Pedido: {act.pedido}</span>}
+                                                                        {act.produto && <span>• Produto: {act.produto}</span>}
+                                                                        {act.op_numero && <span>• OP: {act.op_numero}</span>}
+                                                                    </div>
+                                                                )}
+
+                                                                {act.tipo === 'aviso' && (
+                                                                    <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2">
+                                                                        <span>Remetente: {act.remetenteNome}</span>
+                                                                        {act.grupoNome && <span>• Grupo: {act.grupoNome}</span>}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        
-                                                        <p className={`text-slate-800 text-sm font-semibold break-words leading-relaxed ${act.concluido ? 'line-through text-slate-400' : ''}`}>
-                                                            {act.titulo}
-                                                        </p>
 
-                                                        {/* Meta information */}
-                                                        {act.tipo === 'custom' && (
-                                                            <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2 items-center">
-                                                                <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
-                                                                    <User className="w-3.5 h-3.5 text-slate-400" />
-                                                                    De: {act.idRemetente === user?.id ? 'Você' : act.remetenteNome || 'Usuário'}
-                                                                </span>
-                                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
-                                                                    Para: {act.idDestinatario === user?.id ? 'Você' : act.destinatarioNome || 'Usuário'}
-                                                                </span>
-                                                            </div>
-                                                        )}
-
+                                                        {/* Actions for Ata Viva (Edit & Delete) */}
                                                         {act.tipo === 'ataviva' && (
-                                                            <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2">
-                                                                {act.pedido && <span>Pedido: {act.pedido}</span>}
-                                                                {act.produto && <span>• Produto: {act.produto}</span>}
-                                                                {act.op_numero && <span>• OP: {act.op_numero}</span>}
-                                                            </div>
-                                                        )}
-
-                                                        {act.tipo === 'aviso' && (
-                                                            <div className="mt-2 text-slate-400 text-[11px] font-medium flex flex-wrap gap-2">
-                                                                <span>Remetente: {act.remetenteNome}</span>
-                                                                {act.grupoNome && <span>• Grupo: {act.grupoNome}</span>}
+                                                            <div className="flex items-center gap-1 shrink-0 self-start mt-0.5">
+                                                                <button
+                                                                    onClick={() => handleEditAtaViva(act)}
+                                                                    className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
+                                                                    title="Editar tarefa da Ata Viva"
+                                                                >
+                                                                    <Edit className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteAtaViva(act.id)}
+                                                                    className="p-1 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-600 transition-colors"
+                                                                    title="Excluir tarefa da Ata Viva"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
                                                             </div>
                                                         )}
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="p-4 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-400 text-sm">
+                                                Todas as atividades de hoje foram concluídas.
+                                                <button
+                                                    onClick={() => setShowCompleted(true)}
+                                                    className="block mx-auto mt-2 text-xs font-bold text-orange-600 hover:text-orange-500 underline"
+                                                >
+                                                    Visualizar atividades concluídas ({completedCount})
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="p-4 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-400 text-sm">
@@ -876,40 +1041,55 @@ export default function CalendarioAtividades() {
                                 {detailsLoading ? (
                                     <div className="py-8 text-center text-slate-400 text-sm">Carregando PCP...</div>
                                 ) : dayDetails.pcp && dayDetails.pcp.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {dayDetails.pcp.map((item) => (
-                                            <div key={item.id} className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-2 hover:shadow-md transition-shadow">
-                                                <div className="flex justify-between items-start gap-2">
-                                                    <div>
-                                                        <span className="font-mono font-bold text-slate-700 text-sm">
-                                                            {item.pedido} <span className="text-slate-400 font-normal">/ {item.item}</span>
-                                                        </span>
-                                                        <h5 className="font-bold text-slate-800 text-sm mt-0.5 leading-snug truncate max-w-[200px]" title={item.cliente_nome}>
-                                                            {item.cliente_nome}
-                                                        </h5>
-                                                    </div>
-                                                    <span className="bg-emerald-100 text-emerald-800 text-xs font-black px-2.5 py-0.5 rounded-full shrink-0">
-                                                        {item.quantidade_pcp} PC
-                                                    </span>
-                                                </div>
-
-                                                <div className="text-xs text-slate-500 space-y-1">
-                                                    <p className="truncate font-medium text-slate-600" title={item.produto_descricao}>
-                                                        <b>Cód:</b> {item.produto_codigo} — {item.produto_descricao}
-                                                    </p>
-                                                    {item.op_protheus && (
-                                                        <p className="font-mono">
-                                                            <b>OP:</b> {item.op_protheus}
-                                                        </p>
-                                                    )}
-                                                    {item.observacao && (
-                                                        <p className="bg-slate-50 p-2 rounded-lg border border-slate-100 italic text-[11px] font-medium leading-relaxed">
-                                                            "{item.observacao}"
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
+                                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                                                    <th className="p-3">Ped/Item</th>
+                                                    <th className="p-3">Cliente</th>
+                                                    <th className="p-3">Produto/Descrição</th>
+                                                    <th className="p-3">OP</th>
+                                                    <th className="p-3 text-right">Qtd</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                                                {dayDetails.pcp.map((item) => {
+                                                    const formattedQty = parseFloat(item.quantidade_pcp || 0).toLocaleString('pt-BR', { 
+                                                        minimumFractionDigits: 0, 
+                                                        maximumFractionDigits: 2 
+                                                    });
+                                                    return (
+                                                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-mono font-bold text-slate-800">
+                                                                {item.pedido}/{item.item}
+                                                            </td>
+                                                            <td className="p-3 truncate max-w-[120px]" title={item.cliente_nome}>
+                                                                {item.cliente_nome}
+                                                            </td>
+                                                            <td className="p-3">
+                                                                <div className="font-semibold text-slate-800 truncate max-w-[180px]" title={item.produto_descricao}>
+                                                                    {item.produto_descricao}
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-400 font-mono">
+                                                                    {item.produto_codigo}
+                                                                </div>
+                                                                {item.observacao && (
+                                                                    <div className="text-[10px] text-slate-500 italic mt-0.5" title={item.observacao}>
+                                                                        Obs: {item.observacao}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3 font-mono text-slate-500">
+                                                                {item.op_protheus || '-'}
+                                                            </td>
+                                                            <td className="p-3 text-right font-bold text-slate-900 whitespace-nowrap">
+                                                                {formattedQty}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 ) : (
                                     <div className="p-4 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-400 text-sm">

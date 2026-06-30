@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import { api } from '../../services/api';
 import { toast } from 'react-toastify';
 import { logoBase64 } from '../../services/metalfisaLogoBase64';
+import { downloadBlob } from '../../utils/downloadHelper';
 
 export default function OrdersTimelineTab({ filters }) {
     const [data, setData] = useState([]);
@@ -312,7 +313,8 @@ export default function OrdersTimelineTab({ filters }) {
                     itemsList.push({
                         pedido:              p.pedido,
                         ped_cliente:         it.pedido_cliente || '-',
-                        cod_prod_cliente:     it.cod_prod_cliente || '-',
+                        op:                  it.op_num || '-',
+                        emissao:             formatDate(p.data_emissao),
                         produto:             it.produto,
                         descricao:           it.descricao,
                         qtd_vendida:         it.qtd_vendida,
@@ -330,7 +332,8 @@ export default function OrdersTimelineTab({ filters }) {
                     itemsList.push({
                         pedido:              p.pedido,
                         ped_cliente:         it.pedido_cliente || '-',
-                        cod_prod_cliente:     it.cod_prod_cliente || '-',
+                        op:                  it.op_num || '-',
+                        emissao:             formatDate(p.data_emissao),
                         produto:             it.produto,
                         descricao:           it.descricao,
                         qtd_vendida:         it.qtd_vendida,
@@ -347,7 +350,8 @@ export default function OrdersTimelineTab({ filters }) {
                 itemsList.push({
                     pedido:              target.pedido,
                     ped_cliente:         it.pedido_cliente || '-',
-                    cod_prod_cliente:     it.cod_prod_cliente || '-',
+                    op:                  it.op_num || '-',
+                    emissao:             formatDate(target.data_emissao),
                     produto:             it.produto,
                     descricao:           it.descricao,
                     qtd_vendida:         it.qtd_vendida,
@@ -362,15 +366,16 @@ export default function OrdersTimelineTab({ filters }) {
 
         const columns = [
             { header: 'Pedido',              dataKey: 'pedido' },
+            { header: 'Emissão',             dataKey: 'emissao' },
             { header: 'Ped. Cliente',        dataKey: 'ped_cliente' },
-            { header: 'Cód. Prod. Cliente',  dataKey: 'cod_prod_cliente' },
+            { header: 'OP',                  dataKey: 'op' },
             { header: 'Produto',             dataKey: 'produto' },
             { header: 'Descrição',           dataKey: 'descricao' },
-            { header: 'Qtd. Vendida',        dataKey: 'qtd_vendida' },
-            { header: 'Qtd. Faturada',       dataKey: 'qtd_faturada' },
-            { header: 'Entrega Comercial',   dataKey: 'data_entrega' },
+            { header: 'Qtd. Vend.',          dataKey: 'qtd_vendida' },
+            { header: 'Qtd. Fat.',           dataKey: 'qtd_faturada' },
+            { header: 'Entrega Com.',        dataKey: 'data_entrega' },
             { header: 'Dt. PCP',             dataKey: 'data_pcp' },
-            { header: 'Previsão Faturamento',dataKey: 'data_faturamento' },
+            { header: 'Previsão Fat.',       dataKey: 'data_faturamento' },
             { header: 'Progresso',           dataKey: 'progresso' },
         ];
 
@@ -389,15 +394,16 @@ export default function OrdersTimelineTab({ filters }) {
             bodyStyles: { fontSize: 7, cellPadding: 2, lineColor: [210, 215, 220] },
             alternateRowStyles: { fillColor: [248, 250, 253] },
             columnStyles: {
-                ped_cliente:         { cellWidth: 22, halign: 'center' },
-                cod_prod_cliente:    { cellWidth: 24, halign: 'center' },
-                descricao:           { cellWidth: 44 },
-                data_entrega:        { halign: 'center', cellWidth: 24 },
-                data_pcp:            { halign: 'center', cellWidth: 20 },
-                data_faturamento:    { halign: 'center', cellWidth: 26 },
-                qtd_vendida:         { halign: 'right',  cellWidth: 18 },
-                qtd_faturada:        { halign: 'right',  cellWidth: 18 },
-                progresso:           { fontStyle: 'bold', halign: 'center', cellWidth: 18 },
+                emissao:             { cellWidth: 16, halign: 'center' },
+                ped_cliente:         { cellWidth: 20, halign: 'center' },
+                op:                  { cellWidth: 16, halign: 'center' },
+                descricao:           { cellWidth: 40 },
+                data_entrega:        { halign: 'center', cellWidth: 20 },
+                data_pcp:            { halign: 'center', cellWidth: 18 },
+                data_faturamento:    { halign: 'center', cellWidth: 20 },
+                qtd_vendida:         { halign: 'right',  cellWidth: 14 },
+                qtd_faturada:        { halign: 'right',  cellWidth: 14 },
+                progresso:           { fontStyle: 'bold', halign: 'center', cellWidth: 14 },
             },
             margin: { left: 10, right: 10, bottom: 14 },
             didDrawPage: ({ pageNumber }) => {
@@ -437,8 +443,9 @@ export default function OrdersTimelineTab({ filters }) {
                     itemsList.push({
                         'Pedido': p.pedido,
                         'Cliente': target.name || '-',
+                        'Emissão': formatDate(p.data_emissao),
                         'Ped. Cliente': it.pedido_cliente || '-',
-                        'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                        'OP': it.op_num || '-',
                         'Produto': it.produto,
                         'Descrição': it.descricao,
                         'Qtd. Vendida': Number(it.qtd_vendida) || 0,
@@ -456,8 +463,9 @@ export default function OrdersTimelineTab({ filters }) {
                     itemsList.push({
                         'Pedido': p.pedido,
                         'Cliente': p.cliente || '-',
+                        'Emissão': formatDate(p.data_emissao),
                         'Ped. Cliente': it.pedido_cliente || '-',
-                        'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                        'OP': it.op_num || '-',
                         'Produto': it.produto,
                         'Descrição': it.descricao,
                         'Qtd. Vendida': Number(it.qtd_vendida) || 0,
@@ -474,8 +482,9 @@ export default function OrdersTimelineTab({ filters }) {
                 itemsList.push({
                     'Pedido': target.pedido,
                     'Cliente': target.cliente || '-',
+                    'Emissão': formatDate(target.data_emissao),
                     'Ped. Cliente': it.pedido_cliente || '-',
-                    'Cód. Prod. Cliente': it.cod_prod_cliente || '-',
+                    'OP': it.op_num || '-',
                     'Produto': it.produto,
                     'Descrição': it.descricao,
                     'Qtd. Vendida': Number(it.qtd_vendida) || 0,
@@ -501,8 +510,9 @@ export default function OrdersTimelineTab({ filters }) {
         worksheet['!cols'] = [
             { wch: 15 }, // Pedido
             { wch: 35 }, // Cliente
+            { wch: 15 }, // Emissão
             { wch: 18 }, // Ped. Cliente
-            { wch: 22 }, // Cód. Prod. Cliente
+            { wch: 16 }, // OP
             { wch: 20 }, // Produto
             { wch: 45 }, // Descrição
             { wch: 15 }, // Qtd. Vendida
@@ -514,7 +524,9 @@ export default function OrdersTimelineTab({ filters }) {
         ];
 
         const fileName = type === 'all' ? `Cronograma_Geral.xlsx` : `Cronograma_${target.name || target.pedido}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        downloadBlob(blob, fileName);
         toast.success('Cronograma exportado para Excel!');
     };
 
@@ -750,10 +762,7 @@ export default function OrdersTimelineTab({ filters }) {
                                 return;
                             }
                             const docResult = generateTimelinePDF({ type: 'all' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(docResult.blob);
-                            link.download = docResult.fileName;
-                            link.click();
+                            downloadBlob(docResult.blob, docResult.fileName);
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:scale-[0.98] rounded shadow-sm transition-all"
                         title="Baixar Cronograma Geral em PDF"
@@ -882,10 +891,7 @@ export default function OrdersTimelineTab({ filters }) {
                                                             pedidos: viewMode === 'client' ? node.pedidos : null,
                                                             itens: viewMode === 'order' ? node.itens : null,
                                                         });
-                                                        const link = document.createElement('a');
-                                                        link.href = URL.createObjectURL(docResult.blob);
-                                                        link.download = docResult.fileName;
-                                                        link.click();
+                                                        downloadBlob(docResult.blob, docResult.fileName);
                                                     }}
                                                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded shadow-sm transition-colors"
                                                     title="Baixar Cronograma em PDF"

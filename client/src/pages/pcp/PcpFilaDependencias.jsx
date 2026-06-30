@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import { format, addDays, endOfWeek, endOfMonth } from 'date-fns';
 import RecursoLegendModal from '../../components/RecursoLegendModal';
+import { generateFilaDependenciasPdf } from '../../services/filaDependenciasPdfGenerator';
 
 const PcpFilaDependencias = () => {
     const { user } = useAuth();
@@ -256,12 +257,19 @@ const PcpFilaDependencias = () => {
                         
                         <button
                             type="button"
-                            onClick={() => window.print()}
+                            onClick={async () => {
+                                try {
+                                    const fullData = getFilteredData(activeTab === 'inbound' ? inbound : outbound);
+                                    await generateFilaDependenciasPdf(activeTab, recurso, dataFim, fullData);
+                                } catch (err) {
+                                    toast.error('Erro ao gerar relatório em PDF');
+                                }
+                            }}
                             className="bg-slate-800 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-900 transition-all flex items-center justify-center gap-2 shadow-sm shrink-0 ml-auto"
-                            title="Imprimir Relatório"
+                            title="Baixar Relatório PDF"
                         >
                             <Printer className="h-4 w-4" />
-                            Imprimir
+                            Baixar PDF
                         </button>
                     </form>
 

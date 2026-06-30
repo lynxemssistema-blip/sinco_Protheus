@@ -268,6 +268,11 @@ function scheduleTaskInstance(task) {
     try {
         const cronJob = cron.schedule(task.cron_expression, async () => {
             try {
+                const { isWeekendOrHoliday } = require('../../utils/dateHelper');
+                if (isWeekendOrHoliday()) {
+                    console.log(`[HermesScheduler] Hoje é final de semana ou feriado. Tarefa "${task.nome}" (ID: ${task.id}) pulada.`);
+                    return;
+                }
                 const [rows] = await mysqlPool.query('SELECT * FROM hermes_tasks WHERE id = ?', [task.id]);
                 if (rows.length > 0 && rows[0].ativo) {
                     await executeTask(rows[0]);

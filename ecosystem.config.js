@@ -1,6 +1,17 @@
 module.exports = {
     apps: [
         {
+            name: 'print-bridge',
+            script: 'print-bridge.js',
+            cwd: '.',
+            instances: 1,
+            autorestart: true,
+            watch: false,
+            env: {
+                PRINTER_NAME: 'ArgoxUSB'
+            }
+        },
+        {
             name: 'metalfisa-backend',
             script: 'index.js',
             cwd: './server',

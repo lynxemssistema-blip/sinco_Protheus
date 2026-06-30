@@ -686,5 +686,8 @@ export const getRncApontamentos = (rncId) => api.get(`/sgq/rncs/${rncId}/apontam
 export const createRncApontamento = (rncId, data) => api.post(`/sgq/rncs/${rncId}/apontamentos`, data).then(res => res.data);
 export const deleteRncApontamento = (id) => api.delete(`/sgq/rncs/apontamentos/${id}`).then(res => res.data);
 
+// Fornecedores Protheus
+export const getProtheusFornecedores = () => api.get('/protheus/fornecedores').then(res => res.data);
+
 export { api };
 export default api;

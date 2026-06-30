@@ -830,4 +830,34 @@ router.post('/produto-cliente/editar', async (req, res) => {
     }
 });
 
+// =========================================================================
+// ROTA: Buscar Fornecedores (SA2) via DB
+// =========================================================================
+router.get('/fornecedores', async (req, res) => {
+    try {
+        const sql = `
+            SELECT 
+                TRIM(a2_cod) as a2_cod,
+                TRIM(a2_loja) as a2_loja,
+                a2_nome::bytea as a2_nome_bytes,
+                TRIM(a2_cgc) as a2_cgc
+            FROM public.sa2010
+            WHERE d_e_l_e_t_ = ' '
+        `;
+        const rows = await queryProtheus(sql);
+        const td = new TextDecoder('windows-1252');
+        const formatted = rows.map(r => ({
+            a2_cod: r.a2_cod?.trim() || '',
+            a2_loja: r.a2_loja?.trim() || '',
+            a2_nome: r.a2_nome_bytes ? td.decode(r.a2_nome_bytes).trim() : '',
+            a2_cgc: r.a2_cgc?.trim() || ''
+        }));
+        formatted.sort((a, b) => a.a2_nome.localeCompare(b.a2_nome, 'pt-BR'));
+        res.json(formatted);
+    } catch (error) {
+        console.error('Erro ao buscar SA2:', error.message);
+        res.status(500).json({ error: 'Falha na busca de Fornecedores do Protheus.' });
+    }
+});
+
 module.exports = router;

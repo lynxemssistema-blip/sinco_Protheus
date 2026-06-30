@@ -1106,48 +1106,30 @@ router.get('/cronograma', async (req, res) => {
         }
 
         const forecastMap = await getForecastMapCached();
-        const needsFcJoin = (sortBy === 'entrega_pcp' || sortBy === 'prev_fat') ||
-                            (dateType === 'entrega_pcp' && (dataInicial || dataFinal));
 
-        let fcJoin = '';
-        if (needsFcJoin && forecastMap.size > 0) {
-            const fcPedidos = [], fcItems = [], fcDatas = [], fcPrevFats = [];
+        if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
+            const dateS = dataInicial ? new Date(dataInicial) : new Date('2000-01-01');
+            const dateE = dataFinal ? new Date(dataFinal + 'T23:59:59') : new Date('2100-01-01');
+            const matchingKeys = [];
             for (const [key, val] of forecastMap) {
-                const [p, i] = key.split('|');
-                fcPedidos.push(p);
-                fcItems.push(i);
-                fcDatas.push(val.data_entrega_pcp ? new Date(val.data_entrega_pcp) : null);
-                fcPrevFats.push(val.data_prevista_faturamento ? new Date(val.data_prevista_faturamento) : null);
-            }
-            const fcBase = paramCount;
-            params.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
-            paramCount += 4;
-
-            fcJoin = `
-                LEFT JOIN (
-                    SELECT * FROM unnest(
-                        $${fcBase}::text[], $${fcBase+1}::text[],
-                        $${fcBase+2}::timestamp[], $${fcBase+3}::timestamp[]
-                    ) AS t(fc_pedido, fc_item, data_entrega_pcp, data_prevista_faturamento)
-                ) fc ON fc.fc_pedido = TRIM(c6.c6_num) AND fc.fc_item = TRIM(c6.c6_item)
-            `;
-
-            if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
-                if (dataInicial) {
-                    whereSql += ` AND fc.data_entrega_pcp >= $${paramCount}::timestamp`;
-                    params.push(new Date(dataInicial));
-                    paramCount++;
-                }
-                if (dataFinal) {
-                    whereSql += ` AND fc.data_entrega_pcp <= $${paramCount}::timestamp`;
-                    params.push(new Date(dataFinal + 'T23:59:59'));
-                    paramCount++;
+                if (val.data_entrega_pcp) {
+                    const dt = new Date(val.data_entrega_pcp);
+                    if (dt >= dateS && dt <= dateE) {
+                        matchingKeys.push(key);
+                    }
                 }
             }
-        } else if (needsFcJoin) {
-            if (dateType === 'entrega_pcp' && (dataInicial || dataFinal)) {
-                whereSql += ' AND FALSE';
+            if (matchingKeys.length === 0) {
+                return res.json([]);
             }
+            
+            const limitKeys = matchingKeys.slice(0, 10000);
+            const inList = limitKeys.map(k => {
+                const [p, i] = k.split('|');
+                return `('${p}', '${i}')`;
+            }).join(', ');
+            
+            whereSql += ` AND (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${inList})`;
         }
 
         const sortDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
@@ -1156,14 +1138,6 @@ router.get('/cronograma', async (req, res) => {
             orderClause = `ORDER BY NULLIF(TRIM(c6.c6_entreg), '') ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'emissao') {
             orderClause = `ORDER BY c5.c5_emissao ${sortDir}, c5.c5_num DESC, c6.c6_item ASC`;
-        } else if (sortBy === 'entrega_pcp') {
-            orderClause = fcJoin
-                ? `ORDER BY CASE WHEN fc.data_entrega_pcp IS NULL THEN 1 ELSE 0 END ASC, fc.data_entrega_pcp ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
-                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
-        } else if (sortBy === 'prev_fat') {
-            orderClause = fcJoin
-                ? `ORDER BY CASE WHEN fc.data_prevista_faturamento IS NULL THEN 1 ELSE 0 END ASC, fc.data_prevista_faturamento ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`
-                : `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
         } else if (sortBy === 'pedido') {
             orderClause = `ORDER BY c5.c5_num ${sortDir}, c6.c6_item ASC`;
         } else if (sortBy === 'cliente') {
@@ -1185,14 +1159,7 @@ router.get('/cronograma', async (req, res) => {
                 c6.c6_qtdven AS qtd_vendida,
                 c6.c6_qtdent AS qtd_entregue,
                 TRIM(c6.c6_pedcli) AS pedido_cliente,
-                (
-                    SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ')
-                    FROM public.sz1010 z1
-                    WHERE COALESCE(z1.d_e_l_e_t_, '') IN ('', ' ')
-                      AND TRIM(z1.z1_cliente) = TRIM(c5.c5_cliente)
-                      AND TRIM(z1.z1_loja) = TRIM(c5.c5_lojacli)
-                      AND TRIM(z1.z1_produto) = TRIM(c6.c6_produto)
-                ) AS cod_prod_cliente
+                '' AS cod_prod_cliente
             FROM public.sc6010 c6
             JOIN public.sc5010 c5 
                 ON COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
@@ -1204,16 +1171,40 @@ router.get('/cronograma', async (req, res) => {
             LEFT JOIN public.sb1010 sb1
                 ON COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
-            ${fcJoin}
             WHERE ${whereSql}
             ${orderClause}
         `;
 
         const pgResult = await pgClient.query(pgQuery, params);
-        const rows = pgResult.rows;
+        let rows = pgResult.rows;
 
         if (rows.length === 0) {
             return res.json([]);
+        }
+
+        if (sortBy === 'entrega_pcp' || sortBy === 'prev_fat') {
+            rows.forEach(r => {
+                const mapVal = forecastMap.get(`${r.pedido}|${r.item}`);
+                r._sort_val = null;
+                if (mapVal) {
+                    r._sort_val = sortBy === 'entrega_pcp' ? mapVal.data_entrega_pcp : mapVal.data_prevista_faturamento;
+                }
+            });
+            rows.sort((a, b) => {
+                if (!a._sort_val && !b._sort_val) {
+                    if (a.pedido === b.pedido) return a.item.localeCompare(b.item);
+                    return b.pedido.localeCompare(a.pedido); // DESC
+                }
+                if (!a._sort_val) return 1;
+                if (!b._sort_val) return -1;
+                const da = new Date(a._sort_val).getTime();
+                const db = new Date(b._sort_val).getTime();
+                if (da === db) {
+                    if (a.pedido === b.pedido) return a.item.localeCompare(b.item);
+                    return b.pedido.localeCompare(a.pedido);
+                }
+                return sortOrder === 'ASC' ? da - db : db - da;
+            });
         }
 
         // Build pedidos Map and preserve order from SQL query

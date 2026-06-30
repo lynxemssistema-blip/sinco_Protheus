@@ -55,7 +55,7 @@ export default function ProgramasNCN() {
         tempo_previsto: '00:00:00',
         tipo_material: '',
         quantidade_vezes: 1,
-        chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }],
+        chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }],
         criado_por: '',
         turno_previsao: 1,
         recebedor_nome: '',
@@ -100,7 +100,7 @@ export default function ProgramasNCN() {
     const handleAddChapaField = () => {
         setProgForm(prev => ({
             ...prev,
-            chapas_planejadas: [...prev.chapas_planejadas, { codigo: '', repeticoes: 1, tempo: '00:00:00' }]
+            chapas_planejadas: [...prev.chapas_planejadas, { codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }]
         }));
     };
 
@@ -110,7 +110,7 @@ export default function ProgramasNCN() {
             newChapas.splice(index, 1);
             return {
                 ...prev,
-                chapas_planejadas: newChapas.length > 0 ? newChapas : [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }]
+                chapas_planejadas: newChapas.length > 0 ? newChapas : [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }]
             };
         });
     };
@@ -141,8 +141,9 @@ export default function ProgramasNCN() {
                 if (!codigo) return;
                 const repeticoes = parseInt(c.repeticoes) || 1;
                 const tempo = c.tempo || '00:00:00';
+                const tipo = c.tipo || 'inteira';
                 for (let i = 0; i < repeticoes; i++) {
-                    chapasFiltradas.push({ codigo, tempo });
+                    chapasFiltradas.push({ codigo, tempo, tipo });
                 }
             });
 
@@ -177,7 +178,7 @@ export default function ProgramasNCN() {
                 tempo_previsto: '00:00:00',
                 tipo_material: '',
                 quantidade_vezes: 1,
-                chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }],
+                chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }],
                 criado_por: user?.NomeCompleto || user?.nome || '',
                 turno_previsao: 1,
                 recebedor_nome: '',
@@ -194,7 +195,7 @@ export default function ProgramasNCN() {
 
     // Carregar programa no formulário de edição
     const handleEditProgram = (prog) => {
-        let chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }];
+        let chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }];
         if (prog.chapas_planejadas) {
             try {
                 const parsed = typeof prog.chapas_planejadas === 'string'
@@ -205,21 +206,22 @@ export default function ProgramasNCN() {
                     parsed.forEach(ch => {
                         const rawCode = typeof ch === 'string' ? ch : (ch.codigo || '');
                         const tempo = typeof ch === 'string' ? '00:00:00' : (ch.tempo || '00:00:00');
-                        
+                        const tipo = typeof ch === 'string' ? 'inteira' : (ch.tipo || 'inteira');
+
                         const match = rawCode.match(/^(.*?)\s*\(\d+\)$/);
                         const baseCode = match ? match[1].trim() : rawCode.trim();
-                        
-                        const key = `${baseCode}|${tempo}`;
+
+                        const key = `${baseCode}|${tempo}|${tipo}`;
                         if (groupedMap.has(key)) {
                             groupedMap.get(key).repeticoes += 1;
                         } else {
-                            groupedMap.set(key, { codigo: baseCode, repeticoes: 1, tempo });
+                            groupedMap.set(key, { codigo: baseCode, repeticoes: 1, tempo, tipo });
                         }
                     });
                     chapas = Array.from(groupedMap.values());
                 }
             } catch (e) {
-                chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }];
+                chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }];
             }
         }
         setProgForm({
@@ -420,7 +422,7 @@ export default function ProgramasNCN() {
                             tempo_previsto: '00:00:00',
                             tipo_material: '',
                             quantidade_vezes: 1,
-                            chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00' }],
+                            chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }],
                             criado_por: user?.NomeCompleto || user?.nome || '',
                             turno_previsao: 1,
                             recebedor_nome: '',
@@ -868,6 +870,7 @@ export default function ProgramasNCN() {
                                                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
                                                     <th className="px-4 py-2.5 w-10 text-center">#</th>
                                                     <th className="px-4 py-2.5">Código da Chapa *</th>
+                                                    <th className="px-4 py-2.5 w-32 text-center">Tipo</th>
                                                     <th className="px-4 py-2.5 w-24 text-center">Repetições (x)</th>
                                                     <th className="px-4 py-2.5 w-32">Tempo / Chapa *</th>
                                                     <th className="px-4 py-2.5 w-32">Tempo Total</th>
@@ -890,6 +893,24 @@ export default function ProgramasNCN() {
                                                                     placeholder="Ex: 4202 - Jabil-00005"
                                                                     className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-bold text-slate-700"
                                                                 />
+                                                            </td>
+                                                            <td className="px-4 py-2.5 text-center">
+                                                                <div className="flex rounded-lg overflow-hidden border border-slate-200 text-[10px] font-bold w-fit mx-auto">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleChapaFieldChange(idx, 'tipo', 'inteira')}
+                                                                        className={`px-2 py-1.5 transition-colors ${(chapa.tipo || 'inteira') === 'inteira' ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
+                                                                    >
+                                                                        Inteira
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleChapaFieldChange(idx, 'tipo', 'retalho')}
+                                                                        className={`px-2 py-1.5 transition-colors ${(chapa.tipo || 'inteira') === 'retalho' ? 'bg-amber-500 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
+                                                                    >
+                                                                        Retalho
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                             <td className="px-4 py-2.5">
                                                                 <input

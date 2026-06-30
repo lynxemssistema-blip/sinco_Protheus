@@ -4,7 +4,7 @@ import {
     Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight,
     Package, Layers, FileText, FileSpreadsheet, Loader2,
     GripVertical, Settings, X, Eye, EyeOff, Scissors, Play, Square,
-    ArrowUp, ArrowDown, ArrowUpDown, HelpCircle, Printer
+    ArrowUp, ArrowDown, ArrowUpDown, HelpCircle, Printer, Factory
 } from 'lucide-react';
 import {
     getPedidosFlat, getProdutos, getReportDownloadUrl,
