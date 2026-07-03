@@ -709,6 +709,9 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
         }
         if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+        if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
         return raw;
     };
 
@@ -822,9 +825,9 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
                             <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/10">{formatCurrency(qtyEntreg * effectiveValUnit)}</td>
                             <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-950">{formatCurrency(valTotalItem)}</td>
                             
-                            <td className="px-3 py-1.5 text-right font-mono">{qtyTotal.toLocaleString()}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">{qtyFaturar.toLocaleString()}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-600 bg-emerald-50/10">{qtyEntreg.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right font-mono">{qtyTotal.toLocaleString('pt-BR')}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">{qtyFaturar.toLocaleString('pt-BR')}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-600 bg-emerald-50/10">{qtyEntreg.toLocaleString('pt-BR')}</td>
                             
                             <td className="px-3 py-1.5 text-center text-[11px] font-bold text-cyan-700">
                                 {row.data_entrega_pcp ? formatProtheusDate(row.data_entrega_pcp) : <span className="text-slate-300">—</span>}

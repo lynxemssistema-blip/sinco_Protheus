@@ -555,7 +555,7 @@ export default function Analise3DPage() {
       page.drawText('METALFISA - RELATÓRIO DE INSPEÇÃO METROLÓGICA (IA)', {
         x: 50, y: height - 50, size: 16, font: boldFont, color: rgb(0.1, 0.1, 0.5)
       });
-      page.drawText(`Data: ${new Date().toLocaleString()}`, {
+      page.drawText(`Data: ${new Date().toLocaleString('pt-BR')}`, {
         x: 50, y: height - 70, size: 10, font
       });
       page.drawText(`Peça / STL: ${modelName || 'Não especificado'}`, {

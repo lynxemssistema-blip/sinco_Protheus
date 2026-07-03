@@ -611,8 +611,8 @@ export default function IndApontamentoPage({ embedded = false }) {
                                             <td className="p-3 text-center">
                                                 {op.data_planejada_inicio ? (
                                                     <div className="text-xs">
-                                                        <div className="text-green-700 font-medium">I: {new Date(op.data_planejada_inicio).toLocaleDateString()}</div>
-                                                        <div className="text-red-700 font-medium">F: {new Date(op.data_planejada_fim).toLocaleDateString()}</div>
+                                                        <div className="text-green-700 font-medium">I: {new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR')}</div>
+                                                        <div className="text-red-700 font-medium">F: {new Date(op.data_planejada_fim).toLocaleDateString('pt-BR')}</div>
                                                     </div>
                                                 ) : (
                                                     <span className="text-slate-400 italic text-xs">Não planejado</span>

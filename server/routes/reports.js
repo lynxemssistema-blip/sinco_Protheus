@@ -437,8 +437,28 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
                 produto: item.produto.trim(),
                 descricao: item.descricao?.trim(),
                 op: item.op?.trim(),
-                ped_cli: item.ped_cli?.trim()
+                ped_cli: item.ped_cli?.trim(),
+                tag_especial: 'Nenhum' // Default
             });
+        });
+
+        // Fetch tags from local MySQL
+        const placeholders = orderNumbers.map(() => '?').join(',');
+        const [tagsRows] = await mysqlPool.query(
+            `SELECT pedido, item, tag_especial FROM app_pedido_itens_tags WHERE pedido IN (${placeholders})`,
+            orderNumbers.map(n => n.trim())
+        );
+
+        // Merge tags into items
+        tagsRows.forEach(tagRecord => {
+            const pedido = tagRecord.pedido.trim();
+            const itemCode = tagRecord.item.trim();
+            if (itemsMap[pedido]) {
+                const itemObj = itemsMap[pedido].find(i => i.item.trim() === itemCode);
+                if (itemObj) {
+                    itemObj.tag_especial = tagRecord.tag_especial || 'Nenhum';
+                }
+            }
         });
     }
 
@@ -490,6 +510,28 @@ router.get('/sales-planning/data', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/reports/sales-planning/item-tag
+router.put('/sales-planning/item-tag', async (req, res) => {
+    try {
+        const { pedido, item, tag_especial } = req.body;
+        if (!pedido || !item) {
+            return res.status(400).json({ error: 'Pedido e Item so obrigatrios.' });
+        }
+        
+        await mysqlPool.query(
+            `INSERT INTO app_pedido_itens_tags (pedido, item, tag_especial) 
+             VALUES (?, ?, ?) 
+             ON DUPLICATE KEY UPDATE tag_especial = VALUES(tag_especial)`,
+            [pedido.trim(), item.trim(), tag_especial]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Erro ao atualizar tag especial:', err);
+        res.status(500).json({ error: 'Erro ao atualizar tag especial.' });
     }
 });
 

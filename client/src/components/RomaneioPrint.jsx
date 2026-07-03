@@ -18,7 +18,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                     <div className="w-1/4 p-2 flex flex-col justify-center items-center">
                         <div className="font-bold text-lg">Nº {romaneio.id}</div>
                         <div className="text-sm">Rev: {romaneio.current_revision || 1}</div>
-                        <div className="text-xs">{new Date(romaneio.created_at).toLocaleString()}</div>
+                        <div className="text-xs">{new Date(romaneio.created_at).toLocaleString('pt-BR')}</div>
                     </div>
                 </div>
 

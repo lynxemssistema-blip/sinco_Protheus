@@ -2175,6 +2175,26 @@ export default function Settings() {
                                         })}
 
                                     </div>
+                                    <div className="mt-3 flex justify-end">
+                                        <button
+                                            type="button"
+                                            disabled={loadingCompany}
+                                            onClick={async () => {
+                                                try {
+                                                    setLoadingCompany(true);
+                                                    await updateGeneralSettings({ general_config: companyForm.general_config });
+                                                    alert('Configurações de notificação do Faturamento salvas com sucesso!');
+                                                } catch (err) {
+                                                    alert('Erro ao salvar notificações do Faturamento: ' + err.message);
+                                                } finally {
+                                                    setLoadingCompany(false);
+                                                }
+                                            }}
+                                            className="bg-emerald-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-emerald-700 text-sm disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCompany ? 'Salvando...' : 'Salvar Configurações de Faturamento'}
+                                        </button>
+                                    </div>
 
                                 </div>
 
@@ -2698,10 +2718,156 @@ export default function Settings() {
 
                                 </div>
 
+                                
+                                {/* Automação: Alertas do SGQ */}
+                                <div className="mt-5 pt-4 border-t border-slate-200">
+                                    <h5 className="font-semibold text-slate-700 text-sm mb-1 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
+                                        Notificações do SGQ
+                                    </h5>
+                                    <p className="text-xs text-slate-500 mb-4">
+                                        Configure os usuários que receberão notificações automáticas (E-mail e WhatsApp) sobre eventos do Controle de Qualidade (vencimentos de calibração, romaneios, alertas de PPAP, etc).
+                                    </p>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Usuários e Canais de Recebimento</label>
+                                    <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
+                                        {usersList.filter(u => u.aprovado === 1).map(u => {
+                                            const sgqAlerts = companyForm.general_config?.sgq_alerts_users || [];
+                                            const userPref = sgqAlerts.find(x => x.id === u.idUsuario);
+                                            const isInGroup = !!userPref;
+                                            
+                                            return (
+                                                <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded border-b border-gray-50 last:border-0">
+                                                    <label className="flex items-center gap-3 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={isInGroup}
+                                                            onChange={(e) => {
+                                                                let newUsers = [...sgqAlerts];
+                                                                if (e.target.checked) {
+                                                                    newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
+                                                                } else {
+                                                                    newUsers = newUsers.filter(x => x.id !== u.idUsuario);
+                                                                }
+                                                                setCompanyForm(prev => ({
+                                                                    ...prev,
+                                                                    general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                }));
+                                                            }}
+                                                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
+                                                            <span className="text-xs text-slate-500">{u.email || 'Sem e-mail'} | {u.telefone || 'Sem telefone'}</span>
+                                                        </div>
+                                                    </label>
+                                                    
+                                                    {isInGroup && (
+                                                        <div className="flex items-center gap-4 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={userPref.email}
+                                                                    disabled={!u.email}
+                                                                    onChange={(e) => {
+                                                                        const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
+                                                                        setCompanyForm(prev => ({
+                                                                            ...prev,
+                                                                            general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                        }));
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
+                                                                /> E-mail
+                                                            </label>
+                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={userPref.whatsapp}
+                                                                    disabled={!u.telefone}
+                                                                    onChange={(e) => {
+                                                                        const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
+                                                                        setCompanyForm(prev => ({
+                                                                            ...prev,
+                                                                            general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                        }));
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
+                                                                /> WhatsApp
+                                                            </label>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                        {usersList.filter(u => u.aprovado === 1).length === 0 && (
+                                            <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário aprovado no sistema.</p>
+                                        )}
+                                    </div>
+
+                                    {/* Controle de Mensagens de Alerta */}
+                                    <div className="mt-6 pt-4 border-t border-slate-200">
+                                        <h6 className="font-semibold text-slate-700 text-sm mb-2 flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                                            Templates de Mensagem de Alerta (Calibração)
+                                        </h6>
+                                        <p className="text-xs text-slate-500 mb-4">
+                                            Configure o texto que será enviado automaticamente. Variáveis disponíveis: <code className="bg-slate-100 px-1 rounded">{'{name}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{patrimonio}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{validade}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{dias}'}</code>.
+                                        </p>
+                                        
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mensagem para WhatsApp</label>
+                                                <textarea
+                                                    value={companyForm.general_config?.sgq_alerts_template_whatsapp || '⚠️ *Alerta SGQ - Calibração* ⚠️\nO instrumento {name} (Patrimônio: {patrimonio}) vencerá em {validade} ({dias} dias).'}
+                                                    onChange={(e) => setCompanyForm(prev => ({
+                                                        ...prev,
+                                                        general_config: { ...prev.general_config, sgq_alerts_template_whatsapp: e.target.value }
+                                                    }))}
+                                                    rows={3}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
+                                                    placeholder="Digite o template da mensagem de WhatsApp..."
+                                                ></textarea>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mensagem para E-mail</label>
+                                                <textarea
+                                                    value={companyForm.general_config?.sgq_alerts_template_email || 'Prezado(a),\n\nInformamos que o instrumento {name} (Patrimônio: {patrimonio}) possui calibração válida apenas até {validade} ({dias} dias restantes).\n\nPor favor, providencie a calibração.'}
+                                                    onChange={(e) => setCompanyForm(prev => ({
+                                                        ...prev,
+                                                        general_config: { ...prev.general_config, sgq_alerts_template_email: e.target.value }
+                                                    }))}
+                                                    rows={4}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
+                                                    placeholder="Digite o template da mensagem de E-mail..."
+                                                ></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 flex justify-end">
+                                        <button
+                                            type="button"
+                                            disabled={loadingCompany}
+                                            onClick={async () => {
+                                                try {
+                                                    setLoadingCompany(true);
+                                                    await updateGeneralSettings({ general_config: companyForm.general_config });
+                                                    alert('Configurações de notificação do SGQ salvas com sucesso!');
+                                                } catch (err) {
+                                                    alert('Erro ao salvar notificações do SGQ: ' + err.message);
+                                                } finally {
+                                                    setLoadingCompany(false);
+                                                }
+                                            }}
+                                            className="bg-indigo-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-50 transition-colors"
+                                        >
+                                            {loadingCompany ? 'Salvando...' : 'Salvar Configurações de Notificação'}
+                                        </button>
+                                    </div>
+                                </div>
+
                             </div>
 
                             
-
                             {/* Módulo Análise 3D */}
 
                             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">

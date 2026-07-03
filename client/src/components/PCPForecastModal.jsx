@@ -138,7 +138,7 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
     </form>
 );
 
-const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
+const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true }) => {
     const { user } = useAuth();
     const [programacoes, setProgramacoes] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -616,32 +616,34 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
 
                 <div className="flex flex-col md:flex-row overflow-hidden flex-1 min-h-0">
                     {/* Painel esquerdo: Adicionar nova */}
-                    <div className="w-full md:w-80 shrink-0 border-r border-gray-100 flex flex-col relative overflow-hidden">
-                        <div className="p-5 overflow-y-auto flex-1">
-                            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-3">
-                                <Plus className="h-4 w-4 text-indigo-600" /> Nova Programação
-                            </h3>
-                            <ProgForm
-                                value={formData}
-                                onChange={setFormData}
-                                onSubmit={handleAdd}
-                                saving={saving && !editingId}
-                                qtdDisponivel={qtdDisponivel}
-                                qtdTotal={qtdTotal}
-                                isEdit={false}
-                                canGenerateOp={canGenerateOp}
-                            />
-                        </div>
-                        {!isBatch && qtdDisponivel <= 0 && programacoes.length > 0 && (
-                            <div className="absolute inset-0 z-10 bg-white/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
-                                <div className="bg-emerald-100 p-3 rounded-full mb-3 shadow-sm border border-emerald-200">
-                                    <CheckCircle className="h-8 w-8 text-emerald-600" />
-                                </div>
-                                <h4 className="font-bold text-gray-800 mb-1">Total Programado!</h4>
-                                <p className="text-xs text-gray-500">A quantidade total deste item já foi parametrizada.</p>
+                    {canEdit && (
+                        <div className="w-full md:w-80 shrink-0 border-r border-gray-100 flex flex-col relative overflow-hidden">
+                            <div className="p-5 overflow-y-auto flex-1">
+                                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-3">
+                                    <Plus className="h-4 w-4 text-indigo-600" /> Nova Programação
+                                </h3>
+                                <ProgForm
+                                    value={formData}
+                                    onChange={setFormData}
+                                    onSubmit={handleAdd}
+                                    saving={saving && !editingId}
+                                    qtdDisponivel={qtdDisponivel}
+                                    qtdTotal={qtdTotal}
+                                    isEdit={false}
+                                    canGenerateOp={canGenerateOp}
+                                />
                             </div>
-                        )}
-                    </div>
+                            {!isBatch && qtdDisponivel <= 0 && programacoes.length > 0 && (
+                                <div className="absolute inset-0 z-10 bg-white/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
+                                    <div className="bg-emerald-100 p-3 rounded-full mb-3 shadow-sm border border-emerald-200">
+                                        <CheckCircle className="h-8 w-8 text-emerald-600" />
+                                    </div>
+                                    <h4 className="font-bold text-gray-800 mb-1">Total Programado!</h4>
+                                    <p className="text-xs text-gray-500">A quantidade total deste item já foi parametrizada.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Lista de Programações ou Itens do Lote */}
                     <div className="flex-1 p-5 overflow-y-auto">
@@ -734,20 +736,22 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                             <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Editando...</span>
                                                         )}
                                                     </div>
-                                                    <div className="flex items-center gap-1">
-                                                        {editingId !== prog.id && (
-                                                            <button onClick={() => startEdit(prog)}
-                                                                className="p-1.5 text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors rounded"
-                                                                title="Editar programação">
-                                                                <Pencil className="h-3.5 w-3.5" />
+                                                    {canEdit && (
+                                                        <div className="flex items-center gap-1">
+                                                            {editingId !== prog.id && (
+                                                                <button onClick={() => startEdit(prog)}
+                                                                    className="p-1.5 text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors rounded"
+                                                                    title="Editar programação">
+                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                </button>
+                                                            )}
+                                                            <button onClick={(e) => handleDeleteClick(e, prog.id)} disabled={editingId === prog.id}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                                                title="Remover programação">
+                                                                <Trash2 className="h-3.5 w-3.5" />
                                                             </button>
-                                                        )}
-                                                        <button onClick={(e) => handleDeleteClick(e, prog.id)} disabled={editingId === prog.id}
-                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                                            title="Remover programação">
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </button>
-                                                    </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {/* Edit Form */}

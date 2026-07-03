@@ -13,7 +13,7 @@ const api = axios.create({
     baseURL: `${getBaseUrl()}/api`,
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
-    timeout: 60000
+    timeout: 150000
 });
 
 // Interceptor to attach JWT token to every request
@@ -506,6 +506,7 @@ export const getPurchaseFlowToInvoice = (params) => api.get('/compras/fluxo-comp
 // REPORTS
 export const getProductionReportData = (params) => api.get('/reports/production/data', { params }).then(res => res.data);
 export const getSalesPlanningReportData = (params) => api.get('/reports/sales-planning/data', { params }).then(res => res.data);
+export const updateOrderItemTag = (data) => api.put('/reports/sales-planning/item-tag', data).then(res => res.data);
 export const getResourceEvolutionReportData = (params) => api.get('/reports/resource-evolution', { params }).then(res => res.data);
 
 // SALES NOTES (Ata Viva)

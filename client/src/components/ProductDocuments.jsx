@@ -3,7 +3,7 @@ import { FileText, Link as LinkIcon, Plus, Trash2, ExternalLink } from 'lucide-r
 import api, { getProductDocuments, getFileUrl } from '../services/api';
 
 // Componente deve ser inserido na página de Estrutura ou Detalhe
-const ProductDocuments = ({ produtoCodigo }) => {
+const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
     const [docs, setDocs] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -54,18 +54,18 @@ const ProductDocuments = ({ produtoCodigo }) => {
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-bold text-gray-800">Documentos & Arquivos</h3>
-                </div>
-                {!isAdding && (
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-gray-500" />
+                    Documentos ({docs.length})
+                </h3>
+                {canEdit && (
                     <button
-                        onClick={() => setIsAdding(true)}
-                        className="flex items-center gap-1 text-sm text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors font-medium border border-transparent hover:border-blue-100"
+                        onClick={() => setIsAdding(!isAdding)}
+                        className="flex items-center gap-1 text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors font-medium"
                     >
                         <Plus className="h-4 w-4" />
-                        Adicionar Link
+                        Vincular Arquivo
                     </button>
                 )}
             </div>
@@ -193,13 +193,15 @@ const ProductDocuments = ({ produtoCodigo }) => {
                                     </div>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => handleDelete(doc.id)}
-                                className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-600 transition-all"
-                                title="Remover"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={() => handleDelete(doc.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-600 transition-all"
+                                    title="Remover"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            )}
                         </div>
                     ))}
                 </div>

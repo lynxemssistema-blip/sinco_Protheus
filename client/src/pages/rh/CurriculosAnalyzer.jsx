@@ -413,7 +413,7 @@ const CurriculosAnalyzer = () => {
                                     <span className="mx-2">•</span>
                                     Cargo Base: <span className="font-semibold text-slate-600">{selectedCandidato.cargo_nome}</span>
                                     <span className="mx-2">•</span>
-                                    Adicionado no sistema em {new Date(selectedCandidato.created_at).toLocaleDateString()}
+                                    Adicionado no sistema em {new Date(selectedCandidato.created_at).toLocaleDateString('pt-BR')}
                                 </p>
                                 
                                 <div className="mt-4 bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-700 font-medium">

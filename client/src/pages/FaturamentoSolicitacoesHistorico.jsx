@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { getFaturamentoSolicitacoes, updateFaturamentoSolicitacaoStatus, enviarFaturamentoEmailLote } from '../services/api';
-import { History, FileText, Calendar, Box, CheckCircle, Clock, XCircle, Search, ChevronDown, ChevronUp, Download, LayoutList, Table } from 'lucide-react';
+import { History, FileText, Calendar, Box, CheckCircle, Clock, XCircle, Search, ChevronDown, ChevronUp, Download, LayoutList, Table, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'react-toastify';
 import generateFaturamentoPdf from '../services/faturamentoPdfGenerator';
 import { generateFaturamentoHistoricoPdf } from '../services/faturamentoHistoricoPdfGenerator';
+import { exportFaturamentoHistoricoExcel } from '../services/faturamentoHistoricoExcelGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import useStickyState from '../hooks/useStickyState';
 
@@ -478,6 +479,17 @@ const FaturamentoSolicitacoesHistorico = () => {
                                         >
                                             <Download className="w-4 h-4" /> Relatório PDF
                                         </button>
+                                        <button 
+                                            onClick={() => {
+                                                const rows = viewMode === 'tabela' ? faturamentosFlat 
+                                                    : viewMode === 'tabela_solicitacoes' ? faturamentosSolicitacoesFlat 
+                                                    : faturamentosProdutosFlat;
+                                                exportFaturamentoHistoricoExcel(viewMode, rows, includePdfValues);
+                                            }}
+                                            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-medium rounded-lg text-sm flex items-center gap-2 transition-colors shadow-sm"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4" /> Excel
+                                        </button>
                                     </div>
                                     <div className="bg-white border text-sm border-gray-200 rounded-lg overflow-hidden shadow-sm overflow-x-auto">
                                         {viewMode === 'tabela' ? (
@@ -727,10 +739,10 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                                             : new Date(solicitacao.updated_at || solicitacao.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                                                                     </td>
                                                                     <td className="px-4 py-2 text-right text-gray-400 font-medium">
-                                                                        {parseFloat(it.saldo_faturar_momentaneo).toLocaleString()}
+                                                                        {parseFloat(it.saldo_faturar_momentaneo).toLocaleString('pt-BR')}
                                                                     </td>
                                                                     <td className="px-4 py-2 text-right font-bold text-[15px] text-blue-700">
-                                                                        {parseFloat(it.quantidade_solicitada).toLocaleString()}
+                                                                        {parseFloat(it.quantidade_solicitada).toLocaleString('pt-BR')}
                                                                     </td>
                                                                 </tr>
                                                             ))}

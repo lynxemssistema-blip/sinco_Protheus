@@ -148,7 +148,7 @@ router.delete('/:id/items/:itemId', async (req, res) => {
 router.put('/:id/items/:itemId/retorno', upload.single('certificado'), async (req, res) => {
     try {
         const { itemId } = req.params;
-        const { validade_calibracao } = req.body;
+        const { validade_calibracao, observacao } = req.body;
         const file = req.file;
 
         const [itemRow] = await db.query('SELECT asset_id FROM sgq_romaneios_items WHERE id = ?', [itemId]);
@@ -160,18 +160,24 @@ router.put('/:id/items/:itemId/retorno', upload.single('certificado'), async (re
         if (file) {
             fileUrl = `/uploads/certificados/${file.filename}`;
             
-            // Adicionar ao histórico de anexos do ativo
+            // Adicionar ao histórico de calibrações do ativo
             await db.query(`
-                INSERT INTO sgq_asset_attachments (asset_id, file_path, file_name, file_type, category)
-                VALUES (?, ?, ?, ?, ?)
-            `, [assetId, fileUrl, file.originalname, 'pdf', 'certificado']);
+                INSERT INTO sgq_calibrations (asset_id, certificate_url, date_returned)
+                VALUES (?, ?, CURRENT_DATE)
+            `, [assetId, fileUrl]);
+        }
+
+        try {
+            await db.query('ALTER TABLE sgq_romaneios_items ADD COLUMN observacao_retorno TEXT');
+        } catch (e) {
+            // Ignora erro se coluna já existir
         }
 
         await db.query(`
             UPDATE sgq_romaneios_items 
-            SET status = 'retornado', data_retorno = NOW(), certificado_url = ?
+            SET status = 'retornado', data_retorno = NOW(), certificado_url = COALESCE(?, certificado_url), observacao_retorno = ?
             WHERE id = ?
-        `, [fileUrl, itemId]);
+        `, [fileUrl, observacao || null, itemId]);
 
         await db.query(`
             UPDATE sgq_assets 

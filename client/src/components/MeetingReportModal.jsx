@@ -362,7 +362,7 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                         <div className="flex items-end mb-0.5">
                             <div className="flex items-center text-sm text-slate-400 bg-slate-50 px-3 py-2 rounded-lg border h-[38px]">
                                 <Calendar className="w-4 h-4 mr-2" />
-                                {new Date().toLocaleDateString()}
+                                {new Date().toLocaleDateString('pt-BR')}
                             </div>
                         </div>
                         </div>
@@ -384,8 +384,8 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                 </div>
                                 <div className="text-right">
                                     <div className="text-sm text-slate-500">Data de Emissão</div>
-                                    <div className="font-mono text-lg font-bold">{new Date().toLocaleDateString()}</div>
-                                    <div className="text-xs text-slate-400">{new Date().toLocaleTimeString()}</div>
+                                    <div className="font-mono text-lg font-bold">{new Date().toLocaleDateString('pt-BR')}</div>
+                                    <div className="text-xs text-slate-400">{new Date().toLocaleTimeString('pt-BR')}</div>
                                 </div>
                             </div>
 
@@ -557,7 +557,7 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
                                                                                             <span className="text-red-500 font-bold">• Pendente</span>
                                                                                         )}
                                                                                         <span className="mx-1">|</span>
-                                                                                        {note.created_by} em {new Date(note.created_at).toLocaleString()}
+                                                                                        {note.created_by} em {new Date(note.created_at).toLocaleString('pt-BR')}
                                                                                     </div>
                                                                                     </div>
                                                                                 </div>

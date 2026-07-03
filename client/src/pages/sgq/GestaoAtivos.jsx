@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Plus, Minus, Search, Edit2, Trash2, X, Save, AlertCircle, Upload, Wrench, Copy, Check, Camera, FileText, Download, Star, Bell, Mail, MessageSquare, Calendar, CheckCircle2 } from 'lucide-react';
+import { Plus, Minus, Search, Edit2, Trash2, X, Save, AlertCircle, Upload, Wrench, Copy, Check, Camera, FileText, Download, Star, Bell, Mail, MessageSquare, Calendar, CheckCircle2, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { logoBase64 as metalfisaLogoBase64 } from '../../services/metalfisaLogoBase64';
 
 export default function GestaoAtivos() {
     const [ativos, setAtivos] = useState([]);
@@ -9,6 +13,14 @@ export default function GestaoAtivos() {
     const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_search') || '');
     const [selectedRow, setSelectedRow] = useState(null);
     const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_status') || 'all');
+    const [columnFilters, setColumnFilters] = useState({
+        patrimonio: '',
+        name: '',
+        model: '',
+        status: '',
+        validade: '',
+        certificado: ''
+    });
 
     const [globalTab, setGlobalTab] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_tab') || 'ativos'); // 'ativos' | 'calibracoes' | 'historico'
     const [historico, setHistorico] = useState([]);
@@ -369,7 +381,17 @@ export default function GestaoAtivos() {
         
         const matchesStatus = statusFilter === 'all' || a.status === statusFilter;
         
-        return matchesSearch && matchesStatus;
+        const matchesColPatrimonio = !columnFilters.patrimonio || (a.patrimonio && a.patrimonio.toLowerCase().includes(columnFilters.patrimonio.toLowerCase()));
+        const matchesColName = !columnFilters.name || (a.name && a.name.toLowerCase().includes(columnFilters.name.toLowerCase()));
+        const matchesColModel = !columnFilters.model || ((a.model || '').toLowerCase().includes(columnFilters.model.toLowerCase()) || (a.serial_number || '').toLowerCase().includes(columnFilters.model.toLowerCase()));
+        
+        const labelStatus = a.requires_calibration === 0 || a.requires_calibration === false ? `Estoque: ${a.stock_quantity}` : getStatusLabel(a.status);
+        const matchesColStatus = !columnFilters.status || (labelStatus.toLowerCase().includes(columnFilters.status.toLowerCase()));
+        
+        const validadeStr = a.calibration_validity ? new Date(a.calibration_validity).toLocaleDateString('pt-BR') : '-';
+        const matchesColValidade = !columnFilters.validade || (validadeStr.toLowerCase().includes(columnFilters.validade.toLowerCase()));
+
+        return matchesSearch && matchesStatus && matchesColPatrimonio && matchesColName && matchesColModel && matchesColStatus && matchesColValidade;
     });
 
     const sortedAtivos = [...filteredAtivos.filter(a => a.calibration_validity)].sort((a, b) => {
@@ -378,9 +400,181 @@ export default function GestaoAtivos() {
         return dateA - dateB;
     });
 
+    const filteredHistorico = historico.filter(h => {
+        const asset = ativos.find(a => a.id === h.asset_id);
+        const matchesSearch = !searchTerm || (asset && ((asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) || (asset.patrimonio && asset.patrimonio.toLowerCase().includes(searchTerm.toLowerCase()))));
+        
+        const dataUpload = h.date_returned ? new Date(h.date_returned).toLocaleDateString('pt-BR') : '';
+        const matchesUpload = !columnFilters.validade || dataUpload.includes(columnFilters.validade);
+        
+        const patrimonioStr = asset ? `[${asset.patrimonio || ''}] ${asset.name || ''}`.toLowerCase() : '';
+        const matchesPatrimonio = !columnFilters.patrimonio || patrimonioStr.includes(columnFilters.patrimonio.toLowerCase());
+        
+        const matchesCertificado = !columnFilters.certificado || (h.certificate_number && h.certificate_number.toLowerCase().includes(columnFilters.certificado.toLowerCase()));
+
+        return matchesSearch && matchesUpload && matchesPatrimonio && matchesCertificado;
+    });
+
+    const handleExportPDF = () => {
+        const doc = new jsPDF('l', 'mm', 'a4');
+
+        // Header
+        if (metalfisaLogoBase64) {
+            doc.addImage(metalfisaLogoBase64, 'PNG', 14, 10, 40, 15);
+        }
+        
+        doc.setFontSize(16);
+        doc.setTextColor(40);
+        
+        let title = 'Relatório de Ativos SGQ';
+        if (globalTab === 'calibracoes') title = 'Vencimentos e Alertas de Calibração SGQ';
+        if (globalTab === 'historico') title = 'Histórico de Calibrações SGQ';
+        
+        doc.text(title, 60, 20);
+
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 60, 26);
+        
+        let filterText = "Filtros: ";
+        if (searchTerm) filterText += `Busca: "${searchTerm}" | `;
+        filterText += `Status: ${statusFilter === 'all' ? 'Todos' : statusFilter}`;
+        doc.text(filterText, 14, 35);
+
+        let tableColumn = [];
+        let tableRows = [];
+
+        if (globalTab === 'ativos') {
+            tableColumn = ["Patrimônio", "Equipamento", "Modelo", "Nº Série", "Calibração", "Vencimento", "Status", "Estoque"];
+            tableRows = filteredAtivos.map(a => [
+                a.patrimonio || '-',
+                a.name || '-',
+                a.model || '-',
+                a.serial_number || '-',
+                a.requires_calibration ? 'Sim' : 'Não',
+                a.calibration_validity ? new Date(a.calibration_validity).toLocaleDateString('pt-BR') : '-',
+                a.status === 'available' ? 'Em Uso' : a.status === 'maintenance' ? 'Manutenção' : a.status === 'calibration' ? 'Calibração' : 'Inativo',
+                a.stock_quantity || 1
+            ]);
+        } else if (globalTab === 'calibracoes') {
+            tableColumn = ["Patrimônio", "Equipamento", "Modelo", "Vencimento", "Dias p/ Vencer", "Status"];
+            tableRows = sortedAtivos.map(a => {
+                const isValid = a.calibration_validity ? new Date(a.calibration_validity) >= new Date() : false;
+                const daysToExpire = a.calibration_validity ? Math.ceil((new Date(a.calibration_validity) - new Date()) / (1000 * 60 * 60 * 24)) : 0;
+                return [
+                    a.patrimonio || '-',
+                    a.name || '-',
+                    a.model || '-',
+                    a.calibration_validity ? new Date(a.calibration_validity).toLocaleDateString('pt-BR') : '-',
+                    daysToExpire,
+                    isValid ? 'OK' : 'Vencido'
+                ];
+            });
+        } else if (globalTab === 'historico') {
+            tableColumn = ["Ativo", "Data Calib.", "Próx. Vencimento", "Certificado", "Avaliador"];
+            
+            let filteredHist = historico;
+            if (searchTerm) {
+                filteredHist = historico.filter(h => {
+                    const asset = ativos.find(a => a.id === h.asset_id);
+                    return asset && (
+                        (asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                        (asset.patrimonio && asset.patrimonio.toLowerCase().includes(searchTerm.toLowerCase()))
+                    );
+                });
+            }
+
+            tableRows = filteredHist.map(h => {
+                const asset = ativos.find(a => a.id === h.asset_id);
+                return [
+                    asset ? `[${asset.patrimonio}] ${asset.name}` : '-',
+                    h.calibration_date ? new Date(h.calibration_date).toLocaleDateString('pt-BR') : '-',
+                    h.next_due_date ? new Date(h.next_due_date).toLocaleDateString('pt-BR') : '-',
+                    h.certificate_number || '-',
+                    h.evaluator_name || '-'
+                ];
+            });
+        }
+
+        autoTable(doc, {
+            startY: 40,
+            head: [tableColumn],
+            body: tableRows,
+            theme: 'striped',
+            headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
+            styles: { fontSize: 8 }
+        });
+
+        doc.save(`SGQ_Relatorio_${globalTab}_${new Date().getTime()}.pdf`);
+    };
+
+    const handleExportExcel = () => {
+        let tableColumn = [];
+        let tableRows = [];
+
+        if (globalTab === 'ativos') {
+            tableColumn = ["Patrimônio", "Equipamento", "Modelo", "Nº Série", "Exige Calibração", "Vencimento", "Status", "Qtd Estoque"];
+            tableRows = filteredAtivos.map(a => [
+                a.patrimonio || '-',
+                a.name || '-',
+                a.model || '-',
+                a.serial_number || '-',
+                a.requires_calibration ? 'Sim' : 'Não',
+                a.calibration_validity ? new Date(a.calibration_validity).toLocaleDateString('pt-BR') : '-',
+                a.status === 'available' ? 'Em Uso' : a.status === 'maintenance' ? 'Manutenção' : a.status === 'calibration' ? 'Calibração' : 'Inativo',
+                a.stock_quantity || 1
+            ]);
+        } else if (globalTab === 'calibracoes') {
+            tableColumn = ["Patrimônio", "Equipamento", "Modelo", "Vencimento", "Dias p/ Vencer", "Status"];
+            tableRows = sortedAtivos.map(a => {
+                const isValid = a.calibration_validity ? new Date(a.calibration_validity) >= new Date() : false;
+                const daysToExpire = a.calibration_validity ? Math.ceil((new Date(a.calibration_validity) - new Date()) / (1000 * 60 * 60 * 24)) : 0;
+                return [
+                    a.patrimonio || '-',
+                    a.name || '-',
+                    a.model || '-',
+                    a.calibration_validity ? new Date(a.calibration_validity).toLocaleDateString('pt-BR') : '-',
+                    daysToExpire,
+                    isValid ? 'OK' : 'Vencido'
+                ];
+            });
+        } else if (globalTab === 'historico') {
+            tableColumn = ["Ativo", "Data Calibração", "Próx. Vencimento", "Nº Certificado", "Avaliador", "Observações"];
+            
+            let filteredHist = historico;
+            if (searchTerm) {
+                filteredHist = historico.filter(h => {
+                    const asset = ativos.find(a => a.id === h.asset_id);
+                    return asset && (
+                        (asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                        (asset.patrimonio && asset.patrimonio.toLowerCase().includes(searchTerm.toLowerCase()))
+                    );
+                });
+            }
+
+            tableRows = filteredHist.map(h => {
+                const asset = ativos.find(a => a.id === h.asset_id);
+                return [
+                    asset ? `[${asset.patrimonio}] ${asset.name}` : '-',
+                    h.calibration_date ? new Date(h.calibration_date).toLocaleDateString('pt-BR') : '-',
+                    h.next_due_date ? new Date(h.next_due_date).toLocaleDateString('pt-BR') : '-',
+                    h.certificate_number || '-',
+                    h.evaluator_name || '-',
+                    h.notes || '-'
+                ];
+            });
+        }
+
+        const wsData = [tableColumn, ...tableRows];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
+        XLSX.writeFile(wb, `SGQ_Relatorio_${globalTab}_${new Date().getTime()}.xlsx`);
+    };
+
     return (
-        <div className="p-6 max-w-7xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
+        <div className="p-6 max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)]">
+            <div className="flex justify-between items-center mb-6 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="bg-indigo-100 p-3 rounded-lg">
                         <Wrench className="w-6 h-6 text-indigo-700" />
@@ -420,8 +614,8 @@ export default function GestaoAtivos() {
             </div>
 
             {globalTab === 'ativos' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="flex flex-col sm:flex-row gap-4 p-4 border-b border-slate-200 bg-slate-50">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
+                <div className="flex flex-col sm:flex-row gap-4 p-4 border-b border-slate-200 bg-slate-50 shrink-0">
                     <div className="relative max-w-md flex-1">
                         <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                         <input
@@ -447,20 +641,51 @@ export default function GestaoAtivos() {
                             <option value="discarded">Descartado</option>
                         </select>
                     </div>
+                    <div className="flex gap-2 items-center w-full sm:w-auto">
+                        <button
+                            onClick={handleExportExcel}
+                            className="flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+                            title="Exportar para Excel"
+                        >
+                            <FileSpreadsheet className="w-4 h-4" /> Excel
+                        </button>
+                        <button
+                            onClick={handleExportPDF}
+                            className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors shadow-sm whitespace-nowrap"
+                            title="Exportar para PDF"
+                        >
+                            <FileText className="w-4 h-4" /> PDF
+                        </button>
+                    </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-800">
+                <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+                    <table className="w-full text-left text-sm text-slate-600 relative">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-800 sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">Patrimônio</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center w-16">Foto</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">Descrição / Nome</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">Modelo / Serial</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">Status</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">Validade Calibração</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-right">Ações</th>
-                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">PDF</th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">
+                                    Patrimônio
+                                    <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.patrimonio} onChange={e => setColumnFilters({...columnFilters, patrimonio: e.target.value})} />
+                                </th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center w-16 align-top">Foto</th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">
+                                    Descrição / Nome
+                                    <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.name} onChange={e => setColumnFilters({...columnFilters, name: e.target.value})} />
+                                </th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider">
+                                    Modelo / Serial
+                                    <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.model} onChange={e => setColumnFilters({...columnFilters, model: e.target.value})} />
+                                </th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center align-top">
+                                    Status
+                                    <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.status} onChange={e => setColumnFilters({...columnFilters, status: e.target.value})} />
+                                </th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center align-top">
+                                    Validade Calibração
+                                    <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.validade} onChange={e => setColumnFilters({...columnFilters, validade: e.target.value})} />
+                                </th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-right align-top w-20">Ações</th>
+                                <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center align-top w-16">PDF</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -597,9 +822,9 @@ export default function GestaoAtivos() {
             )}
 
             {globalTab === 'calibracoes' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50">
-                        <div className="relative max-w-md">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
+                    <div className="flex flex-col sm:flex-row gap-4 p-4 border-b border-slate-200 bg-slate-50 shrink-0">
+                        <div className="relative max-w-md flex-1">
                             <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                             <input
                                 type="text"
@@ -609,17 +834,46 @@ export default function GestaoAtivos() {
                                 className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                             />
                         </div>
+                        <div className="flex gap-2 items-center w-full sm:w-auto">
+                            <button
+                                onClick={handleExportExcel}
+                                className="flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+                                title="Exportar para Excel"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" /> Excel
+                            </button>
+                            <button
+                                onClick={handleExportPDF}
+                                className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors shadow-sm whitespace-nowrap"
+                                title="Exportar para PDF"
+                            >
+                                <FileText className="w-4 h-4" /> PDF
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm text-slate-600">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-800">
+                    <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+                        <table className="w-full text-left text-sm text-slate-600 relative">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-800 sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Patrimônio</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Instrumento</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Data Vencimento</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center">Status</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider text-right">Ações</th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">
+                                        Patrimônio
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.patrimonio} onChange={e => setColumnFilters({...columnFilters, patrimonio: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center w-16 align-top">Foto</th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">
+                                        Instrumento
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.name} onChange={e => setColumnFilters({...columnFilters, name: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider align-top">
+                                        Data Vencimento
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.validade} onChange={e => setColumnFilters({...columnFilters, validade: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider text-center align-top">
+                                        Status
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.status} onChange={e => setColumnFilters({...columnFilters, status: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider text-right align-top w-20">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -647,6 +901,21 @@ export default function GestaoAtivos() {
                                                     <span className="font-mono text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-200 font-bold">
                                                         {a.patrimonio || '-'}
                                                     </span>
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {a.main_photo_id ? (
+                                                        <img 
+                                                            src={`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} 
+                                                            alt={a.name} 
+                                                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shadow-sm mx-auto cursor-pointer hover:scale-110 transition-transform"
+                                                            onClick={() => window.open(`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`, '_blank')}
+                                                            title="Clique para ampliar"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-10 h-10 bg-slate-100 rounded-md flex items-center justify-center border border-slate-200 mx-auto" title="Sem foto">
+                                                            <Camera className="w-4 h-4 text-slate-400" />
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="p-4 font-bold text-slate-800">
                                                     {a.name}
@@ -680,14 +949,51 @@ export default function GestaoAtivos() {
             )}
 
             {globalTab === 'historico' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm text-slate-600">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-800">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
+                    <div className="flex flex-col sm:flex-row gap-4 p-4 border-b border-slate-200 bg-slate-50 shrink-0">
+                        <div className="relative max-w-md flex-1">
+                            <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Buscar histórico por nome ou patrimônio..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            />
+                        </div>
+                        <div className="flex gap-2 items-center w-full sm:w-auto">
+                            <button
+                                onClick={handleExportExcel}
+                                className="flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+                                title="Exportar para Excel"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" /> Excel
+                            </button>
+                            <button
+                                onClick={handleExportPDF}
+                                className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors shadow-sm whitespace-nowrap"
+                                title="Exportar para PDF"
+                            >
+                                <FileText className="w-4 h-4" /> PDF
+                            </button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+                        <table className="w-full text-left text-sm text-slate-600 relative">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-800 sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Data do Upload</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Patrimônio / Instrumento</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Certificado</th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider align-top">
+                                        Data do Upload
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.validade} onChange={e => setColumnFilters({...columnFilters, validade: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider align-top">
+                                        Patrimônio / Instrumento
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.patrimonio} onChange={e => setColumnFilters({...columnFilters, patrimonio: e.target.value})} />
+                                    </th>
+                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider align-top">
+                                        Certificado
+                                        <input type="text" placeholder="Filtrar..." className="block mt-1 w-full p-1 text-xs font-normal border border-slate-300 rounded" value={columnFilters.certificado} onChange={e => setColumnFilters({...columnFilters, certificado: e.target.value})} />
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -699,14 +1005,14 @@ export default function GestaoAtivos() {
                                             </div>
                                         </td>
                                     </tr>
-                                ) : historico.length === 0 ? (
+                                ) : filteredHistorico.length === 0 ? (
                                     <tr>
                                         <td colSpan="3" className="p-12 text-center text-slate-500">
                                             <p className="font-medium text-lg text-slate-700">Nenhum histórico de calibração encontrado.</p>
                                         </td>
                                     </tr>
                                 ) : (
-                                    historico.map(h => {
+                                    filteredHistorico.map(h => {
                                         const asset = ativos.find(a => a.id === h.asset_id);
                                         return (
                                             <tr key={h.id} className="hover:bg-slate-50/80 transition-colors">

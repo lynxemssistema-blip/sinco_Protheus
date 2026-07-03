@@ -62,7 +62,7 @@ export default function DBAMonitoringTab() {
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">Monitoramento DBA e Infraestrutura</h2>
                         <p className="text-sm text-slate-500">
-                            Atualizado em: {lastUpdate ? lastUpdate.toLocaleTimeString() : '--:--:--'} (Polling: 10s)
+                            Atualizado em: {lastUpdate ? lastUpdate.toLocaleTimeString('pt-BR') : '--:--:--'} (Polling: 10s)
                         </p>
                     </div>
                 </div>

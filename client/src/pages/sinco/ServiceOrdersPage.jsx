@@ -251,10 +251,10 @@ const ServiceOrdersPage = () => {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {os.DataCriacao ? new Date(os.DataCriacao).toLocaleDateString() : '-'}
+                                                {os.DataCriacao ? new Date(os.DataCriacao).toLocaleDateString('pt-BR') : '-'}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {os.DataFinalizacao ? new Date(os.DataFinalizacao).toLocaleDateString() : '-'}
+                                                {os.DataFinalizacao ? new Date(os.DataFinalizacao).toLocaleDateString('pt-BR') : '-'}
                                             </td>
                                             <td className="px-6 py-4 text-center">
                                                 {resolvePdfPath(os.EnderecoOrdemServico) ? (

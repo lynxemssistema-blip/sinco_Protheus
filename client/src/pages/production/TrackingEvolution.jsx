@@ -231,7 +231,7 @@ export default function TrackingEvolution() {
                         const op = comparisonData[index];
                         return `${op.codigo} - ${op.descricao}`;
                     },
-                    label: (context) => context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' pcs'
+                    label: (context) => context.dataset.label + ': ' + context.parsed.y.toLocaleString('pt-BR') + ' pcs'
                 }
             }
         },
@@ -366,28 +366,28 @@ export default function TrackingEvolution() {
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-blue-500 relative overflow-hidden group">
                                     <div className="relative z-10">
                                         <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Peças</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.total_pecas || 0).toLocaleString()}</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.total_pecas || 0).toLocaleString('pt-BR')}</p>
                                     </div>
                                     <Package className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-blue-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-emerald-500 relative overflow-hidden group">
                                     <div className="relative z-10">
                                         <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Pedidos Únicos</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.pedidos_unicos || 0).toLocaleString()}</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.pedidos_unicos || 0).toLocaleString('pt-BR')}</p>
                                     </div>
                                     <FileSpreadsheet className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-emerald-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-yellow-500 relative overflow-hidden group">
                                     <div className="relative z-10">
                                         <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Operações</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.operacoes_unicas || 0).toLocaleString()}</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.operacoes_unicas || 0).toLocaleString('pt-BR')}</p>
                                     </div>
                                     <Factory className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-yellow-50 transition-colors" />
                                 </div>
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-slate-500 relative overflow-hidden group">
                                     <div className="relative z-10">
                                         <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Colaboradores</p>
-                                        <p className="text-3xl font-bold text-slate-800">{(summary.colaboradores_unicos || 0).toLocaleString()}</p>
+                                        <p className="text-3xl font-bold text-slate-800">{(summary.colaboradores_unicos || 0).toLocaleString('pt-BR')}</p>
                                     </div>
                                     <Users className="absolute right-4 bottom-4 w-12 h-12 text-slate-100 group-hover:text-slate-50 transition-colors" />
                                 </div>
@@ -445,7 +445,7 @@ export default function TrackingEvolution() {
                                                             {item.chave}
                                                         </td>
                                                         <td className="px-4 py-3 text-slate-600 text-right font-mono text-sm font-semibold">
-                                                            {item.total_pecas?.toLocaleString()}
+                                                            {item.total_pecas?.toLocaleString('pt-BR')}
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
                                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -553,11 +553,11 @@ export default function TrackingEvolution() {
                                         <div className="flex justify-between items-end mb-4">
                                             <div>
                                                 <p className="text-sm text-slate-400">Total Planejado (Protheus)</p>
-                                                <p className="text-3xl font-bold">{comparisonSummary.total_planejado.toLocaleString()}</p>
+                                                <p className="text-3xl font-bold">{comparisonSummary.total_planejado.toLocaleString('pt-BR')}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-sm text-slate-400">Total Apontado</p>
-                                                <p className="text-3xl font-bold text-emerald-400">{comparisonSummary.total_apontado.toLocaleString()}</p>
+                                                <p className="text-3xl font-bold text-emerald-400">{comparisonSummary.total_apontado.toLocaleString('pt-BR')}</p>
                                             </div>
                                         </div>
                                         <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
@@ -579,7 +579,7 @@ export default function TrackingEvolution() {
                                 <div className="bg-white p-6 rounded-sm shadow-sm border-l-4 border-amber-500 flex flex-col justify-center">
                                     <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Desvio / Saldo</p>
                                     <p className={`text-4xl font-bold ${comparisonSummary.diferenca >= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                                        {comparisonSummary.diferenca > 0 ? '+' : ''}{comparisonSummary.diferenca.toLocaleString()}
+                                        {comparisonSummary.diferenca > 0 ? '+' : ''}{comparisonSummary.diferenca.toLocaleString('pt-BR')}
                                     </p>
                                     <p className="text-xs text-slate-400 mt-2">Diferença entre peças produzidas e meta</p>
                                 </div>

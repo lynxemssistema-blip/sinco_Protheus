@@ -1000,7 +1000,7 @@ export default function ProductionControl() {
                                                 {op.data_planejada_inicio ? (
                                                     <div className="text-xs flex flex-col items-center gap-0.5">
                                                         <div className="text-green-700 font-medium whitespace-nowrap">
-                                                            I: {new Date(op.data_planejada_inicio).toLocaleDateString()}
+                                                            I: {new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR')}
                                                         </div>
                                                         {op.dias_espera > 0 && (
                                                             <div className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200" title="Dias aguardando entre recursos">
@@ -1404,17 +1404,17 @@ function CargaRecursosView({
 
                                         <div className="text-center min-w-[70px]">
                                             <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Planejado</div>
-                                            <div className="text-xs font-bold text-slate-700">{res.qtdPlanejada.toLocaleString()}</div>
+                                            <div className="text-xs font-bold text-slate-700">{res.qtdPlanejada.toLocaleString('pt-BR')}</div>
                                         </div>
 
                                         <div className="text-center min-w-[70px]">
                                             <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Realizado</div>
-                                            <div className="text-xs font-bold text-slate-700">{res.qtdProduzida.toLocaleString()}</div>
+                                            <div className="text-xs font-bold text-slate-700">{res.qtdProduzida.toLocaleString('pt-BR')}</div>
                                         </div>
 
                                         <div className={`text-center px-3.5 py-1.5 rounded-lg border min-w-[110px] ${badgeClass}`}>
                                             <div className="text-[9px] font-bold uppercase tracking-wider opacity-90">Saldo Pendente</div>
-                                            <div className="text-sm font-extrabold">{res.qtdPendente.toLocaleString()}</div>
+                                            <div className="text-sm font-extrabold">{res.qtdPendente.toLocaleString('pt-BR')}</div>
                                         </div>
                                         
                                         {/* Nova métrica: Ocupação e Carga (Gargalo real em tempo) */}
@@ -1498,22 +1498,22 @@ function CargaRecursosView({
                                                                 <td className="p-2.5 text-center whitespace-nowrap">
                                                                     {op.data_planejada_inicio ? (
                                                                         <div className="text-[10px] font-bold">
-                                                                            <span className="text-green-600">{new Date(op.data_planejada_inicio).toLocaleDateString()}</span>
+                                                                            <span className="text-green-600">{new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR')}</span>
                                                                             <span className="text-slate-400 mx-1">/</span>
-                                                                            <span className="text-red-500">{new Date(op.data_planejada_fim).toLocaleDateString()}</span>
+                                                                            <span className="text-red-500">{new Date(op.data_planejada_fim).toLocaleDateString('pt-BR')}</span>
                                                                         </div>
                                                                     ) : (
                                                                         <span className="text-slate-400 italic text-[10px]">Não planejado</span>
                                                                     )}
                                                                 </td>
                                                                 <td className="p-2.5 text-right font-semibold text-slate-700">
-                                                                    {Number(op.qtd_planejada_op).toLocaleString()}
+                                                                    {Number(op.qtd_planejada_op).toLocaleString('pt-BR')}
                                                                 </td>
                                                                 <td className="p-2.5 text-right text-slate-600">
-                                                                    {Number(op.qtd_produzida_real).toLocaleString()}
+                                                                    {Number(op.qtd_produzida_real).toLocaleString('pt-BR')}
                                                                 </td>
                                                                 <td className={`p-2.5 text-right font-extrabold ${op.qtdPendente > 0 ? 'text-red-600 bg-red-50/20' : 'text-slate-500'}`}>
-                                                                    {op.qtdPendente.toLocaleString()}
+                                                                    {op.qtdPendente.toLocaleString('pt-BR')}
                                                                 </td>
                                                                 <td className="p-2.5 text-center">
                                                                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-extrabold border ${statusClass}`}>

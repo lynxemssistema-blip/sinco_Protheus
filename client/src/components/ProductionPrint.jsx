@@ -26,7 +26,7 @@ const ProductionPrint = forwardRef(({ ops, filters }, ref) => {
                         <p className="text-slate-500 mt-1">MetalFisa - Sistema de Gestão</p>
                     </div>
                     <div className="text-right">
-                        <p className="font-bold">{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</p>
+                        <p className="font-bold">{new Date().toLocaleDateString('pt-BR')} {new Date().toLocaleTimeString('pt-BR')}</p>
                         <p className="text-slate-500 mt-1">Total de OPs: {ops.length}</p>
                     </div>
                 </div>
@@ -75,10 +75,10 @@ const ProductionPrint = forwardRef(({ ops, filters }, ref) => {
                                 <div className="text-[9px] text-slate-500 truncate">{op.desc_operacao}</div>
                             </td>
                             <td className="py-2 align-top text-center text-[10px]">
-                                {op.data_planejada_inicio ? new Date(op.data_planejada_inicio).toLocaleDateString() : '-'}
+                                {op.data_planejada_inicio ? new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR') : '-'}
                             </td>
                             <td className="py-2 align-top text-center text-[10px]">
-                                {op.data_planejada_fim ? new Date(op.data_planejada_fim).toLocaleDateString() : '-'}
+                                {op.data_planejada_fim ? new Date(op.data_planejada_fim).toLocaleDateString('pt-BR') : '-'}
                             </td>
                             <td className="py-2 align-top text-center font-mono">
                                 {Number(op.qtd_produzida_real).toFixed(0)}/{Number(op.qtd_planejada_op).toFixed(0)}

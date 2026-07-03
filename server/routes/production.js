@@ -2781,6 +2781,51 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
         await connection.commit();
         res.json({ message: 'Apontamento registrado com sucesso.' });
+
+        // --- INÍCIO VERIFICAÇÃO PPAP / GITS PARA WHATSAPP ---
+        (async () => {
+            try {
+                const pgRes = await db.query(
+                    `SELECT c2_pedido, c2_itempd, c2_produto
+                     FROM public.sc2010
+                     WHERE c2_num = $1 AND c2_item = $2
+                     AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
+                    [op_numero, op_item]
+                );
+
+                if (pgRes.rows.length > 0) {
+                    const { c2_pedido: pedido, c2_itempd: itempd, c2_produto: produto } = pgRes.rows[0];
+                    if (pedido && itempd) {
+                        const [classifRows] = await mysqlPool.query(
+                            'SELECT classificacao FROM app_pedido_itens_classificacao WHERE pedido = ? AND item = ?',
+                            [pedido.trim(), itempd.trim()]
+                        );
+
+                        if (classifRows.length > 0) {
+                            const classificacao = classifRows[0].classificacao || '';
+                            if (classificacao === 'Gits' || classificacao === 'PPAP' || classificacao === 'Gits e PPAP') {
+                                const { sendText, msgAvisoPpapGits } = require('../services/whatsapp');
+                                const waText = msgAvisoPpapGits({
+                                    pedido: pedido.trim(),
+                                    item: itempd.trim(),
+                                    produto: produto ? produto.trim() : 'Desconhecido',
+                                    recurso: operacao_codigo,
+                                    usuario: usuario || 'Sistema',
+                                    quantidade: qtyNum
+                                });
+                                
+                                const targetJid = '120363357136677244@g.us'; // Grupo PPAP WABTEC 2026
+                                await sendText([targetJid], waText, `Aviso PPAP Pedido ${pedido.trim()}`);
+                                console.log(`[WhatsApp] Aviso PPAP enviado para grupo referente à OP ${op_numero}`);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('[PPAP WhatsApp Error]', err.message);
+            }
+        })();
+        // --- FIM VERIFICAÇÃO PPAP ---
     } catch (err) {
         console.error('[APPOINT ERROR]', err);
         if (connection) await connection.rollback();

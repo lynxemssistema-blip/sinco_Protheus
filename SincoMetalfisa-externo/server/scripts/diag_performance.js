@@ -218,7 +218,7 @@ async function diagMySQL() {
 
     console.log(`\n  ⏱  Uptime: ${upH}h`);
     console.log(`  🔌 Threads connected: ${map.Threads_connected} | running: ${map.Threads_running}`);
-    console.log(`  📊 Total queries: ${parseInt(map.Questions).toLocaleString()}`);
+    console.log(`  📊 Total queries: ${parseInt(map.Questions).toLocaleString('pt-BR')}`);
     console.log(`  🐢 Slow queries: ${map.Slow_queries}`);
     console.log(`  ${cacheIcon} InnoDB buffer pool hit: ${cacheHit}%`);
   } catch(e) { console.error('  status:', e.message); }
@@ -236,7 +236,7 @@ async function diagMySQL() {
       LIMIT 10
     `, [db]);
     console.log(`\n  📊 Top 10 maiores tabelas (banco: ${db}):`);
-    tbls.forEach(r => console.log(`     ${pad(r.table_name, 40)} ${pad(r.size_mb + ' MB', 10)} ~${parseInt(r.table_rows).toLocaleString()} linhas`));
+    tbls.forEach(r => console.log(`     ${pad(r.table_name, 40)} ${pad(r.size_mb + ' MB', 10)} ~${parseInt(r.table_rows).toLocaleString('pt-BR')} linhas`));
   } catch(e) { console.error('  tabelas:', e.message); }
 
   // Benchmark latência
@@ -267,7 +267,7 @@ async function diagMySQL() {
       try {
         const s = Date.now();
         const [r] = await conn.query(`SELECT COUNT(*) as c FROM \`${tbl}\``);
-        console.log(`     ${pad(tbl, 35)} ${pad(r[0].c.toLocaleString() + ' registros', 18)} ${ms(s)}`);
+        console.log(`     ${pad(tbl, 35)} ${pad(r[0].c.toLocaleString('pt-BR') + ' registros', 18)} ${ms(s)}`);
       } catch(e) {
         console.log(`     ${pad(tbl, 35)} ❌ ${e.message}`);
       }

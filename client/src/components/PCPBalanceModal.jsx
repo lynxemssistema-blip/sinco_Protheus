@@ -3,7 +3,7 @@ import { Calendar, X, AlertCircle, ArrowLeft, Check, TableProperties, Loader2 } 
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
-export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSaveSuccess, usuario }) {
+export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSaveSuccess, usuario, canEdit = true }) {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [allowedDays, setAllowedDays] = useState([1, 2, 3, 4, 5]); // Seg a Sex por padrão
@@ -279,13 +279,15 @@ export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSave
                             >
                                 Cancelar
                             </button>
-                            <button 
-                                onClick={handlePreview}
-                                className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md rounded-lg flex items-center gap-2 transition-all"
-                            >
-                                <TableProperties className="w-4 h-4" />
-                                Visualizar Alocação
-                            </button>
+                            {canEdit && (
+                                <button 
+                                    onClick={handlePreview}
+                                    className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md rounded-lg flex items-center gap-2 transition-all"
+                                >
+                                    <TableProperties className="w-4 h-4" />
+                                    Visualizar Alocação
+                                </button>
+                            )}
                         </div>
                     </>
                 ) : (
@@ -368,30 +370,32 @@ export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSave
                                 >
                                     Cancelar
                                 </button>
-                                <button 
-                                    onClick={handleSave}
-                                    disabled={loading}
-                                    className={`px-6 py-2 text-sm font-bold text-white rounded-lg flex items-center justify-center gap-2 transition-all relative overflow-hidden min-w-[180px] ${
-                                        loading ? 'bg-green-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg'
-                                    }`}
-                                >
-                                    {saveProgress && (
-                                        <div 
-                                            className="absolute left-0 top-0 bottom-0 bg-green-700 opacity-40 transition-all duration-300"
-                                            style={{ width: `${(saveProgress.current / saveProgress.total) * 100}%` }}
-                                        />
-                                    )}
-                                    <span className="relative z-10 flex items-center gap-2">
-                                        {loading ? (
-                                            `Salvando... ${saveProgress ? Math.round((saveProgress.current / saveProgress.total) * 100) : 0}%`
-                                        ) : (
-                                            <>
-                                                <Check className="w-4 h-4" />
-                                                Confirmar e Salvar
-                                            </>
+                                {canEdit && (
+                                    <button 
+                                        onClick={handleSave}
+                                        disabled={loading}
+                                        className={`px-6 py-2 text-sm font-bold text-white rounded-lg flex items-center justify-center gap-2 transition-all relative overflow-hidden min-w-[180px] ${
+                                            loading ? 'bg-green-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg'
+                                        }`}
+                                    >
+                                        {saveProgress && (
+                                            <div 
+                                                className="absolute left-0 top-0 bottom-0 bg-green-700 opacity-40 transition-all duration-300"
+                                                style={{ width: `${(saveProgress.current / saveProgress.total) * 100}%` }}
+                                            />
                                         )}
-                                    </span>
-                                </button>
+                                        <span className="relative z-10 flex items-center gap-2">
+                                            {loading ? (
+                                                `Salvando... ${saveProgress ? Math.round((saveProgress.current / saveProgress.total) * 100) : 0}%`
+                                            ) : (
+                                                <>
+                                                    <Check className="w-4 h-4" />
+                                                    Confirmar e Salvar
+                                                </>
+                                            )}
+                                        </span>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </>

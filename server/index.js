@@ -262,6 +262,7 @@ app.use('/api/ata-viva', require('./routes/ataViva'));
 
 // Sinco Route (Ordem de Serviço)
 app.use('/api/sinco', require('./routes/sinco'));
+app.use('/api/faturamento/pre-etiquetas', require('./routes/etiquetasPreLista'));
 
 // Sinco - Apontamento de Produção (OS)
 app.use('/api/sinco-apontamento', require('./routes/sinco_apontamento'));
@@ -352,7 +353,12 @@ app.get('/health', (req, res) => {
 
 // Explicit API 404 to avoid falling back to React
 app.use('/api', (req, res) => {
-    res.status(404).json({ error: 'API Route Not Found', path: req.originalUrl, method: req.method });
+    res.status(404).json({ error: 'Endpoint não encontrado.' });
+});
+
+// Explicit Uploads 404 to avoid falling back to React
+app.use('/uploads', (req, res) => {
+    res.status(404).send('Arquivo não encontrado no servidor.');
 });
 
 // Serve static files from React app with cache control
@@ -499,6 +505,9 @@ cron.schedule('0 6,15 * * *', async () => {
         console.error('[CRON] Erro geral na rotina:', err);
     }
 });
+
+const { init: startSgqAlertsJob } = require('./services/cronJobs/sgqAlertsJob');
+startSgqAlertsJob();
 
 const { startFaturamentoCron } = require('./services/faturamentoCron');
 startFaturamentoCron();

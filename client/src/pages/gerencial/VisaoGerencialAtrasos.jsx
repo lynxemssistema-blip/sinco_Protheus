@@ -255,7 +255,7 @@ const VisaoGerencialAtrasos = () => {
                                 </div>
                                 <div>
                                     <p className="text-sm font-medium text-slate-500">Qtd Física Pendente</p>
-                                    <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalSaldoQtd.toLocaleString()}</h3>
+                                    <h3 className="text-2xl font-bold text-slate-800">{processedData.metrics.totalSaldoQtd.toLocaleString('pt-BR')}</h3>
                                 </div>
                             </div>
 
@@ -300,7 +300,7 @@ const VisaoGerencialAtrasos = () => {
                                                 label={{ value: activeTab === 'financeiro' ? 'Saldo Financeiro em Atraso (R$)' : 'Volume Pendente (Peças)', position: 'insideBottom', offset: -15, fontSize: 12, fill: '#64748b' }}
                                             />
                                             <YAxis dataKey="name" type="category" width={160} fontSize={10} tickFormatter={(name) => name && name.length > 20 ? name.substring(0, 20) + '...' : name} />
-                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
+                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString('pt-BR')} peças`} cursor={{fill: '#f1f5f9'}} />
                                             <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#4f46e5' : '#3b82f6'} radius={[0, 4, 4, 0]} barSize={20} />
                                         </BarChart>
                                     </ResponsiveContainer>
@@ -324,7 +324,7 @@ const VisaoGerencialAtrasos = () => {
                                                 tickFormatter={val => activeTab === 'financeiro' ? `R$ ${(val/1000).toFixed(0)}k` : `${val} pçs`} 
                                                 label={{ value: activeTab === 'financeiro' ? 'Valor (R$)' : 'Volume (Peças)', angle: -90, position: 'insideLeft', offset: -10, fontSize: 12, fill: '#64748b' }}
                                             />
-                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString()} peças`} cursor={{fill: '#f1f5f9'}} />
+                                            <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString('pt-BR')} peças`} cursor={{fill: '#f1f5f9'}} />
                                             <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#10b981' : '#f59e0b'} radius={[4, 4, 0, 0]} maxBarSize={40} />
                                         </BarChart>
                                     </ResponsiveContainer>
@@ -368,7 +368,7 @@ const VisaoGerencialAtrasos = () => {
                                                         {cliNode.client}
                                                     </td>
                                                     <td className="p-3 font-bold text-right text-slate-800">
-                                                        {cliNode.qtdTotal.toLocaleString()}
+                                                        {cliNode.qtdTotal.toLocaleString('pt-BR')}
                                                     </td>
                                                     {activeTab === 'financeiro' && (
                                                         <td className="p-3 font-bold text-right text-indigo-700">
@@ -395,7 +395,7 @@ const VisaoGerencialAtrasos = () => {
                                                                     </div>
                                                                 </td>
                                                                 <td className="p-2 font-semibold text-right text-slate-600 text-sm">
-                                                                    {monthNode.qtdTotal.toLocaleString()}
+                                                                    {monthNode.qtdTotal.toLocaleString('pt-BR')}
                                                                 </td>
                                                                 {activeTab === 'financeiro' && (
                                                                     <td className="p-2 font-semibold text-right text-indigo-600 text-sm">
@@ -427,7 +427,7 @@ const VisaoGerencialAtrasos = () => {
                                                                         {item.entrega_formatada}
                                                                     </td>
                                                                     <td className="p-2 text-sm text-right font-medium">
-                                                                        {Number(item.qtd_faturar).toLocaleString()}
+                                                                        {Number(item.qtd_faturar).toLocaleString('pt-BR')}
                                                                     </td>
                                                                     {activeTab === 'financeiro' && (
                                                                         <td className="p-2 text-sm text-right text-slate-600 font-mono">

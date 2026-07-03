@@ -131,4 +131,14 @@ function msgMeuCanal({ nome, setores }) {
     );
 }
 
-module.exports = { sendText, normalizePhone, logEmailSent, msgNovaFaturamento, msgFaturamentoPendente, msgMeuCanal };
+function msgAvisoPpapGits({ pedido, item, produto, recurso, usuario, quantidade }) {
+    return (
+        `🚨 *Aviso PPAP/Gits: Avanço de Operação*\n\n` +
+        `Pedido/Item: *${pedido} / ${item}*\n` +
+        `Produto: *${produto}*\n\n` +
+        `O usuário *${usuario}* finalizou um apontamento no recurso *${recurso}* (Qtd: ${quantidade}).\n` +
+        `O produto está sendo liberado e enviado para a próxima operação.`
+    );
+}
+
+module.exports = { sendText, normalizePhone, logEmailSent, msgNovaFaturamento, msgFaturamentoPendente, msgMeuCanal, msgAvisoPpapGits };

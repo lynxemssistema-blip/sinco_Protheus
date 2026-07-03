@@ -40,39 +40,90 @@ export default function OrdersTimelineTab({ filters }) {
     const [sendingEmail, setSendingEmail] = useState(false);
 
     // Fetch timeline data from backend
-    const fetchTimelineData = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            // Quando loadAll=true, ignora todos os filtros e busca tudo do banco
-            const params = loadAll
-                ? { only_active: 'true' }
-                : {
-                    pedido: filters.pedido || '',
-                    cliente: filters.cliente || '',
-                    produto: filters.produto || '',
-                    pedcli: filters.pedcli || '',
-                    dataInicial: filters.dataInicial || '',
-                    dataFinal: filters.dataFinal || '',
-                    dateType: filters.dateType || 'entrega',
-                    only_active: filters.only_active !== undefined ? String(filters.only_active) : 'true',
-                    tipo_item: filters.tipo_item || '',
-                    op_status: filters.op_status || '',
-                    sortBy: filters.sortBy || 'emissao',
-                    sortOrder: filters.sortOrder || 'DESC'
-                };
-            const res = await api.get('/pcp-refinado/cronograma', { params });
-            setData(res.data || []);
-        } catch (err) {
-            console.error('Erro ao buscar dados do cronograma:', err);
-            setError('Falha ao carregar os dados do cronograma. Tente novamente.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     useEffect(() => {
+        let active = true;
+
+        const fetchTimelineData = async () => {
+            setLoading(true);
+            setError(null);
+            setData([]); // Limpa a tabela para mostrar o novo carregamento
+
+            try {
+                // Quando loadAll=true, ignora todos os filtros e busca tudo do banco
+                const baseParams = loadAll
+                    ? { only_active: 'true' }
+                    : {
+                        pedido: filters.pedido || '',
+                        cliente: filters.cliente || '',
+                        produto: filters.produto || '',
+                        pedcli: filters.pedcli || '',
+                        dataInicial: filters.dataInicial || '',
+                        dataFinal: filters.dataFinal || '',
+                        dateType: filters.dateType || 'entrega',
+                        only_active: filters.only_active !== undefined ? String(filters.only_active) : 'true',
+                        tipo_item: filters.tipo_item || '',
+                        op_status: filters.op_status || '',
+                        sortBy: filters.sortBy || 'emissao',
+                        sortOrder: filters.sortOrder || 'DESC'
+                    };
+
+                let page = 1;
+                const limit = 200;
+                let hasMore = true;
+                let allDataMap = new Map();
+                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+                while (hasMore && active) {
+                    const res = await api.get('/pcp-refinado/cronograma', {
+                        params: { ...baseParams, page, limit }
+                    });
+
+                    if (!active) break;
+
+                    const payload = res.data;
+                    const newOrders = Array.isArray(payload) ? payload : (payload.data || []);
+                    const meta = payload.meta || { total: newOrders.length, page: 1, limit: newOrders.length || 200 };
+
+                    // Merge no array existente para renderização progressiva
+                    newOrders.forEach(order => {
+                        if (allDataMap.has(order.pedido)) {
+                            const existing = allDataMap.get(order.pedido);
+                            existing.itens = [...existing.itens, ...order.itens];
+                        } else {
+                            allDataMap.set(order.pedido, order);
+                        }
+                    });
+
+                    // Atualiza a tela a cada lote que chega
+                    setData(Array.from(allDataMap.values()));
+
+                    // has_more vem do backend (LIMIT N+1 trick). Não usar newOrders.length < limit
+                    // porque newOrders conta pedidos agrupados, não itens SQL individuais.
+                    if (meta.has_more === false || newOrders.length === 0) {
+                        hasMore = false;
+                    } else {
+                        page++;
+                        // Pausa entre lotes para não sobrecarregar o servidor
+                        await sleep(400);
+                    }
+                }
+            } catch (err) {
+                if (active) {
+                    console.error('Erro ao buscar dados do cronograma:', err);
+                    setError('Falha ao carregar os dados do cronograma. Tente novamente.');
+                }
+            } finally {
+                if (active) {
+                    setLoading(false);
+                }
+            }
+        };
+
         fetchTimelineData();
+
+        return () => {
+            active = false; // Cancela loops anteriores se os filtros mudarem
+        };
     }, [filters, loadAll]);
 
     // Helpers to parse & format dates
@@ -312,13 +363,15 @@ export default function OrdersTimelineTab({ filters }) {
                 (p.itens || []).forEach(it => {
                     itemsList.push({
                         pedido:              p.pedido,
-                        ped_cliente:         it.pedido_cliente || '-',
-                        op:                  it.op_num || '-',
+                        ref_cliente:         it.ref_cliente || '-',
+                        pc:                  it.pedido_cliente || '-',
+                        op:                  (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                         emissao:             formatDate(p.data_emissao),
                         produto:             it.produto,
                         descricao:           it.descricao,
                         qtd_vendida:         it.qtd_vendida,
                         qtd_faturada:        it.qtd_faturada,
+                        saldo_faturar:       Math.max(0, (it.qtd_vendida || 0) - (it.qtd_faturada || 0)),
                         data_entrega:        formatDate(it.data_entrega),
                         data_pcp:            formatDate(it.data_entrega_pcp),
                         data_faturamento:    formatDate(it.data_prevista_faturamento),
@@ -331,13 +384,15 @@ export default function OrdersTimelineTab({ filters }) {
                 (p.itens || []).forEach(it => {
                     itemsList.push({
                         pedido:              p.pedido,
-                        ped_cliente:         it.pedido_cliente || '-',
-                        op:                  it.op_num || '-',
+                        ref_cliente:         it.ref_cliente || '-',
+                        pc:                  it.pedido_cliente || '-',
+                        op:                  (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                         emissao:             formatDate(p.data_emissao),
                         produto:             it.produto,
                         descricao:           it.descricao,
                         qtd_vendida:         it.qtd_vendida,
                         qtd_faturada:        it.qtd_faturada,
+                        saldo_faturar:       Math.max(0, (it.qtd_vendida || 0) - (it.qtd_faturada || 0)),
                         data_entrega:        formatDate(it.data_entrega),
                         data_pcp:            formatDate(it.data_entrega_pcp),
                         data_faturamento:    formatDate(it.data_prevista_faturamento),
@@ -349,13 +404,15 @@ export default function OrdersTimelineTab({ filters }) {
             (target.itens || []).forEach(it => {
                 itemsList.push({
                     pedido:              target.pedido,
-                    ped_cliente:         it.pedido_cliente || '-',
-                    op:                  it.op_num || '-',
+                    ref_cliente:         it.ref_cliente || '-',
+                    pc:                  it.pedido_cliente || '-',
+                    op:                  (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                     emissao:             formatDate(target.data_emissao),
                     produto:             it.produto,
                     descricao:           it.descricao,
                     qtd_vendida:         it.qtd_vendida,
                     qtd_faturada:        it.qtd_faturada,
+                    saldo_faturar:       Math.max(0, (it.qtd_vendida || 0) - (it.qtd_faturada || 0)),
                     data_entrega:        formatDate(it.data_entrega),
                     data_pcp:            formatDate(it.data_entrega_pcp),
                     data_faturamento:    formatDate(it.data_prevista_faturamento),
@@ -367,15 +424,17 @@ export default function OrdersTimelineTab({ filters }) {
         const columns = [
             { header: 'Pedido',              dataKey: 'pedido' },
             { header: 'Emissão',             dataKey: 'emissao' },
-            { header: 'Ped. Cliente',        dataKey: 'ped_cliente' },
+            { header: 'Ref. Cliente',        dataKey: 'ref_cliente' },
+            { header: 'PC',                  dataKey: 'pc' },
             { header: 'OP',                  dataKey: 'op' },
             { header: 'Produto',             dataKey: 'produto' },
             { header: 'Descrição',           dataKey: 'descricao' },
             { header: 'Qtd. Vend.',          dataKey: 'qtd_vendida' },
             { header: 'Qtd. Fat.',           dataKey: 'qtd_faturada' },
-            { header: 'Entrega Com.',        dataKey: 'data_entrega' },
-            { header: 'Dt. PCP',             dataKey: 'data_pcp' },
-            { header: 'Previsão Fat.',       dataKey: 'data_faturamento' },
+            { header: 'Saldo Fat.',          dataKey: 'saldo_faturar' },
+            ...(showComercialDate ? [{ header: 'Entrega Com.', dataKey: 'data_entrega' }] : []),
+            ...(showPcpDate ? [{ header: 'Dt. PCP', dataKey: 'data_pcp' }] : []),
+            ...(showBillingDate ? [{ header: 'Previsão Fat.', dataKey: 'data_faturamento' }] : []),
             { header: 'Progresso',           dataKey: 'progresso' },
         ];
 
@@ -395,17 +454,19 @@ export default function OrdersTimelineTab({ filters }) {
             alternateRowStyles: { fillColor: [248, 250, 253] },
             columnStyles: {
                 emissao:             { cellWidth: 16, halign: 'center' },
-                ped_cliente:         { cellWidth: 20, halign: 'center' },
+                ref_cliente:         { cellWidth: 20, halign: 'center' },
+                pc:                  { cellWidth: 16, halign: 'center' },
                 op:                  { cellWidth: 16, halign: 'center' },
                 descricao:           { cellWidth: 40 },
                 data_entrega:        { halign: 'center', cellWidth: 20 },
                 data_pcp:            { halign: 'center', cellWidth: 18 },
                 data_faturamento:    { halign: 'center', cellWidth: 20 },
-                qtd_vendida:         { halign: 'right',  cellWidth: 14 },
-                qtd_faturada:        { halign: 'right',  cellWidth: 14 },
+                qtd_vendida:         { halign: 'right',  cellWidth: 12 },
+                qtd_faturada:        { halign: 'right',  cellWidth: 12 },
+                saldo_faturar:       { halign: 'right',  cellWidth: 12, fontStyle: 'bold' },
                 progresso:           { fontStyle: 'bold', halign: 'center', cellWidth: 14 },
             },
-            margin: { left: 10, right: 10, bottom: 14 },
+            margin: { top: 38, left: 10, right: 10, bottom: 14 },
             didDrawPage: ({ pageNumber }) => {
                 // Re-desenha cabeçalho em quebras automáticas
                 if (pageNumber > 1) drawCronogramaHeader(doc, pageWidth, titleMain, titleSub);
@@ -444,15 +505,17 @@ export default function OrdersTimelineTab({ filters }) {
                         'Pedido': p.pedido,
                         'Cliente': target.name || '-',
                         'Emissão': formatDate(p.data_emissao),
-                        'Ped. Cliente': it.pedido_cliente || '-',
-                        'OP': it.op_num || '-',
+                        'Ref. Cliente': it.ref_cliente || '-',
+                        'PC': it.pedido_cliente || '-',
+                        'OP': (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                         'Produto': it.produto,
                         'Descrição': it.descricao,
                         'Qtd. Vendida': Number(it.qtd_vendida) || 0,
                         'Qtd. Faturada': Number(it.qtd_faturada) || 0,
-                        'Entrega Comercial': formatDate(it.data_entrega),
-                        'Dt. PCP': formatDate(it.data_entrega_pcp),
-                        'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                        'Saldo a Faturar': Math.max(0, (Number(it.qtd_vendida) || 0) - (Number(it.qtd_faturada) || 0)),
+                        ...(showComercialDate && { 'Entrega Comercial': formatDate(it.data_entrega) }),
+                        ...(showPcpDate && { 'Dt. PCP': formatDate(it.data_entrega_pcp) }),
+                        ...(showBillingDate && { 'Previsão Faturamento': formatDate(it.data_prevista_faturamento) }),
                         'Progresso': `${getItemProgress(it)}%`,
                     });
                 });
@@ -464,15 +527,17 @@ export default function OrdersTimelineTab({ filters }) {
                         'Pedido': p.pedido,
                         'Cliente': p.cliente || '-',
                         'Emissão': formatDate(p.data_emissao),
-                        'Ped. Cliente': it.pedido_cliente || '-',
-                        'OP': it.op_num || '-',
+                        'Ref. Cliente': it.ref_cliente || '-',
+                        'PC': it.pedido_cliente || '-',
+                        'OP': (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                         'Produto': it.produto,
                         'Descrição': it.descricao,
                         'Qtd. Vendida': Number(it.qtd_vendida) || 0,
                         'Qtd. Faturada': Number(it.qtd_faturada) || 0,
-                        'Entrega Comercial': formatDate(it.data_entrega),
-                        'Dt. PCP': formatDate(it.data_entrega_pcp),
-                        'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                        'Saldo a Faturar': Math.max(0, (Number(it.qtd_vendida) || 0) - (Number(it.qtd_faturada) || 0)),
+                        ...(showComercialDate && { 'Entrega Comercial': formatDate(it.data_entrega) }),
+                        ...(showPcpDate && { 'Dt. PCP': formatDate(it.data_entrega_pcp) }),
+                        ...(showBillingDate && { 'Previsão Faturamento': formatDate(it.data_prevista_faturamento) }),
                         'Progresso': `${getItemProgress(it)}%`,
                     });
                 });
@@ -483,15 +548,17 @@ export default function OrdersTimelineTab({ filters }) {
                     'Pedido': target.pedido,
                     'Cliente': target.cliente || '-',
                     'Emissão': formatDate(target.data_emissao),
-                    'Ped. Cliente': it.pedido_cliente || '-',
-                    'OP': it.op_num || '-',
+                    'Ref. Cliente': it.ref_cliente || '-',
+                    'PC': it.pedido_cliente || '-',
+                    'OP': (it.ops && it.ops.length > 0) ? it.ops.map(o => o.op_raw).filter(Boolean).join(', ') : '-',
                     'Produto': it.produto,
                     'Descrição': it.descricao,
                     'Qtd. Vendida': Number(it.qtd_vendida) || 0,
                     'Qtd. Faturada': Number(it.qtd_faturada) || 0,
-                    'Entrega Comercial': formatDate(it.data_entrega),
-                    'Dt. PCP': formatDate(it.data_entrega_pcp),
-                    'Previsão Faturamento': formatDate(it.data_prevista_faturamento),
+                    'Saldo a Faturar': Math.max(0, (Number(it.qtd_vendida) || 0) - (Number(it.qtd_faturada) || 0)),
+                    ...(showComercialDate && { 'Entrega Comercial': formatDate(it.data_entrega) }),
+                    ...(showPcpDate && { 'Dt. PCP': formatDate(it.data_entrega_pcp) }),
+                    ...(showBillingDate && { 'Previsão Faturamento': formatDate(it.data_prevista_faturamento) }),
                     'Progresso': `${getItemProgress(it)}%`,
                 });
             });
@@ -502,26 +569,129 @@ export default function OrdersTimelineTab({ filters }) {
             return;
         }
 
-        const worksheet = XLSX.utils.json_to_sheet(itemsList);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Cronograma');
 
-        // Auto-size columns slightly
-        worksheet['!cols'] = [
-            { wch: 15 }, // Pedido
-            { wch: 35 }, // Cliente
-            { wch: 15 }, // Emissão
-            { wch: 18 }, // Ped. Cliente
-            { wch: 16 }, // OP
-            { wch: 20 }, // Produto
-            { wch: 45 }, // Descrição
-            { wch: 15 }, // Qtd. Vendida
-            { wch: 15 }, // Qtd. Faturada
-            { wch: 20 }, // Entrega Comercial
-            { wch: 15 }, // Dt. PCP
-            { wch: 22 }, // Previsão Faturamento
-            { wch: 12 }, // Progresso
-        ];
+        // Agrupar por PC
+        const groupedByPC = {};
+        itemsList.forEach(item => {
+            const pc = item['PC'] && item['PC'] !== '-' ? item['PC'] : 'Sem PC';
+            
+            // Limpar caracteres não permitidos em nomes de aba no Excel
+            let safePc = pc.replace(/[\\/*?\[\]:]/g, '').substring(0, 31).trim();
+            if (!safePc) safePc = 'Sem PC';
+
+            if (!groupedByPC[safePc]) {
+                groupedByPC[safePc] = [];
+            }
+            groupedByPC[safePc].push(item);
+        });
+
+        const parseDateBR = (str) => {
+            if (!str || str === '-') return null;
+            const parts = str.split('/');
+            if (parts.length === 3) {
+                return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            }
+            return null;
+        };
+
+        const summaryData = [];
+
+        Object.keys(groupedByPC).forEach(pcName => {
+            const groupItems = groupedByPC[pcName];
+            let minDate = null;
+            let maxDate = null;
+            let totalVendida = 0;
+            let totalFaturada = 0;
+            let totalSaldo = 0;
+
+            groupItems.forEach(it => {
+                totalVendida += (it['Qtd. Vendida'] || 0);
+                totalFaturada += (it['Qtd. Faturada'] || 0);
+                totalSaldo += (it['Saldo a Faturar'] || 0);
+
+                const datesToParse = [];
+                if (showComercialDate && it['Entrega Comercial']) datesToParse.push(it['Entrega Comercial']);
+                if (showPcpDate && it['Dt. PCP']) datesToParse.push(it['Dt. PCP']);
+                if (showBillingDate && it['Previsão Faturamento']) datesToParse.push(it['Previsão Faturamento']);
+
+                datesToParse.forEach(dStr => {
+                    const parsed = parseDateBR(dStr);
+                    if (parsed) {
+                        if (!minDate || parsed < minDate) minDate = parsed;
+                        if (!maxDate || parsed > maxDate) maxDate = parsed;
+                    }
+                });
+            });
+
+            const formatDateObj = (d) => {
+                if (!d) return '-';
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                return `${dd}/${mm}/${yyyy}`;
+            };
+
+            const uniquePedidos = Array.from(new Set(groupItems.map(it => it['Pedido']).filter(Boolean))).join(', ');
+
+            summaryData.push({
+                'PC (Pedido de Compra)': pcName,
+                'Pedido MetalFisa': uniquePedidos || '-',
+                'Início do Processo': formatDateObj(minDate),
+                'Fim do Processo': formatDateObj(maxDate),
+                'Total Vendido': totalVendida,
+                'Total Faturado': totalFaturada,
+                'Saldo a Faturar': totalSaldo
+            });
+        });
+
+        // Adicionar aba de Resumo PRIMEIRO (como a primeira aba)
+        if (summaryData.length > 0) {
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            wsSummary['!cols'] = [
+                { wch: 30 }, // PC / Grupo
+                { wch: 25 }, // Pedido MetalFisa
+                { wch: 22 }, // Início do Processo
+                { wch: 22 }, // Fim do Processo
+                { wch: 15 }, // Total Vendido
+                { wch: 15 }, // Total Faturado
+                { wch: 15 }, // Saldo a Faturar
+            ];
+            XLSX.utils.book_append_sheet(workbook, wsSummary, 'Resumo Geral');
+        }
+
+        // Adicionar uma aba para cada PC
+        Object.keys(groupedByPC).forEach(pcName => {
+            const ws = XLSX.utils.json_to_sheet(groupedByPC[pcName]);
+            
+            // Auto-size columns slightly
+            ws['!cols'] = [
+                { wch: 15 }, // Pedido
+                { wch: 35 }, // Cliente
+                { wch: 15 }, // Emissão
+                { wch: 18 }, // Ref. Cliente
+                { wch: 18 }, // PC
+                { wch: 16 }, // OP
+                { wch: 20 }, // Produto
+                { wch: 45 }, // Descrição
+                { wch: 15 }, // Qtd. Vendida
+                { wch: 15 }, // Qtd. Faturada
+                { wch: 15 }, // Saldo a Faturar
+                ...(showComercialDate ? [{ wch: 20 }] : []), // Entrega Comercial
+                ...(showPcpDate ? [{ wch: 15 }] : []), // Dt. PCP
+                ...(showBillingDate ? [{ wch: 22 }] : []), // Previsão Faturamento
+                { wch: 12 }, // Progresso
+            ];
+
+            let finalName = pcName;
+            let counter = 1;
+            while (workbook.SheetNames.includes(finalName)) {
+                finalName = `${pcName.substring(0, 27)}_${counter}`;
+                counter++;
+            }
+
+            XLSX.utils.book_append_sheet(workbook, ws, finalName);
+        });
 
         const fileName = type === 'all' ? `Cronograma_Geral.xlsx` : `Cronograma_${target.name || target.pedido}.xlsx`;
         const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });

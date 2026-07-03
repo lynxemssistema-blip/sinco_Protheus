@@ -691,9 +691,11 @@ export default function LabelPrintModal({ items, onClose }) {
                     printResults.push({
                         item: payloadItem.itemId,
                         ok: false,
-                        error: err.name === 'AbortError' || err.name === 'TimeoutError'
-                            ? 'Timeout — Print Agent não respondeu em 35s'
-                            : err.message,
+                        error: (err.name === 'TypeError' && err.message.includes('Failed to fetch'))
+                            ? 'Print Agent fechado. Inicie o MetalFisa Print Agent no seu PC.'
+                            : (err.name === 'AbortError' || err.name === 'TimeoutError'
+                                ? 'Timeout — Print Agent não respondeu em 35s'
+                                : err.message),
                     });
                 }
 

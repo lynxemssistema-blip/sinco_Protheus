@@ -565,7 +565,7 @@ const VisaoGerencialProdutos = () => {
                              <span className="text-[10px] font-bold text-slate-400 uppercase">Em Atraso</span>
                          </div>
                          <div className="mt-4">
-                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.atraso.qtd.toLocaleString()} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
+                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.atraso.qtd.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
                              {canViewFinance && <div className="text-xs text-red-600 font-semibold mt-1">R$ {(processedData.metrics.atraso.brl / 1000).toFixed(0)}k</div>}
                          </div>
                     </div>
@@ -576,7 +576,7 @@ const VisaoGerencialProdutos = () => {
                              <span className="text-[10px] font-bold text-slate-400 uppercase">No Prazo</span>
                          </div>
                          <div className="mt-4">
-                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.futuro.qtd.toLocaleString()} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
+                             <h4 className="text-xl font-bold text-slate-800">{processedData.metrics.futuro.qtd.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-500">pçs</span></h4>
                              {canViewFinance && <div className="text-xs text-emerald-600 font-semibold mt-1">R$ {(processedData.metrics.futuro.brl / 1000).toFixed(0)}k</div>}
                          </div>
                     </div>
@@ -588,7 +588,7 @@ const VisaoGerencialProdutos = () => {
                                 <BarChart data={processedData.chartData} layout="vertical">
                                     <XAxis type="number" hide />
                                     <YAxis dataKey="name" type="category" width={90} fontSize={10} tick={{fill: '#64748b'}} />
-                                    <RechartsTooltip formatter={(val) => Math.floor(val).toLocaleString() + (isShowingFinance ? ' R$' : ' pçs')} />
+                                    <RechartsTooltip formatter={(val) => Math.floor(val).toLocaleString('pt-BR') + (isShowingFinance ? ' R$' : ' pçs')} />
                                     <Bar dataKey={isShowingFinance ? 'Valor' : 'Qtd'} barSize={10} radius={[0, 4, 4, 0]}>
                                         {processedData.chartData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.name === 'Em Atraso' ? '#ef4444' : '#10b981'} />
@@ -626,7 +626,7 @@ const VisaoGerencialProdutos = () => {
                                                 return <Cell key={`pie-cell-${index}`} fill={color} />;
                                             })}
                                         </Pie>
-                                        <RechartsTooltip formatter={(val, name) => [`${Number(val).toLocaleString()} itens`, name]} />
+                                        <RechartsTooltip formatter={(val, name) => [`${Number(val).toLocaleString('pt-BR')} itens`, name]} />
                                         <Legend
                                             verticalAlign="middle"
                                             align="right"
@@ -634,7 +634,7 @@ const VisaoGerencialProdutos = () => {
                                             iconSize={8}
                                             iconType="circle"
                                             wrapperStyle={{ fontSize: '10px', lineHeight: '18px', paddingLeft: '4px' }}
-                                            formatter={(value, entry) => `${value}: ${Number(entry.payload.total).toLocaleString()}`}
+                                            formatter={(value, entry) => `${value}: ${Number(entry.payload.total).toLocaleString('pt-BR')}`}
                                         />
                                     </PieChart>
                                 </ResponsiveContainer>
@@ -829,7 +829,7 @@ const VisaoGerencialProdutos = () => {
                                                                         <div className="text-[10px] text-slate-400">Cód: {client.code}</div>
                                                                     </div>
                                                                     <div className="text-right flex-shrink-0 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold">
-                                                                        {client.totalQtd.toLocaleString()} pçs
+                                                                        {client.totalQtd.toLocaleString('pt-BR')} pçs
                                                                     </div>
                                                                 </div>
                                                                 
@@ -866,7 +866,7 @@ const VisaoGerencialProdutos = () => {
                                                                                     <div className="text-[10px] text-slate-400">{order.items.length} itens pendentes</div>
                                                                                 </div>
                                                                                 <div className="text-right flex-shrink-0 text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">
-                                                                                    {order.totalQtd.toLocaleString()} pçs
+                                                                                    {order.totalQtd.toLocaleString('pt-BR')} pçs
                                                                                 </div>
                                                                             </div>
 
@@ -895,7 +895,7 @@ const VisaoGerencialProdutos = () => {
                                                                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
                                                                                                         <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Total Pedido)</div>
                                                                                                         <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
-                                                                                                        <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString('pt-BR')} pçs</div>
                                                                                                         <div>📅 <strong>Início:</strong> {order.minEmissionObj?.toLocaleDateString('pt-BR')}</div>
                                                                                                         <div>📅 <strong>Entrega:</strong> {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</div>
                                                                                                     </div>
@@ -951,7 +951,7 @@ const VisaoGerencialProdutos = () => {
                                                                                         </div>
                                                                                         <div className="text-[10px] text-slate-400 truncate max-w-[240px] mt-0.5" title={item.descricao}>{item.descricao}</div>
                                                                                         <div className="flex justify-between items-center text-[10px] mt-1 text-slate-500">
-                                                                                            <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString()} pçs</strong></span>
+                                                                                            <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</strong></span>
                                                                                             <span className="text-[9px] text-indigo-600 font-semibold">{formatBRL(item.valor_saldo)}</span>
                                                                                         </div>
                                                                                     </div>
@@ -979,7 +979,7 @@ const VisaoGerencialProdutos = () => {
                                                                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
                                                                                                         <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Protheus)</div>
                                                                                                         <div>📦 <strong>Item:</strong> {item.codigo}</div>
-                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</div>
                                                                                                         <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
                                                                                                         <div>📅 <strong>Entrega Contratual:</strong> {item.entrega_formatada}</div>
                                                                                                     </div>
@@ -1008,7 +1008,7 @@ const VisaoGerencialProdutos = () => {
                                                                                                             {hasPcpDate ? 'Previsão de Entrega (PCP)' : 'Previsão PCP (Prazo Comercial)'}
                                                                                                         </div>
                                                                                                         <div>📦 <strong>Item:</strong> {item.codigo}</div>
-                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                                        <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</div>
                                                                                                         <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
                                                                                                         <div>📅 <strong>Previsão PCP:</strong> {displayPcpDateStr} {!hasPcpDate && '(Fallback)'}</div>
                                                                                                         {hasPcpDate && isPcpDelayed && (
@@ -1072,7 +1072,7 @@ const VisaoGerencialProdutos = () => {
                                                                         <div className="text-[10px] text-slate-400 truncate" title={order.nome_cliente}>{order.nome_cliente}</div>
                                                                     </div>
                                                                     <div className="text-right flex-shrink-0 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold">
-                                                                        {order.totalQtd.toLocaleString()} pçs
+                                                                        {order.totalQtd.toLocaleString('pt-BR')} pçs
                                                                     </div>
                                                                 </div>
                                                                 
@@ -1101,7 +1101,7 @@ const VisaoGerencialProdutos = () => {
                                                                                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
                                                                                             <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Total Pedido)</div>
                                                                                             <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
-                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString('pt-BR')} pçs</div>
                                                                                             <div>📅 <strong>Início:</strong> {order.minEmissionObj?.toLocaleDateString('pt-BR')}</div>
                                                                                             <div>📅 <strong>Entrega:</strong> {order.maxDeliveryObj?.toLocaleDateString('pt-BR')}</div>
                                                                                         </div>
@@ -1124,7 +1124,7 @@ const VisaoGerencialProdutos = () => {
                                                                                                 Previsão PCP (Total Pedido)
                                                                                             </div>
                                                                                             <div>📦 <strong>Pedido:</strong> {order.pedido}</div>
-                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString()} pçs</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {order.totalQtd.toLocaleString('pt-BR')} pçs</div>
                                                                                             <div>📅 <strong>Previsão PCP:</strong> {order.maxPcpObj?.toLocaleDateString('pt-BR')}</div>
                                                                                             {isOrderPcpDelayed && (
                                                                                                 <div className="text-amber-400 font-bold mt-1">⚠️ Desvio de prazo do cronograma!</div>
@@ -1174,7 +1174,7 @@ const VisaoGerencialProdutos = () => {
                                                                             </div>
                                                                             <div className="text-[10px] text-slate-400 truncate max-w-[240px] mt-0.5" title={item.descricao}>{item.descricao}</div>
                                                                             <div className="flex justify-between items-center text-[10px] mt-1 text-slate-500">
-                                                                                <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString()} pçs</strong></span>
+                                                                                <span>Saldo: <strong>{parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</strong></span>
                                                                                 <span className="text-[9px] text-indigo-600 font-semibold">{formatBRL(item.valor_saldo)}</span>
                                                                             </div>
                                                                         </div>
@@ -1197,7 +1197,7 @@ const VisaoGerencialProdutos = () => {
                                                                                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover/bar:block bg-slate-800 text-white text-[11px] p-2.5 rounded-lg shadow-xl z-50 pointer-events-none w-52 leading-relaxed">
                                                                                             <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-xs text-blue-300">Prazo Comercial (Protheus)</div>
                                                                                             <div>📦 <strong>Item:</strong> {item.codigo}</div>
-                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</div>
                                                                                             <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
                                                                                             <div>📅 <strong>Entrega Contratual:</strong> {item.entrega_formatada}</div>
                                                                                         </div>
@@ -1225,7 +1225,7 @@ const VisaoGerencialProdutos = () => {
                                                                                                 {hasPcpDate ? 'Previsão de Entrega (PCP)' : 'Previsão PCP (Prazo Comercial)'}
                                                                                             </div>
                                                                                             <div>📦 <strong>Item:</strong> {item.codigo}</div>
-                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString()} pçs</div>
+                                                                                            <div>📊 <strong>Saldo:</strong> {parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs</div>
                                                                                             <div>📅 <strong>Emissão:</strong> {item.emissao_formatada}</div>
                                                                                             <div>📅 <strong>Previsão PCP:</strong> {displayPcpDateStr} {!hasPcpDate && '(Fallback)'}</div>
                                                                                             {hasPcpDate && isPcpDelayed && (
@@ -1298,7 +1298,7 @@ const VisaoGerencialProdutos = () => {
                                                             {grp.groupKey}
                                                         </td>
                                                         <td className="p-3 text-right font-bold text-slate-800">
-                                                            {grp.totalQtd.toLocaleString()} pçs
+                                                            {grp.totalQtd.toLocaleString('pt-BR')} pçs
                                                         </td>
                                                         {isShowingFinance && <td className="p-3 text-right font-bold text-indigo-700">{formatBRL(grp.totalBrl)}</td>}
                                                     </tr>
@@ -1323,7 +1323,7 @@ const VisaoGerencialProdutos = () => {
                                                                         </div>
                                                                     </td>
                                                                     <td className="p-2 text-right text-sm font-semibold text-slate-700">
-                                                                        {prd.totalQtd.toLocaleString()} pçs
+                                                                        {prd.totalQtd.toLocaleString('pt-BR')} pçs
                                                                     </td>
                                                                     {isShowingFinance && <td className="p-2 text-right text-sm text-indigo-600">{formatBRL(prd.totalBrl)}</td>}
                                                                 </tr>
@@ -1367,7 +1367,7 @@ const VisaoGerencialProdutos = () => {
                                                                                 )}
                                                                             </td>
                                                                             <td className="p-2 text-sm text-right text-slate-600">
-                                                                                {parseFloat(item.qtd_faturar).toLocaleString()} pçs
+                                                                                {parseFloat(item.qtd_faturar).toLocaleString('pt-BR')} pçs
                                                                             </td>
                                                                             {isShowingFinance && <td className="p-2 text-sm text-right">{formatBRL(item.valor_saldo)}</td>}
                                                                         </tr>

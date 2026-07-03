@@ -284,10 +284,10 @@ export default function Romaneios() {
                                             <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs">{r.tipo_descricao}</span>
                                         </td>
                                         <td className="p-4 text-slate-600 font-medium text-sm">
-                                            {r.data_liberacao ? new Date(r.data_liberacao).toLocaleDateString() : '-'}
+                                            {r.data_liberacao ? new Date(r.data_liberacao).toLocaleDateString('pt-BR') : '-'}
                                         </td>
                                         <td className="p-4 text-slate-600 font-medium text-sm">
-                                            {r.data_previsao_retorno ? new Date(r.data_previsao_retorno).toLocaleDateString() : '-'}
+                                            {r.data_previsao_retorno ? new Date(r.data_previsao_retorno).toLocaleDateString('pt-BR') : '-'}
                                         </td>
                                         <td className="p-4 text-slate-600 font-bold text-sm">
                                             {Number(r.peso_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}

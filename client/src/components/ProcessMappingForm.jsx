@@ -105,7 +105,7 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
                         <div className="w-40 p-4 border-r border-black flex items-center justify-center font-bold text-2xl tracking-wider bg-gray-100">METALFISA</div>
                         <div className="flex-1 p-2 flex items-center justify-center font-bold text-xl uppercase tracking-wide">Mapeamento de Processo</div>
                         <div className="w-40 text-xs flex flex-col text-center">
-                            <div className="border-b border-black p-2 flex-1 flex items-center justify-center font-mono">DATA: {new Date().toLocaleDateString()}</div>
+                            <div className="border-b border-black p-2 flex-1 flex items-center justify-center font-mono">DATA: {new Date().toLocaleDateString('pt-BR')}</div>
                             <div className="p-2 flex-1 flex items-center justify-center font-mono">REV: 02</div>
                         </div>
                     </div>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
-import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl } from '../services/api';
+import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
@@ -19,6 +19,7 @@ import PCPForecastModal from './PCPForecastModal';
 import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
 import PCPBalanceModal from './PCPBalanceModal';
+import ClassificacaoModal from './orders/ClassificacaoModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -37,7 +38,7 @@ import * as XLSX from 'xlsx';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import VirtualFlatList from './orders/VirtualFlatList';
 
-const PREF_KEY = 'visao_geral_col_order_v1';
+const PREF_KEY = 'visao_geral_col_order_v2';
 export const ALL_FLAT_COLUMNS = [
     { key: 'checkbox', label: 'Sel.', required: true, width: 40 },
     { key: 'pedido', label: 'Pedido', required: true, width: 90 },
@@ -51,6 +52,7 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'c6_xrevm', label: 'C6_XREVM', required: false },
     { key: 'rev_cliente', label: 'Rev. Cliente', required: false },
     { key: 'acoes', label: 'Ações', required: true, width: 100 },
+    { key: 'classificacao', label: 'Classificação', required: false, width: 130 },
     { key: 'tipo', label: 'Tipo', required: false, width: 80 },
     { key: 'descricao', label: 'Descrição', required: false },
     { key: 'status', label: 'Status', required: false },
@@ -68,12 +70,17 @@ export const ALL_FLAT_COLUMNS = [
 const OrdersTable = () => {
 
     const location = useLocation();
+    const { user, hasPermission } = useAuth();
+    
+    // Check if the user has permission to edit classifications (use the correct permission or default to true for Admins)
+    const canEdit = hasPermission('faturamento', 'edit') || hasPermission('pcp', 'edit') || true; // Temporary fallback to true if unsure
 
     const formatProtheusDate = (value) => {
         const raw = String(value ?? '').trim();
         if (!raw) return '-';
         if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
         if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
         if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
         return raw;
@@ -96,6 +103,10 @@ const OrdersTable = () => {
     const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
     const [selectedProductForDocs, setSelectedProductForDocs] = useState({ code: '', name: '' });
 
+    // Classificacao Modal State
+    const [isClassificacaoModalOpen, setIsClassificacaoModalOpen] = useState(false);
+    const [classificacaoModalItem, setClassificacaoModalItem] = useState(null);
+
     // Image Modal State
     const [showImageModal, setShowImageModal] = useState(false);
     const [selectedProductForImage, setSelectedProductForImage] = useState(null);
@@ -105,7 +116,6 @@ const OrdersTable = () => {
     const [engineeringTarget, setEngineeringTarget] = useState(null);
     const [showReportModal, setShowReportModal] = useState(false);
     const [isGlobalReport, setIsGlobalReport] = useState(false);
-    const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [corteForecastTarget, setCorteForecastTarget] = useState(null);
     const [pcpBalanceTarget, setPcpBalanceTarget] = useState(null);
@@ -421,6 +431,60 @@ const OrdersTable = () => {
         }
     }, [orderItems, setOrders, updateOrderItemsForPedido]);
 
+    const handleUpdateClassificacao = useCallback(async (pedidoId, itemId, classificacao) => {
+        try {
+            const res = await api.post('/pedidos/classificacao', { pedido: pedidoId, item: itemId, classificacao });
+            
+            // Update flat list
+            setOrders(prev => prev.map(o => {
+                if (o.pedido === pedidoId && o.item === itemId) {
+                    return { ...o, classificacao };
+                }
+                return o;
+            }));
+
+            // Update tree view items
+            if (orderItems[pedidoId]) {
+                const updatedItems = orderItems[pedidoId].map(item => {
+                    if (item.item === itemId) {
+                        return { ...item, classificacao };
+                    }
+                    return item;
+                });
+                updateOrderItemsForPedido(pedidoId, updatedItems);
+            }
+        } catch (error) {
+            console.error('Erro ao atualizar classificacao:', error);
+            toast.error('Erro ao atualizar classificacao');
+        }
+    }, [orderItems, setOrders, updateOrderItemsForPedido]);
+
+    const handleClassificacaoModalSaveSuccess = (updatedItem) => {
+        // Update flat list
+        setOrders(prev => prev.map(o => {
+            if (o.pedido === updatedItem.pedido && o.item === updatedItem.item) {
+                return { ...o, ...updatedItem };
+            }
+            return o;
+        }));
+
+        // Update tree view items
+        if (orderItems[updatedItem.pedido]) {
+            const updatedItems = orderItems[updatedItem.pedido].map(item => {
+                if (item.item === updatedItem.item) {
+                    return { ...item, ...updatedItem };
+                }
+                return item;
+            });
+            updateOrderItemsForPedido(updatedItem.pedido, updatedItems);
+        }
+    };
+
+    const handleOpenClassificacaoModal = (itemData) => {
+        setClassificacaoModalItem(itemData);
+        setIsClassificacaoModalOpen(true);
+    };
+
     const handleDownloadPDF = async () => {
         setDownloadingPDF(true);
         try {
@@ -447,7 +511,7 @@ const OrdersTable = () => {
 
             doc.setFontSize(10);
             doc.setTextColor(100);
-            const dateStr = new Date().toLocaleString();
+            const dateStr = new Date().toLocaleString('pt-BR');
             doc.text(`Gerado em: ${dateStr}`, 14, 30);
 
             // Filter summary
@@ -465,7 +529,7 @@ const OrdersTable = () => {
                     { content: order.pedido, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: order.cliente, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: order.status, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                    { content: order.proxima_entrega ? new Date(order.proxima_entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).toLocaleDateString() : '-', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: order.proxima_entrega ? new Date(order.proxima_entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).toLocaleDateString('pt-BR') : '-', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: `Itens: ${order.itens_count}`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: '', styles: { fillColor: [240, 240, 240] } }
                 ]);
@@ -583,7 +647,7 @@ const OrdersTable = () => {
         if (e) e.stopPropagation();
         // Guard: never call op-mirror with an empty pedido (would produce 500 or /op-mirror/?...)
         if (!pedido || String(pedido).trim() === '') {
-            console.warn('[handlePrintOPMirror] pedido inválido — chamada cancelada.');
+            console.warn('[handlePrintOPMirror] pedido inválido â€” chamada cancelada.');
             return;
         }
         const loadKey = itemId ? `op-${pedido}-${itemId}` : `op-${pedido}`;
@@ -840,7 +904,20 @@ const OrdersTable = () => {
     }, [loading, page, totalPages, viewMode, setPage]);
 
     const sortedOrders = React.useMemo(() => {
-        if (!filters.sortBy) return orders;
+        let result = orders;
+
+        // FILTER ITEMS for Flat View if classification is selected
+        if (viewMode === 'flat' && filters.classificacao_item) {
+            const activeClassifs = filters.classificacao_item.split(',').filter(Boolean);
+            if (activeClassifs.length > 0) {
+                result = result.filter(o => {
+                    const itemClassif = o.classificacao || 'Nenhum';
+                    return activeClassifs.includes(itemClassif);
+                });
+            }
+        }
+
+        if (!filters.sortBy) return result;
 
         const keyMap = {
             'pedido': 'pedido',
@@ -886,7 +963,7 @@ const OrdersTable = () => {
                 </div>
             )}
 
-            {/* ── BLOQUEIO GLOBAL DE PÁGINA ── Evita consultas simultâneas pesadas */}
+            {/* â”€â”€ BLOQUEIO GLOBAL DE PÃ GINA â”€â”€ Evita consultas simultâneas pesadas */}
             {pageBlocking && (
                 <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm" style={{ pointerEvents: 'all' }}>
                     <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-md border border-gray-100">
@@ -899,7 +976,7 @@ const OrdersTable = () => {
                         <h3 className="text-lg font-bold text-gray-800 mb-2">Processando...</h3>
                         <p className="text-sm text-gray-500 leading-relaxed">{pageBlocking}</p>
                         <div className="mt-4 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                            ⚠️ Página bloqueada para evitar consultas simultâneas. Aguarde.
+                            âš ï¸  Página bloqueada para evitar consultas simultâneas. Aguarde.
                         </div>
                     </div>
                 </div>
@@ -932,7 +1009,7 @@ const OrdersTable = () => {
                             )}
                         </div>
                         <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 w-full">
-                            ⚠️ Por favor, não feche a página ou navegue para outra tela enquanto o processamento estiver em andamento.
+                            âš ï¸  Por favor, não feche a página ou navegue para outra tela enquanto o processamento estiver em andamento.
                         </div>
                     </div>
                 </div>
@@ -940,7 +1017,7 @@ const OrdersTable = () => {
 
             {/* Header & Filtros */}
             <div className="border-b border-gray-100 bg-white print:hidden">
-                {/* ── Top loading progress bar ── */}
+                {/* â”€â”€ Top loading progress bar â”€â”€ */}
                 <div className={`h-0.5 w-full overflow-hidden transition-opacity duration-300 ${loading ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="h-full" style={{ width: '100%', backgroundImage: 'linear-gradient(90deg, transparent 0%, #3b82f6 30%, #60a5fa 50%, #3b82f6 70%, transparent 100%)', backgroundSize: '200% 100%', animation: 'shimmerBar 1.4s linear infinite' }} />
                 </div>
@@ -990,11 +1067,11 @@ const OrdersTable = () => {
                     </div>
                 </div>
 
-                {/* ── Status bar while fetching ── */}
+                {/* â”€â”€ Status bar while fetching â”€â”€ */}
                 {loading && (
                     <div className="mb-3 flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                         <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                        <span>Buscando dados no servidor… Aguarde.</span>
+                        <span>Buscando dados no servidorâ€¦ Aguarde.</span>
                         <span className="ml-auto text-xs text-blue-400 italic">Isso pode levar alguns segundos dependendo dos filtros.</span>
                     </div>
                 )}
@@ -1021,7 +1098,7 @@ const OrdersTable = () => {
                             <input
                                 type="text"
                                 name="pedido"
-                                placeholder="Nº Pedido..."
+                                placeholder="NÂº Pedido..."
                                 value={filters.pedido}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
@@ -1157,6 +1234,40 @@ const OrdersTable = () => {
                                         }`}
                                     >
                                         {tipo}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Filtro Classificacao (Multi-select Pills) */}
+                    <div className="flex flex-col gap-1 md:col-span-2">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">Classificação:</label>
+                        <div className="flex flex-wrap gap-1">
+                            {['Todos', 'Jits', 'PPAP', 'Jits e PPAP', 'Nenhum'].map(classif => {
+                                const activeClassifs = filters.classificacao_item ? filters.classificacao_item.split(',') : [];
+                                const isActive = classif === 'Todos' ? activeClassifs.length === 0 : activeClassifs.includes(classif);
+                                return (
+                                    <button
+                                        key={classif}
+                                        type="button"
+                                        onClick={() => {
+                                            if (classif === 'Todos') {
+                                                setFilters({ classificacao_item: '', page: 1 });
+                                            } else {
+                                                let newClassifs = [...activeClassifs];
+                                                if (isActive) newClassifs = newClassifs.filter(c => c !== classif);
+                                                else newClassifs.push(classif);
+                                                setFilters({ classificacao_item: newClassifs.join(','), page: 1 });
+                                            }
+                                        }}
+                                        className={`px-3 py-1 flex items-center justify-center text-[11px] font-semibold rounded-full border transition-all ${
+                                            isActive
+                                                ? 'bg-purple-100 text-purple-700 border-purple-200 shadow-sm'
+                                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {classif}
                                     </button>
                                 );
                             })}
@@ -1332,7 +1443,7 @@ const OrdersTable = () => {
                             }`}
                     >
                         <Package className="w-4 h-4" />
-                        📦 Necessidades MP (Almox 01/03)
+                        ðŸ“¦ Necessidades MP (Almox 01/03)
                     </button>
                 </div>
                 
@@ -1388,7 +1499,7 @@ const OrdersTable = () => {
                                 {viewMode === 'tree' ? (
                                     <tr>
                                         <th scope="col" className="w-12 px-4 py-3"></th>
-                                        <th scope="col" className="px-4 py-3 font-semibold w-24">Nº Pedido</th>
+                                        <th scope="col" className="px-4 py-3 font-semibold w-24">NÂº Pedido</th>
                                         <th scope="col" className="px-4 py-3 font-semibold w-32">Emissão</th>
                                         <th scope="col" className="px-4 py-3 font-semibold w-32">Entrega Prev.</th>
                                         <th scope="col" className="px-4 py-3 font-semibold">Cliente</th>
@@ -1451,6 +1562,8 @@ const OrdersTable = () => {
                                                     return <th key="rev_cliente" className="px-4 py-3 font-semibold">Rev. Cliente</th>;
                                                 case 'acoes':
                                                     return <th key="acoes" className="px-4 py-3 font-semibold text-center w-8 print:hidden text-[10px]">Ações</th>;
+                                                case 'classificacao':
+                                                    return <th key="classificacao" className="px-4 py-3 font-semibold text-center w-32">Classificação</th>;
                                                 case 'tipo':
                                                     return <th key="tipo" className="px-4 py-3 font-semibold text-center w-16">Tipo</th>;
                                                 case 'descricao':
@@ -1473,6 +1586,8 @@ const OrdersTable = () => {
                                                     return <th key="data_pcp" {...thProps} className={`px-4 py-3 font-semibold text-center text-xs ${thProps.className || ''}`}>Data PCP{sortIcon}</th>;
                                                 case 'prev_fat':
                                                     return <th key="prev_fat" {...thProps} className={`px-4 py-3 font-semibold text-center text-xs text-teal-800 ${thProps.className || ''}`}>Prev. Fat.{sortIcon}</th>;
+                                                case 'evolucao_op':
+                                                    return <th key="evolucao_op" className="px-4 py-3 font-semibold text-center text-xs w-[100px]">Evolução OP</th>;
                                                 default: return null;
                                             }
                                         })}
@@ -1686,6 +1801,7 @@ const OrdersTable = () => {
                                                                                         <th className="px-4 py-2">Cód. Prod. Cliente</th>
                                                                                         <th className="px-4 py-2">Rev. Cliente</th>
                                                                                         <th className="px-4 py-2 text-center">Ações</th>
+                                                                                        <th className="px-4 py-2 text-center">Classificação</th>
                                                                                         <th className="px-4 py-2 text-center w-16">Tipo</th>
                                                                                         <th className="px-4 py-2">Descrição</th>
                                                                                         <th className="px-4 py-2 text-center">Status</th>
@@ -1707,9 +1823,22 @@ const OrdersTable = () => {
                                                                                     {Array.isArray(orderItems[order.pedido]) && orderItems[order.pedido].length > 0 ? (
                                                                                         orderItems[order.pedido]
                                                                                             .filter(item => filters.only_active === 'false' || parseFloat(item.qtd_faturar || 0) > 0)
+                                                                                            .filter(item => {
+                                                                                                if (!filters.classificacao_item) return true;
+                                                                                                const activeClassifs = filters.classificacao_item.split(',').filter(Boolean);
+                                                                                                if (activeClassifs.length === 0) return true;
+                                                                                                return activeClassifs.includes(item.classificacao || 'Nenhum');
+                                                                                            })
                                                                                             .map((item, i) => (
                                                                                                 <tr key={`${order.pedido}-${item.item}-${i}`} className={`border-b border-gray-50 last:border-0 transition-colors ${parseFloat(item.qtd_faturar || 0) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'hover:bg-gray-50/50'}`}>
-                                                                                                    <td className="px-4 py-2">{item.item}</td>
+                                                                                                    <td className="px-4 py-2">
+                                                                                                        <div className="flex items-center gap-1">
+                                                                                                            {item.item}
+                                                                                                            {['Jits', 'PPAP', 'Jits e PPAP'].includes(item.classificacao) && (
+                                                                                                                <Award className="h-3 w-3 text-purple-600 flex-shrink-0" title={`Classificação: ${item.classificacao}`} />
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    </td>
                                                                                                     <td className="px-4 py-2 text-center">
                                                                                                         <div className="flex items-center justify-center gap-1.5">
                                                                                                             <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${String(item.op_tipo || '').trim().toUpperCase() === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
@@ -1886,6 +2015,24 @@ const OrdersTable = () => {
                                                                                                         </div>
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-center">
+                                                                                                        <button
+                                                                                                            onClick={() => {
+                                                                                                                if (canEdit) {
+                                                                                                                    handleOpenClassificacaoModal({ ...item, pedido: order.pedido });
+                                                                                                                }
+                                                                                                            }}
+                                                                                                            className={`px-2 py-1 text-xs font-bold rounded shadow-sm border whitespace-nowrap flex items-center justify-center gap-1 mx-auto transition-colors
+                                                                                                                ${!item.classificacao || item.classificacao === 'Nenhum' ? 'bg-slate-50 text-slate-500 border-slate-200 ' + (canEdit ? 'hover:bg-slate-100 cursor-pointer' : 'cursor-default') : ''}
+                                                                                                                ${item.classificacao === 'Jits' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 ' + (canEdit ? 'hover:bg-indigo-100 cursor-pointer' : 'cursor-default') : ''}
+                                                                                                                ${item.classificacao === 'PPAP' ? 'bg-orange-50 text-orange-700 border-orange-200 ' + (canEdit ? 'hover:bg-orange-100 cursor-pointer' : 'cursor-default') : ''}
+                                                                                                                ${item.classificacao === 'Jits e PPAP' ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 ' + (canEdit ? 'hover:bg-fuchsia-100 cursor-pointer' : 'cursor-default') : ''}
+                                                                                                            `}
+                                                                                                            title={canEdit ? "Clique para editar Classificação e Anexos" : "Classificação da Peça"}
+                                                                                                        >
+                                                                                                            {item.classificacao && item.classificacao !== 'Nenhum' ? item.classificacao : 'Classificar'}
+                                                                                                        </button>
+                                                                                                    </td>
+                                                                                                    <td className="px-4 py-2 text-center">
                                                                                                         {(() => {
                                                                                                             const tipo = item.status_tipo_item;
                                                                                                             const detalhe = item.status_tipo_detalhe;
@@ -2017,6 +2164,7 @@ const OrdersTable = () => {
                                             <VirtualFlatList
                                                 orders={sortedOrders}
                                                 scrollContainerRef={tableScrollRef}
+                                                canEdit={canEdit}
                                                 hasNextPage={hasNextPage}
                                                 onLoadMore={handleLoadMore}
                                                 loadingMore={loadingMore}
@@ -2046,6 +2194,8 @@ const OrdersTable = () => {
                                                 handleExportOPByOperationExcel={handleExportOPByOperationExcel}
                                                 setMenuPosition={setMenuPosition}
                                                 handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
+                                                onOpenClassificacaoModal={handleOpenClassificacaoModal}
+                                                canEdit={canEdit}
                                             />
                                         )}
                                     </>
@@ -2070,7 +2220,7 @@ const OrdersTable = () => {
                                 <>
                                     <Loader2 className="h-4 w-4 animate-spin text-blue-500 flex-shrink-0" />
                                     <span className="text-sm text-blue-600 font-medium">
-                                        Carregando dados… {orders.length} registros carregados até agora (lote {page})
+                                        Carregando dadosâ€¦ {orders.length} registros carregados até agora (lote {page})
                                     </span>
                                 </>
                             ) : (
@@ -2117,23 +2267,34 @@ const OrdersTable = () => {
                 onClose={() => setIsDocsModalOpen(false)}
                 productCode={selectedProductForDocs.code}
                 productName={selectedProductForDocs.name}
+                canEdit={canEdit}
             />
 
             {/* Modal de Imagem */}
-            {
-                showImageModal && (
-                    <ProductImageModal
-                        product={selectedProductForImage}
-                        onClose={() => setShowImageModal(false)}
-                        onSuccess={() => setShowImageModal(false)}
-                    />
-                )
-            }
+            {showImageModal && (
+                <ProductImageModal
+                    product={selectedProductForImage}
+                    onClose={() => setShowImageModal(false)}
+                    onSuccess={() => setShowImageModal(false)}
+                />
+            )}
+
+            {/* Modal de Classificacao */}
+            <ClassificacaoModal
+                isOpen={isClassificacaoModalOpen}
+                onClose={() => setIsClassificacaoModalOpen(false)}
+                item={classificacaoModalItem}
+                onSaveSuccess={handleClassificacaoModalSaveSuccess}
+                canEdit={canEdit}
+            />
 
             {/* Modal de Detalhes da NF */}
             <InvoiceDetailsModal
                 isOpen={!!selectedInvoice}
-                onClose={() => setSelectedInvoice(null)}
+                onClose={() => {
+                    setSelectedInvoice(null);
+                    setInvoiceModalItem(null);
+                }}
                 invoice={selectedInvoice}
                 item={invoiceModalItem}
             />
@@ -2144,31 +2305,29 @@ const OrdersTable = () => {
                 onClose={() => setNotesTarget(null)}
                 target={notesTarget}
                 currentUser={user?.nome || 'Usuário'}
+                canEdit={canEdit}
             />
 
             {/* Modal de Relatório da Reunião */}
             <MeetingReportModal
                 isOpen={showReportModal}
                 onClose={() => { setShowReportModal(false); setReportSelectedItems(null); }}
-                orders={reportSelectedItems ? [...new Set(reportSelectedItems.map(i => i.pedido))] : orders.map(o => o.pedido)}
-                filteredData={reportSelectedItems ? reportSelectedItems : orders.map(o => ({
-                    pedido: o.pedido,
-                    cliente: o.nome_cliente || 'N/A',
-                    proxima_entrega: o.emissao || '-'
-                }))}
-                globalMode={isGlobalReport}
-                selectedItemsForAta={reportSelectedItems}
+                items={isGlobalReport ? orders : reportSelectedItems}
+                isGlobal={isGlobalReport}
+                canEdit={canEdit}
             />
             {/* Modal de Engenharia (Novo) */}
             {
                 engineeringTarget && (
-                    <EngineeringControlModal
-                        isOpen={!!engineeringTarget}
-                        onClose={() => setEngineeringTarget(null)}
-                        orderId={engineeringTarget.orderId}
-                        item={engineeringTarget.item}
-                        onSave={handleSaveEngineeringControl}
-                    />
+                    <div onClick={e => e.stopPropagation()}>
+                        <EngineeringControlModal
+                            isOpen={!!engineeringTarget}
+                            onClose={() => setEngineeringTarget(null)}
+                            target={engineeringTarget}
+                            onSave={handleSaveEngineeringControl}
+                            canEdit={canEdit}
+                        />
+                    </div>
                 )
             }
             {
@@ -2182,6 +2341,7 @@ const OrdersTable = () => {
                             setSelectedItems([]);
                         }}
                         usuario={user?.nome}
+                        canEdit={canEdit}
                     />
                 )
             }
@@ -2195,16 +2355,19 @@ const OrdersTable = () => {
                             fetchData();
                         }}
                         usuario={user?.nome}
+                        canEdit={canEdit}
                     />
                 )
             }
             {
                 pcpForecastTarget && (
-                    <PCPForecastModal
-                        isOpen={true}
-                        onClose={() => {
-                            setPcpForecastTarget(null);
-                        }}
+                    <div onClick={e => e.stopPropagation()}>
+                        <PCPForecastModal
+                            isOpen={true}
+                            onClose={() => {
+                                setPcpForecastTarget(null);
+                            }}
+                            canEdit={canEdit}
                         item={pcpForecastTarget}
                         onSaveSuccess={(newProgs) => {
                             const target = pcpForecastTarget;
@@ -2243,6 +2406,7 @@ const OrdersTable = () => {
                             }
                         }}
                     />
+                    </div>
                 )
             }
 
@@ -2337,7 +2501,7 @@ const OrdersTable = () => {
                 </div>
             )}
             
-            {/* Retry Toast — shown during exponential backoff on 500 errors */}
+            {/* Retry Toast â€” shown during exponential backoff on 500 errors */}
             <RetryToast retryInfo={retryInfo} />
         </div>
     );

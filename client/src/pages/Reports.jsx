@@ -805,6 +805,6 @@ function formatDate(str) {
             const [y, m, d] = ymd.split('-');
             return `${d}/${m}/${y}`;
         }
-        return new Date(str).toLocaleDateString();
+        return new Date(str).toLocaleDateString('pt-BR');
     } catch (e) { return str; }
 }

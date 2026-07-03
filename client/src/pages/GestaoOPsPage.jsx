@@ -30,7 +30,10 @@ const GestaoOPsPage = () => {
         if (!raw) return '-';
         if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
         if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+        if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
+        return raw;
         if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
         return raw;
     };
@@ -340,7 +343,7 @@ const GestaoOPsPage = () => {
 
             doc.setFontSize(10);
             doc.setTextColor(100);
-            const dateStr = new Date().toLocaleString();
+            const dateStr = new Date().toLocaleString('pt-BR');
             doc.text(`Gerado em: ${dateStr}`, 14, 30);
 
             // Filter summary
@@ -358,7 +361,7 @@ const GestaoOPsPage = () => {
                     { content: order.pedido, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: order.cliente, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: order.status, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
-                    { content: order.proxima_entrega ? new Date(order.proxima_entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).toLocaleDateString() : '-', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: order.proxima_entrega ? new Date(order.proxima_entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).toLocaleDateString('pt-BR') : '-', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: `Itens: ${order.itens_count}`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
                     { content: '', styles: { fillColor: [240, 240, 240] } }
                 ]);

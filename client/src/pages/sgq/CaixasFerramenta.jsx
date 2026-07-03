@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Package, Plus, Search, User, Wrench, Calendar, Link as LinkIcon, Trash2, X, Save, Edit2, LayoutGrid, List, Camera, FileText, Download, Printer } from 'lucide-react';
+import { Package, Plus, Search, User, Wrench, Calendar, Link as LinkIcon, Trash2, X, Save, Edit2, LayoutGrid, List, Camera, FileText, Download, Printer, FileSpreadsheet } from 'lucide-react';
 import { generateToolboxPdf } from '../../services/sgqToolboxPdfGenerator';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { logoBase64 as metalfisaLogoBase64 } from '../../services/metalfisaLogoBase64';
 export default function CaixasFerramenta() {
     const [toolboxes, setToolboxes] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
@@ -233,6 +237,91 @@ export default function CaixasFerramenta() {
         );
     };
 
+    const handleExportAllPDF = async () => {
+        try {
+            const res = await api.get('/sgq/assets/toolboxes/all/assets');
+            const data = res.data;
+
+            if (data.length === 0) {
+                alert("Nenhum equipamento vinculado a caixas.");
+                return;
+            }
+
+            const doc = new jsPDF('l', 'mm', 'a4');
+
+            if (metalfisaLogoBase64) {
+                doc.addImage(metalfisaLogoBase64, 'PNG', 14, 10, 40, 15);
+            }
+            
+            doc.setFontSize(16);
+            doc.setTextColor(40);
+            doc.text('Inspeção Geral de Equipamentos - Caixas de Ferramentas', 60, 20);
+
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 60, 26);
+            
+            const tableColumn = ["Caixa", "Responsável", "Patrimônio", "Equipamento", "Modelo", "Nº Série", "Data Entrega"];
+            const tableRows = data.map(item => [
+                item.toolbox_name,
+                getUserName(item.employee_cpf),
+                item.patrimonio || '-',
+                item.name,
+                item.model || '-',
+                item.serial_number || '-',
+                item.assigned_at ? new Date(item.assigned_at).toLocaleDateString('pt-BR') : '-'
+            ]);
+
+            autoTable(doc, {
+                startY: 35,
+                head: [tableColumn],
+                body: tableRows,
+                theme: 'striped',
+                headStyles: { fillColor: [79, 70, 229] },
+                styles: { fontSize: 8 }
+            });
+
+            doc.save(`SGQ_Inspecao_Caixas_${new Date().getTime()}.pdf`);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao exportar PDF.");
+        }
+    };
+
+    const handleExportAllExcel = async () => {
+        try {
+            const res = await api.get('/sgq/assets/toolboxes/all/assets');
+            const data = res.data;
+
+            if (data.length === 0) {
+                alert("Nenhum equipamento vinculado a caixas.");
+                return;
+            }
+
+            const tableColumn = ["Caixa de Ferramentas", "Responsável (Colaborador)", "Patrimônio", "Equipamento", "Modelo", "Nº Série", "Status", "Exige Calibração", "Data de Entrega"];
+            const tableRows = data.map(item => [
+                item.toolbox_name,
+                getUserName(item.employee_cpf),
+                item.patrimonio || '-',
+                item.name,
+                item.model || '-',
+                item.serial_number || '-',
+                item.status === 'in_use' ? 'Em Uso' : item.status,
+                item.requires_calibration ? 'Sim' : 'Não',
+                item.assigned_at ? new Date(item.assigned_at).toLocaleDateString('pt-BR') : '-'
+            ]);
+
+            const wsData = [tableColumn, ...tableRows];
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Inspecao_Geral");
+            XLSX.writeFile(wb, `SGQ_Inspecao_Caixas_${new Date().getTime()}.xlsx`);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao exportar Excel.");
+        }
+    };
+
     return (
         <div className="p-6 max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
@@ -245,12 +334,28 @@ export default function CaixasFerramenta() {
                         <p className="text-sm text-slate-500">Gestão de kits atribuídos a colaboradores</p>
                     </div>
                 </div>
-                <button 
-                    onClick={() => handleOpenCreateModal()}
-                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-                >
-                    <Plus size={18} /> Nova Caixa
-                </button>
+                <div className="flex gap-2 items-center">
+                    <button 
+                        onClick={handleExportAllExcel}
+                        className="flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+                        title="Exportar Inspeção Geral em Excel"
+                    >
+                        <FileSpreadsheet size={16} /> Excel Geral
+                    </button>
+                    <button 
+                        onClick={handleExportAllPDF}
+                        className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors shadow-sm"
+                        title="Exportar Inspeção Geral em PDF"
+                    >
+                        <FileText size={16} /> PDF Geral
+                    </button>
+                    <button 
+                        onClick={() => handleOpenCreateModal()}
+                        className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                    >
+                        <Plus size={18} /> Nova Caixa
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">

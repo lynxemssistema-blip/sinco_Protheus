@@ -134,7 +134,7 @@ export default function HermesFeed() {
                                 <p className="text-xs text-slate-500">Confirme a leitura para fechar</p>
                             </div>
                         </div>
-                        <div className="p-6 bg-slate-50">
+                        <div className="p-6 bg-slate-50 max-h-[60vh] overflow-y-auto">
                             <div 
                                 className="text-sm text-slate-700 whitespace-pre-wrap font-mono"
                                 dangerouslySetInnerHTML={{ __html: renderInline(urgentAlerts[0].text) }}

@@ -46,6 +46,8 @@ const VirtualFlatList = ({
     handleExportOPByOperationExcel,
     setMenuPosition,
     handleUpdateFaturamentoDate,
+    onOpenClassificacaoModal,
+    canEdit,
 }) => {
     const sentinelRef = useRef(null);
 
@@ -145,6 +147,8 @@ const VirtualFlatList = ({
                         onExportOPByOperationExcel={handleExportOPByOperationExcel}
                         onSetMenuPosition={setMenuPosition}
                         onUpdateFaturamentoDate={handleUpdateFaturamentoDate}
+                        onOpenClassificacaoModal={onOpenClassificacaoModal}
+                        canEdit={canEdit}
                     />
                 );
             })}

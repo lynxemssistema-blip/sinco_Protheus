@@ -13,6 +13,8 @@ import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
 import { BillingForecastInput } from '../components/orders/BillingForecastInput';
 import FinancialView from '../components/orders/FinancialView';
 import LabelPrintModal from '../components/orders/LabelPrintModal';
+import PreEtiquetasTabletView from '../components/orders/PreEtiquetasTabletView';
+import PreEtiquetasPendentes from '../components/orders/PreEtiquetasPendentes';
 
 const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
     return (
@@ -68,7 +70,7 @@ const ItensAFaturar = () => {
 
     // Enforce tab security
     useEffect(() => {
-        if (!canViewFinancialTab && activeTab !== 'itens') {
+        if (!canViewFinancialTab && activeTab === 'financeiro') {
             setActiveTab('itens');
         }
     }, [canViewFinancialTab, activeTab, setActiveTab]);
@@ -206,6 +208,9 @@ const ItensAFaturar = () => {
         if (!raw) return '-';
         if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+        if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
         return raw;
     };
 
@@ -629,7 +634,7 @@ const ItensAFaturar = () => {
                             return true;
                         })
                         : [];
-                    baseData['Fat. Solicitados'] = faturamentosValidos.map(fat => `${fat.numero_solicitacao} (${parseFloat(fat.quantidade_solicitada).toLocaleString()})`).join(', ');
+                    baseData['Fat. Solicitados'] = faturamentosValidos.map(fat => `${fat.numero_solicitacao} (${parseFloat(fat.quantidade_solicitada).toLocaleString('pt-BR')})`).join(', ');
 
                     // NFs Anteriores
                     const nfs = Array.isArray(row.notas_fiscais) ? row.notas_fiscais.filter(nf => nf && nf.nota && nf.nota.trim()) : [];
@@ -777,7 +782,7 @@ const ItensAFaturar = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-2 text-right font-bold text-gray-600">
-                                                        {maxQtd.toLocaleString()}
+                                                        {maxQtd.toLocaleString('pt-BR')}
                                                     </td>
                                                      <td className="px-4 py-2 text-center">
                                                          {order.op_num_completa || order.op_num ? (
@@ -825,7 +830,7 @@ const ItensAFaturar = () => {
                                                                         </div>
                                                                         {order.saldo_produzido !== undefined && (
                                                                             <div className="text-[9px] text-gray-400 text-center font-medium">
-                                                                                Apontado: {parseFloat(order.saldo_produzido).toLocaleString()}
+                                                                                Apontado: {parseFloat(order.saldo_produzido).toLocaleString('pt-BR')}
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -1013,28 +1018,47 @@ const ItensAFaturar = () => {
             )}
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden relative">
-                {canViewFinancialTab && (
-                    <div className="flex border-b border-gray-200 bg-slate-50/80 px-4 shrink-0 gap-1">
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('itens')}
-                            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${activeTab === 'itens' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                        >
-                            <LayoutList className="h-4 w-4" />
-                            Itens a Faturar
-                        </button>
+                <div className="flex border-b border-gray-200 bg-slate-50/80 px-4 shrink-0 gap-1 overflow-x-auto">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('itens')}
+                        className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px whitespace-nowrap ${activeTab === 'itens' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <LayoutList className="h-4 w-4" />
+                        Itens a Faturar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('expedicao')}
+                        className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px whitespace-nowrap ${activeTab === 'expedicao' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <Factory className="h-4 w-4" />
+                        Expedição (Tablet)
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('pendentes')}
+                        className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px whitespace-nowrap ${activeTab === 'pendentes' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <ClipboardList className="h-4 w-4" />
+                        Etiquetas Pendentes
+                    </button>
+                    {canViewFinancialTab && (
                         <button
                             type="button"
                             onClick={() => setActiveTab('financeiro')}
-                            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${activeTab === 'financeiro' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px whitespace-nowrap ${activeTab === 'financeiro' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                         >
                             <BarChart2 className="h-4 w-4" />
                             Dados Financeiros
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {activeTab === 'itens' ? (
+                {activeTab === 'expedicao' && <PreEtiquetasTabletView onNavigateList={() => setActiveTab('pendentes')} />}
+                {activeTab === 'pendentes' && <PreEtiquetasPendentes />}
+                
+                {activeTab === 'itens' && (
                     <>
                         <div className="p-4 border-b border-gray-100 bg-white shrink-0 flex flex-col justify-between md:flex-row gap-4">
                             <div>
@@ -1312,10 +1336,10 @@ const ItensAFaturar = () => {
                                             {canViewFinancials && <td className="px-3 py-2 text-right font-mono text-gray-700">{formatCurrency(order.valor_unitario)}</td>}
                                             {canViewFinancials && <td className="px-3 py-2 text-right font-mono font-bold text-gray-900">{formatCurrency(order.valor_total)}</td>}
 
-                                            <td className="px-3 py-2 text-right">{parseFloat(order.quantidade).toLocaleString()}</td>
-                                            <td className="px-3 py-2 text-right text-gray-400">{parseFloat(order.qtd_entreg).toLocaleString()}</td>
+                                            <td className="px-3 py-2 text-right">{parseFloat(order.quantidade).toLocaleString('pt-BR')}</td>
+                                            <td className="px-3 py-2 text-right text-gray-400">{parseFloat(order.qtd_entreg).toLocaleString('pt-BR')}</td>
                                             <td className={`px-3 py-2 text-right font-bold text-[14px] ${isSelected ? 'text-blue-800' : 'text-blue-600'}`}>
-                                                {parseFloat(order.qtd_faturar).toLocaleString()}
+                                                {parseFloat(order.qtd_faturar).toLocaleString('pt-BR')}
                                             </td>
                                             {/* Colunas PCP */}
                                             <td className="px-2 py-2 text-center text-xs text-gray-500 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -1394,7 +1418,7 @@ const ItensAFaturar = () => {
                                                         return faturamentosValidos.length > 0 ? (
                                                             faturamentosValidos.map((fat, fIdx) => (
                                                                 <div key={fIdx} className="text-[9px] bg-cyan-50 text-cyan-700 border border-cyan-200 rounded px-1.5 py-0.5 whitespace-nowrap overflow-hidden" title={`Qtd: ${fat.quantidade_solicitada}`}>
-                                                                    <span className="font-bold">{fat.numero_solicitacao}</span> ({parseFloat(fat.quantidade_solicitada).toLocaleString()})
+                                                                    <span className="font-bold">{fat.numero_solicitacao}</span> ({parseFloat(fat.quantidade_solicitada).toLocaleString('pt-BR')})
                                                                 </div>
                                                             ))
                                                         ) : <span className="text-gray-300 text-[10px] text-center">-</span>;
@@ -1446,7 +1470,9 @@ const ItensAFaturar = () => {
                     </div>
                 )}
                     </>
-                ) : (
+                )}
+
+                {activeTab === 'financeiro' && canViewFinancialTab && (
                     <FinancialView 
                         rows={rows} 
                         loading={loading} 

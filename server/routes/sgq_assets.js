@@ -317,16 +317,40 @@ router.get('/:id/attachments', async (req, res) => {
 router.get('/attachments/:attachmentId/download', async (req, res) => {
     try {
         const { attachmentId } = req.params;
-        const [rows] = await db.query('SELECT file_data, mime_type, original_name FROM sgq_asset_attachments WHERE id = ?', [attachmentId]);
+        let query = 'SELECT file_data, mime_type, original_name';
+        try {
+            await db.query('SELECT file_path FROM sgq_asset_attachments LIMIT 1');
+            query += ', file_path';
+        } catch (e) {
+            // column doesn't exist yet
+        }
+        query += ' FROM sgq_asset_attachments WHERE id = ?';
+        
+        const [rows] = await db.query(query, [attachmentId]);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Anexo não encontrado.' });
         }
 
-        const file = rows[0];
-        res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${file.original_name}"`);
-        res.send(file.file_data);
+        const attachment = rows[0];
+
+        if (attachment.file_path) {
+            const fs = require('fs');
+            const path = require('path');
+            const relativePath = attachment.file_path.replace(/^\//, '');
+            const fullPath = path.join(__dirname, '..', relativePath);
+            if (fs.existsSync(fullPath)) {
+                return res.sendFile(fullPath);
+            }
+        }
+
+        if (attachment.file_data) {
+            res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${attachment.original_name}"`);
+            return res.send(attachment.file_data);
+        }
+
+        return res.status(404).json({ error: 'Arquivo não encontrado.' });
     } catch (error) {
         console.error('Erro ao fazer download do anexo:', error);
         res.status(500).json({ error: 'Erro interno ao fazer download.' });
@@ -359,7 +383,18 @@ router.post('/:id/attachments', memoryUpload.fields([
             await db.query('UPDATE sgq_asset_attachments SET is_main = FALSE WHERE asset_id = ? AND file_type = "photo"', [id]);
         }
         
+        try {
+            await db.query('ALTER TABLE sgq_asset_attachments ADD COLUMN file_path VARCHAR(255)');
+        } catch (e) {}
+
         const insertPromises = [];
+        const fs = require('fs');
+        const path = require('path');
+
+        const uploadDirPhotos = path.join(__dirname, '../uploads/fotos');
+        const uploadDirPdfs = path.join(__dirname, '../uploads/certificados');
+        if (!fs.existsSync(uploadDirPhotos)) fs.mkdirSync(uploadDirPhotos, { recursive: true });
+        if (!fs.existsSync(uploadDirPdfs)) fs.mkdirSync(uploadDirPdfs, { recursive: true });
 
         if (req.files['photos']) {
             req.files['photos'].forEach((file, idx) => {
@@ -367,20 +402,30 @@ router.post('/:id/attachments', memoryUpload.fields([
                 if (file.originalname === mainPhotoName) isMain = true;
                 else if (!hasMain && !mainPhotoName && idx === 0 && existing.length === 0) isMain = true;
 
+                const fileName = `asset-${id}-${Date.now()}-${file.originalname}`;
+                const filePath = path.join(uploadDirPhotos, fileName);
+                fs.writeFileSync(filePath, file.buffer);
+                const fileUrl = `/uploads/fotos/${fileName}`;
+
                 const promise = db.query(`
-                    INSERT INTO sgq_asset_attachments (asset_id, file_type, mime_type, file_data, original_name, is_main)
+                    INSERT INTO sgq_asset_attachments (asset_id, file_type, mime_type, file_path, original_name, is_main)
                     VALUES (?, ?, ?, ?, ?, ?)
-                `, [id, 'photo', file.mimetype, file.buffer, file.originalname, isMain]);
+                `, [id, 'photo', file.mimetype, fileUrl, file.originalname, isMain]);
                 insertPromises.push(promise);
             });
         }
         
         if (req.files['pdfs']) {
             req.files['pdfs'].forEach(file => {
+                const fileName = `asset-${id}-${Date.now()}-${file.originalname}`;
+                const filePath = path.join(uploadDirPdfs, fileName);
+                fs.writeFileSync(filePath, file.buffer);
+                const fileUrl = `/uploads/certificados/${fileName}`;
+
                 const promise = db.query(`
-                    INSERT INTO sgq_asset_attachments (asset_id, file_type, mime_type, file_data, original_name, is_main)
+                    INSERT INTO sgq_asset_attachments (asset_id, file_type, mime_type, file_path, original_name, is_main)
                     VALUES (?, ?, ?, ?, ?, ?)
-                `, [id, 'pdf', file.mimetype, file.buffer, file.originalname, false]);
+                `, [id, 'pdf', file.mimetype, fileUrl, file.originalname, false]);
                 insertPromises.push(promise);
             });
         }
@@ -580,6 +625,26 @@ router.delete('/assign/:toolbox_id/:asset_id', async (req, res) => {
     } catch (error) {
         console.error('Erro ao remover da caixa:', error);
         res.status(500).json({ error: 'Erro ao remover ativo da caixa.' });
+    }
+});
+
+// Listar todos os ativos de TODAS as caixas (Para Inspeção Geral)
+router.get('/toolboxes/all/assets', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT 
+                a.id, a.patrimonio, a.name, a.model, a.serial_number, a.status, a.calibration_validity, a.requires_calibration,
+                t.assigned_at, t.quantity as assigned_quantity,
+                tb.name as toolbox_name, tb.employee_cpf
+            FROM sgq_assets a
+            JOIN sgq_asset_toolbox t ON a.id = t.asset_id
+            JOIN sgq_toolboxes tb ON t.toolbox_id = tb.id
+            ORDER BY tb.name ASC, a.name ASC
+        `);
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao buscar ativos de todas as caixas:', error);
+        res.status(500).json({ error: 'Erro ao buscar ativos de todas as caixas.' });
     }
 });
 

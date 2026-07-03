@@ -419,7 +419,7 @@ router.post('/curriculos/:id/reavaliar', async (req, res) => {
         let comentariosArr = [];
         try { comentariosArr = JSON.parse(cand.comentarios || '[]'); } catch(e){}
         if (comentariosArr.length > 0) {
-            comTxt = comentariosArr.map(c => `[${c.autor} em ${new Date(c.data).toLocaleDateString()}]: ${c.texto}`).join('\n');
+            comTxt = comentariosArr.map(c => `[${c.autor} em ${new Date(c.data).toLocaleDateString('pt-BR')}]: ${c.texto}`).join('\n');
         }
 
         const prompt = `

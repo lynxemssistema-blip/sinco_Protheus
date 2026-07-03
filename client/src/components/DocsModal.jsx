@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 import ProductDocuments from './ProductDocuments';
 
-export default function DocsModal({ isOpen, onClose, productCode, productName }) {
+export default function DocsModal({ isOpen, onClose, productCode, productName, canEdit = true }) {
     // Fechar ao pressionar ESC
     useEffect(() => {
         const handleEsc = (e) => {
@@ -38,7 +38,7 @@ export default function DocsModal({ isOpen, onClose, productCode, productName })
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
-                    <ProductDocuments produtoCodigo={productCode} />
+                    <ProductDocuments produtoCodigo={productCode} canEdit={canEdit} />
                 </div>
             </div>
         </div>

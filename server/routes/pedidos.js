@@ -8,7 +8,22 @@ const archiver = require('archiver');
 const fs = require('fs');
 const nodePath = require('path');
 const ExcelJS = require('exceljs');
+const multer = require('multer');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+
+const uploadDirClassificacao = nodePath.join(__dirname, '../uploads/classificacao');
+if (!fs.existsSync(uploadDirClassificacao)) {
+    fs.mkdirSync(uploadDirClassificacao, { recursive: true });
+}
+const storageClassificacao = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDirClassificacao);
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + nodePath.extname(file.originalname));
+    }
+});
+const uploadClassificacao = multer({ storage: storageClassificacao });
 const { getVisaoGerencial } = require('../util/visaoGerencialHelper');
 
 // Helper to get authorized orders for external users
@@ -451,7 +466,7 @@ router.get('/flat', async (req, res) => {
     let paramsCount = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', classificacao_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -563,9 +578,43 @@ router.get('/flat', async (req, res) => {
             whereClause += ` AND c6.c6_pedcli ILIKE '%' || $${paramCount} || '%'`;
             params.push(pedcli);
             paramCount++;
-            countWhereClause += ` AND c6.c6_pedcli ILIKE '%' || $${countParamCount} || '%'`;
+countWhereClause += ` AND c6.c6_pedcli ILIKE '%' || $${countParamCount} || '%'`;
             countParams.push(pedcli);
             countParamCount++;
+        }
+
+        // --- Classificacao (Gits/PPAP) pre-filter ---
+        if (classificacao_item) {
+            const classificacoes = classificacao_item.split(',').filter(Boolean);
+            if (classificacoes.length > 0) {
+                const hasNenhum = classificacoes.includes('Nenhum');
+                const positiveClassifs = classificacoes.filter(c => c !== 'Nenhum');
+
+                if (positiveClassifs.length > 0 && !hasNenhum) {
+                    const placeholdersClassif = positiveClassifs.map(() => '?').join(',');
+                    const [classRows] = await mysqlPool.query(
+                        `SELECT DISTINCT TRIM(pedido) as pedido FROM app_pedido_itens_classificacao WHERE classificacao IN (${placeholdersClassif})`,
+                        positiveClassifs
+                    );
+                    if (classRows.length > 0) {
+                        const matchedPedidos = classRows.map(r => r.pedido);
+                        const placeholdersMatched = matchedPedidos.map((_, i) => `$${paramCount + i}`).join(',');
+                        whereClause += ` AND TRIM(c5.c5_num) IN (${placeholdersMatched})`;
+                        params.push(...matchedPedidos);
+                        paramCount += matchedPedidos.length;
+
+                        const countPlaceholdersMatched = matchedPedidos.map((_, i) => `$${countParamCount + i}`).join(',');
+                        countWhereClause += ` AND TRIM(c5.c5_num) IN (${countPlaceholdersMatched})`;
+                        countParams.push(...matchedPedidos);
+                        countParamCount += matchedPedidos.length;
+                    } else {
+                        return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                    }
+                }
+                // If hasNenhum is true, we don't restrict the orders at the database level
+                // because almost every order has at least one "Nenhum" item.
+                // The frontend will filter out the specific items.
+            }
         }
 
         // --- Novo Filtro de Tipo de Item (Múltipla Seleção) ---
@@ -1130,7 +1179,7 @@ router.get('/flat', async (req, res) => {
                 })();
             }
 
-            const [forecastResult, notesResult, docsResult, faturasResult, notasResult, sz1Result, lastOpResult, saldoProdResult] = await Promise.allSettled([
+            const [forecastResult, notesResult, docsResult, faturasResult, notasResult, sz1Result, lastOpResult, saldoProdResult, prioridadesResult, classificacoesResult] = await Promise.allSettled([
                 // 1. PCP Forecasts
                 mysqlPool.query(`
                     SELECT *, TRIM(pedido) as p_trim, TRIM(item) as i_trim
@@ -1171,7 +1220,21 @@ router.get('/flat', async (req, res) => {
                 // 7. Last Operation Code (Protheus)
                 lastOpEnrichment,
                 // 8. Saldo Produzido (MySQL)
-                saldoProduzidoEnrichment
+                saldoProduzidoEnrichment,
+                // 9. Prioridades
+                mysqlPool.query(`
+                    SELECT TRIM(pedido) as pedido, TRIM(item_pedido) as item_pedido, texto_tarefa
+                    FROM app_ata_viva_tarefas
+                    WHERE status = 'PENDENTE'
+                      AND (texto_tarefa LIKE '%PRIORIDADE MÁXIMA%' OR texto_tarefa LIKE '%[PRIORIDADE MÁXIMA]%')
+                      AND TRIM(pedido) IN (${pedidoPlaceholders})
+                `, uniquePedidos),
+                // 10. Classificacoes (Gits/PPAP)
+                mysqlPool.query(`
+                    SELECT TRIM(pedido) as pedido, TRIM(item) as item, classificacao
+                    FROM app_pedido_itens_classificacao
+                    WHERE TRIM(pedido) IN (${pedidoPlaceholders})
+                `, uniquePedidos)
             ]);
 
             // ── Batch status lookup (sg1/sg2/sz0) — replaces per-row LATERAL JOINs ──
@@ -1374,6 +1437,33 @@ router.get('/flat', async (req, res) => {
                     row.rev_cliente = entry ? entry.rev_cliente : null;
                 });
             } else { console.error('Error sz1 batch:', sz1Result.reason?.message); }
+
+            // Merge Prioridades
+            if (prioridadesResult && prioridadesResult.status === 'fulfilled') {
+                const prioridadesMap = {};
+                prioridadesResult.value[0].forEach(p => {
+                    const key = `${p.pedido}-${p.item_pedido}`;
+                    prioridadesMap[key] = p;
+                });
+                result.rows.forEach(row => {
+                    const priorityData = prioridadesMap[`${String(row.pedido).trim()}-${String(row.item).trim()}`];
+                    row.is_priority = !!priorityData;
+                    row.priority_obs = priorityData ? priorityData.texto_tarefa : null;
+                });
+            } else if (prioridadesResult) { console.error('Error prioridades:', prioridadesResult.reason?.message); }
+
+            // Merge Classificacoes
+            if (classificacoesResult && classificacoesResult.status === 'fulfilled') {
+                const classMap = {};
+                classificacoesResult.value[0].forEach(p => {
+                    const key = `${p.pedido}-${p.item}`;
+                    classMap[key] = p.classificacao;
+                });
+                result.rows.forEach(row => {
+                    const key = `${String(row.pedido).trim()}-${String(row.item).trim()}`;
+                    row.classificacao = classMap[key] || 'Nenhum';
+                });
+            } else if (classificacoesResult) { console.error('Error classificacoes:', classificacoesResult.reason?.message); }
 
 
             // ── Compute status_tipo_item from batch lookup (replaces SQL LATERAL JOINs) ──
@@ -2504,6 +2594,90 @@ async function logHistory(pedido, item, actionType, fieldChanged, oldValue, newV
 // ─── Batch Engineering Control Save ──────────────────────────────────────────
 // POST /api/pedidos/batch/items/notes
 // Aplica os mesmos campos de controle em múltiplos itens de uma vez.
+
+router.post('/classificacao', async (req, res) => {
+    try {
+        const { pedido, item, classificacao, ppap_numero, data_atualizacao } = req.body;
+        if (!pedido || !item || !classificacao) {
+            return res.status(400).json({ error: 'Pedido, item e classificacao são obrigatórios.' });
+        }
+
+        const [existing] = await mysqlPool.query(
+            'SELECT * FROM app_pedido_itens_classificacao WHERE pedido = ? AND item = ?',
+            [String(pedido).trim(), String(item).trim()]
+        );
+
+        if (existing.length > 0) {
+            await mysqlPool.query(
+                'UPDATE app_pedido_itens_classificacao SET classificacao = ?, ppap_numero = ?, data_atualizacao = ? WHERE pedido = ? AND item = ?',
+                [classificacao, ppap_numero || null, data_atualizacao || null, String(pedido).trim(), String(item).trim()]
+            );
+        } else {
+            await mysqlPool.query(
+                'INSERT INTO app_pedido_itens_classificacao (pedido, item, classificacao, ppap_numero, data_atualizacao) VALUES (?, ?, ?, ?, ?)',
+                [String(pedido).trim(), String(item).trim(), classificacao, ppap_numero || null, data_atualizacao || null]
+            );
+        }
+
+        res.json({ success: true, message: 'Classificação atualizada com sucesso.' });
+    } catch (err) {
+        console.error('Error updating classificacao:', err);
+        res.status(500).json({ error: 'Failed to update classificacao' });
+    }
+});
+
+router.post('/classificacao/upload', uploadClassificacao.single('file'), async (req, res) => {
+    try {
+        const { pedido, item } = req.body;
+        if (!pedido || !item || !req.file) {
+            return res.status(400).json({ error: 'Pedido, item e arquivo são obrigatórios.' });
+        }
+
+        const fileUrl = `/uploads/classificacao/${req.file.filename}`;
+        await mysqlPool.query(
+            'INSERT INTO app_pedido_itens_classificacao_anexos (pedido, item, filename, original_name, url) VALUES (?, ?, ?, ?, ?)',
+            [String(pedido).trim(), String(item).trim(), req.file.filename, req.file.originalname, fileUrl]
+        );
+
+        res.json({ success: true, message: 'Arquivo anexado com sucesso.', fileUrl });
+    } catch (err) {
+        console.error('Error uploading file:', err);
+        res.status(500).json({ error: 'Failed to upload file' });
+    }
+});
+
+router.get('/classificacao/anexos/:pedido/:item', async (req, res) => {
+    try {
+        const { pedido, item } = req.params;
+        const [rows] = await mysqlPool.query(
+            'SELECT * FROM app_pedido_itens_classificacao_anexos WHERE pedido = ? AND item = ? ORDER BY created_at DESC',
+            [String(pedido).trim(), String(item).trim()]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching anexos:', err);
+        res.status(500).json({ error: 'Failed to fetch anexos' });
+    }
+});
+
+router.delete('/classificacao/anexos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await mysqlPool.query('SELECT filename FROM app_pedido_itens_classificacao_anexos WHERE id = ?', [id]);
+        
+        if (rows.length > 0) {
+            const filename = rows[0].filename;
+            const filePath = nodePath.join(__dirname, '../uploads/classificacao', filename);
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            await mysqlPool.query('DELETE FROM app_pedido_itens_classificacao_anexos WHERE id = ?', [id]);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error deleting anexo:', err);
+        res.status(500).json({ error: 'Failed to delete anexo' });
+    }
+});
+
 router.post('/batch/items/notes', async (req, res) => {
     const { items, formData } = req.body;
     if (!items || !Array.isArray(items) || items.length === 0) {

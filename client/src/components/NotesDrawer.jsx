@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, CheckCircle, User, MessageSquare, Edit2, Trash2, Check, XCircle, Pin, PinOff } from 'lucide-react';
 import { getSalesNotes, createSalesNote, resolveSalesNote, updateSalesNote, deleteSalesNote } from '../services/api';
 
-export default function NotesDrawer({ isOpen, onClose, target, currentUser = 'Sistema' }) {
+export default function NotesDrawer({ isOpen, onClose, target, currentUser = 'Sistema', canEdit = true }) {
     const [notes, setNotes] = useState([]);
     const [newItem, setNewItem] = useState('');
     const [loading, setLoading] = useState(false);
@@ -175,47 +175,49 @@ export default function NotesDrawer({ isOpen, onClose, target, currentUser = 'Si
                                                     <User className="w-3 h-3" /> {note.created_by}
                                                 </span>
                                                 <span className="text-[10px] text-gray-400">
-                                                    {new Date(note.created_at).toLocaleString()}
+                                                    {new Date(note.created_at).toLocaleString('pt-BR')}
                                                 </span>
                                             </div>
 
                                             {/* Action Buttons */}
-                                            <div className="flex items-center gap-2">
-                                                {!note.is_resolved ? (
-                                                    <>
-                                                        {editingNote?.id === note.id ? (
-                                                            <div className="flex items-center gap-1">
-                                                                <button onClick={() => handleUpdate(note.id)} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
-                                                                <button onClick={() => setEditingNote(null)} className="text-red-500 hover:bg-red-50 p-1 rounded"><XCircle className="w-4 h-4" /></button>
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <button onClick={() => setEditingNote({ id: note.id, text: note.note_text })} className="text-gray-400 hover:text-blue-500 p-1 rounded transition-colors" title="Editar">
-                                                                    <Edit2 className="w-3 h-3" />
-                                                                </button>
-                                                                <button onClick={() => handleDelete(note.id)} className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors" title="Excluir">
-                                                                    <Trash2 className="w-3 h-3" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleResolve(note.id)}
-                                                                    className="text-xs text-green-600 hover:bg-green-50 px-2 py-1 rounded border border-green-100 hover:border-green-300 transition-colors ml-1"
-                                                                >
-                                                                    Resolver
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                    </>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-green-600 font-bold flex items-center gap-1">
-                                                            <CheckCircle className="w-3 h-3" /> Resolvido
-                                                        </span>
-                                                        <button onClick={() => handleDelete(note.id)} className="text-gray-300 hover:text-red-300 p-1 rounded transition-colors" title="Excluir">
-                                                            <Trash2 className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {canEdit && (
+                                                <div className="flex items-center gap-2">
+                                                    {!note.is_resolved ? (
+                                                        <>
+                                                            {editingNote?.id === note.id ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <button onClick={() => handleUpdate(note.id)} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
+                                                                    <button onClick={() => setEditingNote(null)} className="text-red-500 hover:bg-red-50 p-1 rounded"><XCircle className="w-4 h-4" /></button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <button onClick={() => setEditingNote({ id: note.id, text: note.note_text })} className="text-gray-400 hover:text-blue-500 p-1 rounded transition-colors" title="Editar">
+                                                                        <Edit2 className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button onClick={() => handleDelete(note.id)} className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors" title="Excluir">
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleResolve(note.id)}
+                                                                        className="text-xs text-green-600 hover:bg-green-50 px-2 py-1 rounded border border-green-100 hover:border-green-300 transition-colors ml-1"
+                                                                    >
+                                                                        Resolver
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs text-green-600 font-bold flex items-center gap-1">
+                                                                <CheckCircle className="w-3 h-3" /> Resolvido
+                                                            </span>
+                                                            <button onClick={() => handleDelete(note.id)} className="text-gray-300 hover:text-red-300 p-1 rounded transition-colors" title="Excluir">
+                                                                <Trash2 className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Note Content */}
@@ -238,31 +240,33 @@ export default function NotesDrawer({ isOpen, onClose, target, currentUser = 'Si
                 </div>
 
                 {/* Footer Input */}
-                <form onSubmit={handleSend} className="p-4 border-t bg-white">
-                    <div className="relative">
-                        <textarea
-                            className="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-2 text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none resize-none"
-                            rows="3"
-                            placeholder="Escreva uma observação..."
-                            value={newItem}
-                            onChange={e => setNewItem(e.target.value)}
-                            onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSend(e);
-                                }
-                            }}
-                        ></textarea>
-                        <button
-                            type="submit"
-                            disabled={!newItem.trim()}
-                            className="absolute bottom-3 right-3 p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <Send className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1 pl-1">Pressione Enter para enviar</p>
-                </form>
+                {canEdit && (
+                    <form onSubmit={handleSend} className="p-4 border-t bg-white">
+                        <div className="relative">
+                            <textarea
+                                className="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-2 text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none resize-none"
+                                rows="3"
+                                placeholder="Escreva uma observação..."
+                                value={newItem}
+                                onChange={e => setNewItem(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSend(e);
+                                    }
+                                }}
+                            ></textarea>
+                            <button
+                                type="submit"
+                                disabled={!newItem.trim()}
+                                className="absolute bottom-3 right-3 p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <Send className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1 pl-1">Pressione Enter para enviar</p>
+                    </form>
+                )}
             </div>
         </div>
     );

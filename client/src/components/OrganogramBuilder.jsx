@@ -600,7 +600,7 @@ const OrganogramBuilder = () => {
                         <div className="th-logo">METALFISA</div>
                         <div className="th-title">ORGANOGRAMA: {activeChart.name}</div>
                         <div className="th-info">
-                            <div>{new Date().toLocaleDateString()}</div>
+                            <div>{new Date().toLocaleDateString('pt-BR')}</div>
                             <div>REV: 01</div>
                         </div>
                     </div>

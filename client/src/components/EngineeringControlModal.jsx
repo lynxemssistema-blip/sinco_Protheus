@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
-const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido, item, onSave, batchItems }) => {
+const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido, item, onSave, batchItems, canEdit = true }) => {
     const isBatchMode = Array.isArray(batchItems) && batchItems.length > 0;
     const orderId = orderIdProp || pedido;
     const { user, isAdmin } = useAuth();
@@ -421,26 +421,28 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
 
                 {/* Body */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
-
+                    <fieldset disabled={!canEdit} className="h-full border-0 p-0 m-0 w-full">
                     {activeTab === 'general' && (
                         <div className="space-y-6 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <InputGroup history={history.engineering_start_date} label="Início engenharia" name="engineering_start_date" type="date" value={formData.engineering_start_date} onChange={handleChange} />
                             </div>
-                            <div className="flex justify-end pt-4 border-t border-gray-100">
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={loading}
-                                    className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                >
-                                    {loading ? 'Salvando...' : (
-                                        <>
-                                            <Save className="w-4 h-4" />
-                                            {isBatchMode ? `Aplicar Geral em ${batchItems.length} itens` : 'Salvar Geral'}
-                                        </>
-                                    )}
-                                </button>
-                            </div>
+                            {canEdit && (
+                                <div className="flex justify-end pt-4 border-t border-gray-100">
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={loading}
+                                        className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    >
+                                        {loading ? 'Salvando...' : (
+                                            <>
+                                                <Save className="w-4 h-4" />
+                                                {isBatchMode ? `Aplicar Geral em ${batchItems.length} itens` : 'Salvar Geral'}
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -895,23 +897,25 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                                 <div className="grid grid-cols-1">
                                     <InputGroup history={history.designer_production_release_date} label="Liberado Engenharia" name="designer_production_release_date" type="date" value={formData.designer_production_release_date} onChange={handleChange} className="bg-white" />
                                 </div>
+                                <TextAreaGroup history={history.designer_notes} label="Observações adicionais do projetista" name="designer_notes" value={formData.designer_notes} onChange={handleChange} />
                             </div>
 
-                            <TextAreaGroup history={history.designer_notes} label="Observações do projeto" name="designer_notes" value={formData.designer_notes} onChange={handleChange} />
-                            <div className="flex justify-end pt-4 border-t border-gray-100">
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={loading}
-                                    className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                >
-                                    {loading ? 'Salvando...' : (
-                                        <>
-                                            <Save className="w-4 h-4" />
-                                            {isBatchMode ? `Aplicar Projetista em ${batchItems.length} itens` : 'Salvar Projetista'}
-                                        </>
-                                    )}
-                                </button>
-                            </div>
+                            {canEdit && (
+                                <div className="flex justify-end pt-4 border-t border-gray-100">
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={loading}
+                                        className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    >
+                                        {loading ? 'Salvando...' : (
+                                            <>
+                                                <Save className="w-4 h-4" />
+                                                {isBatchMode ? `Aplicar Projetista em ${batchItems.length} itens` : 'Salvar Projetista'}
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -981,23 +985,27 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                             </div>
 
                             <TextAreaGroup history={history.pcp_notes} label="Observações gerais PCP" name="pcp_notes" value={formData.pcp_notes} onChange={handleChange} />
-                            <div className="flex justify-end pt-4 border-t border-gray-100">
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={loading}
-                                    className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                >
-                                    {loading ? 'Salvando...' : (
-                                        <>
-                                            <Save className="w-4 h-4" />
-                                            {isBatchMode ? `Aplicar PCP em ${batchItems.length} itens` : 'Salvar PCP'}
-                                        </>
-                                    )}
-                                </button>
-                            </div>
+                            
+                            {canEdit && (
+                                <div className="flex justify-end pt-4 border-t border-gray-100">
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={loading}
+                                        className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    >
+                                        {loading ? 'Salvando...' : (
+                                            <>
+                                                <Save className="w-4 h-4" />
+                                                {isBatchMode ? `Aplicar PCP em ${batchItems.length} itens` : 'Salvar PCP'}
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
+                    </fieldset>
                 </form>
 
                 {/* Footer */}

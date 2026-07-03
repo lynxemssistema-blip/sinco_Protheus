@@ -3,7 +3,7 @@ import { api } from '../../services/api';
 import { toast } from 'react-toastify';
 import { AlertCircle } from 'lucide-react';
 
-export const BillingForecastInput = ({ item, user, onUpdateSuccess }) => {
+export const BillingForecastInput = ({ item, user, onUpdateSuccess, canEdit = true }) => {
     // Delivery date fallback in YYYY-MM-DD
     const getFallbackDate = () => {
         if (!item.entrega) return '';
@@ -80,11 +80,13 @@ export const BillingForecastInput = ({ item, user, onUpdateSuccess }) => {
                     type="date"
                     value={displayValue}
                     onChange={handleChange}
-                    disabled={isSaving}
+                    disabled={!canEdit || isSaving}
                     aria-label="Previsão de Faturamento"
                     className={`px-2 py-1 text-xs border rounded transition-all focus:ring-1 focus:ring-teal-500 outline-none w-[125px] ${
+                        !canEdit ? 'bg-transparent text-gray-500 border-transparent cursor-default' :
                         isSaving ? 'opacity-50 cursor-wait' : 'cursor-pointer'
                     } ${
+                        !canEdit ? '' :
                         isOverdue 
                             ? isFallback
                                 ? 'text-red-500 font-normal italic border-dashed border-red-300 bg-red-50/20 hover:border-red-400' 
@@ -94,6 +96,7 @@ export const BillingForecastInput = ({ item, user, onUpdateSuccess }) => {
                                 : 'text-teal-800 font-semibold border-teal-200 bg-teal-50/50 hover:border-teal-400'
                     }`}
                     title={
+                        !canEdit ? 'Previsão de Faturamento (Visualização)' :
                         isOverdue 
                             ? isFallback 
                                 ? 'Alerta: Data de entrega vencida! Clique para alterar previsão de faturamento.' 

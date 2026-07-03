@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
     StickyNote, MoreVertical, Loader2, Truck,
-    Factory, ClipboardList, ImageIcon, FileSpreadsheet
+    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
@@ -43,6 +43,8 @@ const FlatItemRow = ({
     onExportOPByOperationExcel,
     onSetMenuPosition,
     onUpdateFaturamentoDate,
+    onOpenClassificacaoModal,
+    canEdit,
 }) => {
     const { user } = useAuth();
     const handleNfClick = useCallback((nf) => {
@@ -84,9 +86,11 @@ const FlatItemRow = ({
         <tr
             onClick={() => onSetActiveRow && onSetActiveRow(isActive ? null : `${item.pedido}-${item.item}`)}
             className={`transition-colors cursor-pointer border-b border-gray-50 last:border-0 ${
-                parseFloat(item.qtd_faturar) <= 0
-                    ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
-                    : 'bg-white hover:bg-slate-50'
+                item.is_priority
+                    ? 'bg-red-50/80 hover:bg-red-100/90 border-l-4 border-l-red-500 ring-1 ring-inset ring-red-200 shadow-sm'
+                    : parseFloat(item.qtd_faturar) <= 0
+                        ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
+                        : 'bg-white hover:bg-slate-50'
             } ${isActive ? '!bg-indigo-50/80 shadow-sm ring-1 ring-indigo-200' : (isSelected ? '!bg-blue-50' : '')}`}
         >
 {visibleColumns.map(col => {
@@ -98,7 +102,15 @@ const FlatItemRow = ({
                     );
                     case 'pedido': return (
                         <td key={col.key} className="px-3 py-2 whitespace-nowrap sticky left-[40px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
-                            <span className="font-bold text-gray-900">{item.pedido}</span>
+                            <div className="flex flex-col gap-0.5">
+                                <span className={`font-bold ${item.is_priority ? 'text-red-700' : 'text-gray-900'}`}>{item.pedido}</span>
+                                {item.is_priority && (
+                                    <div className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100/80 px-1 rounded shadow-sm border border-red-200 w-fit" title={item.priority_obs || 'Prioridade'}>
+                                        <AlertTriangle className="h-3 w-3" />
+                                        <span>PRIOR.</span>
+                                    </div>
+                                )}
+                            </div>
                         </td>
                     );
                     case 'emissao': return (
@@ -122,8 +134,13 @@ const FlatItemRow = ({
                         </td>
                     );
                     case 'item': return (
-                        <td key={col.key} className="px-2 py-2 text-center text-xs font-mono text-gray-500 bg-inherit min-w-[40px] max-w-[40px] w-[40px]">
-                            {item.item}
+                        <td key={col.key} className="px-4 py-2 text-center text-gray-900 min-w-[40px] max-w-[40px] w-[40px]">
+                            <div className="flex items-center justify-center gap-1">
+                                {item.item}
+                                {['Jits', 'PPAP', 'Jits e PPAP'].includes(item.classificacao) && (
+                                    <Award className="h-3 w-3 text-purple-600 flex-shrink-0" title={`Classificação: ${item.classificacao}`} />
+                                )}
+                            </div>
                         </td>
                     );
                     case 'op': return (
@@ -160,9 +177,11 @@ const FlatItemRow = ({
                                     <FileText className="h-4 w-4" />
                                     {item.has_docs && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" /></span>}
                                 </button>
-                                <button onClick={() => onSetEngineeringTarget({ orderId: item.pedido, item })} className="p-1.5 text-gray-400 hover:text-blue-500 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center" title="Controle Engenharia / BOM">
-                                    <Settings className="h-4 w-4" />
-                                </button>
+                                {canEdit && (
+                                    <button onClick={() => onSetEngineeringTarget({ orderId: item.pedido, item })} className="p-1.5 text-gray-400 hover:text-blue-500 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center" title="Controle Engenharia / BOM">
+                                        <Settings className="h-4 w-4" />
+                                    </button>
+                                )}
                                 <div className="relative" onClick={e => e.stopPropagation()}>
                                     <button title="Mais ações" onClick={(e) => { e.stopPropagation(); if (isMenuOpen) { onOpenActionMenu(null); } else { const rect = e.currentTarget.getBoundingClientRect(); const spaceBelow = window.innerHeight - rect.bottom; const spaceAbove = rect.top; const menuHeight = 350; if (spaceBelow < menuHeight && spaceAbove > spaceBelow) { onSetMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }); } else { onSetMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right }); } onOpenActionMenu(menuKey); } }} className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center">
                                         <MoreVertical className="h-4 w-4" />
@@ -194,6 +213,25 @@ const FlatItemRow = ({
                                     )}
                                 </div>
                             </div>
+                        </td>
+                    );
+                    case 'classificacao': return (
+                        <td key={col.key} className="px-4 py-2 text-center">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (canEdit && onOpenClassificacaoModal) onOpenClassificacaoModal(item);
+                                }}
+                                className={`px-2 py-1 text-xs font-bold rounded shadow-sm border whitespace-nowrap flex items-center justify-center gap-1 mx-auto transition-colors
+                                    ${!item.classificacao || item.classificacao === 'Nenhum' ? 'bg-slate-50 text-slate-500 border-slate-200 ' + (canEdit ? 'hover:bg-slate-100' : 'cursor-default') : ''}
+                                    ${item.classificacao === 'Jits' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 ' + (canEdit ? 'hover:bg-indigo-100' : 'cursor-default') : ''}
+                                    ${item.classificacao === 'PPAP' ? 'bg-orange-50 text-orange-700 border-orange-200 ' + (canEdit ? 'hover:bg-orange-100' : 'cursor-default') : ''}
+                                    ${item.classificacao === 'Jits e PPAP' ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 ' + (canEdit ? 'hover:bg-fuchsia-100' : 'cursor-default') : ''}
+                                `}
+                                title={canEdit ? "Clique para editar Classificação e Anexos" : "Classificação da Peça"}
+                            >
+                                {item.classificacao && item.classificacao !== 'Nenhum' ? item.classificacao : 'Classificar'}
+                            </button>
                         </td>
                     );
                     case 'tipo': return (
@@ -291,28 +329,46 @@ const FlatItemRow = ({
                         </td>
                     );
                     case 'qtd_pcp': return (
-                        <td key={col.key} className="px-4 py-2 text-right text-xs font-medium text-teal-700 min-w-[80px]">
-                            <div className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block" onClick={() => onSetPcpForecastTarget(item)} title="Clique para definir Qtd. PCP">
-                                <span className="group-hover/pcp:text-teal-900">{item.pcp_delivery_forecast_qtd ? parseFloat(item.pcp_delivery_forecast_qtd).toLocaleString('pt-BR') : 'Definir...'}</span>
-                            </div>
+                        <td key={col.key} className="px-3 py-2 text-center font-mono text-xs whitespace-nowrap min-w-[200px]">
+                            {canEdit ? (
+                                <div className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block" onClick={() => onSetPcpForecastTarget(item)} title="Clique para definir Qtd. PCP">
+                                    <span className="group-hover/pcp:text-teal-900">{item.pcp_delivery_forecast_qtd ? parseFloat(item.pcp_delivery_forecast_qtd).toLocaleString('pt-BR') : 'Definir...'}</span>
+                                </div>
+                            ) : (
+                                <div className="inline-block px-1 py-0.5">
+                                    <span className="text-slate-700">{item.pcp_delivery_forecast_qtd ? parseFloat(item.pcp_delivery_forecast_qtd).toLocaleString('pt-BR') : '-'}</span>
+                                </div>
+                            )}
                         </td>
                     );
                     case 'data_pcp': return (
-                        <td key={col.key} className="px-4 py-2 text-center text-xs min-w-[90px]">
-                            <div className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block" onClick={() => onSetPcpForecastTarget(item)} title="Clique para definir Data PCP">
-                                {item.pcp_delivery_forecast_date ? (
-                                    <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-semibold group-hover/pcp:border-teal-400">
-                                        {new Date(item.pcp_delivery_forecast_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }
-                                    </span>
-                                ) : (
-                                    <span className="text-gray-400 group-hover/pcp:text-teal-600">Definir...</span>
-                                )}
-                            </div>
+                        <td key={col.key} className="px-3 py-2 text-center whitespace-nowrap text-xs text-gray-700 min-w-[200px]">
+                            {canEdit ? (
+                                <div className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block" onClick={() => onSetPcpForecastTarget(item)} title="Clique para definir Data PCP">
+                                    {item.pcp_delivery_forecast_date ? (
+                                        <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-semibold group-hover/pcp:border-teal-400">
+                                            {formatProtheusDate(item.pcp_delivery_forecast_date)}
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400 group-hover/pcp:text-teal-600">Definir...</span>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="inline-block px-1 py-0.5">
+                                    {item.pcp_delivery_forecast_date ? (
+                                        <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-semibold">
+                                            {formatProtheusDate(item.pcp_delivery_forecast_date)}
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400">-</span>
+                                    )}
+                                </div>
+                            )}
                         </td>
                     );
                     case 'prev_fat': return (
                         <td key={col.key} className="px-4 py-2 text-center text-xs min-w-[110px]">
-                            <BillingForecastInput item={item} user={user} onUpdateSuccess={onUpdateFaturamentoDate} />
+                            <BillingForecastInput item={item} user={user} onUpdateSuccess={onUpdateFaturamentoDate} canEdit={canEdit} />
                         </td>
                     );
                     case 'evolucao_op': return (
@@ -353,6 +409,7 @@ const areEqual = (prev, next) => {
         prev.item.op_num === next.item.op_num &&
         prev.item.qtd_faturar === next.item.qtd_faturar &&
         prev.item.romaneios === next.item.romaneios &&
+        prev.item.is_priority === next.item.is_priority &&
         prev.isSelected === next.isSelected &&
         prev.isActive === next.isActive &&
         prev.openActionMenu === next.openActionMenu &&

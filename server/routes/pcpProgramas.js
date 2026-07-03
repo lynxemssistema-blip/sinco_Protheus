@@ -70,7 +70,8 @@ router.post('/', async (req, res) => {
             }
             return {
                 codigo: code,
-                tempo: ch.tempo || '00:00:00'
+                tempo: ch.tempo || '00:00:00',
+                tipo: ch.tipo || 'inteira'
             };
         }).filter(Boolean);
 
@@ -150,8 +151,8 @@ router.get('/maquina/:maquina_id', async (req, res) => {
                 INNER JOIN (SELECT programa_id, MAX(id) AS max_id FROM pcp_programas_execucoes GROUP BY programa_id) e2
                     ON e1.id = e2.max_id
             ) el ON el.programa_id = p.id
-            LEFT JOIN usuario u1 ON u1.NomeCompleto = el.usuario_apontamento
-            LEFT JOIN usuario u2 ON u2.Login = el.usuario_apontamento
+            LEFT JOIN (SELECT NomeCompleto, MAX(fotoUsuario) as fotoUsuario FROM usuario GROUP BY NomeCompleto) u1 ON u1.NomeCompleto = p.criado_por
+            LEFT JOIN (SELECT NomeCompleto, MAX(fotoUsuario) as fotoUsuario FROM usuario GROUP BY NomeCompleto) u2 ON u2.NomeCompleto = el.usuario_apontamento
             ${filterClause}
             ORDER BY
                 CASE WHEN p.status = 'CONCLUIDO' THEN 2 ELSE 1 END ASC,
@@ -194,6 +195,75 @@ router.put('/reordenar', async (req, res) => {
         res.status(500).json({ error: "Erro interno ao reordenar programas." });
     }
 });
+
+// ==========================================
+// API DE CONFIGURAÇÃO DE TURNOS (pcp_turnos)
+// ==========================================
+
+// GET /api/pcp/programas/turnos
+router.get('/turnos', async (req, res) => {
+    try {
+        const [turnos] = await mysqlPool.query('SELECT * FROM pcp_turnos WHERE ativo = true ORDER BY ordem ASC, hora_inicio ASC');
+        res.json(turnos);
+    } catch (err) {
+        console.error("Erro ao listar turnos:", err);
+        res.status(500).json({ error: "Erro interno ao buscar turnos." });
+    }
+});
+
+// POST /api/pcp/programas/turnos
+router.post('/turnos', async (req, res) => {
+    try {
+        const { nome, hora_inicio, hora_fim, intervalo_inicio, intervalo_fim, ordem } = req.body;
+        if (!nome || !hora_inicio || !hora_fim) {
+            return res.status(400).json({ error: 'Nome, hora de início e fim são obrigatórios.' });
+        }
+        
+        const [result] = await mysqlPool.query(`
+            INSERT INTO pcp_turnos (nome, hora_inicio, hora_fim, intervalo_inicio, intervalo_fim, ordem)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [nome, hora_inicio, hora_fim, intervalo_inicio || null, intervalo_fim || null, ordem || 0]);
+        
+        res.json({ success: true, id: result.insertId });
+    } catch (err) {
+        console.error("Erro ao criar turno:", err);
+        res.status(500).json({ error: "Erro ao criar turno." });
+    }
+});
+
+// PUT /api/pcp/programas/turnos/:id
+router.put('/turnos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nome, hora_inicio, hora_fim, intervalo_inicio, intervalo_fim, ordem, ativo } = req.body;
+        
+        await mysqlPool.query(`
+            UPDATE pcp_turnos 
+            SET nome = ?, hora_inicio = ?, hora_fim = ?, intervalo_inicio = ?, intervalo_fim = ?, ordem = ?, ativo = ?
+            WHERE id = ?
+        `, [nome, hora_inicio, hora_fim, intervalo_inicio || null, intervalo_fim || null, ordem || 0, ativo !== false, id]);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Erro ao atualizar turno:", err);
+        res.status(500).json({ error: "Erro ao atualizar turno." });
+    }
+});
+
+// DELETE /api/pcp/programas/turnos/:id
+router.delete('/turnos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Soft delete para manter histórico
+        await mysqlPool.query('UPDATE pcp_turnos SET ativo = false WHERE id = ?', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Erro ao excluir turno:", err);
+        res.status(500).json({ error: "Erro ao excluir turno." });
+    }
+});
+
+// ==========================================
 
 // 3. Atualizar liberação (ou preencher campos de recebimento)
 // PUT /api/pcp/programas/:id
@@ -245,7 +315,8 @@ router.put('/:id', async (req, res) => {
                 }
                 return {
                     codigo: code,
-                    tempo: ch.tempo || '00:00:00'
+                    tempo: ch.tempo || '00:00:00',
+                    tipo: ch.tipo || 'inteira'
                 };
             }).filter(Boolean);
 
@@ -690,16 +761,39 @@ router.get('/:id/paradas', async (req, res) => {
     }
 });
 
-// 12. Concluir Manualmente Liberação de Programa (Finalizar Lote)
-// PUT /api/pcp/programas/:id/concluir
+// 12. Concluir Programa Inteiro (forçado ou fim natural)
 router.put('/:id/concluir', async (req, res) => {
     try {
         const { id } = req.params;
-        await mysqlPool.query("UPDATE pcp_programas_liberados SET status = 'CONCLUIDO' WHERE id = ?", [id]);
+        await mysqlPool.query(`UPDATE pcp_programas_liberados SET status = 'CONCLUIDO' WHERE id = ?`, [id]);
+        const io = req.app.get('io');
+        if (io) io.emit('tv:programas_atualizados');
         res.json({ success: true });
     } catch (err) {
-        console.error("Erro ao concluir programa manualmente:", err);
-        res.status(500).json({ error: "Erro interno ao concluir programa." });
+        console.error("Erro ao concluir programa:", err);
+        res.status(500).json({ error: "Erro interno" });
+    }
+});
+
+// 11. Atualizar Data Base do Cálculo
+router.put('/:id/base-time', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { base_time_calculo } = req.body;
+        
+        let val = null;
+        if (base_time_calculo) {
+            val = new Date(base_time_calculo);
+        }
+        
+        await mysqlPool.query(`UPDATE pcp_programas_liberados SET base_time_calculo = ? WHERE id = ?`, [val, id]);
+        
+        const io = req.app.get('io');
+        if (io) io.emit('tv:programas_atualizados');
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Erro ao atualizar data base:", err);
+        res.status(500).json({ error: "Erro interno" });
     }
 });
 

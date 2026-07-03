@@ -273,7 +273,7 @@ export default function EvolucaoApontamentosView({
                             {metric === 'qtd' ? 'Total de Peças' : 'Total de Apontamentos'}
                         </div>
                         <div className="text-xl font-extrabold text-slate-800">
-                            {stats.total.toLocaleString()}
+                            {stats.total.toLocaleString('pt-BR')}
                         </div>
                     </div>
                 </div>
@@ -286,7 +286,7 @@ export default function EvolucaoApontamentosView({
                     <div>
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Média Diária</div>
                         <div className="text-xl font-extrabold text-slate-800">
-                            {stats.avg.toLocaleString()}
+                            {stats.avg.toLocaleString('pt-BR')}
                         </div>
                     </div>
                 </div>
@@ -301,7 +301,7 @@ export default function EvolucaoApontamentosView({
                         <div className="text-sm font-bold text-slate-700 flex items-center gap-2 mt-0.5">
                             <span>Dia {stats.maxDate}:</span>
                             <span className="font-extrabold text-slate-900 bg-amber-100 px-1.5 py-0.5 rounded text-xs border border-amber-200">
-                                {stats.maxVal.toLocaleString()} {metric === 'qtd' ? 'peças' : 'apontamentos'}
+                                {stats.maxVal.toLocaleString('pt-BR')} {metric === 'qtd' ? 'peças' : 'apontamentos'}
                             </span>
                         </div>
                     </div>
@@ -375,7 +375,7 @@ export default function EvolucaoApontamentosView({
                                             textAnchor="end"
                                             className="font-mono text-[10px] fill-slate-400 font-bold"
                                         >
-                                            {val.toLocaleString()}
+                                            {val.toLocaleString('pt-BR')}
                                         </text>
                                     </g>
                                 );
@@ -492,7 +492,7 @@ export default function EvolucaoApontamentosView({
                                     {formatFullDate(chartPoints[hoveredBarIndex].date)}
                                 </div>
                                 <div className="font-extrabold text-sm text-emerald-450 mt-0.5">
-                                    {chartPoints[hoveredBarIndex].value.toLocaleString()}{' '}
+                                    {chartPoints[hoveredBarIndex].value.toLocaleString('pt-BR')}{' '}
                                     <span className="font-normal text-slate-350 text-xs">
                                         {metric === 'qtd' ? 'peças' : 'apontamentos'}
                                     </span>
@@ -543,10 +543,10 @@ export default function EvolucaoApontamentosView({
                                                 {log.setor || 'Sem Setor'}
                                             </td>
                                             <td className="p-2.5 text-right font-extrabold text-blue-600">
-                                                {Number(log.qtd).toLocaleString()} peças
+                                                {Number(log.qtd).toLocaleString('pt-BR')} peças
                                             </td>
                                             <td className="p-2.5 text-right font-bold text-slate-700 pr-4">
-                                                {Number(log.count).toLocaleString()}
+                                                {Number(log.count).toLocaleString('pt-BR')}
                                             </td>
                                         </tr>
                                     ))}

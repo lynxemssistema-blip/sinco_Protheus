@@ -182,7 +182,7 @@ const SgqRomaneioForm = ({ romaneioId, onBack, user }) => {
     };
 
     const [returnModal, setReturnModal] = useState(null); // { itemId, assetName }
-    const [returnForm, setReturnForm] = useState({ validade_calibracao: '', file: null });
+    const [returnForm, setReturnForm] = useState({ validade_calibracao: '', observacao: '', file: null });
 
     const submitReturn = async (e) => {
         e.preventDefault();
@@ -191,6 +191,7 @@ const SgqRomaneioForm = ({ romaneioId, onBack, user }) => {
             setLoading(true);
             const formData = new FormData();
             formData.append('validade_calibracao', returnForm.validade_calibracao);
+            if (returnForm.observacao) formData.append('observacao', returnForm.observacao);
             if (returnForm.file) formData.append('certificado', returnForm.file);
 
             await api.put(`/sgq/romaneios/${header.id}/items/${returnModal.itemId}/retorno`, formData, {
@@ -199,7 +200,7 @@ const SgqRomaneioForm = ({ romaneioId, onBack, user }) => {
 
             alert('Retorno registrado com sucesso!');
             setReturnModal(null);
-            setReturnForm({ validade_calibracao: '', file: null });
+            setReturnForm({ validade_calibracao: '', observacao: '', file: null });
             loadRomaneio(header.id);
         } catch (err) {
             alert('Erro ao registrar retorno');
@@ -460,6 +461,10 @@ const SgqRomaneioForm = ({ romaneioId, onBack, user }) => {
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Certificado de Calibração (Opcional)</label>
                                 <input type="file" accept=".pdf,image/*" className="w-full p-2 border border-slate-300 rounded-lg bg-slate-50" onChange={e => setReturnForm({...returnForm, file: e.target.files[0]})} />
                                 <p className="text-xs text-slate-500 mt-1">Será salvo no histórico de anexos do ativo automaticamente.</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Observações (Opcional)</label>
+                                <textarea rows="3" className="w-full p-2 border border-slate-300 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500" value={returnForm.observacao} onChange={e => setReturnForm({...returnForm, observacao: e.target.value})} placeholder="Adicione qualquer observação relevante sobre o retorno..."></textarea>
                             </div>
                             <div className="flex justify-end gap-3 pt-4">
                                 <button type="button" onClick={() => setReturnModal(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancelar</button>

@@ -281,6 +281,54 @@ pause`;
         URL.revokeObjectURL(url);
     };
 
+    const downloadSilentInstaller = () => {
+        const origin = window.location.origin;
+        const agentUrl = `${origin}/api/labels/download-agent`;
+
+        const batContent = `@echo off
+echo ========================================================
+echo Instalando o MetalFisa Print Agent (Silencioso)...
+echo ========================================================
+echo.
+set "AGENT_DIR=%APPDATA%\\MetalFisaAgent"
+if not exist "%AGENT_DIR%" mkdir "%AGENT_DIR%"
+cd /d "%AGENT_DIR%"
+
+echo Baixando o agente do servidor...
+powershell -Command "Invoke-WebRequest -Uri '${agentUrl}' -OutFile 'MetalFisa-Print-Agent.exe'"
+
+echo Criando script de execucao invisivel...
+echo Set objShell = CreateObject("WScript.Shell") > run_hidden.vbs
+echo objShell.Run "cmd /c MetalFisa-Print-Agent.exe", 0, False >> run_hidden.vbs
+
+echo Configurando para iniciar com o Windows...
+set "STARTUP_FOLDER=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+set "SHORTCUT_PATH=%STARTUP_FOLDER%\\MetalFisaPrintAgent.lnk"
+powershell -Command "$wshell = New-Object -ComObject WScript.Shell; $s = $wshell.CreateShortcut('%SHORTCUT_PATH%'); $s.TargetPath = 'wscript.exe'; $s.Arguments = '\"%AGENT_DIR%\\run_hidden.vbs\"'; $s.WorkingDirectory = '%AGENT_DIR%'; $s.WindowStyle = 1; $s.Save()"
+
+echo Iniciando o agente agora...
+wscript run_hidden.vbs
+
+echo.
+echo ========================================================
+echo Instalacao concluida! O Print Agent ja esta rodando
+echo de forma oculta e vai iniciar sempre com o Windows.
+echo Voce ja pode fechar esta janela (fechara em 5s).
+echo ========================================================
+timeout /t 5 >nul
+`;
+
+        const blob = new Blob([batContent], { type: 'application/bat' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Instalar-Print-Agent-Silencioso.bat';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     // ── Testar Impressão via Print Agent local ─────────────────────────────────
     const handlePrintTest = async () => {
         if (!canvasRef.current) return;
@@ -313,7 +361,12 @@ pause`;
                 alert('Falha na impressão de teste:\n' + errMsg);
             }
         } catch (err) {
-            alert('Erro ao imprimir teste:\n' + err.message);
+            if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+                alert('Não foi possível conectar ao Print Agent.\nVerifique se o aplicativo MetalFisa Print Agent está aberto e rodando no seu computador.');
+                setAgentStatus('offline');
+            } else {
+                alert('Erro ao imprimir teste:\n' + err.message);
+            }
         } finally {
             setPrintingTest(false);
         }
@@ -597,27 +650,34 @@ pause`;
                             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-xs text-gray-600 space-y-2">
                                 <p className="font-semibold text-gray-700">Para ativar a impressão neste computador:</p>
                                 <ol className="list-decimal list-inside space-y-1.5">
-                                    <li>Baixe o arquivo <strong>MetalFisa-Print-Agent.ems</strong></li>
-                                    <li>Renomeie para <strong>MetalFisa-Print-Agent.exe</strong></li>
-                                    <li>Execute o arquivo para iniciar o agente de impressão</li>
-                                    <li>Recarregue esta página para verificar o status</li>
+                                    <li>Clique no botão ao lado para baixar o instalador automático.</li>
+                                    <li>Execute o arquivo <strong>Instalar-Print-Agent-Silencioso.bat</strong> que foi baixado.</li>
+                                    <li>Uma tela preta vai aparecer rapidamente, baixar o agente e configurar tudo sozinho.</li>
+                                    <li>Pronto! Ele já estará rodando em silêncio e iniciará junto com o Windows.</li>
+                                    <li>Recarregue esta página para verificar se ficou online!</li>
                                 </ol>
                             </div>
                         )}
                     </div>
 
                     {/* Botão de download */}
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 flex flex-col gap-2">
+                        <button
+                            onClick={downloadSilentInstaller}
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+                        >
+                            <Download className="h-4 w-4" />
+                            Instalação Automática (Silencioso)
+                        </button>
                         <a
                             href="/api/labels/download-agent"
                             download="MetalFisa-Print-Agent.ems"
-                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                            className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-semibold transition-colors shadow-sm"
                         >
-                            <Download className="h-4 w-4" />
-                            Baixar Print Agent
+                            Baixar manual (.ems)
                         </a>
-                        <p className="text-[10px] text-gray-400 mt-2 text-center">
-                            MetalFisa-Print-Agent.ems → renomear para .exe
+                        <p className="text-[10px] text-gray-400 mt-1 text-center">
+                            Apenas para especialistas
                         </p>
                     </div>
                 </div>

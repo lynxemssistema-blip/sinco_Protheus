@@ -920,11 +920,15 @@ router.get('/cronograma', async (req, res) => {
         const { 
             pedido, cliente, produto, pedcli, dataInicial, dataFinal, 
             dateType = 'entrega', only_active = 'true', tipo_item = '', 
-            op_status = '', sortBy = 'emissao', sortOrder = 'DESC' 
+            op_status = '', sortBy = 'emissao', sortOrder = 'DESC',
+            page = '1', limit = '200'
         } = req.query;
 
+        const pageNum = parseInt(page, 10) || 1;
+        const limitNum = parseInt(limit, 10) || 200;
+
         pgClient = await db.connect();
-        await pgClient.query("SET LOCAL statement_timeout = '55000'");
+        await pgClient.query("SET statement_timeout = '120000'");
 
         const params = [];
         let paramCount = 1;
@@ -1133,6 +1137,10 @@ router.get('/cronograma', async (req, res) => {
         }
 
         const sortDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+        // entrega_pcp/prev_fat sorting requires matching forecast data from the MySQL cache,
+        // so those cases must fetch all rows first and paginate in memory.
+        const needsJsSort = (sortBy === 'entrega_pcp' || sortBy === 'prev_fat');
+
         let orderClause = '';
         if (sortBy === 'entrega') {
             orderClause = `ORDER BY NULLIF(TRIM(c6.c6_entreg), '') ${sortDir} NULLS LAST, c5.c5_num DESC, c6.c6_item ASC`;
@@ -1146,8 +1154,19 @@ router.get('/cronograma', async (req, res) => {
             orderClause = `ORDER BY c5.c5_num DESC, c6.c6_item ASC`;
         }
 
+        // Fetch limitNum+1 rows so we can detect "has next page" without COUNT(*) OVER().
+        // COUNT(*) OVER() forces a full table scan before LIMIT is applied, which times out
+        // on large result sets (e.g. VMI with 2000+ items). The +1 trick avoids that entirely.
+        const sqlOffset = needsJsSort ? 0 : (pageNum - 1) * limitNum;
+        const sqlFetchLimit = needsJsSort
+            ? 5000                // cap for JS-sort; JS pagination applied below
+            : limitNum + 1;       // +1 to detect hasMore without COUNT(*)
+        const sqlLimitClause = needsJsSort
+            ? `LIMIT ${sqlFetchLimit}`
+            : `LIMIT ${sqlFetchLimit} OFFSET ${sqlOffset}`;
+
         const pgQuery = `
-            SELECT 
+            SELECT
                 TRIM(c5.c5_num) AS pedido,
                 TRIM(a1.a1_nome) AS cliente,
                 TRIM(COALESCE(a1.a1_email, '')) AS cliente_email,
@@ -1159,12 +1178,14 @@ router.get('/cronograma', async (req, res) => {
                 c6.c6_qtdven AS qtd_vendida,
                 c6.c6_qtdent AS qtd_entregue,
                 TRIM(c6.c6_pedcli) AS pedido_cliente,
+                TRIM(c5.c5_cliente) AS cliente_cod,
+                '' AS ref_cliente,
                 '' AS cod_prod_cliente
             FROM public.sc6010 c6
-            JOIN public.sc5010 c5 
+            JOIN public.sc5010 c5
                 ON COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(c5.c5_num) = TRIM(c6.c6_num)
-            LEFT JOIN public.sa1010 a1 
+            LEFT JOIN public.sa1010 a1
                 ON COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
                 AND TRIM(a1.a1_cod) = TRIM(c5.c5_cliente)
                 AND TRIM(a1.a1_loja) = TRIM(c5.c5_lojacli)
@@ -1173,16 +1194,24 @@ router.get('/cronograma', async (req, res) => {
                 AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
             WHERE ${whereSql}
             ${orderClause}
+            ${sqlLimitClause}
         `;
 
         const pgResult = await pgClient.query(pgQuery, params);
         let rows = pgResult.rows;
 
         if (rows.length === 0) {
-            return res.json([]);
+            return res.json({ data: [], meta: { total: 0, page: pageNum, limit: limitNum, has_more: false } });
         }
 
-        if (sortBy === 'entrega_pcp' || sortBy === 'prev_fat') {
+        // Detect has_more using the extra row fetched (only for SQL-paginated sorts)
+        let hasMore = false;
+        if (!needsJsSort && rows.length > limitNum) {
+            hasMore = true;
+            rows = rows.slice(0, limitNum); // discard the extra sentinel row
+        }
+
+        if (needsJsSort) {
             rows.forEach(r => {
                 const mapVal = forecastMap.get(`${r.pedido}|${r.item}`);
                 r._sort_val = null;
@@ -1205,6 +1234,39 @@ router.get('/cronograma', async (req, res) => {
                 }
                 return sortOrder === 'ASC' ? da - db : db - da;
             });
+            const startIndex = (pageNum - 1) * limitNum;
+            const pageSlice = rows.slice(startIndex, startIndex + limitNum);
+            hasMore = startIndex + limitNum < rows.length;
+            rows = pageSlice;
+        }
+        // For SQL-paginated sorts, rows already contain only the requested page
+
+        const totalItems = pageNum * limitNum + (hasMore ? 1 : 0); // approximate for meta compat
+
+        // Enrich ref_cliente via batch query (same pattern as pedidos.js — proven to work)
+        const uniqueClientes = [...new Set(rows.map(r => r.cliente_cod).filter(Boolean))];
+        const uniqueProdutos = [...new Set(rows.map(r => r.produto).filter(Boolean))];
+        if (uniqueClientes.length > 0 && uniqueProdutos.length > 0) {
+            try {
+                const sz1Result = await pgClient.query(`
+                    SELECT
+                        TRIM(z1.z1_cliente) AS z1_cliente,
+                        TRIM(z1.z1_produto) AS produto,
+                        STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ') AS ref_cliente
+                    FROM public.sz1010 z1
+                    WHERE z1.z1_cliente = ANY($1::varchar[])
+                      AND TRIM(z1.z1_produto) = ANY($2::varchar[])
+                      AND COALESCE(z1.d_e_l_e_t_, '') = ''
+                    GROUP BY TRIM(z1.z1_cliente), TRIM(z1.z1_produto)
+                `, [uniqueClientes, uniqueProdutos]);
+                const sz1Map = new Map();
+                sz1Result.rows.forEach(r => sz1Map.set(`${r.z1_cliente}|${r.produto}`, r.ref_cliente || ''));
+                rows.forEach(row => {
+                    row.ref_cliente = sz1Map.get(`${row.cliente_cod}|${row.produto}`) || '';
+                });
+            } catch (sz1Err) {
+                console.warn('[cronograma] sz1010 batch error:', sz1Err.message);
+            }
         }
 
         // Build pedidos Map and preserve order from SQL query
@@ -1236,6 +1298,7 @@ router.get('/cronograma', async (req, res) => {
                 data_entrega_pcp: null,
                 data_prevista_faturamento: null,
                 pedido_cliente: row.pedido_cliente,
+                ref_cliente: row.ref_cliente,
                 cod_prod_cliente: row.cod_prod_cliente,
                 progresso_granular: 0,
                 progresso_agregado: 0,
@@ -1357,32 +1420,44 @@ router.get('/cronograma', async (req, res) => {
 
         const uniqueOpCodes = [...new Set(opCodes)];
         const uniqueOpCodOperacoes = [...new Set(opCodOperacoes)];
-        
+
         let appointments = [];
         let plans = [];
 
         if (uniqueOpCodes.length > 0 && uniqueOpCodOperacoes.length > 0) {
-            const opPlaceholders = uniqueOpCodes.map(() => '?').join(',');
-            const opOperacPlaceholders = uniqueOpCodOperacoes.map(() => '?').join(',');
-            const args = [...uniqueOpCodes, ...uniqueOpCodOperacoes];
+            // Process in chunks of 150 OP codes to stay within MySQL connection
+            // limits and avoid building a single oversized IN clause.
+            const CHUNK = 150;
+            const opChunks = [];
+            for (let i = 0; i < uniqueOpCodes.length; i += CHUNK) {
+                opChunks.push(uniqueOpCodes.slice(i, i + CHUNK));
+            }
+            const opOperacPh = uniqueOpCodOperacoes.map(() => '?').join(',');
 
-            const [[aRows], [pRows]] = await Promise.all([
-                mysqlPool.query(`
-                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
-                           SUM(quantidade) as total_produzido
-                    FROM app_production_appointments
-                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
-                    GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-                `, args),
-                mysqlPool.query(`
-                    SELECT op_numero, op_item, op_sequencia, operacao_codigo,
-                           data_planejada_inicio, data_planejada_fim, dias_espera
-                    FROM app_production_planning
-                    WHERE op_numero IN (${opPlaceholders}) AND operacao_codigo IN (${opOperacPlaceholders})
-                `, args)
-            ]);
-            appointments = aRows;
-            plans = pRows;
+            const chunkResults = await Promise.all(opChunks.map(chunk => {
+                const opPh = chunk.map(() => '?').join(',');
+                const args = [...chunk, ...uniqueOpCodOperacoes];
+                return Promise.all([
+                    mysqlPool.query(`
+                        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                               SUM(quantidade) as total_produzido
+                        FROM app_production_appointments
+                        WHERE op_numero IN (${opPh}) AND operacao_codigo IN (${opOperacPh})
+                        GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                    `, args),
+                    mysqlPool.query(`
+                        SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                               data_planejada_inicio, data_planejada_fim, dias_espera
+                        FROM app_production_planning
+                        WHERE op_numero IN (${opPh}) AND operacao_codigo IN (${opOperacPh})
+                    `, args)
+                ]);
+            }));
+
+            for (const [[aRows], [pRows]] of chunkResults) {
+                appointments.push(...aRows);
+                plans.push(...pRows);
+            }
         }
 
         // Attach operations and calculate progress
@@ -1455,7 +1530,15 @@ router.get('/cronograma', async (req, res) => {
             });
         });
 
-        res.json(orderedPedidos);
+        res.json({
+            data: orderedPedidos,
+            meta: {
+                total: totalItems,
+                page: pageNum,
+                limit: limitNum,
+                has_more: hasMore
+            }
+        });
     } catch (err) {
         console.error('⚠️ Erro no endpoint /cronograma:', err);
         require('fs').writeFileSync('error_log.txt', 'ERRO NO CRONOGRAMA:\n' + err.stack);

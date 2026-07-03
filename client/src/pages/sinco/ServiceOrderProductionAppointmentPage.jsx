@@ -16,7 +16,7 @@ const formatDateTime = (value) => {
     if (!value) return '-';
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleString();
+    return d.toLocaleString('pt-BR');
 };
 
 const toNumber = (value) => {

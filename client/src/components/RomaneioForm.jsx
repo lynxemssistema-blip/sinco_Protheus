@@ -549,7 +549,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 <div>
                                     <span className="font-bold">Rev {rev.revision_number}</span>
                                     <span className="mx-2 text-slate-400">|</span>
-                                    <span>{new Date(rev.created_at).toLocaleString()}</span>
+                                    <span>{new Date(rev.created_at).toLocaleString('pt-BR')}</span>
                                     <span className="mx-2 text-slate-400">|</span>
                                     <span className="text-blue-600 font-medium">{rev.usuario || 'Sistema'}</span>
                                 </div>
@@ -571,7 +571,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                             </div>
                             <div className="text-xs text-slate-500">
                                 Criado por <span className="font-medium text-slate-700">{currRomaneioData?.usuario || user?.nome || 'Você'}</span> • 
-                                Em <span className="font-medium text-slate-700">{currRomaneioData?.created_at ? new Date(currRomaneioData.created_at).toLocaleDateString() : new Date().toLocaleDateString()}</span>
+                                Em <span className="font-medium text-slate-700">{currRomaneioData?.created_at ? new Date(currRomaneioData.created_at).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}</span>
                             </div>
                         </div>
                         <div className="text-right flex gap-4">
@@ -894,7 +894,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                             <div className="text-xs text-slate-500">
                                 <span className="font-bold text-slate-700">{header.cliente_nome}</span>
                                 <span className="mx-2 text-slate-300">|</span>
-                                {header.motorista_nome || 'Sem motorista'} - {header.veiculo_placa || 'Sem placa'} | Liberação: {header.data_liberacao ? new Date(header.data_liberacao).toLocaleDateString() : 'N/D'}
+                                {header.motorista_nome || 'Sem motorista'} - {header.veiculo_placa || 'Sem placa'} | Liberação: {header.data_liberacao ? new Date(header.data_liberacao).toLocaleDateString('pt-BR') : 'N/D'}
                             </div>
                         </div>
                         <div className="text-right flex flex-col sm:flex-row items-end sm:items-center gap-4 sm:gap-6">
@@ -994,7 +994,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                     <ul className="list-disc list-inside ml-2">
                                                         {opItemAlert.map((alertItem, idx) => (
                                                             <li key={idx}>
-                                                                Romaneio <strong>#{alertItem.romaneio_id}</strong> ({alertItem.status}) - Qtd: <strong>{Number(alertItem.qtd_enviada).toFixed(2)}</strong> em {new Date(alertItem.data_criacao).toLocaleDateString()}
+                                                                Romaneio <strong>#{alertItem.romaneio_id}</strong> ({alertItem.status}) - Qtd: <strong>{Number(alertItem.qtd_enviada).toFixed(2)}</strong> em {new Date(alertItem.data_criacao).toLocaleDateString('pt-BR')}
                                                             </li>
                                                         ))}
                                                     </ul>

@@ -3,9 +3,14 @@ import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
     Plus, X, Trash2, Calendar, Clock, User, FileText, 
-    Factory, AlertCircle, RefreshCw, Search, Edit, GripVertical
+    Factory, AlertCircle, RefreshCw, Search, Edit, GripVertical, Table, Printer, Settings, Info
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { logoBase64 } from '../../services/metalfisaLogoBase64';
+import { getNextWorkingTime, addWorkingTime, getTurnoForTime, jumpToNextShift, toSecs } from '../../utils/timeProjectionUtils';
 
 // Auxiliares de conversão de tempo
 function hhmmssToSeconds(str) {
@@ -42,8 +47,18 @@ export default function ProgramasNCN() {
     const [filterMaquinaId, setFilterMaquinaId] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const [showConcluidos, setShowConcluidos] = useState(false);
     const [draggedIndex, setDraggedIndex] = useState(null);
     
+    // State Config Turnos
+    const [showConfigTurnos, setShowConfigTurnos] = useState(false);
+    const [turnos, setTurnos] = useState([]);
+    const [loadingTurnos, setLoadingTurnos] = useState(false);
+    const [editingTurno, setEditingTurno] = useState(null);
+    const [turnoForm, setTurnoForm] = useState({
+        nome: '', hora_inicio: '06:00', hora_fim: '15:00', intervalo_inicio: '', intervalo_fim: '', ordem: 1
+    });
+
     // State do Modal
     const [showFormProg, setShowFormProg] = useState(false);
     const [editingProgId, setEditingProgId] = useState(null);
@@ -64,6 +79,14 @@ export default function ProgramasNCN() {
         notas_instrucoes: ''
     });
 
+    // State do Print Settings Modal
+    const [printModalProg, setPrintModalProg] = useState(null);
+    const [printSettings, setPrintSettings] = useState({
+        date: new Date().toISOString().substring(0, 10),
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        turnoId: ''
+    });
+
     // Carregar máquinas e programas ao montar a tela
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -78,6 +101,7 @@ export default function ProgramasNCN() {
                 setLoadingMaquinas(false);
             }
 
+            await loadTurnos();
             await loadProgramas();
         };
         fetchInitialData();
@@ -93,6 +117,53 @@ export default function ProgramasNCN() {
             toast.error("Erro ao carregar programas liberados.");
         } finally {
             setLoadingProgramas(false);
+        }
+    };
+
+    const loadTurnos = async () => {
+        try {
+            setLoadingTurnos(true);
+            const res = await api.get('/pcp/programas/turnos');
+            setTurnos(res.data);
+        } catch (err) {
+            console.error("Erro ao carregar turnos:", err);
+            toast.error("Erro ao carregar configurações de turnos.");
+        } finally {
+            setLoadingTurnos(false);
+        }
+    };
+
+    useEffect(() => {
+        // Removed conditional to avoid redundant loads, it's loaded on mount now.
+    }, [showConfigTurnos]);
+
+    const handleSaveTurno = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingTurno) {
+                await api.put(`/pcp/programas/turnos/${editingTurno.id}`, turnoForm);
+                toast.success("Turno atualizado com sucesso!");
+            } else {
+                await api.post('/pcp/programas/turnos', turnoForm);
+                toast.success("Turno criado com sucesso!");
+            }
+            setEditingTurno(null);
+            setTurnoForm({ nome: '', hora_inicio: '06:00', hora_fim: '15:00', intervalo_inicio: '', intervalo_fim: '', ordem: turnos.length + 2 });
+            loadTurnos();
+        } catch (err) {
+            toast.error("Erro ao salvar turno.");
+        }
+    };
+
+    const handleDeleteTurno = async (id) => {
+        if (window.confirm("Deseja excluir este turno? O histórico de horários pode ser impactado nas chapas atuais.")) {
+            try {
+                await api.delete(`/pcp/programas/turnos/${id}`);
+                toast.success("Turno excluído.");
+                loadTurnos();
+            } catch (err) {
+                toast.error("Erro ao excluir turno.");
+            }
         }
     };
 
@@ -258,6 +329,303 @@ export default function ProgramasNCN() {
         }
     };
 
+    const handleExportExcel = () => {
+        try {
+            const dataToExport = filteredProgramas.map(prog => ({
+                "ID": prog.id,
+                "Ordem": prog.ordem_execucao || 0,
+                "Status": prog.status,
+                "Programa": prog.nome_programa,
+                "Equipamento": prog.maquina_nome || `Máquina ${prog.maquina_id}`,
+                "Material": prog.tipo_material,
+                "Turno": prog.turno_previsao,
+                "Total Chapas": prog.quantidade_vezes,
+                "Tempo Previsto (Lote)": prog.tempo_previsto,
+                "Criado Por": prog.criado_por,
+                "Data Liberação": prog.created_at ? new Date(prog.created_at).toLocaleString('pt-BR') : ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Programas CNC");
+            XLSX.writeFile(workbook, `Programas_CNC_${new Date().toISOString().slice(0,10)}.xlsx`);
+            toast.success("Excel gerado com sucesso!");
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao gerar Excel.");
+        }
+    };
+
+    const handleExportPDF = () => {
+        try {
+            const doc = new jsPDF('landscape');
+            
+            // Header MetalFisa
+            doc.setFillColor(30, 58, 95);
+            doc.rect(14, 10, 42, 24, 'F');
+            doc.addImage(logoBase64, 'PNG', 16, 12, 14, 14);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('METALFISA', 32, 21);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6);
+            doc.text('Metalúrgica Ltda', 32, 25.5);
+            
+            doc.setFontSize(16);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Relatório de Programas CNC (NCN)', 60, 20);
+            
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, 60, 26);
+            doc.text(`Data Base: ${new Date().toLocaleDateString('pt-BR')}`, doc.internal.pageSize.getWidth() - 14, 20, { align: 'right' });
+            
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, 38, doc.internal.pageSize.getWidth() - 14, 38);
+            
+            const tableColumn = ["ID", "Ordem", "Status", "Programa", "Máquina", "Material", "Turno", "Chapas", "Tempo"];
+            const tableRows = [];
+            
+            filteredProgramas.forEach(prog => {
+                tableRows.push([
+                    `#${prog.id}`,
+                    prog.ordem_execucao || 0,
+                    prog.status,
+                    prog.nome_programa,
+                    prog.maquina_nome || `Máquina ${prog.maquina_id}`,
+                    prog.tipo_material,
+                    `T${prog.turno_previsao}`,
+                    prog.quantidade_vezes,
+                    prog.tempo_previsto
+                ]);
+            });
+            
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: 42,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [30, 58, 95] } 
+            });
+            
+            doc.save(`Programas_CNC_${new Date().toISOString().slice(0,10)}.pdf`);
+            toast.success("PDF gerado com sucesso!");
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao gerar PDF.");
+        }
+    };
+
+    const handlePrintProgram = (prog, baseDate, baseTime, customTurnoId) => {
+        try {
+            const doc = new jsPDF('landscape');
+            
+            // Header MetalFisa
+            doc.setFillColor(30, 58, 95);
+            doc.rect(14, 10, 42, 24, 'F');
+            doc.addImage(logoBase64, 'PNG', 16, 12, 14, 14);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('METALFISA', 32, 21);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6);
+            doc.text('Metalúrgica Ltda', 32, 25.5);
+            
+            doc.setFontSize(16);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'bold');
+            doc.text('FICHA TÉCNICA - PROGRAMA CNC', 60, 22);
+            
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, 38, doc.internal.pageSize.getWidth() - 14, 38);
+            
+            // Caixa de Informações Principais
+            doc.setDrawColor(200);
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(14, 42, 269, 50, 2, 2, 'FD'); // Width was 182, now 269
+            
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "bold");
+            doc.text(`Programa: ${prog.nome_programa}`, 20, 52);
+            doc.text(`Status: ${prog.status}`, 200, 52); // X was 140, now 200
+            
+            doc.setFont("helvetica", "normal");
+            doc.text(`Material: ${prog.tipo_material}`, 20, 60);
+            doc.text(`Equipamento: ${prog.maquina_nome || prog.maquina_id}`, 200, 60);
+            
+            doc.text(`Criado por: ${prog.criado_por}`, 20, 68);
+            doc.text(`Turno: T${prog.turno_previsao}`, 200, 68);
+            
+            const dataLib = prog.created_at ? new Date(prog.created_at).toLocaleString('pt-BR') : '-';
+            doc.text(`Data Liberação: ${dataLib}`, 20, 76);
+            
+            doc.text(`Qtd. Chapas: ${prog.quantidade_vezes}`, 200, 76);
+            
+            // Calculando projeção de tempo para as chapas
+            const chapasArray = [];
+            if (prog._chapas && prog._chapas.length > 0) {
+                prog._chapas.forEach((ch, idx) => {
+                    if (typeof ch === 'string') chapasArray.push({ codigo: ch, tempo: prog.tempo_previsto || '00:00:00' });
+                    else chapasArray.push({ ...ch, codigo: ch.codigo || `Chapa ${idx+1}`, tempo: ch.tempo || prog.tempo_previsto || '00:00:00' });
+                });
+            } else {
+                for (let i = 0; i < prog.quantidade_vezes; i++) {
+                    chapasArray.push({ codigo: `${prog.nome_programa} (${i+1})`, tempo: prog.tempo_previsto || '00:00:00' });
+                }
+            }
+
+            let baseRefTime = new Date();
+            if (baseDate && baseTime) {
+                baseRefTime = new Date(`${baseDate}T${baseTime}:00`);
+            } else if (prog.base_time_calculo) {
+                baseRefTime = new Date(prog.base_time_calculo);
+            }
+            
+            let currentCursor = getNextWorkingTime(baseRefTime, turnos);
+            
+            // Se o usuário selecionou um turno diferente do calculado para o Início
+            let initialTurno = getTurnoForTime(currentCursor, turnos);
+            
+            const projArray = chapasArray.map((chapa, idx) => {
+                const tempoSecs = toSecs(chapa.tempo);
+                const projStart = new Date(currentCursor);
+                const projEnd = addWorkingTime(projStart, tempoSecs, turnos);
+                currentCursor = new Date(projEnd);
+                
+                let turnoAssigned = getTurnoForTime(projStart, turnos);
+                
+                // Força o turno customizado apenas para a primeira chapa se definido,
+                // ou se ele preencheu todo um período com a mesma identificação
+                if (idx === 0 && customTurnoId && turnoAssigned?.id != customTurnoId) {
+                    const found = turnos.find(t => t.id == customTurnoId);
+                    if (found) turnoAssigned = found;
+                }
+                
+                if (chapa.forcar_quebra_turno) {
+                    currentCursor = jumpToNextShift(currentCursor, turnos);
+                }
+
+                return {
+                    ...chapa,
+                    projStart,
+                    projEnd,
+                    turnoAssigned
+                };
+            });
+
+            // Mark the last chapa of each shift based on turno change or manual break
+            for (let i = 0; i < projArray.length; i++) {
+                const currentTurnoId = projArray[i].turnoAssigned?.id;
+                const nextTurnoId = i + 1 < projArray.length ? projArray[i+1].turnoAssigned?.id : null;
+                
+                if (projArray[i].forcar_quebra_turno || currentTurnoId !== nextTurnoId) {
+                    projArray[i].isLastOfShift = true;
+                }
+            }
+
+            // Tabela de Chapas
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text('Lista de Chapas do Lote (Projeção)', 14, 102);
+            
+            const chapasRows = [];
+            projArray.forEach((ch, idx) => {
+                const projStart = ch.projStart.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+                const projEnd = ch.projEnd.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+                const turnoStr = ch.turnoAssigned ? ch.turnoAssigned.nome : '-';
+                
+                // Add marker for last of shift
+                const marker = ch.isLastOfShift ? ' (FIM DO TURNO)' : '';
+                
+                chapasRows.push([
+                    idx + 1, 
+                    ch.codigo || '-', 
+                    ch.tempo || '-', 
+                    turnoStr + marker,
+                    projStart,
+                    '         :         ', // Espaço maior para Início Real
+                    projEnd,
+                    '         :         '  // Espaço maior para Fim Real
+                ]);
+            });
+            
+            autoTable(doc, {
+                startY: 107,
+                head: [['#', 'Código da Chapa', 'Tempo Prev.', 'Turno', 'Início Proj.', 'Início Real', 'Fim Proj.', 'Fim Real']],
+                body: chapasRows,
+                headStyles: { fillColor: [71, 85, 105] }, // slate-600
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                styles: { fontSize: 9 },
+                didParseCell: function (data) {
+                    if (data.section === 'body' && data.row.raw[3] && data.row.raw[3].includes('(FIM DO TURNO)')) {
+                        // Highlight the row if it's the last of the shift
+                        if (data.cell.section === 'body') {
+                            data.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                    }
+                }
+            });
+            
+            const finalY = doc.lastAutoTable.finalY || 100;
+            
+            // Resumo de Turnos
+            const turnosSummary = {};
+            projArray.forEach(ch => {
+                const tName = ch.turnoAssigned ? ch.turnoAssigned.nome : 'Sem Turno';
+                if (!turnosSummary[tName]) turnosSummary[tName] = 0;
+                turnosSummary[tName]++;
+            });
+            
+            let currentY = finalY + 10;
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "bold");
+            doc.text('Resumo de Chapas por Turno (Saldo):', 14, currentY);
+            doc.setFont("helvetica", "normal");
+            Object.keys(turnosSummary).forEach((tName, i) => {
+                doc.text(`${tName}: ${turnosSummary[tName]} chapa(s)`, 14, currentY + 6 + (i*5));
+            });
+
+            currentY = currentY + 6 + (Object.keys(turnosSummary).length * 5) + 5;
+
+            // Área de Apontamento Manual (para o operador)
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text('Apontamento do Operador (Manual)', 14, currentY);
+            
+            doc.setDrawColor(200);
+            doc.roundedRect(14, currentY + 5, 269, 60, 2, 2, 'S'); // width 269
+            
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "normal");
+            doc.text('Inicio Real:', 20, currentY + 15);
+            doc.line(40, currentY + 15, 130, currentY + 15); // underline
+            
+            doc.text('Fim Real:', 150, currentY + 15);
+            doc.line(170, currentY + 15, 260, currentY + 15);
+            
+            doc.text('Operador:', 20, currentY + 30);
+            doc.line(40, currentY + 30, 130, currentY + 30);
+            
+            doc.text('Assinatura:', 150, currentY + 30);
+            doc.line(170, currentY + 30, 260, currentY + 30);
+            
+            doc.text('Observacoes:', 20, currentY + 45);
+            doc.line(42, currentY + 45, 260, currentY + 45);
+            doc.line(20, currentY + 55, 260, currentY + 55);
+            
+            // Abre o PDF em nova guia para visualizacao e impressao
+            window.open(doc.output('bloburl'), '_blank');
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao gerar ficha tecnica do programa.");
+        }
+    };
+
     const handleUpdateOrdem = async (prog, valor) => {
         const novaOrdem = parseInt(valor) || 0;
         if (novaOrdem === (prog.ordem_execucao || 0)) return;
@@ -362,7 +730,14 @@ export default function ProgramasNCN() {
                 const material = p.tipo_material ? p.tipo_material.toLowerCase() : '';
                 const matchesSearch = nome.includes(term) || material.includes(term);
                 const matchesMaquina = filterMaquinaId === 'all' || String(p.maquina_id) === String(filterMaquinaId);
-                const matchesStatus = filterStatus === 'all' || p.status === filterStatus;
+                
+                let matchesStatus = false;
+                if (filterStatus === 'all') {
+                    matchesStatus = showConcluidos ? true : p.status !== 'CONCLUIDO';
+                } else {
+                    matchesStatus = p.status === filterStatus;
+                }
+                
                 return matchesSearch && matchesMaquina && matchesStatus;
             })
             .map(p => {
@@ -375,7 +750,7 @@ export default function ProgramasNCN() {
                 } catch (_) {}
                 return { ...p, _chapas };
             });
-    }, [programas, searchQuery, filterMaquinaId, filterStatus]);
+    }, [programas, searchQuery, filterMaquinaId, filterStatus, showConcluidos]);
 
     const canChangeMachine = useMemo(() => {
         if (!editingProgId) return true;
@@ -411,31 +786,40 @@ export default function ProgramasNCN() {
                     <h1 className="text-2xl md:text-3xl font-black tracking-tight">Programas CNC</h1>
                     <p className="text-xs md:text-sm text-slate-400 mt-1">Gerenciamento e liberação de arquivos de corte por equipamento e especificações de processo</p>
                 </div>
-                <button
-                    onClick={() => {
-                        setEditingProgId(null);
-                        setEditingProgram(null);
-                        setProgForm({
-                            maquina_id: '',
-                            nome_programa: '',
-                            data_criacao: new Date().toISOString().substring(0, 10),
-                            tempo_previsto: '00:00:00',
-                            tipo_material: '',
-                            quantidade_vezes: 1,
-                            chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }],
-                            criado_por: user?.NomeCompleto || user?.nome || '',
-                            turno_previsao: 1,
-                            recebedor_nome: '',
-                            recebido_data: '',
-                            recebido_hora: '',
-                            notas_instrucoes: ''
-                        });
-                        setShowFormProg(true);
-                    }}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md hover:scale-105 hover:-translate-y-0.5"
-                >
-                    <Plus size={16} /> Liberar Novo Programa
-                </button>
+                
+                <div className="flex items-center gap-3 z-10 flex-wrap justify-end">
+                    <button
+                        onClick={() => setShowConfigTurnos(true)}
+                        className="bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md hover:-translate-y-0.5"
+                    >
+                        <Settings size={16} /> Configurar Turnos
+                    </button>
+                    <button
+                        onClick={() => {
+                            setEditingProgId(null);
+                            setEditingProgram(null);
+                            setProgForm({
+                                maquina_id: '',
+                                nome_programa: '',
+                                data_criacao: new Date().toISOString().substring(0, 10),
+                                tempo_previsto: '00:00:00',
+                                tipo_material: '',
+                                quantidade_vezes: 1,
+                                chapas_planejadas: [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }],
+                                criado_por: user?.NomeCompleto || user?.nome || '',
+                                turno_previsao: 1,
+                                recebedor_nome: '',
+                                recebido_data: '',
+                                recebido_hora: '',
+                                notas_instrucoes: ''
+                            });
+                            setShowFormProg(true);
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md hover:scale-105 hover:-translate-y-0.5"
+                    >
+                        <Plus size={16} /> Liberar Novo Programa
+                    </button>
+                </div>
             </div>
 
             {/* Barra de Filtros Unificada */}
@@ -483,13 +867,45 @@ export default function ProgramasNCN() {
                     </select>
                 </div>
 
+                {/* Filtro de Concluídos */}
+                <div className="w-full md:w-auto flex items-center">
+                    <label className="flex items-center cursor-pointer select-none text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl hover:bg-slate-100 transition-colors w-full md:w-auto justify-center">
+                        <input
+                            type="checkbox"
+                            checked={showConcluidos}
+                            onChange={(e) => setShowConcluidos(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 border-slate-300 rounded mr-2"
+                        />
+                        Mostrar Concluídos
+                    </label>
+                </div>
+
                 {/* Botão Recarregar */}
                 <button
                     onClick={loadProgramas}
                     className="flex items-center justify-center gap-1.5 bg-slate-100 text-slate-700 px-4 py-3 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors border border-slate-200 w-full md:w-auto shrink-0"
+                    title="Recarregar Dados"
                 >
-                    <RefreshCw size={14} /> Atualizar
+                    <RefreshCw size={14} />
                 </button>
+                
+                {/* Botões de Exportação */}
+                <div className="flex gap-2">
+                    <button
+                        onClick={handleExportPDF}
+                        className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors active:scale-95 flex items-center justify-center"
+                        title="Exportar para PDF"
+                    >
+                        <FileText size={16} />
+                    </button>
+                    <button
+                        onClick={handleExportExcel}
+                        className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-xl transition-colors active:scale-95 flex items-center justify-center"
+                        title="Exportar para Excel"
+                    >
+                        <Table size={16} />
+                    </button>
+                </div>
             </div>
 
             {filterMaquinaId === 'all' && (
@@ -512,21 +928,21 @@ export default function ProgramasNCN() {
                         Nenhum programa cadastrado ou liberado com os filtros selecionados.
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                                    <th className="px-5 py-4 w-12 text-center">ID</th>
-                                    <th className="px-5 py-4 w-20 text-center">Seq.</th>
-                                    <th className="px-5 py-4 w-28 text-center">Status</th>
-                                    <th className="px-5 py-4">Programa CNC</th>
-                                    <th className="px-5 py-4">Equipamento</th>
-                                    <th className="px-5 py-4">Material</th>
-                                    <th className="px-5 py-4 w-16 text-center">Turno</th>
-                                    <th className="px-5 py-4 max-w-[280px]">Chapas do Lote</th>
-                                    <th className="px-5 py-4">Tempo (Prev. / Exec.)</th>
-                                    <th className="px-5 py-4">Assinatura / Controle</th>
-                                    <th className="px-5 py-4 w-24 text-center">Ações</th>
+                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] scrollbar-thin scrollbar-thumb-slate-200">
+                        <table className="w-full text-left border-collapse text-xs relative">
+                            <thead className="sticky top-0 z-10 shadow-sm">
+                                <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                                    <th className="px-5 py-4 w-12 text-center bg-slate-50 border-b border-slate-200">ID</th>
+                                    <th className="px-5 py-4 w-20 text-center bg-slate-50 border-b border-slate-200">Seq.</th>
+                                    <th className="px-5 py-4 w-28 text-center bg-slate-50 border-b border-slate-200">Status</th>
+                                    <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Programa CNC</th>
+                                    <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Equipamento</th>
+                                    <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Material</th>
+                                    <th className="px-5 py-4 w-16 text-center bg-slate-50 border-b border-slate-200">Turno</th>
+                                    <th className="px-5 py-4 max-w-[280px] bg-slate-50 border-b border-slate-200">Chapas do Lote</th>
+                                    <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Tempo (Prev. / Exec.)</th>
+                                    <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Assinatura / Controle</th>
+                                    <th className="px-5 py-4 w-24 text-center bg-slate-50 border-b border-slate-200">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -695,6 +1111,13 @@ export default function ProgramasNCN() {
                                         <td className="px-5 py-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <button
+                                                    onClick={() => setPrintModalProg(prog)}
+                                                    className="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-2 rounded-xl transition-all"
+                                                    title="Imprimir Ficha Técnica do Programa"
+                                                >
+                                                    <Printer size={14} />
+                                                </button>
+                                                <button
                                                     onClick={() => handleEditProgram(prog)}
                                                     className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-2 rounded-xl transition-all"
                                                     title="Editar liberação"
@@ -832,10 +1255,18 @@ export default function ProgramasNCN() {
                                         onChange={e => setProgForm({...progForm, turno_previsao: parseInt(e.target.value) || 1})}
                                         className="w-full border border-slate-300 rounded p-2 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
                                     >
-                                        <option value="1">Turno 1</option>
-                                        <option value="2">Turno 2</option>
-                                        <option value="3">Turno 3</option>
-                                        <option value="4">Turno 4</option>
+                                        {turnos && turnos.length > 0 ? (
+                                            turnos.map(t => (
+                                                <option key={t.id} value={t.ordem}>{t.nome}</option>
+                                            ))
+                                        ) : (
+                                            <>
+                                                <option value="1">Turno 1</option>
+                                                <option value="2">Turno 2</option>
+                                                <option value="3">Turno 3</option>
+                                                <option value="4">Turno 4</option>
+                                            </>
+                                        )}
                                     </select>
                                 </div>
 
@@ -1036,6 +1467,218 @@ export default function ProgramasNCN() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* Modal de Configuração de Turnos */}
+            {showConfigTurnos && (
+                <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
+                        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
+                            <div>
+                                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                                    <Settings size={20} className="text-indigo-400" />
+                                    Configuração de Turnos PCP
+                                </h3>
+                                <p className="text-xs text-slate-400">Gerencie os horários e intervalos para projeção de chapas.</p>
+                            </div>
+                            <button onClick={() => setShowConfigTurnos(false)} className="text-slate-400 hover:text-white transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                            {/* Formulário */}
+                            <div className="w-full md:w-1/3 bg-slate-50 border-r border-slate-200 p-6 overflow-y-auto">
+                                <h4 className="text-sm font-bold text-slate-700 mb-4">{editingTurno ? 'Editar Turno' : 'Novo Turno'}</h4>
+                                <form onSubmit={handleSaveTurno} className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Nome/Identificador</label>
+                                        <input required type="text" value={turnoForm.nome} onChange={e => setTurnoForm({...turnoForm, nome: e.target.value})} placeholder="Ex: Turno 1" className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="w-1/2">
+                                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Hora Início</label>
+                                            <input required type="time" value={turnoForm.hora_inicio} onChange={e => setTurnoForm({...turnoForm, hora_inicio: e.target.value})} className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                        </div>
+                                        <div className="w-1/2">
+                                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Hora Fim</label>
+                                            <input required type="time" value={turnoForm.hora_fim} onChange={e => setTurnoForm({...turnoForm, hora_fim: e.target.value})} className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="w-1/2">
+                                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Início do Intervalo</label>
+                                            <input type="time" value={turnoForm.intervalo_inicio || ''} onChange={e => setTurnoForm({...turnoForm, intervalo_inicio: e.target.value})} className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                        </div>
+                                        <div className="w-1/2">
+                                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Fim do Intervalo</label>
+                                            <input type="time" value={turnoForm.intervalo_fim || ''} onChange={e => setTurnoForm({...turnoForm, intervalo_fim: e.target.value})} className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Ordem (Sequência)</label>
+                                        <input required type="number" min="1" value={turnoForm.ordem} onChange={e => setTurnoForm({...turnoForm, ordem: e.target.value})} className="w-full border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500" />
+                                    </div>
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="submit" className="flex-1 bg-indigo-600 text-white rounded p-2 text-xs font-bold hover:bg-indigo-700">
+                                            {editingTurno ? 'Salvar Edição' : 'Adicionar Turno'}
+                                        </button>
+                                        {editingTurno && (
+                                            <button type="button" onClick={() => { setEditingTurno(null); setTurnoForm({ nome: '', hora_inicio: '06:00', hora_fim: '15:00', intervalo_inicio: '', intervalo_fim: '', ordem: turnos.length + 1 }); }} className="bg-slate-200 text-slate-700 rounded p-2 text-xs font-bold hover:bg-slate-300">
+                                                Cancelar
+                                            </button>
+                                        )}
+                                    </div>
+                                </form>
+                            </div>
+                            {/* Lista */}
+                            <div className="w-full md:w-2/3 p-6 overflow-y-auto">
+                                <h4 className="text-sm font-bold text-slate-700 mb-4">Turnos Cadastrados</h4>
+                                {loadingTurnos ? (
+                                    <div className="flex justify-center p-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div></div>
+                                ) : turnos.length === 0 ? (
+                                    <div className="text-center text-xs text-slate-400 p-8">Nenhum turno cadastrado. Crie um ao lado.</div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {turnos.map(t => (
+                                            <div key={t.id} className="border border-slate-200 bg-white rounded-xl p-4 flex items-center justify-between hover:shadow-sm">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded">Seq: {t.ordem}</span>
+                                                        <h5 className="font-bold text-slate-800 text-sm">{t.nome}</h5>
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 mt-1 font-mono">
+                                                        {t.hora_inicio.substring(0,5)} as {t.hora_fim.substring(0,5)}
+                                                        {t.intervalo_inicio && t.intervalo_fim && (
+                                                            <span className="ml-3 text-orange-500">
+                                                                (Pausa: {t.intervalo_inicio.substring(0,5)} as {t.intervalo_fim.substring(0,5)})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => {
+                                                        setEditingTurno(t);
+                                                        setTurnoForm({
+                                                            nome: t.nome,
+                                                            hora_inicio: t.hora_inicio.substring(0,5),
+                                                            hora_fim: t.hora_fim.substring(0,5),
+                                                            intervalo_inicio: t.intervalo_inicio ? t.intervalo_inicio.substring(0,5) : '',
+                                                            intervalo_fim: t.intervalo_fim ? t.intervalo_fim.substring(0,5) : '',
+                                                            ordem: t.ordem
+                                                        });
+                                                    }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                                                        <Edit size={16} />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteTurno(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {printModalProg && (
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="bg-emerald-600 px-6 py-4 flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                <Printer size={20} />
+                                Configurar Ficha Técnica
+                            </h2>
+                            <button onClick={() => setPrintModalProg(null)} className="text-white/70 hover:text-white">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 space-y-6">
+                            <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg text-sm border border-emerald-100 flex gap-3">
+                                <Info size={18} className="shrink-0 mt-0.5" />
+                                <p>Defina o momento exato em que o primeiro item do Lote começará a ser produzido. As demais chapas seguirão os horários configurados na sua estrutura de Turnos.</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Data Inicial</label>
+                                    <input 
+                                        type="date"
+                                        value={printSettings.date}
+                                        onChange={(e) => {
+                                            const newDate = e.target.value;
+                                            const newSettings = { ...printSettings, date: newDate };
+                                            
+                                            // Atualiza turno sugerido
+                                            const simulatedDate = new Date(`${newDate}T${printSettings.time}:00`);
+                                            const autoTurno = getTurnoForTime(simulatedDate, turnos);
+                                            if (autoTurno) newSettings.turnoId = autoTurno.id;
+                                            
+                                            setPrintSettings(newSettings);
+                                        }}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Hora Inicial</label>
+                                    <input 
+                                        type="time"
+                                        value={printSettings.time}
+                                        onChange={(e) => {
+                                            const newTime = e.target.value;
+                                            const newSettings = { ...printSettings, time: newTime };
+                                            
+                                            // Atualiza turno sugerido
+                                            const simulatedDate = new Date(`${printSettings.date}T${newTime}:00`);
+                                            const autoTurno = getTurnoForTime(simulatedDate, turnos);
+                                            if (autoTurno) newSettings.turnoId = autoTurno.id;
+                                            
+                                            setPrintSettings(newSettings);
+                                        }}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Turno Base (Forçado)</label>
+                                <select
+                                    value={printSettings.turnoId}
+                                    onChange={(e) => setPrintSettings(prev => ({ ...prev, turnoId: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none bg-white"
+                                >
+                                    <option value="">Selecione um Turno (Opcional)</option>
+                                    {turnos.map(t => (
+                                        <option key={t.id} value={t.id}>
+                                            Turno {t.nome} ({t.hora_inicio.substring(0,5)} as {t.hora_fim.substring(0,5)})
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-slate-400 mt-1">* Normalmente é detectado sozinho baseado na hora acima. Altere apenas se quiser forçar o início no cabeçalho/primeira chapa.</p>
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setPrintModalProg(null)}
+                                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    handlePrintProgram(printModalProg, printSettings.date, printSettings.time, printSettings.turnoId);
+                                    setPrintModalProg(null);
+                                }}
+                                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm flex items-center gap-2"
+                            >
+                                <Printer size={16} />
+                                Gerar e Baixar PDF
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

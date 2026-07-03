@@ -339,8 +339,8 @@ const FaturamentoPainel = () => {
                                                         />
                                                     ) : (
                                                         <div className="flex flex-col items-end">
-                                                            <span className="font-black text-gray-800">{parseFloat(it.quantidade_solicitada).toLocaleString()}</span>
-                                                            <span className="text-[10px] text-gray-400">Máx: {parseFloat(it.saldo_faturar_momentaneo).toLocaleString()}</span>
+                                                            <span className="font-black text-gray-800">{parseFloat(it.quantidade_solicitada).toLocaleString('pt-BR')}</span>
+                                                            <span className="text-[10px] text-gray-400">Máx: {parseFloat(it.saldo_faturar_momentaneo).toLocaleString('pt-BR')}</span>
                                                         </div>
                                                     )}
                                                 </td>
@@ -478,7 +478,7 @@ const FaturamentoPainel = () => {
                                     </div>
                                     <div className="text-right">
                                         <div className="text-[10px] text-gray-400 font-bold uppercase">Saldo a Faturar</div>
-                                        <div className="font-black text-gray-900 text-lg">{parseFloat(rst.qtd_faturar).toLocaleString()} <span className="text-xs font-normal text-gray-500">{rst.unidade}</span></div>
+                                        <div className="font-black text-gray-900 text-lg">{parseFloat(rst.qtd_faturar).toLocaleString('pt-BR')} <span className="text-xs font-normal text-gray-500">{rst.unidade}</span></div>
                                     </div>
                                 </div>
                             ))}

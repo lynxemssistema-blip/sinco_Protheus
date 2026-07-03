@@ -88,7 +88,7 @@ const SolicitacoesTab = () => {
                                     <tr key={sol.id} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 font-mono font-medium text-gray-700">{sol.numero}</td>
                                         <td className="px-6 py-4 text-gray-600">
-                                            {new Date(sol.data_solicitacao).toLocaleDateString()}
+                                            {new Date(sol.data_solicitacao).toLocaleDateString('pt-BR')}
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col">

@@ -277,7 +277,7 @@ const Toolbar = ({ activeResourceTab, availableResources, explodedData, selected
 // ============================================================================
 // [3] COMPONENTE PRINCIPAL
 // ============================================================================
-export default function CorteForecastModal({ isOpen, onClose, items, onSaveSuccess, usuario }) {
+export default function CorteForecastModal({ isOpen, onClose, items, onSaveSuccess, usuario, canEdit = true }) {
     const { state, actions } = useCorteForecastController(items, isOpen, usuario, onSaveSuccess, onClose);
 
     if (!isOpen) return null;
@@ -582,30 +582,33 @@ export default function CorteForecastModal({ isOpen, onClose, items, onSaveSucce
                                     id="gerarPlanilha"
                                     checked={state.gerarPlanilha}
                                     onChange={(e) => actions.setGerarPlanilha(e.target.checked)}
-                                    className="h-4 w-4 rounded bg-[#0b0f19] border-[#38bdf8] text-[#38bdf8] focus:ring-[#38bdf8] focus:ring-offset-[#111827] cursor-pointer"
+                                    disabled={!canEdit}
+                                    className="h-4 w-4 rounded bg-[#0b0f19] border-[#38bdf8] text-[#38bdf8] focus:ring-[#38bdf8] focus:ring-offset-[#111827] cursor-pointer disabled:opacity-50"
                                 />
                                 <label htmlFor="gerarPlanilha" className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider cursor-pointer">
                                     IMPRIMIR ESPELHO
                                 </label>
                             </div>
 
-                            <button 
-                                onClick={actions.handleSave}
-                                disabled={state.saving}
-                                className="w-full bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#0ea5e9] hover:to-[#0284c7] text-[#0b0f19] font-mono text-[13px] uppercase font-black py-4 rounded-md shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-                            >
-                                {state.saving ? (
-                                    <>
-                                        <Loader2 className="h-5 w-5 animate-spin" />
-                                        <span>GRAVANDO...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle className="h-5 w-5" /> 
-                                        <span>CONFIRMAR ({Object.keys(selectedLotes).length})</span>
-                                    </>
-                                )}
-                            </button>
+                            {canEdit && (
+                                <button 
+                                    onClick={actions.handleSave}
+                                    disabled={state.saving}
+                                    className="w-full bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#0ea5e9] hover:to-[#0284c7] text-[#0b0f19] font-mono text-[13px] uppercase font-black py-4 rounded-md shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    {state.saving ? (
+                                        <>
+                                            <Loader2 className="h-5 w-5 animate-spin" />
+                                            <span>GRAVANDO...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CheckCircle className="h-5 w-5" /> 
+                                            <span>CONFIRMAR ({Object.keys(selectedLotes).length})</span>
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

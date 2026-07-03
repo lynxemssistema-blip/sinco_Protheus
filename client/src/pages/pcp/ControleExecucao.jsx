@@ -5,10 +5,14 @@ import {
     Play, Square, CheckCircle, Clock, Search, Filter, 
     TrendingUp, BarChart2, Factory, User, Check, AlertTriangle, 
     Calendar, RefreshCw, Plus, ArrowLeftRight, Octagon, Zap, X, RotateCcw,
-    Truck, Download, Building
+    Truck, Download, Building, FileText, Table
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { logoBase64 } from '../../services/metalfisaLogoBase64';
+import { addWorkingTime, jumpToNextShift, getTurnoForTime, getNextWorkingTime, toSecs, sortTurnos } from '../../utils/timeProjectionUtils';
 
 // Auxiliares de tempo
 function formatSeconds(totalSecs) {
@@ -22,6 +26,11 @@ function formatSeconds(totalSecs) {
         String(secs).padStart(2, '0')
     ].join(':');
 }
+
+const parseLocal = (dateStr) => {
+    if (!dateStr) return null;
+    return typeof dateStr === 'string' ? new Date(dateStr.replace('Z', '')) : new Date(dateStr);
+};
 
 function hhmmssToSeconds(str) {
     if (!str) return 0;
@@ -108,6 +117,10 @@ export default function ControleExecucao() {
     const [relFilterMaquina, setRelFilterMaquina] = useState('');
     const [relFilterTurno, setRelFilterTurno] = useState('');
     const [relSearchQuery, setRelSearchQuery] = useState('');
+    const [relFilterTerceirizado, setRelFilterTerceirizado] = useState('TODOS'); // 'TODOS', 'INTERNA', 'TERCEIRIZADA'
+    const [relFilterDataPlanejada, setRelFilterDataPlanejada] = useState('');
+
+    const [turnos, setTurnos] = useState([]);
 
     // Timer Global para atualizar cronômetros em tempo real
     const [now, setNow] = useState(new Date());
@@ -126,6 +139,11 @@ export default function ControleExecucao() {
             setOperatorName(user.NomeCompleto || user.nome || '');
         }
     }, [user]);
+
+    // Carregar Turnos
+    useEffect(() => {
+        api.get('/pcp/programas/turnos').then(res => setTurnos(res.data)).catch(console.error);
+    }, []);
 
     // Carregar máquinas no início
     useEffect(() => {
@@ -413,9 +431,17 @@ export default function ControleExecucao() {
                 r.nome_programa.toLowerCase().includes(relSearchQuery.toLowerCase()) ||
                 r.maquina_nome.toLowerCase().includes(relSearchQuery.toLowerCase())
                 : true;
-            return matchesMaquina && matchesTurno && matchesSearch;
+                
+            const matchesTerceirizado = relFilterTerceirizado === 'TODOS' ? true :
+                relFilterTerceirizado === 'TERCEIRIZADA' ? r.tipo_execucao === 'TERCEIRIZADA' :
+                (r.tipo_execucao === 'INTERNA' || !r.tipo_execucao);
+                
+            const matchesDataPlanejada = relFilterDataPlanejada ? 
+                (r.data_criacao && r.data_criacao.substring(0, 10) === relFilterDataPlanejada) : true;
+                
+            return matchesMaquina && matchesTurno && matchesSearch && matchesTerceirizado && matchesDataPlanejada;
         });
-    }, [relatorioData, relFilterMaquina, relFilterTurno, relSearchQuery]);
+    }, [relatorioData, relFilterMaquina, relFilterTurno, relSearchQuery, relFilterTerceirizado, relFilterDataPlanejada]);
 
     // Obter lista única de máquinas do relatório para filtros
     const relMaquinasList = useMemo(() => {
@@ -475,8 +501,163 @@ export default function ControleExecucao() {
         return maquinas.find(m => String(m.id) === String(selectedMaquinaId));
     }, [maquinas, selectedMaquinaId]);
 
+    const hoursToExecuteSummary = useMemo(() => {
+        const hoursByMachine = {};
+        let totalGlobalRem = 0;
+        
+        filteredProgramas.forEach(prog => {
+            if (prog.status === 'CONCLUIDO') return;
+            
+            const mName = prog.maquina_nome || `Máquina #${prog.maquina_id}`;
+            if (!hoursByMachine[mName]) {
+                hoursByMachine[mName] = { remSecs: 0, progCount: 0 };
+            }
+            
+            const progExecs = execucoes[prog.id] || [];
+            const concludedCount = progExecs.filter(e => e.status === 'CONCLUIDA').length;
+            const pendingChapas = Math.max(0, prog.quantidade_vezes - concludedCount);
+            
+            const tSecs = hhmmssToSeconds(prog.tempo_previsto);
+            const rem = pendingChapas * tSecs;
+            hoursByMachine[mName].remSecs += rem;
+            hoursByMachine[mName].progCount += 1;
+            totalGlobalRem += rem;
+            
+            // Separar terceirizados
+            if (prog.tipo_execucao === 'TERCEIRIZADA') {
+                if (!hoursByMachine['TERCEIRIZADOS']) {
+                    hoursByMachine['TERCEIRIZADOS'] = { remSecs: 0, progCount: 0 };
+                }
+                hoursByMachine['TERCEIRIZADOS'].remSecs += rem;
+                hoursByMachine['TERCEIRIZADOS'].progCount += 1;
+            }
+        });
+        
+        return { byMachine: hoursByMachine, totalGlobalRem };
+    }, [filteredProgramas, execucoes]);
+
+    const handleExportExcel = () => {
+        try {
+            const dataToExport = filteredProgramas.map(prog => {
+                const progExecs = execucoes[prog.id] || [];
+                const concludedCount = progExecs.filter(e => e.status === 'CONCLUIDA').length;
+                const tempoPrev = formatSeconds(prog.quantidade_vezes * hhmmssToSeconds(prog.tempo_previsto));
+                
+                let tempoExecutadoTotal = 0;
+                progExecs.forEach(e => {
+                    if (e.status === 'CONCLUIDA') {
+                        tempoExecutadoTotal += e.tempo_realizado_segundos || 0;
+                    }
+                });
+
+                return {
+                    "ID": prog.id,
+                    "Status": prog.status,
+                    "Programa": prog.nome_programa,
+                    "Data Liberação": prog.created_at ? new Date(prog.created_at).toLocaleDateString('pt-BR') : '',
+                    "Equipamento": prog.maquina_nome || `Máquina ${prog.maquina_id}`,
+                    "Material": prog.tipo_material,
+                    "Chapas Concluídas": concludedCount,
+                    "Total Chapas": prog.quantidade_vezes,
+                    "Tempo Previsto (Lote)": tempoPrev,
+                    "Tempo Realizado (Lote)": formatSeconds(tempoExecutadoTotal),
+                    "Criado Por": prog.criado_por
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "PCP");
+            XLSX.writeFile(workbook, `Relatorio_PCP_${new Date().toISOString().slice(0,10)}.xlsx`);
+            toast.success("Excel gerado com sucesso!");
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao gerar Excel.");
+        }
+    };
+
+    const handleExportPDF = () => {
+        try {
+            const doc = new jsPDF('landscape');
+            
+            // Header MetalFisa
+            doc.setFillColor(30, 58, 95);
+            doc.rect(14, 10, 42, 24, 'F');
+            doc.addImage(logoBase64, 'PNG', 16, 12, 14, 14);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('METALFISA', 32, 21);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6);
+            doc.text('Metalúrgica Ltda', 32, 25.5);
+            
+            doc.setFontSize(16);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Relatório de Controle de Execução (PCP)', 60, 20);
+            
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, 60, 26);
+            
+            if (selectedMaquinaId !== 'todas') {
+                const maq = maquinas.find(m => String(m.id) === String(selectedMaquinaId));
+                if (maq) doc.text(`Máquina: ${maq.nome}`, 60, 31);
+            }
+            
+            doc.text(`Data Base: ${new Date().toLocaleDateString('pt-BR')}`, doc.internal.pageSize.getWidth() - 14, 20, { align: 'right' });
+            
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, 38, doc.internal.pageSize.getWidth() - 14, 38);
+            
+            const tableColumn = ["ID", "Status", "Programa", "Data Lib.", "Máquina", "Material", "Prev. Chapas", "Tempo Previsto", "Tempo Executado"];
+            const tableRows = [];
+            
+            filteredProgramas.forEach(prog => {
+                const progExecs = execucoes[prog.id] || [];
+                const concludedCount = progExecs.filter(e => e.status === 'CONCLUIDA').length;
+                const tempoPrev = formatSeconds(prog.quantidade_vezes * hhmmssToSeconds(prog.tempo_previsto));
+                
+                let tempoExecutadoTotal = 0;
+                progExecs.forEach(e => {
+                    if (e.status === 'CONCLUIDA') {
+                        tempoExecutadoTotal += e.tempo_realizado_segundos || 0;
+                    }
+                });
+
+                tableRows.push([
+                    `#${prog.id}`,
+                    prog.status,
+                    prog.nome_programa,
+                    prog.created_at ? new Date(prog.created_at).toLocaleDateString('pt-BR') : '',
+                    prog.maquina_nome || `Máquina ${prog.maquina_id}`,
+                    prog.tipo_material,
+                    `${concludedCount} / ${prog.quantidade_vezes}`,
+                    tempoPrev,
+                    formatSeconds(tempoExecutadoTotal)
+                ]);
+            });
+            
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: 42,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [30, 58, 95] } 
+            });
+            
+            doc.save(`Relatorio_PCP_${new Date().toISOString().slice(0,10)}.pdf`);
+            toast.success("PDF gerado com sucesso!");
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao gerar PDF.");
+        }
+    };
+
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="p-6 max-w-[1600px] mx-auto space-y-6">
             
             {/* Header com estilo moderno */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 relative overflow-hidden">
@@ -572,11 +753,56 @@ export default function ControleExecucao() {
                         {/* Botão Recarregar */}
                         <button
                             onClick={() => loadProgramasMaquina(selectedMaquinaId)}
-                            className="flex items-center justify-center gap-1.5 bg-slate-100 text-slate-700 px-4 py-3 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors border border-slate-200 w-full lg:w-auto shrink-0"
+                            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors active:scale-95 flex items-center justify-center"
+                            title="Recarregar Dados"
                         >
-                            <RefreshCw size={14} className={loadingProgramas ? 'animate-spin' : ''} /> Atualizar
+                            <RefreshCw size={16} />
                         </button>
+                        
+                        {/* Botões de Exportação */}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleExportPDF}
+                                className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors active:scale-95 flex items-center justify-center"
+                                title="Exportar para PDF"
+                            >
+                                <FileText size={16} />
+                            </button>
+                            <button
+                                onClick={handleExportExcel}
+                                className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-xl transition-colors active:scale-95 flex items-center justify-center"
+                                title="Exportar para Excel"
+                            >
+                                <Table size={16} />
+                            </button>
+                        </div>
                     </div>
+
+                    {/* Resumo de Horas a Executar */}
+                    {!loadingProgramas && filteredProgramas.length > 0 && (
+                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex gap-4 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+                            <div className="flex-shrink-0 flex items-center justify-center bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-3">
+                                <div className="text-center">
+                                    <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-0.5">Total Geral Restante</div>
+                                    <div className="text-xl font-black text-indigo-700">{formatSeconds(hoursToExecuteSummary.totalGlobalRem)}</div>
+                                </div>
+                            </div>
+                            
+                            {Object.keys(hoursToExecuteSummary.byMachine).length > 0 && (
+                                <div className="w-px bg-slate-200 mx-1 flex-shrink-0"></div>
+                            )}
+                            
+                            {Object.entries(hoursToExecuteSummary.byMachine).map(([mName, data]) => (
+                                <div key={mName} className="flex-shrink-0 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-xl px-5 py-3">
+                                    <div className="text-center">
+                                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">{mName}</div>
+                                        <div className="text-lg font-black text-slate-800">{formatSeconds(data.remSecs)}</div>
+                                        <div className="text-[9px] text-slate-400 font-semibold mt-0.5">{data.progCount} {data.progCount === 1 ? 'programa' : 'programas'}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Tabela de Programas */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -589,21 +815,21 @@ export default function ControleExecucao() {
                                 Nenhum programa liberado localizado para os filtros selecionados.
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                                            <th className="px-5 py-4 w-12 text-center">ID</th>
-                                            <th className="px-5 py-4 w-16 text-center" title="Sequência/Prioridade de Execução">Seq.</th>
-                                            <th className="px-5 py-4 w-28 text-center">Status</th>
-                                            <th className="px-5 py-4">Programa CNC</th>
-                                            <th className="px-5 py-4">Equipamento</th>
-                                            <th className="px-5 py-4">Material</th>
-                                            <th className="px-5 py-4 w-16 text-center">Turno</th>
-                                            <th className="px-5 py-4">Progresso</th>
-                                            <th className="px-5 py-4">Previsão Lote</th>
-                                            <th className="px-5 py-4">Assinatura / Controle</th>
-                                            <th className="px-5 py-4 w-32 text-center">Ações</th>
+                            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] scrollbar-thin scrollbar-thumb-slate-200">
+                                <table className="w-full text-left border-collapse text-xs relative">
+                                    <thead className="sticky top-0 z-10 shadow-sm">
+                                        <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                                            <th className="px-5 py-4 w-12 text-center bg-slate-50 border-b border-slate-200">ID</th>
+                                            <th className="px-5 py-4 w-16 text-center bg-slate-50 border-b border-slate-200" title="Sequência/Prioridade de Execução">Seq.</th>
+                                            <th className="px-5 py-4 w-28 text-center bg-slate-50 border-b border-slate-200">Status</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Programa CNC</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Equipamento</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Material</th>
+                                            <th className="px-5 py-4 w-16 text-center bg-slate-50 border-b border-slate-200">Turno</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Progresso</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Previsão Lote</th>
+                                            <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Assinatura / Controle</th>
+                                            <th className="px-5 py-4 w-32 text-center bg-slate-50 border-b border-slate-200">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -613,6 +839,27 @@ export default function ControleExecucao() {
                                             
                                             // Correção do Cálculo da Previsão de Lote (Sem o fator extra de 60x multiplicativo)
                                             const tempoPrevTotal = formatSeconds(prog.quantidade_vezes * hhmmssToSeconds(prog.tempo_previsto));
+                                            
+                                            // Calcula a separação de Inteira vs Retalho
+                                            let countInteira = 0;
+                                            let countRetalho = 0;
+                                            try {
+                                                const chapas = typeof prog.chapas_planejadas === 'string' 
+                                                    ? JSON.parse(prog.chapas_planejadas) 
+                                                    : (prog.chapas_planejadas || []);
+                                                if (Array.isArray(chapas) && chapas.length > 0) {
+                                                    chapas.forEach(ch => {
+                                                        const tipo = (ch.tipo || 'inteira').toLowerCase();
+                                                        if (tipo === 'retalho') countRetalho++;
+                                                        else countInteira++;
+                                                    });
+                                                }
+                                            } catch(e) {}
+                                            
+                                            // Fallback se não tiver detalhes de planejamento
+                                            if (countInteira === 0 && countRetalho === 0) {
+                                                countInteira = prog.quantidade_vezes;
+                                            }
                                             
                                             return (
                                                 <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors">
@@ -657,9 +904,21 @@ export default function ControleExecucao() {
                                                     <td className="px-5 py-4 text-slate-600 font-medium">{prog.tipo_material}</td>
                                                     <td className="px-5 py-4 text-center font-bold text-slate-600 bg-slate-50/50">T{prog.turno_previsao}</td>
                                                     <td className="px-5 py-4 font-bold text-slate-700">
-                                                        <div className="flex flex-col gap-1 w-24">
+                                                        <div className="flex flex-col gap-1 w-32">
                                                             <span>{concludedCount} / {prog.quantidade_vezes} chapas</span>
-                                                            <div className="w-full bg-slate-100 rounded-full h-1">
+                                                            <div className="flex gap-1.5 text-[9px] font-semibold flex-wrap">
+                                                                {countInteira > 0 && (
+                                                                    <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                                                        {countInteira} Inteira{countInteira > 1 ? 's' : ''}
+                                                                    </span>
+                                                                )}
+                                                                {countRetalho > 0 && (
+                                                                    <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                                                                        {countRetalho} Retalho{countRetalho > 1 ? 's' : ''}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="w-full bg-slate-100 rounded-full h-1 mt-0.5">
                                                                 <div 
                                                                     className="bg-indigo-600 h-1 rounded-full transition-all duration-300"
                                                                     style={{ width: `${Math.min(100, Math.round((concludedCount / prog.quantidade_vezes) * 100))}%` }}
@@ -759,7 +1018,7 @@ export default function ControleExecucao() {
                                     {stats.eficienciaGeral}%
                                 </span>
                             </div>
-                            <span className="text-[10px] text-slate-500 mt-1 font-semibold">PCP Previsto / Bruto</span>
+                            <span className="text-[10px] text-slate-500 mt-1 font-semibold">Programado / Exec. (Bruto)</span>
                         </div>
                         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm col-span-2 lg:col-span-1">
                             <span className="text-slate-400 text-[10px] font-bold uppercase flex items-center gap-0.5">
@@ -817,6 +1076,26 @@ export default function ControleExecucao() {
                                 <option value="3">Turno 3</option>
                                 <option value="4">Turno 4</option>
                             </select>
+
+                            {/* Filtro Terceirizado */}
+                            <select
+                                value={relFilterTerceirizado}
+                                onChange={(e) => setRelFilterTerceirizado(e.target.value)}
+                                className="text-xs border border-slate-300 rounded-lg p-2 bg-white"
+                            >
+                                <option value="TODOS">Todas as Execuções</option>
+                                <option value="INTERNA">Apenas Interna</option>
+                                <option value="TERCEIRIZADA">Apenas Terceirizada</option>
+                            </select>
+
+                            {/* Filtro Data Planejada */}
+                            <input
+                                type="date"
+                                value={relFilterDataPlanejada}
+                                onChange={(e) => setRelFilterDataPlanejada(e.target.value)}
+                                className="text-xs border border-slate-300 rounded-lg p-2 bg-white outline-none focus:ring-1 focus:ring-indigo-500"
+                                title="Filtrar por Data Planejada"
+                            />
                         </div>
 
                         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
@@ -853,9 +1132,10 @@ export default function ControleExecucao() {
                                         <th className="p-4">Programa</th>
                                         <th className="p-4 text-center">Turno</th>
                                         <th className="p-4 text-center">Chapas Concluídas</th>
-                                        <th className="p-4 text-center">Tempo Previsto</th>
-                                        <th className="p-4 text-center">Tempo Realizado</th>
-                                        <th className="p-4 text-center">Tempo Parado</th>
+                                        <th className="p-4 text-center">Tempo Programado</th>
+                                        <th className="p-4 text-center">T. Executado (Bruto)</th>
+                                        <th className="p-4 text-center">T. Executado (Líquido)</th>
+                                        <th className="p-4 text-center">Tempo de Parada</th>
                                         <th className="p-4 text-center">Ef. Bruta</th>
                                         <th className="p-4 text-center">Ef. Líquida</th>
                                         <th className="p-4 text-center">Status</th>
@@ -875,6 +1155,7 @@ export default function ControleExecucao() {
                                             </td>
                                             <td className="p-4 text-center font-mono font-bold text-slate-700">{row.tempo_previsto_total}</td>
                                             <td className="p-4 text-center font-mono font-bold text-slate-700">{row.tempo_realizado_total}</td>
+                                            <td className="p-4 text-center font-mono font-bold text-indigo-600">{row.tempo_liquido_total}</td>
                                             <td className="p-4 text-center font-mono font-bold text-red-500">{row.tempo_parada_total}</td>
                                             <td className="p-4 text-center">
                                                 <span className={`px-2.5 py-1 rounded-full text-xs font-black inline-block ${
@@ -944,9 +1225,9 @@ export default function ControleExecucao() {
                         </div>
 
                         {/* Corpo do Modal */}
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <div className="flex-1 flex flex-col overflow-hidden p-6 space-y-6">
                             {/* Informativo do Lote */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap gap-6 items-center justify-between text-xs font-semibold">
+                            <div className="shrink-0 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap gap-6 items-center justify-between text-xs font-semibold">
                                 <div>
                                     <span className="text-slate-400 font-bold block uppercase text-[10px]">Operador Logado</span>
                                     <span className="text-sm font-black text-slate-700">{operatorName || 'Operador'}</span>
@@ -971,9 +1252,47 @@ export default function ControleExecucao() {
                             </div>
 
                             {/* Listagem de Chapas Planejadas */}
-                            <div className="space-y-4">
-                                <div className="flex flex-wrap items-center justify-between gap-4">
-                                    <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Chapas do Lote</h4>
+                            <div className="flex-1 flex flex-col space-y-4 overflow-hidden">
+                                <div className="shrink-0 flex flex-wrap items-center justify-between gap-4">
+                                    <div className="flex items-center gap-4">
+                                        <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Chapas do Lote</h4>
+                                        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 p-1.5 rounded-lg">
+                                            <span className="text-[10px] font-bold text-indigo-700 uppercase">Início do Cálculo:</span>
+                                            <input 
+                                                type="datetime-local" 
+                                                className="text-xs border-none bg-white rounded p-1 text-slate-700 font-bold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
+                                                value={apontamentoProg.base_time_calculo ? new Date(new Date(apontamentoProg.base_time_calculo).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
+                                                onChange={async (e) => {
+                                                    const val = e.target.value;
+                                                    try {
+                                                        await api.put(`/pcp/programas/liberados/${apontamentoProg.id}/base-time`, { base_time_calculo: val || null });
+                                                        toast.success("Data base salva!");
+                                                        setApontamentoProg(prev => ({...prev, base_time_calculo: val || null}));
+                                                        // Refresh parent lists
+                                                        setFetchTime(new Date());
+                                                    } catch (err) {
+                                                        toast.error("Erro ao salvar data base.");
+                                                    }
+                                                }}
+                                            />
+                                            {apontamentoProg.base_time_calculo && (
+                                                <button 
+                                                    onClick={async () => {
+                                                        try {
+                                                            await api.put(`/pcp/programas/liberados/${apontamentoProg.id}/base-time`, { base_time_calculo: null });
+                                                            toast.success("Data base limpa!");
+                                                            setApontamentoProg(prev => ({...prev, base_time_calculo: null}));
+                                                            setFetchTime(new Date());
+                                                        } catch (err) {}
+                                                    }}
+                                                    className="text-indigo-400 hover:text-indigo-700 p-1 bg-white rounded shadow-sm"
+                                                    title="Limpar e usar Hora Atual"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                     
                                     <select
                                         value={chapaFilter}
@@ -989,7 +1308,7 @@ export default function ControleExecucao() {
                                     </select>
                                 </div>
                                 
-                                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                                <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
                                     {(() => {
                                         const chapasArray = (() => {
                                             try {
@@ -1039,8 +1358,78 @@ export default function ControleExecucao() {
                                             );
                                         }
 
+                                        // LÓGICA DE PROJEÇÃO DINÂMICA
+                                        let baseRefTime = apontamentoProg.base_time_calculo ? new Date(apontamentoProg.base_time_calculo) : new Date(now);
+                                        let currentCursor = new Date(baseRefTime);
+                                        let hasActiveOrConcluded = false;
+
+                                        // Primeiro passe: encontrar onde o cursor de projeção deve começar
+                                        for (let i = 0; i < chapasArray.length; i++) {
+                                            const chapa = chapasArray[i];
+                                            const chapaCodigo = chapa.codigo || `Chapa ${i + 1}`;
+                                            const exec = progExecs.find(e => e.chapa_numero === chapaCodigo);
+                                            
+                                            if (exec) {
+                                                hasActiveOrConcluded = true;
+                                                if (exec.status === 'CONCLUIDA') {
+                                                    currentCursor = new Date(exec.hora_fim);
+                                                } else if (exec.status === 'EM_ANDAMENTO') {
+                                                    const start = new Date(exec.hora_inicio);
+                                                    const tempoPrevistoSecs = hhmmssToSeconds(chapa.tempo || apontamentoProg.tempo_previsto || '00:00:00');
+                                                    currentCursor = addWorkingTime(start, tempoPrevistoSecs, turnos);
+                                                    if (currentCursor < baseRefTime) currentCursor = new Date(baseRefTime);
+                                                }
+                                            }
+                                        }
+
+                                        if (!hasActiveOrConcluded) {
+                                            currentCursor = new Date(baseRefTime);
+                                        }
+
+                                        currentCursor = getNextWorkingTime(currentCursor, turnos);
+
+                                        // Segundo passe: Calcular projeções para cada chapa
+                                        const projArray = chapasArray.map((chapa, index) => {
+                                            const chapaCodigo = chapa.codigo || `Chapa ${index + 1}`;
+                                            const exec = progExecs.find(e => e.chapa_numero === chapaCodigo);
+                                            const tempoPrevistoSecs = hhmmssToSeconds(chapa.tempo || apontamentoProg.tempo_previsto || '00:00:00');
+                                            
+                                            let projStart, projEnd;
+                                            
+                                            if (exec) {
+                                                if (exec.status === 'CONCLUIDA') {
+                                                    projStart = new Date(exec.hora_inicio);
+                                                    projEnd = new Date(exec.hora_fim);
+                                                } else if (exec.status === 'EM_ANDAMENTO') {
+                                                    projStart = new Date(exec.hora_inicio);
+                                                    projEnd = addWorkingTime(projStart, tempoPrevistoSecs, turnos);
+                                                    if (projEnd < baseRefTime) projEnd = new Date(baseRefTime);
+                                                    currentCursor = new Date(projEnd);
+                                                }
+                                            } else {
+                                                projStart = new Date(currentCursor);
+                                                projEnd = addWorkingTime(projStart, tempoPrevistoSecs, turnos);
+                                                currentCursor = new Date(projEnd);
+                                            }
+
+                                            const turnoAssigned = getTurnoForTime(projEnd, turnos);
+                                            
+                                            // Atualiza cursor caso exista quebra manual
+                                            if (chapa.forcar_quebra_turno) {
+                                                currentCursor = jumpToNextShift(currentCursor, turnos);
+                                            }
+
+                                            return {
+                                                ...chapa,
+                                                projStart,
+                                                projEnd,
+                                                turnoAssigned
+                                            };
+                                        });
+
                                         return filteredChapasArray.map((chapa) => {
-                                            const index = chapasArray.indexOf(chapa);
+                                            const index = chapasArray.findIndex(c => c.codigo === chapa.codigo);
+                                            const projData = projArray[index];
                                             const chapaCodigo = chapa.codigo || `Chapa ${index + 1}`;
                                             const tempoPrevistoChapa = chapa.tempo || apontamentoProg.tempo_previsto || '00:00:00';
                                             
@@ -1064,7 +1453,16 @@ export default function ControleExecucao() {
                                                             Concluído
                                                         </span>
                                                     );
-                                                    tempoGastoText = formatSeconds(exec.tempo_realizado_segundos);
+                                                    tempoGastoText = (
+                                                        <div className="flex flex-col font-mono text-[10px]">
+                                                            <span className="text-slate-500 font-bold">
+                                                                Previsto: {tempoPrevistoChapa}
+                                                            </span>
+                                                            <span className="text-xs font-black text-green-600 mt-0.5">
+                                                                Real: {formatSeconds(exec.tempo_realizado_segundos)}
+                                                            </span>
+                                                        </div>
+                                                    );
                                                 } else if (exec.status === 'EM_ANDAMENTO') {
                                                     if (paradaAtiva) {
                                                         chapaStatus = 'PARADA';
@@ -1082,7 +1480,7 @@ export default function ControleExecucao() {
                                                         );
                                                     }
 
-                                                    const inicio = new Date(exec.hora_inicio);
+                                                    const inicio = parseLocal(exec.hora_inicio);
                                                     const diffSecs = Math.max(0, Math.floor((now - inicio) / 1000));
                                                     
                                                     const paradasConcluidas = progParadas.filter(p => p.chapa_numero === chapaCodigo && p.status === 'CONCLUIDA');
@@ -1090,7 +1488,7 @@ export default function ControleExecucao() {
 
                                                     let tempoParadaAtiva = 0;
                                                     if (paradaAtiva) {
-                                                        const paradaInicio = new Date(paradaAtiva.data_inicio);
+                                                        const paradaInicio = parseLocal(paradaAtiva.data_inicio);
                                                         tempoParadaAtiva = Math.max(0, Math.floor((now - paradaInicio) / 1000));
                                                     }
 
@@ -1098,16 +1496,19 @@ export default function ControleExecucao() {
 
                                                     tempoGastoText = (
                                                         <div className="flex flex-col font-mono text-[10px]">
-                                                            <span className="text-slate-500">
-                                                                Bruto: {formatSeconds(diffSecs)}
+                                                            <span className="text-slate-500 font-bold">
+                                                                Previsto: {tempoPrevistoChapa}
+                                                            </span>
+                                                            <span className="text-xs font-black text-indigo-600 mt-0.5">
+                                                                Líquido: {formatSeconds(tempoLiquido)}
                                                             </span>
                                                             {(tempoParadoConcluido + tempoParadaAtiva) > 0 && (
-                                                                <span className="text-red-500">
-                                                                    Pausa: -{formatSeconds(tempoParadoConcluido + tempoParadaAtiva)}
+                                                                <span className="text-red-500 text-[9px] mt-0.5">
+                                                                    Pausado: {formatSeconds(tempoParadoConcluido + tempoParadaAtiva)}
                                                                 </span>
                                                             )}
-                                                            <span className="text-xs font-black text-indigo-600">
-                                                                Líq: {formatSeconds(tempoLiquido)}
+                                                            <span className="text-slate-400 text-[9px] mt-0.5">
+                                                                Bruto: {formatSeconds(diffSecs)}
                                                             </span>
                                                         </div>
                                                     );
@@ -1137,9 +1538,18 @@ export default function ControleExecucao() {
                                                             {exec && (
                                                                 <div className="text-[10px] text-slate-500 mt-1.5 space-y-0.5 border-t border-slate-100 pt-1 w-48">
                                                                     <div>Operador: <span className="font-semibold text-slate-700">{exec.usuario_apontamento}</span></div>
-                                                                    <div>Início: <span className="font-mono">{new Date(exec.hora_inicio).toLocaleString('pt-BR')}</span></div>
+                                                                    <div>Início: <span className="font-mono">{parseLocal(exec.hora_inicio).toLocaleString('pt-BR')}</span></div>
                                                                     {exec.hora_fim && (
-                                                                        <div>Fim: <span className="font-mono">{new Date(exec.hora_fim).toLocaleString('pt-BR')}</span></div>
+                                                                        <div>Fim: <span className="font-mono">{parseLocal(exec.hora_fim).toLocaleString('pt-BR')}</span></div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {!exec && (
+                                                                <div className="text-[10px] text-indigo-500 mt-1.5 space-y-0.5 border-t border-indigo-100 pt-1 w-48 font-mono">
+                                                                    <div>Proj. Início: <span>{projData.projStart.toLocaleTimeString('pt-BR').substring(0,5)}</span></div>
+                                                                    <div>Proj. Fim: <span>{projData.projEnd.toLocaleTimeString('pt-BR').substring(0,5)}</span></div>
+                                                                    {projData.turnoAssigned && (
+                                                                        <div className="text-indigo-600 font-bold">Turno: {projData.turnoAssigned.nome}</div>
                                                                     )}
                                                                 </div>
                                                             )}
@@ -1150,12 +1560,23 @@ export default function ControleExecucao() {
                                                         {statusBadge}
                                                     </div>
 
-                                                    <div className="text-slate-700 text-xs font-semibold">
-                                                        <div className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Tempo Gasto</div>
-                                                        <div className="font-mono text-slate-800">{tempoGastoText}</div>
+                                                    <div className="text-slate-700 text-xs font-semibold flex flex-col items-end gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Tempo Gasto</div>
+                                                        </div>
+                                                        <div className="font-mono text-slate-800 text-right">{tempoGastoText}</div>
                                                     </div>
 
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={!!chapa.forcar_quebra_turno}
+                                                                onChange={() => handleToggleQuebraTurno(apontamentoProg.id, index, !!chapa.forcar_quebra_turno)}
+                                                                className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                                            />
+                                                            <span className="text-[9px] font-bold text-slate-500 group-hover:text-indigo-600 transition-colors">Última do Turno</span>
+                                                        </label>
                                                         {chapaStatus === 'PENDENTE' && (
                                                             <button
                                                                 onClick={() => handleStartChapa(apontamentoProg.id, chapaCodigo)}

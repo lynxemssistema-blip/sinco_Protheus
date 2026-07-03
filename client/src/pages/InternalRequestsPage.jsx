@@ -120,7 +120,7 @@ export default function InternalRequestsPage() {
             {/* Print Header */}
             <div className="hidden print:block mb-8">
                 <h2 className="text-2xl font-bold">Relatório de Requisições Internas (SD3)</h2>
-                <p className="text-sm text-gray-500">Gerado em: {new Date().toLocaleString()}</p>
+                <p className="text-sm text-gray-500">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
                 <div className="mt-2 text-xs border-t pt-2">
                     Filtros: {Object.entries(filters).filter(([k, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ') || 'Nenhum'}
                 </div>
