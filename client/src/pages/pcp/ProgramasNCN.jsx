@@ -3,7 +3,7 @@ import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
     Plus, X, Trash2, Calendar, Clock, User, FileText, 
-    Factory, AlertCircle, RefreshCw, Search, Edit, GripVertical, Table, Printer, Settings, Info
+    Factory, AlertCircle, RefreshCw, Search, Edit, Copy, GripVertical, Table, Printer, Settings, Info
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
@@ -46,6 +46,7 @@ export default function ProgramasNCN() {
     // State de filtros
     const [filterMaquinaId, setFilterMaquinaId] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
+    const [highlightedProgId, setHighlightedProgId] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showConcluidos, setShowConcluidos] = useState(false);
     const [draggedIndex, setDraggedIndex] = useState(null);
@@ -235,7 +236,11 @@ export default function ProgramasNCN() {
                 await api.put(`/pcp/programas/${editingProgId}`, payload);
                 toast.success("Programa CNC atualizado com sucesso!");
             } else {
-                await api.post('/pcp/programas', payload);
+                const res = await api.post('/pcp/programas', payload);
+                if (res.data && res.data.id) {
+                    setHighlightedProgId(res.data.id);
+                    setTimeout(() => setHighlightedProgId(null), 6000);
+                }
                 toast.success("Programa CNC liberado com sucesso!");
             }
 
@@ -312,6 +317,60 @@ export default function ProgramasNCN() {
         });
         setEditingProgId(prog.id);
         setEditingProgram(prog);
+        setShowFormProg(true);
+    };
+
+    // Duplicar programa
+    const handleDuplicateProgram = (prog) => {
+        let chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }];
+        if (prog.chapas_planejadas) {
+            try {
+                const parsed = typeof prog.chapas_planejadas === 'string'
+                    ? JSON.parse(prog.chapas_planejadas)
+                    : prog.chapas_planejadas;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const groupedMap = new Map();
+                    parsed.forEach(ch => {
+                        const rawCode = typeof ch === 'string' ? ch : (ch.codigo || '');
+                        const tempo = typeof ch === 'string' ? '00:00:00' : (ch.tempo || '00:00:00');
+                        const tipo = typeof ch === 'string' ? 'inteira' : (ch.tipo || 'inteira');
+
+                        const match = rawCode.match(/^(.*?)\s*\(\d+\)$/);
+                        const baseCode = match ? match[1].trim() : rawCode.trim();
+
+                        const key = `${baseCode}|${tempo}|${tipo}`;
+                        if (groupedMap.has(key)) {
+                            groupedMap.get(key).repeticoes += 1;
+                        } else {
+                            groupedMap.set(key, { codigo: baseCode, repeticoes: 1, tempo, tipo });
+                        }
+                    });
+                    chapas = Array.from(groupedMap.values());
+                }
+            } catch (e) {
+                chapas = [{ codigo: '', repeticoes: 1, tempo: '00:00:00', tipo: 'inteira' }];
+            }
+        }
+        
+        setProgForm({
+            maquina_id: prog.maquina_id || '',
+            nome_programa: '', 
+            data_criacao: new Date().toISOString().substring(0, 10),
+            tempo_previsto: prog.tempo_previsto || '00:00:00',
+            tipo_material: prog.tipo_material || '',
+            quantidade_vezes: prog.quantidade_vezes || 1,
+            chapas_planejadas: chapas,
+            criado_por: user?.NomeCompleto || user?.nome || '', 
+            turno_previsao: prog.turno_previsao || 1,
+            ordem_execucao: -1,
+            recebedor_nome: '', 
+            recebido_data: '', 
+            recebido_hora: '', 
+            notas_instrucoes: prog.notas_instrucoes || ''
+        });
+        
+        setEditingProgId(null);
+        setEditingProgram(null);
         setShowFormProg(true);
     };
 
@@ -761,7 +820,7 @@ export default function ProgramasNCN() {
     }, [editingProgId, editingProgram]);
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="p-6 w-full space-y-6">
             <style>{`
                 @keyframes fadeIn {
                     from { opacity: 0; }
@@ -954,7 +1013,9 @@ export default function ProgramasNCN() {
                                         onDragOver={(e) => handleDragOver(e, idx)}
                                         onDrop={(e) => handleDrop(e, idx)}
                                         onDragEnd={() => setDraggedIndex(null)}
-                                        className={`hover:bg-slate-50/50 transition-colors ${
+                                        className={`hover:bg-slate-50/50 transition-colors duration-1000 ${
+                                            highlightedProgId === prog.id ? 'bg-yellow-100/80 border-l-4 border-yellow-500' : ''
+                                        } ${
                                             filterMaquinaId !== 'all' ? 'cursor-grab active:cursor-grabbing' : ''
                                         } ${draggedIndex === idx ? 'opacity-40 bg-slate-100 border-dashed border-indigo-300' : ''}`}
                                     >
@@ -1116,6 +1177,13 @@ export default function ProgramasNCN() {
                                                     title="Imprimir Ficha Técnica do Programa"
                                                 >
                                                     <Printer size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDuplicateProgram(prog)}
+                                                    className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded-xl transition-all"
+                                                    title="Duplicar programa"
+                                                >
+                                                    <Copy size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleEditProgram(prog)}

@@ -173,27 +173,38 @@ export default function ControleExecucao() {
             const res = await api.get(`/pcp/programas/maquina/${maquinaId}`);
             setProgramas(res.data);
             
-            // Carregar execuções e paradas para cada programa
+            // Carregar todas execuções e paradas de uma vez (Otimização N+1)
+            const [todasExecsRes, todasParadasRes] = await Promise.all([
+                api.get(`/pcp/programas/todas/execucoes`).catch(e => ({ data: [] })),
+                api.get(`/pcp/programas/todas/paradas`).catch(e => ({ data: [] }))
+            ]);
+
             const execsObj = {};
             const paradasObj = {};
-            
-            await Promise.all(res.data.map(async (prog) => {
-                try {
-                    const execRes = await api.get(`/pcp/programas/${prog.id}/execucoes`);
-                    execsObj[prog.id] = execRes.data;
-                } catch (e) {
-                    console.error(`Erro ao carregar execuções:`, e);
-                    execsObj[prog.id] = [];
-                }
 
-                try {
-                    const paradasRes = await api.get(`/pcp/programas/${prog.id}/paradas`);
-                    paradasObj[prog.id] = paradasRes.data;
-                } catch (e) {
-                    console.error(`Erro ao carregar paradas:`, e);
-                    paradasObj[prog.id] = [];
-                }
-            }));
+            // Inicializar arrays para os programas listados
+            res.data.forEach(prog => {
+                execsObj[prog.id] = [];
+                paradasObj[prog.id] = [];
+            });
+
+            // Agrupar execuções por programa_id
+            if (todasExecsRes.data && Array.isArray(todasExecsRes.data)) {
+                todasExecsRes.data.forEach(exec => {
+                    if (execsObj[exec.programa_id]) {
+                        execsObj[exec.programa_id].push(exec);
+                    }
+                });
+            }
+
+            // Agrupar paradas por programa_id
+            if (todasParadasRes.data && Array.isArray(todasParadasRes.data)) {
+                todasParadasRes.data.forEach(parada => {
+                    if (paradasObj[parada.programa_id]) {
+                        paradasObj[parada.programa_id].push(parada);
+                    }
+                });
+            }
             
             setExecucoes(execsObj);
             setParadas(paradasObj);

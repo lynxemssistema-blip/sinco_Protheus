@@ -554,6 +554,39 @@ router.post('/:id/execucoes/cancelar', async (req, res) => {
     }
 });
 
+// 5.9 Listar todas as execuções e paradas (Otimização N+1)
+// GET /api/pcp/programas/todas/execucoes
+router.get('/todas/execucoes', async (req, res) => {
+    try {
+        const [execs] = await mysqlPool.query(`
+            SELECT *,
+                   TIMESTAMPDIFF(SECOND, hora_inicio, CURRENT_TIMESTAMP) AS tempo_decorrido_segundos
+            FROM pcp_programas_execucoes 
+            ORDER BY programa_id ASC, chapa_numero ASC, id ASC
+        `);
+        res.json(execs);
+    } catch (err) {
+        console.error("Erro ao obter todas execuções:", err);
+        res.status(500).json({ error: "Erro interno ao obter todas execuções." });
+    }
+});
+
+// GET /api/pcp/programas/todas/paradas
+router.get('/todas/paradas', async (req, res) => {
+    try {
+        const [paradas] = await mysqlPool.query(`
+            SELECT *,
+                   TIMESTAMPDIFF(SECOND, data_inicio, CURRENT_TIMESTAMP) AS tempo_decorrido_segundos
+            FROM pcp_programas_paradas
+            ORDER BY programa_id ASC, id ASC
+        `);
+        res.json(paradas);
+    } catch (err) {
+        console.error("Erro ao obter todas paradas:", err);
+        res.status(500).json({ error: "Erro interno ao obter todas paradas." });
+    }
+});
+
 // 6. Listar todas as execuções de um programa
 // GET /api/pcp/programas/:id/execucoes
 router.get('/:id/execucoes', async (req, res) => {
