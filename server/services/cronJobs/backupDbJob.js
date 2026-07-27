@@ -24,9 +24,9 @@ async function runBackup() {
             // Determine target directory based on OS
             let targetDir;
             if (process.platform === 'win32') {
-                targetDir = '\\\\192.168.1.253\\Estrutura Lynx\\021-RNC';
+                targetDir = '\\\\192.168.1.253\\Estrutura Lynx\\020-BACKUP_BD';
             } else {
-                targetDir = '/mnt/lynx/021-RNC';
+                targetDir = '/mnt/lynx/020-BACKUP_BD';
             }
 
             // Ensure directory exists or is accessible
