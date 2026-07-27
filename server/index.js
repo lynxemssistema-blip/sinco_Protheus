@@ -530,6 +530,9 @@ cron.schedule('0 6,15 * * *', async () => {
 const { init: startSgqAlertsJob } = require('./services/cronJobs/sgqAlertsJob');
 startSgqAlertsJob();
 
+const { startBackupCron } = require('./services/cronJobs/backupDbJob');
+startBackupCron();
+
 const { startFaturamentoCron } = require('./services/faturamentoCron');
 startFaturamentoCron();
 

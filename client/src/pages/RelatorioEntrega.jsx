@@ -5,13 +5,20 @@ import {
     Printer, ChevronDown, ChevronUp, Bot, Settings,
     Factory, Truck, BarChart3, HelpCircle, Wrench, Star,
     Building2, Globe, Cpu, RefreshCcw, AlertTriangle, Mail,
-    PenLine, KeyRound, Eye, EyeOff, XCircle, BadgeCheck, Lock
+    PenLine, KeyRound, Eye, EyeOff, XCircle, BadgeCheck, Lock, Sparkles
 } from 'lucide-react';
 import api from '../services/api';
 
 // ─── Constantes de dados ────────────────────────────────────────────────────
 const DELIVERY_DATE = 'Julho de 2026';
 const SYSTEM_VERSION = 'v2026.1';
+
+const NOVIDADES_REVISOES = [
+    { label: 'Relatório de Liberações de Engenharia', status: 'Revisado', desc: 'Layout otimizado com scroll interno nas tabelas (sticky headers) e integração da exportação para Excel.', date: '27/07/2026', color: 'blue' },
+    { label: 'Exportação PDF Padronizada', status: 'Inclusão', desc: 'Estrutura centralizada de PDF com a logo da Metalfisa, cabeçalho formatado e grid layout padronizado para Engenharia, Estruturas e PCP.', date: '27/07/2026', color: 'indigo' },
+    { label: 'Correção de API Tracking', status: 'Resolvido', desc: 'Correção do erro interno (500) no comparativo de Planejado vs. Apontado na comunicação com PostgreSQL.', date: '27/07/2026', color: 'emerald' },
+    { label: 'Ajuste de UI/UX em Tabelas', status: 'Revisado', desc: 'Remoção de rolagem dupla (double-scroll) e limitação de altura responsiva, garantindo melhor usabilidade.', date: '27/07/2026', color: 'amber' },
+];
 
 const MODULOS = [
     { id: 1, nome: 'Autenticação e Segurança', desc: 'Login JWT, recuperação de senha por WhatsApp/e-mail, auto-cadastro, RBAC por página com 4 ações', icon: Shield, color: 'slate' },
@@ -478,6 +485,29 @@ export default function RelatorioEntrega({ embedded = false }) {
                 </div>
 
                 {/* ═══ MÓDULOS ENTREGUES ═══════════════════════════════════════ */}
+                {/* ✨ ÚLTIMAS INCLUSÕES E REVISÕES ✨ */}
+                <CollapseSection title={`Últimas Inclusões e Revisões (${NOVIDADES_REVISOES.length})`} icon={Sparkles} defaultOpen={true}>
+                    <div className="mt-2 grid sm:grid-cols-2 gap-3">
+                        {NOVIDADES_REVISOES.map(rev => {
+                            const c = getColor(rev.color);
+                            return (
+                                <div key={rev.label} className={`flex flex-col p-4 rounded-xl ring-1 ${c.ring} ${c.bg} transition-all hover:shadow-md`}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-sm ${rev.status === 'Inclusão' ? 'bg-indigo-500' : rev.status === 'Resolvido' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+                                                {rev.status}
+                                            </span>
+                                            <span className="text-xs font-mono text-slate-500 bg-white/50 px-2 py-0.5 rounded-md">{rev.date}</span>
+                                        </div>
+                                    </div>
+                                    <p className={`text-sm font-bold ${c.text}`}>{rev.label}</p>
+                                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">{rev.desc}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </CollapseSection>
+
                 <CollapseSection title={`Módulos Entregues (${MODULOS.length})`} icon={Package} defaultOpen={true}>
                     <div className="mt-2 grid sm:grid-cols-2 gap-3">
                         {MODULOS.map(mod => (
