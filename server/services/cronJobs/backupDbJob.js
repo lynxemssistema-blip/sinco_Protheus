@@ -62,6 +62,15 @@ async function runBackup() {
             exec(cmd, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[BACKUP DB] Erro ao executar mysqldump: ${error.message}`);
+                    // Remove o arquivo de 0KB se o comando falhou
+                    if (fs.existsSync(filePath)) {
+                        try {
+                            fs.unlinkSync(filePath);
+                            console.log(`[BACKUP DB] Arquivo vazio ${fileName} removido após falha.`);
+                        } catch (unlinkErr) {
+                            console.error(`[BACKUP DB] Falha ao remover arquivo vazio: ${unlinkErr.message}`);
+                        }
+                    }
                     return reject(error);
                 }
                 

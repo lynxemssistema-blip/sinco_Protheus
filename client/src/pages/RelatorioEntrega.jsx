@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     FileText, Download, CheckCircle2, Package, Zap, Link2,
     Clock, Shield, Users, Database, Server, GitBranch,
@@ -146,11 +146,36 @@ function ModuloCard({ mod }) {
 
 function CollapseSection({ title, icon: Icon, children, defaultOpen = false }) {
     const [open, setOpen] = useState(defaultOpen);
+
+    // Refs (not state) so the print handlers always read the latest value
+    // without needing to resubscribe — avoids stale closures across re-renders.
+    const openRef = useRef(open);
+    const preprintOpenRef = useRef(open);
+    useEffect(() => { openRef.current = open; }, [open]);
+
+    // Force every section fully open for the duration of printing/PDF export,
+    // regardless of what the user had toggled on screen, then restore it after.
+    useEffect(() => {
+        const handleBeforePrint = () => {
+            preprintOpenRef.current = openRef.current;
+            setOpen(true);
+        };
+        const handleAfterPrint = () => {
+            setOpen(preprintOpenRef.current);
+        };
+        window.addEventListener('beforeprint', handleBeforePrint);
+        window.addEventListener('afterprint', handleAfterPrint);
+        return () => {
+            window.removeEventListener('beforeprint', handleBeforePrint);
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+    }, []);
+
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:shadow-none print:border-slate-300">
             <button
                 onClick={() => setOpen(v => !v)}
-                className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors print:hidden"
+                className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
             >
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-slate-900 rounded-xl flex items-center justify-center">
@@ -158,9 +183,11 @@ function CollapseSection({ title, icon: Icon, children, defaultOpen = false }) {
                     </div>
                     <span className="font-bold text-slate-800">{title}</span>
                 </div>
-                {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                <span className="print:hidden">
+                    {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                </span>
             </button>
-            {/* Print always shows full content */}
+            {/* Print always shows full content, forced open above */}
             <div className={`${open ? 'block' : 'hidden'} print:block px-6 pb-6`}>
                 {children}
             </div>
