@@ -25,11 +25,13 @@ function normalizeFilePath(filePath) {
     if (process.platform !== 'win32') {
         // Primeiro vira tudo barra normal do Linux
         normalized = normalized.replace(/\\/g, '/');
-        // Depois mapeia a raiz do UNC pra /mnt/engenharia/
+        // Depois mapeia a raiz do UNC pra /mnt/
         normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
+        normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Estrutura Lynx\//i, '/mnt/lynx/');
     } else {
         // Se estiver rodando no Windows (Local), mapeia /mnt/ de volta para UNC
         normalized = normalized.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\');
+        normalized = normalized.replace(/^\/mnt\/lynx\//i, '\\\\192.168.1.253\\Estrutura Lynx\\');
         normalized = normalized.replace(/\//g, '\\');
     }
 

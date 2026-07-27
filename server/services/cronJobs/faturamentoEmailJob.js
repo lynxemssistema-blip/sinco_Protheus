@@ -12,6 +12,16 @@ try {
 const runJob = async (isTest = false, testEmail = null) => {
     try {
         console.log(`[Agendador] Iniciando rotina de envio de faturamentos pendentes...`);
+
+        // Obter configurações globais
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (configRows.length && configRows[0].general_config) {
+            const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (configObj.automations?.visao_gerencial_faturamento_active === false && configObj.automations?.visao_gerencial_faturamento_email_active === false) {
+                console.log(`[Agendador] Visão Gerencial Faturamento desativada nas configurações globais (WhatsApp e E-mail). Cancelando job.`);
+                return;
+            }
+        }
         
         // Obter solicitações PENDENTES
         const [sols] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacoes WHERE status = 'Pendente' ORDER BY created_at DESC`);
@@ -67,19 +77,21 @@ const runJob = async (isTest = false, testEmail = null) => {
 
         // Descobrir DESTINATARIOS a partir de app_company_settings (igual no route.js de faturamento)
         let recipientList = [];
-        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
-        if (configRows.length && configRows[0].general_config) {
-            const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-            const emailsConfig = configObj.faturamento_emails;
+        const emailsConfig = configObj.faturamento_emails;
 
-            if (emailsConfig && Array.isArray(emailsConfig) && emailsConfig.length > 0) {
-                const [userRows] = await mysqlPool.query(
-                    `SELECT email, whatsapp FROM usuario WHERE idUsuario IN (?) AND (email IS NOT NULL OR whatsapp IS NOT NULL)`,
-                    [emailsConfig]
-                );
+        if (emailsConfig && Array.isArray(emailsConfig) && emailsConfig.length > 0) {
+            const [userRows] = await mysqlPool.query(
+                `SELECT email, whatsapp FROM usuario WHERE idUsuario IN (?) AND (email IS NOT NULL OR whatsapp IS NOT NULL)`,
+                [emailsConfig]
+            );
+            
+            // E-mail
+            if (configObj.automations?.visao_gerencial_faturamento_email_active !== false) {
                 recipientList = userRows.map(u => u.email).filter(Boolean);
+            }
 
-                // WhatsApp
+            // WhatsApp
+            if (configObj.automations?.visao_gerencial_faturamento_active !== false) {
                 const waNumbers = userRows.map(u => u.whatsapp).filter(Boolean);
                 if (waNumbers.length > 0) {
                     const waText = msgFaturamentoPendente(sols.length);
@@ -90,16 +102,14 @@ const runJob = async (isTest = false, testEmail = null) => {
             }
         }
 
-        // Adiciona e-mail de teste se for manual
         if (isTest && testEmail) {
             recipientList.push(testEmail);
         }
 
-        // Limpa duplicatas
         recipientList = [...new Set(recipientList)];
 
         if (recipientList.length === 0) {
-            console.log(`[Agendador] Ninguém configurado para receber o alerta de Faturamentos. E-mail cancelado.`);
+            console.log(`[Agendador] Ninguém configurado para receber o alerta de Faturamentos ou automação desativada.`);
             return;
         }
 

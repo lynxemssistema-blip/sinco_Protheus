@@ -5,10 +5,11 @@ const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // ===================================================================
 // GET /api/compras/solicitacoes - Listar Solicitações de Compra
+// Suporte a paginação por offset (carregamento em lotes)
 // ===================================================================
 router.get('/solicitacoes', async (req, res) => {
     try {
-        console.log('🔵 [COMPRAS/SOLICITACOES] VERSÃO 2026-01-21 06:38 - CAMPOS CORRIGIDOS');
+        console.log('🔵 [COMPRAS/SOLICITACOES] VERSÃO 2026-07-07 - PAGINAÇÃO POR OFFSET');
         const {
             filial,
             sc_numero,
@@ -19,6 +20,9 @@ router.get('/solicitacoes', async (req, res) => {
             data_de,
             data_ate
         } = req.query;
+
+        const pageSize = parseInt(req.query.page_size) || 500;
+        const offset   = parseInt(req.query.offset) || 0;
 
         const params = [];
         let paramCount = 1;
@@ -77,9 +81,9 @@ router.get('/solicitacoes', async (req, res) => {
             ? `AND ${whereConditions.join(' AND ')}`
             : '';
 
-        // Adicionar LIMIT
-        const limitParam = paramCount;
-        params.push(1000);
+        // Parâmetros de paginação
+        params.push(pageSize); // $N
+        params.push(offset);   // $N+1
 
         const sql = `
         SELECT
@@ -130,11 +134,19 @@ router.get('/solicitacoes', async (req, res) => {
         WHERE (sc1.d_e_l_e_t_ = '' OR sc1.d_e_l_e_t_ = ' ')
         ${whereClause}
         ORDER BY sc1.c1_emissao DESC, sc1.c1_num DESC
-        LIMIT $${limitParam}
+        LIMIT $${paramCount} OFFSET $${paramCount + 1}
         `;
 
         const result = await db.query(sql, params);
-        res.json(result.rows);
+        const rows = result.rows;
+        const hasMore = rows.length === pageSize;
+
+        res.json({
+            data: rows,
+            offset,
+            page_size: pageSize,
+            hasMore
+        });
 
     } catch (err) {
         console.error('Erro ao buscar solicitações de compra:', err);
@@ -433,13 +445,23 @@ router.get('/fluxo-completo', async (req, res) => {
             pc_numero,
             sc_emissao_de,
             sc_emissao_ate,
+            sc_necessidade_de,
+            sc_necessidade_ate,
             pc_emissao_de,
             pc_emissao_ate,
             nf_recebimento_de,
             nf_recebimento_ate,
             tem_nf,
-            comprador
+            comprador,
+            sc_solicitante,
+            cliente,
+            op_numero,
+            limit,
+            offset
         } = req.query;
+
+        const limitVal = parseInt(limit) || 1000;
+        const offsetVal = parseInt(offset) || 0;
 
         const params = [];
         let paramCount = 1;
@@ -478,6 +500,22 @@ router.get('/fluxo-completo', async (req, res) => {
         if (sc_emissao_ate) {
             params.push(sc_emissao_ate.replace(/-/g, ''));
             scWhere.push(`c1.c1_emissao <= $${paramCount++}`);
+        }
+        if (sc_necessidade_de) {
+            params.push(sc_necessidade_de.replace(/-/g, ''));
+            scWhere.push(`c1.c1_datprf >= $${paramCount++}`);
+        }
+        if (sc_necessidade_ate) {
+            params.push(sc_necessidade_ate.replace(/-/g, ''));
+            scWhere.push(`c1.c1_datprf <= $${paramCount++}`);
+        }
+        if (op_numero) {
+            params.push(`%${op_numero}%`);
+            scWhere.push(`c1.c1_op LIKE $${paramCount++}`);
+        }
+        if (sc_solicitante) {
+            params.push(`%${sc_solicitante.toUpperCase()}%`);
+            scWhere.push(`upper(trim(c1.c1_solicit)) LIKE $${paramCount++}`);
         }
 
         const scWhereClause = scWhere.length > 0 ? `AND ${scWhere.join(' AND ')}` : '';
@@ -520,13 +558,21 @@ router.get('/fluxo-completo', async (req, res) => {
             params.push(`%${comprador.toUpperCase()}%`);
             finalWhere.push(`upper(trim(pc.c7_user)) LIKE $${paramCount++}`);
         }
+        if (cliente) {
+            params.push(`%${cliente.toUpperCase()}%`);
+            finalWhere.push(`COALESCE(upper(trim(sa1a.a1_nome)), upper(trim(sa1b.a1_nome))) LIKE $${paramCount++}`);
+        }
 
         const finalWhereClause = finalWhere.length > 0 ? `WHERE ${finalWhere.join(' AND ')}` : '';
 
         const sql = `
 WITH sc AS (
   SELECT
-    c1.c1_filial, c1.c1_num, c1.c1_item, c1.c1_produto, c1.c1_descri, c1.c1_um, c1.c1_quant, c1.c1_emissao, c1.c1_datprf, c1.c1_obs
+    c1.c1_filial, c1.c1_num, c1.c1_item, c1.c1_produto, c1.c1_descri, c1.c1_um, c1.c1_quant, c1.c1_emissao, c1.c1_datprf, c1.c1_obs, 
+    TRIM(c1.c1_solicit) AS sc_solicitante, 
+    c1.c1_pedido AS sc_pedido_origem_raw, 
+    c1.c1_itemped AS sc_pv_item_raw,
+    c1.c1_op AS sc_op_origem_raw
   FROM sc1010 c1
   WHERE (c1.d_e_l_e_t_ = '' OR c1.d_e_l_e_t_ = ' ')
     ${scWhereClause}
@@ -575,6 +621,26 @@ SELECT
   sc.c1_um AS sc_unidade,
   sc.c1_quant AS sc_quantidade,
   sc.c1_obs   AS sc_observacao,
+  sc.sc_solicitante,
+  CASE WHEN TRIM(sc.sc_op_origem_raw) <> '' AND length(TRIM(sc.sc_op_origem_raw)) >= 8 THEN SUBSTRING(TRIM(sc.sc_op_origem_raw), 1, 6) ELSE TRIM(sc.sc_op_origem_raw) END AS sc_op_numero,
+  CASE WHEN TRIM(sc.sc_op_origem_raw) <> '' AND length(TRIM(sc.sc_op_origem_raw)) >= 8 THEN SUBSTRING(TRIM(sc.sc_op_origem_raw), 7, 2) ELSE '' END AS sc_op_item,
+  COALESCE(
+    NULLIF(TRIM(sc.sc_pedido_origem_raw), ''), 
+    NULLIF(TRIM(c2.c2_pedido), ''),
+    CASE 
+      WHEN TRIM(c2.c2_obs) ~ '^[0-9]+' THEN LPAD(SUBSTRING(TRIM(c2.c2_obs) FROM '^[0-9]+'), 6, '0')
+      ELSE ''
+    END
+  ) AS sc_pedido_origem,
+  COALESCE(
+    NULLIF(TRIM(sc.sc_pv_item_raw), ''), 
+    NULLIF(TRIM(c2.c2_itempv), ''),
+    CASE 
+      WHEN NULLIF(TRIM(c2.c2_pedido), '') IS NOT NULL OR (TRIM(c2.c2_obs) ~ '^[0-9]+') THEN '01'
+      ELSE ''
+    END
+  ) AS sc_pv_item,
+  COALESCE(NULLIF(TRIM(sa1a.a1_nome), ''), TRIM(sa1b.a1_nome)) AS cliente_nome,
   CASE WHEN sc.c1_emissao <> '' AND sc.c1_emissao ~ '^[0-9]{8}$' THEN to_date(sc.c1_emissao, 'YYYYMMDD') END AS sc_data_emissao,
   CASE WHEN sc.c1_datprf  <> '' AND sc.c1_datprf ~ '^[0-9]{8}$' THEN to_date(sc.c1_datprf,  'YYYYMMDD') END AS sc_prev_necessidade,
 
@@ -606,16 +672,49 @@ LEFT JOIN pc
  AND pc.c7_itemsc = sc.c1_item
 LEFT JOIN sa2010 sa2
   ON (sa2.d_e_l_e_t_ = '' OR sa2.d_e_l_e_t_ = ' ')
- AND sa2.a2_cod     = pc.c7_fornece
- AND sa2.a2_loja    = pc.c7_loja
+  AND sa2.a2_cod     = pc.c7_fornece
+  AND sa2.a2_loja    = pc.c7_loja
 LEFT JOIN nf
   ON nf.d1_filial = pc.c7_filial
  AND nf.d1_pedido = pc.c7_num
  AND nf.d1_itempc = pc.c7_item
+LEFT JOIN sc2010 c2
+  ON c2.c2_filial = sc.c1_filial
+ AND c2.c2_num = SUBSTRING(TRIM(sc.sc_op_origem_raw), 1, 6)
+ AND c2.c2_item = SUBSTRING(TRIM(sc.sc_op_origem_raw), 7, 2)
+ AND c2.c2_sequen = SUBSTRING(TRIM(sc.sc_op_origem_raw), 9, 3)
+ AND (c2.d_e_l_e_t_ = '' OR c2.d_e_l_e_t_ = ' ')
+LEFT JOIN sc5010 c5a
+  ON c5a.c5_filial = sc.c1_filial
+ AND c5a.c5_num = sc.sc_pedido_origem_raw
+ AND (c5a.d_e_l_e_t_ = '' OR c5a.d_e_l_e_t_ = ' ')
+LEFT JOIN sc5010 c5b
+  ON c5b.c5_filial = sc.c1_filial
+ AND c5b.c5_num = COALESCE(
+       NULLIF(TRIM(c2.c2_pedido), ''),
+       CASE 
+         WHEN TRIM(c2.c2_obs) ~ '^[0-9]+' THEN LPAD(SUBSTRING(TRIM(c2.c2_obs) FROM '^[0-9]+'), 6, '0')
+         ELSE ''
+       END
+     )
+ AND (c5b.d_e_l_e_t_ = '' OR c5b.d_e_l_e_t_ = ' ')
+LEFT JOIN sa1010 sa1a
+  ON sa1a.a1_filial = '  '
+ AND sa1a.a1_cod = c5a.c5_cliente
+ AND sa1a.a1_loja = c5a.c5_lojacli
+ AND (sa1a.d_e_l_e_t_ = '' OR sa1a.d_e_l_e_t_ = ' ')
+LEFT JOIN sa1010 sa1b
+  ON sa1b.a1_filial = '  '
+ AND sa1b.a1_cod = c5b.c5_cliente
+ AND sa1b.a1_loja = c5b.c5_lojacli
+ AND (sa1b.d_e_l_e_t_ = '' OR sa1b.d_e_l_e_t_ = ' ')
 ${finalWhereClause}
 ORDER BY sc.c1_filial, sc.c1_num, sc.c1_item
-LIMIT 1000;
+LIMIT $${paramCount++} OFFSET $${paramCount++};
         `;
+
+        params.push(limitVal);
+        params.push(offsetVal);
 
         const result = await db.query(sql, params);
         res.json(result.rows);

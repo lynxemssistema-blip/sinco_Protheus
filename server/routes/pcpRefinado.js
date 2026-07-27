@@ -52,24 +52,45 @@ router.get('/recursos', async (req, res) => {
         const pgResult = await pgClient.query(pgQuery);
         const protheusRecursos = pgResult.rows;
 
-        // 2. Fetch from MySQL (Local Capacities)
-        const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao FROM app_recursos_capacidade');
-        
+        // 2. Fetch from MySQL (Local Capacities) — ordered by ordem_exibicao so the
+        //    frontend always receives resources in the sequence defined by the user in
+        //    pcp-refinado/capacidade, without relying on insertion order.
+        const [mysqlResult] = await mysqlPool.query(
+            'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo '
+            + 'FROM app_recursos_capacidade '
+            + 'ORDER BY COALESCE(ordem_exibicao, 9999) ASC, recurso_codigo ASC'
+        );
+
+        // Build a Map keyed by UPPER-TRIMMED code for reliable lookup
         const configMap = {};
         mysqlResult.forEach(row => {
-            configMap[row.recurso_codigo] = row;
+            configMap[(row.recurso_codigo || '').trim().toUpperCase()] = row;
         });
 
-        // 3. Merge
+        // 3. Merge Protheus resources with local capacities
         const merged = protheusRecursos.map(r => {
-            const conf = configMap[r.cod_recurso] || {};
+            const key = (r.cod_recurso || '').trim().toUpperCase();
+            const conf = configMap[key] || {};
             return {
                 cod_recurso: r.cod_recurso,
                 desc_recurso: r.desc_recurso,
                 tempo_padrao_minutos: conf.tempo_padrao_minutos || 0,
                 capacidade_diaria_minutos: conf.capacidade_diaria_minutos || 0,
-                ordem_exibicao: conf.ordem_exibicao || 0
+                // COALESCE: resources never configured in app_recursos_capacidade get 9999
+                // so they always sort AFTER configured ones
+                ordem_exibicao: conf.ordem_exibicao != null ? conf.ordem_exibicao : 9999,
+                grupo_paralelo: conf.grupo_paralelo || null
             };
+        });
+
+        // 4. Sort merged list by ordem_exibicao ASC (primary) then by code (tie-break)
+        //    This guarantees the API response is always in the user-defined order,
+        //    regardless of how Protheus returns h1_codigo.
+        merged.sort((a, b) => {
+            const aOrd = a.ordem_exibicao ?? 9999;
+            const bOrd = b.ordem_exibicao ?? 9999;
+            if (aOrd !== bOrd) return aOrd - bOrd;
+            return (a.cod_recurso || '').localeCompare(b.cod_recurso || '');
         });
 
         res.json(merged);
@@ -84,23 +105,24 @@ router.get('/recursos', async (req, res) => {
 // POST /api/pcp-refinado/recursos - Upsert capacity for a resource
 router.post('/recursos', async (req, res) => {
     try {
-        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao } = req.body;
-        
+        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo } = req.body;
+
         if (!recurso_codigo) {
             return res.status(400).json({ error: 'O código do recurso é obrigatório' });
         }
 
         const query = `
-            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao)
-            VALUES (?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE 
+            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
                 tempo_padrao_minutos = VALUES(tempo_padrao_minutos),
                 capacidade_diaria_minutos = VALUES(capacidade_diaria_minutos),
-                ordem_exibicao = VALUES(ordem_exibicao)
+                ordem_exibicao = VALUES(ordem_exibicao),
+                grupo_paralelo = VALUES(grupo_paralelo)
         `;
 
-        await mysqlPool.query(query, [recurso_codigo, tempo_padrao_minutos || 0, capacidade_diaria_minutos || 0, ordem_exibicao || 0]);
-        
+        await mysqlPool.query(query, [recurso_codigo, tempo_padrao_minutos || 0, capacidade_diaria_minutos || 0, ordem_exibicao || 0, grupo_paralelo || null]);
+
         res.json({ message: 'Capacidade atualizada com sucesso' });
     } catch (error) {
         console.error('❌ [PCP REFINADO] Error saving recurso:', error);
@@ -1563,6 +1585,7 @@ router.post('/smart-plan', async (req, res) => {
                     agent_logs: result.agent_logs
                 });
             }
+            require('fs').writeFileSync('smart_plan_error.txt', 'FCS Engine Error: ' + result.error + '\nLogs:\n' + (result.agent_logs||[]).join('\n'));
             return res.status(500).json({ error: result.error, agent_logs: result.agent_logs });
         }
 
@@ -1579,6 +1602,7 @@ router.post('/smart-plan', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Erro em /smart-plan:', error);
+        require('fs').writeFileSync('smart_plan_error.txt', error.stack || error.message);
         res.status(500).json({ error: error.message });
     }
 });

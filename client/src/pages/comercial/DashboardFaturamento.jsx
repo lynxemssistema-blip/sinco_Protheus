@@ -19,15 +19,16 @@ import api from '../../services/api';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
+// Reflete os únicos status realmente gravados em app_faturamento_solicitacoes (ver server/routes/faturamento.js)
 const STATUS_CONFIG = {
-    'Pendente':    { color: '#f59e0b', bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200', icon: Clock,        label: 'Pendente' },
-    'Em Análise':  { color: '#3b82f6', bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',  icon: Activity,     label: 'Em Análise' },
-    'Aprovado':    { color: '#14b8a6', bg: 'bg-cyan-50',  text: 'text-cyan-700',  border: 'border-cyan-200',icon: CheckCircle2, label: 'Aprovado' },
-    'Faturado':    { color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',icon: CheckCircle2, label: 'Faturado' },
-    'Cancelado':   { color: '#ef4444', bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',   icon: XCircle,      label: 'Cancelado' },
-    'Rejeitado':   { color: '#f97316', bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',icon: XCircle,      label: 'Rejeitado' },
+    'Pendente':  { color: '#f59e0b', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: Clock,        label: 'Pendente' },
+    'Atendido':  { color: '#3b82f6', bg: 'bg-blue-50',  text: 'text-blue-700',  border: 'border-blue-200',  icon: CheckCircle2, label: 'Atendido' },
+    'Cancelado': { color: '#ef4444', bg: 'bg-red-50',   text: 'text-red-700',   border: 'border-red-200',   icon: XCircle,      label: 'Cancelado' },
 };
 const STATUS_COLORS_LIST = Object.values(STATUS_CONFIG).map(s => s.color);
+
+// Card "Faturado" não é um status interno — vem sempre de NF válida no Protheus (kpiFaturadoNF)
+const FATURADO_NF_CONFIG = { color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle2, label: 'Faturado (NF)' };
 
 const GROUP_OPTIONS = [
     { value: 'cliente',        label: 'Por Cliente',        icon: Users },
@@ -272,11 +273,10 @@ export default function DashboardFaturamento() {
 
     // ── Taxa de conversão ─────────────────────────────────────────────────────
     const taxaConversao = useMemo(() => {
-        if (!kpiTotais.map) return 0;
-        const fat  = Number(kpiTotais.map['Faturado']?.qtd_itens   || 0);
+        const fat   = Number(data?.kpiFaturadoNF?.qtd_itens || 0);
         const total = kpiTotais.total?.qtd_itens || 0;
         return total > 0 ? Math.round((fat / total) * 100) : 0;
-    }, [kpiTotais]);
+    }, [data?.kpiFaturadoNF, kpiTotais]);
 
     // ─────────────────────────────────────────────────────────────────────────
     const currentGroup = GROUP_OPTIONS.find(g => g.value === filters.groupBy);
@@ -463,7 +463,7 @@ export default function DashboardFaturamento() {
                 </div>
 
                 {/* Cards por status */}
-                {Object.entries(STATUS_CONFIG).slice(0, 4).map(([key, cfg]) => {
+                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
                     const row = kpiTotais.map?.[key];
                     return (
                         <KpiCard
@@ -483,6 +483,22 @@ export default function DashboardFaturamento() {
                         />
                     );
                 })}
+
+                {/* Card Faturado — sempre a partir de NF válida no Protheus, nunca do status interno */}
+                <KpiCard
+                    label={FATURADO_NF_CONFIG.label}
+                    icon={FATURADO_NF_CONFIG.icon}
+                    color={FATURADO_NF_CONFIG.color}
+                    bg={FATURADO_NF_CONFIG.bg}
+                    border={FATURADO_NF_CONFIG.border}
+                    text={FATURADO_NF_CONFIG.text}
+                    qtd_solicitacoes={data?.kpiFaturadoNF?.qtd_solicitacoes || 0}
+                    qtd_itens={data?.kpiFaturadoNF?.qtd_itens || 0}
+                    valor_total={data?.kpiFaturadoNF?.valor_total || 0}
+                    loading={loading}
+                    canViewValues={canViewValues}
+                    activeMetric={activeMetric}
+                />
             </div>
 
             {/* ── Gráficos principais ──────────────────────────────────────── */}
@@ -751,6 +767,23 @@ export default function DashboardFaturamento() {
                                 });
                             })()}
                         </tbody>
+                        {!loading && !!data?.agrupamento?.length && (
+                            <tfoot>
+                                <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold text-slate-800">
+                                    <td className="px-4 py-2.5" />
+                                    <td className="px-4 py-2.5">Total Geral</td>
+                                    <td className="px-4 py-2.5 text-right">{fmtNum(kpiTotais.total?.qtd_solicitacoes || 0)}</td>
+                                    <td className="px-4 py-2.5 text-right">{fmtNum(kpiTotais.total?.qtd_itens || 0)}</td>
+                                    <td className="px-4 py-2.5 text-right">{fmtNum(Number(kpiTotais.total?.qtd_total || 0).toFixed(0))}</td>
+                                    {canViewValues && (
+                                        <td className="px-4 py-2.5 text-right text-indigo-700">{fmtMoney(kpiTotais.total?.valor_total)}</td>
+                                    )}
+                                    {canViewValues && (
+                                        <td className="px-4 py-2.5 text-right text-slate-500">100.0%</td>
+                                    )}
+                                </tr>
+                            </tfoot>
+                        )}
                     </table>
                 </div>
             </div>

@@ -314,11 +314,24 @@ const AGENT_PRINTER_KEY = '@metalfisa:localPrinterName';
 const AGENT_URL_KEY     = '@metalfisa:agentUrl';
 
 export default function LabelPrintModal({ items, onClose }) {
-    const [selectedItems, setSelectedItems] = useState(items.map(i => ({
-        ...i,
-        _selected: true,
-        _custom_nf: (i.notas_fiscais && i.notas_fiscais.length > 0 && i.notas_fiscais[0] && i.notas_fiscais[0].nota) ? i.notas_fiscais[0].nota.trim() : ''
-    })));
+    const [selectedItems, setSelectedItems] = useState(items.map(i => {
+        let defaultQtd = 0;
+        if (i.qtd_faturar !== undefined) {
+            defaultQtd = parseFloat(i.qtd_faturar);
+        } else if (i.quantidade_solicitada !== undefined) {
+            defaultQtd = parseFloat(i.quantidade_solicitada);
+        } else if (i.cartQty !== undefined) {
+            defaultQtd = parseFloat(i.cartQty);
+        } else {
+            defaultQtd = parseFloat(i.quantidade || 0);
+        }
+        return {
+            ...i,
+            _selected: true,
+            _custom_nf: (i.notas_fiscais && i.notas_fiscais.length > 0 && i.notas_fiscais[0] && i.notas_fiscais[0].nota) ? i.notas_fiscais[0].nota.trim() : '',
+            _custom_qtd: defaultQtd
+        };
+    }));
     const [previewIdx, setPreviewIdx] = useState(0);
     const [loadingConfig, setLoadingConfig] = useState(true);
 
@@ -454,6 +467,9 @@ export default function LabelPrintModal({ items, onClose }) {
         if (!canvas || !config) return;
         const ctx = canvas.getContext('2d');
 
+        const scale = canvas.width / 600;
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, 600, 440);
 
@@ -519,7 +535,7 @@ export default function LabelPrintModal({ items, onClose }) {
                     : (it.entrega || it.data_entrega || '');
             }
             if (key === 'quantidade') {
-                return Number(it.quantidade || it.qtd_faturar || 0).toString();
+                return Number(it._custom_qtd !== undefined ? it._custom_qtd : (it.quantidade || it.qtd_faturar || 0)).toString();
             }
             if (key === 'nf' || key === 'nota_fiscal') {
                 return removeAccents(it._custom_nf || it.nota_fiscal || it.nf || '');
@@ -549,15 +565,18 @@ export default function LabelPrintModal({ items, onClose }) {
                     const tmpCanvas = document.createElement('canvas');
                     JsBarcode(tmpCanvas, val, {
                         format: 'CODE128',
-                        width: 2,
-                        height: field.barcodeHeight || 60,
+                        width: 2 * scale,
+                        height: (field.barcodeHeight || 60) * scale,
                         displayValue: true,
-                        fontSize: 12,
-                        margin: 4,
+                        fontSize: 12 * scale,
+                        margin: 4 * scale,
                         background: '#ffffff',
                         lineColor: '#000000',
                     });
-                    ctx.drawImage(tmpCanvas, field.x, field.y);
+                    
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.drawImage(tmpCanvas, field.x * scale, field.y * scale);
+                    ctx.setTransform(scale, 0, 0, scale, 0, 0);
                 } catch (e) {
                     ctx.font = '12px Arial';
                     ctx.fillStyle = 'black';
@@ -572,13 +591,16 @@ export default function LabelPrintModal({ items, onClose }) {
                 ctx.fillText(displayText, field.x, field.y);
             }
         });
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
     }, [config, logoImg, printQuality]);
 
     // ── Calcular cópias ────────────────────────────────────────────────────────
     const getCopiesForItem = (item) => {
         switch (copiesMode) {
-            case 'quantity':
-                return Math.max(1, Math.round(parseFloat(item.quantidade || item.qtd_faturar || 1)));
+            case 'quantity': {
+                const qtyVal = item._custom_qtd !== undefined ? item._custom_qtd : (item.quantidade || item.qtd_faturar || 1);
+                return Math.max(1, Math.round(parseFloat(qtyVal)));
+            }
             case 'custom':
                 return Math.max(1, Math.floor(customCopies));
             default:
@@ -621,8 +643,8 @@ export default function LabelPrintModal({ items, onClose }) {
             // Monta payloads
             const printPayload = [];
             const offscreenCanvas = document.createElement('canvas');
-            offscreenCanvas.width = 600;
-            offscreenCanvas.height = 440;
+            offscreenCanvas.width = 1800;
+            offscreenCanvas.height = 1320;
 
             for (const item of checkedItems) {
                 const copies = getCopiesForItem(item);
@@ -833,29 +855,46 @@ export default function LabelPrintModal({ items, onClose }) {
                                                 {getCopiesForItem(item)}x
                                             </span>
                                         </div>
-                                        <div className="flex items-center justify-between mt-1">
+                                        <div className="flex flex-col mt-1">
                                             <p className="text-[10px] text-gray-500">Ped: {item.pedido}</p>
-                                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                                <span className="text-[10px] font-semibold text-gray-600">NF:</span>
-                                                <input
-                                                    list={`nfs-list-${idx}`}
-                                                    type="text"
-                                                    placeholder="Nº NF"
-                                                    className="text-[10px] p-0.5 px-1 border border-gray-300 rounded w-16 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-gray-800"
-                                                    value={item._custom_nf || ''}
-                                                    onChange={(e) => {
-                                                        const newItems = [...selectedItems];
-                                                        newItems[idx] = { ...newItems[idx], _custom_nf: e.target.value };
-                                                        setSelectedItems(newItems);
-                                                    }}
-                                                />
-                                                {item.notas_fiscais && item.notas_fiscais.length > 0 && (
-                                                    <datalist id={`nfs-list-${idx}`}>
-                                                        {item.notas_fiscais.filter(nf => nf && nf.nota && nf.nota.trim()).map((nf, nfIdx) => (
-                                                            <option key={nfIdx} value={nf.nota} />
-                                                        ))}
-                                                    </datalist>
-                                                )}
+                                            <div className="flex items-center gap-2 mt-1.5" onClick={e => e.stopPropagation()}>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-[10px] font-semibold text-gray-600">NF:</span>
+                                                    <input
+                                                        list={`nfs-list-${idx}`}
+                                                        type="text"
+                                                        placeholder="Nº NF"
+                                                        className="text-[10px] p-0.5 px-1 border border-gray-300 rounded w-16 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-gray-800"
+                                                        value={item._custom_nf || ''}
+                                                        onChange={(e) => {
+                                                            const newItems = [...selectedItems];
+                                                            newItems[idx] = { ...newItems[idx], _custom_nf: e.target.value };
+                                                            setSelectedItems(newItems);
+                                                        }}
+                                                    />
+                                                    {item.notas_fiscais && item.notas_fiscais.length > 0 && (
+                                                        <datalist id={`nfs-list-${idx}`}>
+                                                            {item.notas_fiscais.filter(nf => nf && nf.nota && nf.nota.trim()).map((nf, nfIdx) => (
+                                                                <option key={nfIdx} value={nf.nota} />
+                                                            ))}
+                                                        </datalist>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-[10px] font-semibold text-gray-600">Qtd:</span>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Qtd"
+                                                        className="text-[10px] p-0.5 px-1 border border-gray-300 rounded w-14 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-gray-800"
+                                                        value={item._custom_qtd !== undefined ? item._custom_qtd : ''}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                                            const newItems = [...selectedItems];
+                                                            newItems[idx] = { ...newItems[idx], _custom_qtd: val };
+                                                            setSelectedItems(newItems);
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -882,10 +921,10 @@ export default function LabelPrintModal({ items, onClose }) {
                                     <div className="bg-white p-1 rounded-sm shadow-xl border-2 border-gray-800 transition-all duration-300 relative">
                                         <canvas
                                             ref={previewCanvasRef}
-                                            width={600}
-                                            height={440}
+                                            width={1800}
+                                            height={1320}
                                             className="bg-white"
-                                            style={{ width: '400px', height: '293px', imageRendering: 'pixelated' }}
+                                            style={{ width: '400px', height: '293px' }}
                                         />
                                         <div className="absolute -bottom-8 left-0 right-0 text-center text-xs text-gray-400 font-medium tracking-wide">
                                             Área Real: 75mm × 55mm (600×440 px)

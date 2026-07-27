@@ -138,8 +138,8 @@ const MaterialRequirementsTab = ({ setPageBlocking = () => {} }) => {
     };
 
     return (
-        <div className="p-6">
-            <div className="mb-6 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+        <div className="flex flex-col h-full p-4">
+            <div className="mb-6 bg-white border border-gray-200 rounded-xl p-6 shadow-sm shrink-0">
                 <div className="flex items-start justify-between">
                     <div>
                         <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -206,8 +206,8 @@ const MaterialRequirementsTab = ({ setPageBlocking = () => {} }) => {
             )}
 
             {!loading && resultados && (
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-2">
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-2 shrink-0">
                         <div className="flex items-center gap-4 text-sm font-medium text-gray-600">
                             <span>Base: <strong className="text-gray-800">{resultados.items_base}</strong> produtos</span>
                             <span className="text-gray-300">|</span>
@@ -216,10 +216,16 @@ const MaterialRequirementsTab = ({ setPageBlocking = () => {} }) => {
                             <span className="text-emerald-700">✅ OK: <strong>{resultados.materiais.filter(m => Number(m.necessidade_liquida) <= 0).length}</strong></span>
                             <span className="text-gray-300">|</span>
                             <span className="text-red-600">⚠️ Em aberto: <strong>{resultados.materiais.filter(m => Number(m.necessidade_liquida) > 0).length}</strong></span>
+                            {resultados.materiais.some(m => m.tem_solda) && (
+                                <>
+                                    <span className="text-gray-300">|</span>
+                                    <span className="text-orange-600 font-semibold">🔥 SOLDA ({resultados.recurso_solda || 'MO0020'}): <strong>{resultados.materiais.filter(m => m.tem_solda).length}</strong> MPs</span>
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto flex-1 bg-white relative">
                         <table className="w-full text-sm text-left">
                             <thead className="bg-gray-50 text-gray-700 uppercase text-xs border-b border-gray-200">
                                 <tr>

@@ -31,14 +31,34 @@ const FaturamentoSolicitacoesHistorico = () => {
     const [dataEmissaoFim, setDataEmissaoFim] = useState('');
     const [produtoFilter, setProdutoFilter] = useState('');
 
+    // O Protheus não guarda qual NF pertence a qual solicitação: quando o mesmo pedido+item é
+    // pedido em mais de uma solicitação de faturamento (remessas parciais em lotes diferentes),
+    // buildNFLookup devolve a MESMA lista de NFs para cada uma. "seenPedidoItem" garante que o
+    // valor real de um pedido+item só entre uma vez na soma, mesmo se referenciado várias vezes.
+    const getItemValorNF = (it, seenPedidoItem) => {
+        if (Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0) {
+            const key = `${String(it.pedido).trim()}|${String(it.item).trim()}`;
+            if (seenPedidoItem) {
+                if (seenPedidoItem.has(key)) return 0;
+                seenPedidoItem.add(key);
+            }
+            return it.notas_fiscais_protheus.reduce((s, nf) => s + (parseFloat(nf.valor_total) || 0), 0);
+        }
+        return parseFloat(it.valor_total) || 0;
+    };
+
     const faturamentosFlat = React.useMemo(() => {
         const flat = [];
+        const seenNfRow = new Set(); // pedido|item|nota — evita listar a mesma NF real 2x quando o pedido+item foi solicitado mais de uma vez
         solicitacoes.forEach(sol => {
             if (!sol.itens) return;
             sol.itens.forEach(it => {
                 const hasProtheusNf = Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0;
                 if (hasProtheusNf) {
                     it.notas_fiscais_protheus.forEach(nf => {
+                        const rowKey = `${String(it.pedido).trim()}|${String(it.item).trim()}|${nf.nota}`;
+                        if (seenNfRow.has(rowKey)) return;
+                        seenNfRow.add(rowKey);
                         flat.push({
                             id: `${sol.id}-${it.id}-${nf.nota}`,
                             nota: nf.nota,
@@ -55,9 +75,13 @@ const FaturamentoSolicitacoesHistorico = () => {
                         });
                     });
                 } else if (it.nota_fiscal || sol.nota_fiscal) {
+                    const notaManual = it.nota_fiscal || sol.nota_fiscal;
+                    const rowKey = `${String(it.pedido).trim()}|${String(it.item).trim()}|${notaManual}`;
+                    if (seenNfRow.has(rowKey)) return;
+                    seenNfRow.add(rowKey);
                     flat.push({
                         id: `${sol.id}-${it.id}-manual`,
-                        nota: it.nota_fiscal || sol.nota_fiscal,
+                        nota: notaManual,
                         serie: '',
                         emissao: new Date(sol.created_at).toLocaleDateString('pt-BR'),
                         pedido: it.pedido,
@@ -133,10 +157,14 @@ const FaturamentoSolicitacoesHistorico = () => {
     }, [solicitacoes, searchTerm, dataEmissaoInicio, dataEmissaoFim, produtoFilter, sortConfig]);
 
     const faturamentosSolicitacoesFlat = React.useMemo(() => {
+        // Compartilhado entre todas as solicitações: garante que o valor real de um pedido+item só
+        // seja contado na primeira solicitação (mais recente, já que a API devolve por s.id DESC)
+        // que o referencia, mesmo que o mesmo pedido+item tenha sido pedido em lotes diferentes.
+        const seenPedidoItem = new Set();
         let result = solicitacoes.map(sol => {
             const clientes = [...new Set(sol.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Não informado';
             const totalItens = sol.itens ? sol.itens.length : 0;
-            const valorTotal = sol.itens ? sol.itens.reduce((acc, it) => acc + (parseFloat(it.valor_total) || 0), 0) : 0;
+            const valorTotal = sol.itens ? sol.itens.reduce((acc, it) => acc + getItemValorNF(it, seenPedidoItem), 0) : 0;
             const emissaoDateStr = new Date(sol.created_at).toLocaleDateString('pt-BR');
             
             const nfs = [...new Set(sol.itens?.flatMap(it => 

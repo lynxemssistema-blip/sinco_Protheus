@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function StockModal({ isOpen, onClose, productCode, productName }) {
     const { user } = useAuth();
-    const [balance, setBalance] = useState(0);
+    const [balanceProtheus, setBalanceProtheus] = useState(0);
+    const [balanceFabrica, setBalanceFabrica] = useState(0);
     const [movements, setMovements] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -34,7 +35,8 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                 getStockBalance(productCode),
                 getStockMovements(productCode)
             ]);
-            setBalance(balanceData.saldo || 0);
+            setBalanceProtheus(balanceData.saldoProtheus || 0);
+            setBalanceFabrica(balanceData.saldoFabrica || 0);
             setMovements(movementsData);
         } catch (err) {
             console.error(err);
@@ -69,6 +71,19 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
         }
     };
 
+    const formatMovementDate = (dateString) => {
+        if (!dateString) return '-';
+        if (/^\d{8}$/.test(dateString)) {
+            const year = dateString.substring(0, 4);
+            const month = dateString.substring(4, 6);
+            const day = dateString.substring(6, 8);
+            return `${day}/${month}/${year}`;
+        }
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return String(dateString);
+        return date.toLocaleDateString('pt-BR');
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -88,17 +103,32 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
-                    {/* Saldo Atual Banner */}
-                    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm mb-6 flex items-center justify-between">
-                        <div>
-                            <span className="text-sm text-gray-500 font-medium uppercase tracking-wider">Saldo Atual</span>
-                            <div className={`text-4xl font-bold mt-1 ${balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                                {(balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
-                                <span className="text-lg text-gray-400 font-normal ml-2">unidades</span>
+                    {/* Saldos Banners */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                            <div>
+                                <span className="text-sm text-gray-500 font-medium uppercase tracking-wider">Saldo ERP (Protheus)</span>
+                                <div className={`text-4xl font-bold mt-1 ${balanceProtheus < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                                    {(balanceProtheus || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                    <span className="text-lg text-gray-400 font-normal ml-2">unidades</span>
+                                </div>
+                            </div>
+                            <div className={`h-12 w-12 rounded-full flex items-center justify-center ${balanceProtheus > 0 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                                <History className="h-6 w-6" />
                             </div>
                         </div>
-                        <div className={`h-12 w-12 rounded-full flex items-center justify-center ${balance > 0 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                            <History className="h-6 w-6" />
+
+                        <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between">
+                            <div>
+                                <span className="text-sm text-blue-600 font-medium uppercase tracking-wider">Saldo Local (Fábrica)</span>
+                                <div className={`text-4xl font-bold mt-1 ${balanceFabrica < 0 ? 'text-red-600' : 'text-blue-900'}`}>
+                                    {(balanceFabrica || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                    <span className="text-lg text-blue-400 font-normal ml-2">unidades</span>
+                                </div>
+                            </div>
+                            <div className={`h-12 w-12 rounded-full flex items-center justify-center ${balanceFabrica > 0 ? 'bg-blue-200 text-blue-700' : 'bg-blue-100 text-blue-400'}`}>
+                                <Save className="h-6 w-6" />
+                            </div>
                         </div>
                     </div>
 
@@ -184,17 +214,25 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                                     <thead className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase">
                                         <tr>
                                             <th className="px-4 py-3">Data</th>
+                                            <th className="px-4 py-3">Usuário</th>
                                             <th className="px-4 py-3 text-center">Tipo</th>
                                             <th className="px-4 py-3 text-right">Qtd</th>
                                             <th className="px-4 py-3">Obs</th>
-                                            <th className="px-4 py-3 text-right text-gray-400">Saldo Ant.</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
                                         {movements.map((mov) => (
                                             <tr key={mov.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-4 py-3 text-gray-600">
-                                                    {new Date(mov.data_movimento).toLocaleString('pt-BR')}
+                                                <td className="px-4 py-3 text-gray-600 font-medium">
+                                                    {formatMovementDate(mov.data_movimento)}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600 truncate max-w-[120px]" title={mov.usuario}>
+                                                    {mov.id?.toString().startsWith('PROT-') ? (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 mr-2">ERP</span>
+                                                    ) : mov.id?.toString().startsWith('FAB-') ? (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700 mr-2">FÁB</span>
+                                                    ) : null}
+                                                    {mov.usuario || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${mov.tipo === 'E'
@@ -209,11 +247,8 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                                                     }`}>
                                                     {mov.tipo === 'S' ? '-' : '+'}{parseFloat(mov.quantidade).toLocaleString('pt-BR')}
                                                 </td>
-                                                <td className="px-4 py-3 text-gray-500 truncate max-w-[150px]" title={mov.observacao}>
+                                                <td className="px-4 py-3 text-gray-500 truncate max-w-[200px]" title={mov.observacao}>
                                                     {mov.observacao || '-'}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-400 font-mono text-xs">
-                                                    {parseFloat(mov.saldo_anterior).toLocaleString('pt-BR')}
                                                 </td>
                                             </tr>
                                         ))}

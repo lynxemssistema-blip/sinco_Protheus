@@ -447,14 +447,17 @@ export const getProductionDashboard = (params, signal) => api.get('/production',
 export const getProductionMatrix = (params) => api.get('/production/matrix', { params }).then(res => res.data);
 export const getOperationById = (opId) => api.get(`/production/operations/${opId}`).then(res => res.data);
 export const saveProductionPlan = (data) => api.post('/production/plan', data).then(res => res.data);
-export const saveProductionPlanBatch = (plans, observacao, modo_calculo, preferencias) =>
-    api.post('/production/plan-batch', { plans, observacao, modo_calculo, preferencias }).then(res => res.data);
+export const saveProductionPlanBatch = (plans, observacao, modo_calculo, preferencias, dataPcpOpts = {}) =>
+    api.post('/production/plan-batch', { plans, observacao, modo_calculo, preferencias, ...dataPcpOpts }).then(res => res.data);
 
 export const previewCascade = (payload) =>
     api.post('/production/cascade-preview', payload).then(res => res.data);
 export const getResourceCapacities = () => api.get('/production/capacities').then(res => res.data);
 export const getPlanningHistory = (op) => api.get(`/production/planning-history/${encodeURIComponent(op)}`).then(res => res.data);
 export const getPlanningPrefs = (op) => api.get(`/production/planning-prefs/${encodeURIComponent(op)}`).then(res => res.data);
+export const savePlanningPrefs = (op, prefs) => api.put(`/production/planning-prefs/${encodeURIComponent(op)}`, prefs).then(res => res.data);
+export const getRecursosOrdem = () => api.get('/pcp-refinado/recursos').then(res => res.data);
+
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);
 export const getAppointmentHistory = (op, item, sequencia, operacao) => api.get(`/production/appointments/${op}`, { params: { item, sequencia, operacao } }).then(res => res.data);
@@ -493,6 +496,12 @@ export const getStockMainBalances = async (params) => {
     return response.data;
 };
 
+export const analisarCadastroIA = (filters) => api.post('/stock/cadastro/analisar', filters).then(res => res.data);
+export const consultarCadastroIA = (payload) => api.post('/stock/cadastro/consultar', payload).then(res => res.data);
+export const salvarCorrecaoCadastro = (payload) => api.post('/stock/cadastro/correcoes', payload).then(res => res.data);
+export const getCorrecoesCadastro = (params) => api.get('/stock/cadastro/correcoes', { params }).then(res => res.data);
+export const atualizarStatusCorrecao = (grupoUuid, status) => api.patch(`/stock/cadastro/correcoes/${grupoUuid}/status`, { status }).then(res => res.data);
+
 export const getInternalRequests = async (params) => {
     const response = await api.get('/stock/requisicoes', { params });
     return response.data;
@@ -506,6 +515,7 @@ export const getPurchaseFlowToInvoice = (params) => api.get('/compras/fluxo-comp
 // REPORTS
 export const getProductionReportData = (params) => api.get('/reports/production/data', { params }).then(res => res.data);
 export const getSalesPlanningReportData = (params) => api.get('/reports/sales-planning/data', { params }).then(res => res.data);
+export const getSalesPlanningMasterSheet = (params) => api.get('/reports/sales-planning/master-sheet', { params }).then(res => res.data);
 export const updateOrderItemTag = (data) => api.put('/reports/sales-planning/item-tag', data).then(res => res.data);
 export const getResourceEvolutionReportData = (params) => api.get('/reports/resource-evolution', { params }).then(res => res.data);
 
@@ -523,6 +533,7 @@ export const getSincoProdutosRaizes = () => api.get('/sinco/produtos-raizes').th
 export const getSincoArvore = (codigo) => api.get(`/sinco/arvore/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoRestricoes = (codigo) => api.get(`/sinco/restricoes/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoRestricoesSz0 = (codigo) => api.get(`/sinco/restricoes-sz0/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getAllSincoRestricoesSz0 = () => api.get('/sinco/restricoes-sz0-todas').then(res => res.data);
 export const createSincoRestricaoSz0 = (payload) => api.post('/sinco/restricao/edit', payload).then(res => res.data);
 export const getSincoOperacoes = (codigo) => api.get(`/sinco/operacoes/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const sincoExportDxf = (outputPath) => api.post('/sinco/export-dxf', { outputPath }).then(res => res.data);
@@ -534,6 +545,8 @@ export const updateSincoComentarioEngenhariaStatus = (id, data) => api.put(`/sin
 // SINCO (OS) - Apontamento de Produção
 export const getSincoOsItems = (osId) => api.get(`/sinco/os/${encodeURIComponent(osId)}/items`).then(res => res.data);
 export const getSincoOsItemsEnriched = (osId) => api.get(`/sinco-apontamento/os/${encodeURIComponent(osId)}/items`).then(res => res.data);
+// Sinco Apontamentos endpoints
+export const getSincoProcessosList = () => api.get('/sinco-apontamento/processos-list').then(res => res.data);
 export const getSincoPedidoBom = (pedido) => api.get(`/sinco-apontamento/pedido/${encodeURIComponent(pedido)}/bom`).then(res => res.data);
 export const getSincoItemProcessos = (ordemServicoItemId) => api.get(`/sinco-apontamento/items/${encodeURIComponent(ordemServicoItemId)}/processos`).then(res => res.data);
 export const getSincoProcessoHistorico = (osItemProcessoId) => api.get(`/sinco-apontamento/processos/${encodeURIComponent(osItemProcessoId)}/historico`).then(res => res.data);
@@ -667,6 +680,8 @@ export const reportSystemError = async (moduleName, error, filters = {}) => {
 
 export const getOpRoteiroSaldo = (op, item, sequencia, produto) => api.get('/producao/op-roteiro-saldo', { params: { op, item, sequencia, produto } }).then(res => res.data);
 
+export const getOpMaterials = (ops) => api.post('/production/op-materials', { ops }).then(res => res.data);
+
 // SGQ Romaneios
 export const getSgqAssets = () => api.get('/sgq/assets').then(res => res.data);
 export const getSgqRomaneios = () => api.get('/sgq/romaneios').then(res => res.data);
@@ -689,6 +704,19 @@ export const deleteRncApontamento = (id) => api.delete(`/sgq/rncs/apontamentos/$
 
 // Fornecedores Protheus
 export const getProtheusFornecedores = () => api.get('/protheus/fornecedores').then(res => res.data);
+
+// Checklist Apontamento Vertical
+export const getChecklist = (op, item_op, sequen_op) => api.get(`/producao/checklist/${op}/${item_op}/${sequen_op}`).then(res => res.data);
+export const saveChecklist = (data) => api.post('/producao/checklist', data).then(res => res.data);
+export const uploadChecklistPhoto = (formData) => api.post('/producao/checklist/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(res => res.data);
+
+// Product Status (Novo/Revisão)
+export const getProductStatus = (codigo) => api.get(`/product-status/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const setProductStatus = (codigo, estado, usuario, acao = 'MARCACAO_MANUAL') => api.post(`/product-status/${encodeURIComponent(codigo)}`, { estado, usuario, acao }).then(res => res.data);
+export const getProductStatusHistory = (codigo) => api.get(`/product-status/${encodeURIComponent(codigo)}/history`).then(res => res.data);
+
+export const getProductStatusesBatch = (codigos) => api.post('/product-status/batch/get', { codigos }).then(res => res.data);
+export const setProductStatusBatch = (codigos, estado, usuario, acao = 'MARCACAO_MANUAL_LOTE') => api.post('/product-status/batch/update', { codigos, estado, usuario, acao }).then(res => res.data);
 
 export { api };
 export default api;

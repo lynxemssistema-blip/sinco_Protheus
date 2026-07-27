@@ -686,16 +686,26 @@ export default function ProgramasNCN() {
     };
 
     const handleUpdateOrdem = async (prog, valor) => {
-        const novaOrdem = parseInt(valor) || 0;
-        if (novaOrdem === (prog.ordem_execucao || 0)) return;
+        const novaOrdem = parseInt(valor);
+        if (!novaOrdem || novaOrdem === (prog.ordem_execucao || 0)) return;
 
-        try {
-            await api.put(`/pcp/programas/${prog.id}`, { ordem_execucao: novaOrdem });
-            toast.success(`Sequência do programa #${prog.id} updated to ${novaOrdem}!`);
+        if (filterMaquinaId !== 'all') {
+            const currentIndex = filteredProgramas.findIndex(p => p.id === prog.id);
+            if (currentIndex === -1) return;
+
+            const novoArray = [...filteredProgramas];
+            const [item] = novoArray.splice(currentIndex, 1);
+            
+            // novaOrdem is 1-based index
+            let newIndex = novaOrdem - 1;
+            if (newIndex < 0) newIndex = 0;
+            if (newIndex > novoArray.length) newIndex = novoArray.length;
+            
+            novoArray.splice(newIndex, 0, item);
+            updateSequenciaNoBanco(novoArray);
+        } else {
+            toast.warning("Selecione uma máquina específica no filtro acima para reordenar digitando a sequência.");
             loadProgramas();
-        } catch (err) {
-            console.error("Erro ao atualizar sequência de execução:", err);
-            toast.error("Erro ao salvar sequência de execução.");
         }
     };
 
@@ -991,7 +1001,7 @@ export default function ProgramasNCN() {
                         <table className="w-full text-left border-collapse text-xs relative">
                             <thead className="sticky top-0 z-10 shadow-sm">
                                 <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                                    <th className="px-5 py-4 w-12 text-center bg-slate-50 border-b border-slate-200">ID</th>
+                                    {/* <th className="px-5 py-4 w-12 text-center bg-slate-50 border-b border-slate-200">ID</th> */}
                                     <th className="px-5 py-4 w-20 text-center bg-slate-50 border-b border-slate-200">Seq.</th>
                                     <th className="px-5 py-4 w-28 text-center bg-slate-50 border-b border-slate-200">Status</th>
                                     <th className="px-5 py-4 bg-slate-50 border-b border-slate-200">Programa CNC</th>
@@ -1019,14 +1029,14 @@ export default function ProgramasNCN() {
                                             filterMaquinaId !== 'all' ? 'cursor-grab active:cursor-grabbing' : ''
                                         } ${draggedIndex === idx ? 'opacity-40 bg-slate-100 border-dashed border-indigo-300' : ''}`}
                                     >
-                                        <td className="px-5 py-4 text-center font-bold text-slate-400 font-mono">
+                                        {/* <td className="px-5 py-4 text-center font-bold text-slate-400 font-mono">
                                             <div className="flex items-center justify-center gap-1">
                                                 {filterMaquinaId !== 'all' && (
                                                     <GripVertical size={12} className="text-slate-300 cursor-grab active:cursor-grabbing hover:text-slate-500 shrink-0" title="Arraste para reordenar" />
                                                 )}
                                                 <span>#{prog.id}</span>
                                             </div>
-                                        </td>
+                                        </td> */}
                                         <td className="px-5 py-4 text-center">
                                             <div className="flex items-center justify-center gap-1.5">
                                                 {filterMaquinaId !== 'all' && (
@@ -1055,7 +1065,7 @@ export default function ProgramasNCN() {
                                                 )}
                                                 <input 
                                                     type="number"
-                                                    min="0"
+                                                    min="1"
                                                     key={prog.id + '-' + (prog.ordem_execucao || 0)}
                                                     defaultValue={prog.ordem_execucao || 0}
                                                     onBlur={(e) => handleUpdateOrdem(prog, e.target.value)}

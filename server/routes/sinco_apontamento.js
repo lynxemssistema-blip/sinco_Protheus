@@ -666,6 +666,20 @@ router.post('/items/:id/material-entrega/entregar', async (req, res) => {
     }
 });
 
+// GET /api/sinco-apontamento/processos-list
+// Retorna a lista de todos os processos disponíveis
+router.get('/processos-list', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(
+            `SELECT IdProcessoFabricacao as IdProcesso, processofabricacao as Descricao, CodigoProcessoFabricacao as Codigo FROM processofabricacao ORDER BY CodigoProcessoFabricacao ASC`
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('[SINCO APONTAMENTO] Erro ao buscar lista de processos:', error);
+        res.status(500).json({ error: error.message || 'Erro interno ao buscar lista de processos' });
+    }
+});
+
 // GET /api/sinco-apontamento/items/:id/processos
 router.get('/items/:id/processos', async (req, res) => {
     try {
@@ -742,20 +756,21 @@ router.post('/processos/:id/apontar', async (req, res) => {
 
         await connection.beginTransaction();
 
+        let companyConfig = {};
+        try {
+            const [configRows] = await connection.query(`SELECT general_config FROM app_company_settings WHERE id = 1 LIMIT 1`);
+            if (configRows.length > 0 && configRows[0].general_config) {
+                companyConfig = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            }
+        } catch (e) {
+            console.error('Erro ao buscar config da empresa:', e);
+        }
+
         // ------------------------------------------------------------------------------------------
         // [SGQ - GESTÃO DE ATIVOS] - BLOQUEIO DE CALIBRAÇÃO VENCIDA
         // ------------------------------------------------------------------------------------------
         try {
-            // Verifica se o módulo SGQ está ativo no general_config
-            const [configRows] = await connection.query(`SELECT general_config FROM app_company_settings WHERE id = 1 LIMIT 1`);
-            let sgqActive = false;
-            
-            if (configRows.length > 0 && configRows[0].general_config) {
-                try {
-                    const parsed = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-                    sgqActive = String(parsed.sgq_module_active) === 'true';
-                } catch(e) { }
-            }
+            const sgqActive = String(companyConfig.sgq_module_active) === 'true';
 
             if (sgqActive) {
                 const [userCheck] = await connection.query(`SELECT idUsuario FROM usuario WHERE Login = ? LIMIT 1`, [usuario]);
@@ -889,6 +904,56 @@ router.post('/processos/:id/apontar', async (req, res) => {
                 'WEB'
             ]
         );
+
+        // ------------------------------------------------------------------------------------------
+        // [INTEGRAÇÃO PROTHEUS] - Baixa Simples Automática
+        // ------------------------------------------------------------------------------------------
+        if (companyConfig.apontamento_simples_protheus_active) {
+            try {
+                // Obter nome do processo e número da OP
+                const [processoRows] = await connection.query(`SELECT processofabricacao as Descricao, CodigoProcessoFabricacao as Codigo FROM processofabricacao WHERE IdProcessoFabricacao = ?`, [proc.IdProcesso]);
+                const processoCodigo = processoRows[0]?.Codigo || '';
+                
+                const [osRows] = await connection.query(`SELECT Numero FROM ordemservico WHERE IdOrdemServico = ?`, [item.IdOrdemServico]);
+                const opNumero = osRows[0]?.Numero || '';
+
+                const validProcessos = (companyConfig.apontamento_simples_processos || '').split(',').map(s => s.trim().toUpperCase());
+                
+                if (processoCodigo && validProcessos.includes(processoCodigo.toUpperCase())) {
+                    console.log(`[PROTHEUS API] Engatilhando baixa de apontamento para OP ${opNumero}, Produto ${item.CodMatFabricante}`);
+                    
+                    const axios = require('axios');
+                    const https = require('https');
+                    
+                    const payload = {
+                        data: {
+                            CFILANT: "0101",
+                            EMPRESA: "01",
+                            NOPER: 3,
+                            apontamentosOrdensProducao: [{
+                                C2_OP: String(opNumero).trim(),
+                                C2_PRODUTO: String(item.CodMatFabricante).trim(),
+                                C2_QUANT: qtd
+                            }]
+                        }
+                    };
+
+                    const agent = new https.Agent({ rejectUnauthorized: false });
+                    axios.post(
+                        'https://192.168.1.60:47500/ordem-producao/apontamento-simples',
+                        payload,
+                        { httpsAgent: agent, timeout: 15000 }
+                    ).then(response => {
+                        console.log(`[PROTHEUS API SUCESSO] Apontamento OP ${opNumero}:`, response.data);
+                    }).catch(err => {
+                        console.error(`[PROTHEUS API ERRO] Falha ao integrar apontamento OP ${opNumero}:`, err.response?.data || err.message);
+                    });
+                }
+            } catch (integracaoError) {
+                console.error('[PROTHEUS API ERRO INTERNO] Falha ao tentar engatilhar baixa:', integracaoError);
+            }
+        }
+        // ------------------------------------------------------------------------------------------
 
         // Se TODOS os processos do item estiverem concluídos, marcar item como finalizado
         const [countsRows] = await connection.query(

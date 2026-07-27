@@ -5,6 +5,43 @@ const db = require('../db');
 const mysqlPool = require('../services/mysqlService');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
+// --- INITIALIZE CHECKLIST TABLES ---
+(async () => {
+    try {
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_montagem_checklist (
+                idChecklist INT AUTO_INCREMENT PRIMARY KEY,
+                op VARCHAR(50) NOT NULL,
+                item_op VARCHAR(10) NOT NULL,
+                sequen_op VARCHAR(10) NOT NULL,
+                produto_pai VARCHAR(50) NOT NULL,
+                idUsuario INT NOT NULL,
+                real_datetime DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                data_finalizado DATETIME DEFAULT NULL,
+                qtd_conjuntos INT NOT NULL DEFAULT 1,
+                observacao_geral TEXT,
+                status ENUM('RASCUNHO', 'FINALIZADO') DEFAULT 'RASCUNHO',
+                INDEX idx_op_item (op, item_op, sequen_op)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_montagem_checklist_itens (
+                idChecklistItem INT AUTO_INCREMENT PRIMARY KEY,
+                idChecklist INT NOT NULL,
+                codigo_componente VARCHAR(50) NOT NULL,
+                descricao_componente VARCHAR(255),
+                montado TINYINT(1) DEFAULT 0,
+                observacao TEXT,
+                foto_url VARCHAR(255),
+                FOREIGN KEY (idChecklist) REFERENCES app_montagem_checklist(idChecklist) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        console.log('✅ [CHECKLIST] Tabelas verificadas/criadas com sucesso no MySQL.');
+    } catch (err) {
+        console.error('❌ [CHECKLIST] Erro ao inicializar tabelas:', err.message);
+    }
+})();
+
 // POST /api/producao/pg-cleanup — libera conexões idle no PostgreSQL
 // Usa a conexão do pool existente para encerrar sessões ociosas > 3 min
 router.post('/pg-cleanup', async (req, res) => {
@@ -956,6 +993,20 @@ router.get('/vertical/:operacao', async (req, res) => {
       appointments = aRows;
     }
 
+    // Fetch checklist status for OPs
+    let checklistStatuses = [];
+    if (opCodes.length > 0) {
+      try {
+        const [cRows] = await mysqlPool.query(
+          `SELECT op, item_op, sequen_op, status FROM app_montagem_checklist WHERE op IN (${opPlaceholders})`,
+          [...opCodes]
+        );
+        checklistStatuses = cRows;
+      } catch (err) {
+        console.error('⚠️ [VERTICAL] Erro checklist status:', err.message);
+      }
+    }
+
     // Docs from MySQL
     const codigosProdutos = [...new Set(opsList.map(o => o.produto).filter(Boolean))];
     const docsMap = {};
@@ -1049,9 +1100,18 @@ router.get('/vertical/:operacao', async (req, res) => {
       const docs = docsMap[opRow.produto] || [];
       const rawP = (opRow.raw_pedido || '').trim();
       const rawO = (opRow.obs_venda  || '').trim();
+      
+      const checklistMatch = checklistStatuses.find(c => 
+        String(c.op).trim() === String(opRow.op).trim() && 
+        String(c.item_op).trim() === String(opRow.item_op).trim() && 
+        String(c.sequen_op).trim() === String(opRow.sequen_op).trim()
+      );
+      const checklist_status = checklistMatch ? checklistMatch.status : null;
+
       return {
         ...opRow,
         status: itemStatus,
+        checklist_status,
         pedido: rawP || (rawO.match(/^\d+/)?.[0] || ''),
         planejamento_inicio: p ? p.data_planejada_inicio : null,
         planejamento_fim:    p ? p.data_planejada_fim    : null,
@@ -1513,6 +1573,269 @@ router.get('/op-roteiro-saldo', async (req, res) => {
     console.error('❌ [OP-ROTEIRO-SALDO]', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- CHECKLIST ROUTES ---
+
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Storage config for checklist photos
+const checklistStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../uploads/checklists');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const checklistUpload = multer({ storage: checklistStorage });
+
+// 1. Obter checklist da OP
+router.get('/checklist/:op/:item_op/:sequen_op', async (req, res) => {
+    try {
+        const { op, item_op, sequen_op } = req.params;
+        const [checklistRows] = await mysqlPool.query(
+            `SELECT idChecklist, op, item_op, sequen_op, produto_pai, idUsuario, real_datetime, data_finalizado, qtd_conjuntos, observacao_geral, status, foto_url_pai
+             FROM app_montagem_checklist 
+             WHERE op = ? AND item_op = ? AND sequen_op = ?`,
+            [op, item_op, sequen_op]
+        );
+
+        let checklist;
+        let items = [];
+
+        if (checklistRows.length > 0) {
+            checklist = checklistRows[0];
+            const [itemRows] = await mysqlPool.query(
+                `SELECT idChecklistItem, idChecklist, codigo_componente, descricao_componente, montado, observacao, foto_url, qtd_necessaria, qtd_montada
+                 FROM app_montagem_checklist_itens 
+                 WHERE idChecklist = ?`,
+                [checklist.idChecklist]
+            );
+            
+            // Buscar a estrutura real do Protheus para garantir quantidades de engenharia atualizadas
+            const structureResult = await db.query(
+                `SELECT 
+                     TRIM(g1.g1_comp) as codigo,
+                     CAST(g1.g1_quant AS NUMERIC) as qtd_necessaria
+                 FROM public.sg1010 g1
+                 WHERE TRIM(g1.g1_cod) = $1
+                   AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')`,
+                [checklist.produto_pai]
+            );
+            const structureMap = {};
+            structureResult.rows.forEach(r => {
+                structureMap[r.codigo.trim()] = parseFloat(r.qtd_necessaria) || 1;
+            });
+
+            // Sobrescrever a quantidade necessária com a real da estrutura Protheus
+            items = itemRows.map(item => {
+                const code = (item.codigo_componente || '').trim();
+                return {
+                    ...item,
+                    qtd_necessaria: structureMap[code] !== undefined ? structureMap[code] : (parseFloat(item.qtd_necessaria) || 1.0)
+                };
+            });
+        } else {
+            // Se não existe salvo, buscar a estrutura do produto na OP do Protheus
+            const formattedOp = op.padStart(6, '0');
+            const opResult = await db.query(
+                `SELECT TRIM(c2_produto) as produto, c2_quant::numeric as qtd_op 
+                 FROM public.sc2010 
+                 WHERE TRIM(c2_num) = $1 AND TRIM(c2_item) = $2 AND TRIM(c2_sequen) = $3 
+                   AND COALESCE(d_e_l_e_t_, '') IN ('', ' ') 
+                 LIMIT 1`,
+                [formattedOp, item_op, sequen_op]
+            );
+
+            if (opResult.rows.length === 0) {
+                return res.json(null);
+            }
+
+            const produtoPai = opResult.rows[0].produto;
+            const qtdOp = opResult.rows[0].qtd_op;
+
+            const structureResult = await db.query(
+                `SELECT 
+                     TRIM(g1.g1_comp) as codigo,
+                     TRIM(b1.b1_desc) as descricao,
+                     CAST(g1.g1_quant AS NUMERIC) as qtd_necessaria
+                 FROM public.sg1010 g1
+                 LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp) 
+                     AND COALESCE(b1.d_e_l_e_t_, '') IN ('', ' ')
+                 WHERE TRIM(g1.g1_cod) = $1
+                   AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')`,
+                [produtoPai]
+            );
+
+            checklist = {
+                op,
+                item_op,
+                sequen_op,
+                produto_pai: produtoPai,
+                qtd_conjuntos: qtdOp,
+                observacao_geral: '',
+                status: 'RASCUNHO',
+                data_finalizado: null,
+                foto_url_pai: null,
+                is_template: true
+            };
+
+            items = structureResult.rows.map(row => ({
+                codigo_componente: row.codigo,
+                descricao_componente: row.descricao,
+                montado: 0,
+                observacao: '',
+                foto_url: null,
+                qtd_necessaria: row.qtd_necessaria,
+                qtd_montada: 0
+            }));
+        }
+
+        // Enriquecer itens com arquivos associados da tabela produtos_docs do MySQL
+        const compCodes = items.map(i => i.codigo_componente);
+        let docsMap = {};
+        if (compCodes.length > 0) {
+            const [docs] = await mysqlPool.query(
+                `SELECT id, produto_codigo, url_arquivo, tipo, titulo 
+                 FROM produtos_docs 
+                 WHERE produto_codigo IN (${compCodes.map(() => '?').join(',')}) 
+                 ORDER BY created_at DESC`,
+                compCodes
+            );
+            docs.forEach(d => {
+                const code = d.produto_codigo.trim();
+                if (!docsMap[code]) docsMap[code] = [];
+                docsMap[code].push(d);
+            });
+        }
+
+        const itemsWithDocs = items.map(item => {
+            const code = item.codigo_componente.trim();
+            const arquivos = docsMap[code] || [];
+            return {
+                ...item,
+                tem_arquivos: arquivos.length > 0,
+                arquivos
+            };
+        });
+
+        res.json({
+            ...checklist,
+            itens: itemsWithDocs
+        });
+
+    } catch (error) {
+        console.error('Erro ao buscar checklist:', error);
+        res.status(500).json({ error: 'Erro ao buscar checklist' });
+    }
+});
+
+// 2. Salvar ou atualizar checklist (Rascunho ou Finalizado)
+router.post('/checklist', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const {
+            op,
+            item_op,
+            sequen_op,
+            produto_pai,
+            data_finalizado,
+            qtd_conjuntos,
+            observacao_geral,
+            status,
+            foto_url_pai,
+            itens
+        } = req.body;
+
+        const idUsuario = req.user ? req.user.id : 1; // fallback to 1 if no auth
+
+        // Verificar se já existe e está finalizado
+        const [existing] = await connection.query(
+            `SELECT idChecklist, status FROM app_montagem_checklist WHERE op = ? AND item_op = ? AND sequen_op = ?`,
+            [op, item_op, sequen_op]
+        );
+
+        if (existing.length > 0 && existing[0].status === 'FINALIZADO') {
+            await connection.rollback();
+            return res.status(403).json({ error: 'Este checklist já foi FINALIZADO e não pode mais ser alterado.' });
+        }
+
+        let idChecklist;
+        if (existing.length > 0) {
+            idChecklist = existing[0].idChecklist;
+            // Atualizar cabeçalho
+            await connection.query(
+                `UPDATE app_montagem_checklist 
+                 SET idUsuario = ?, data_finalizado = ?, qtd_conjuntos = ?, observacao_geral = ?, status = ?, foto_url_pai = ?
+                 WHERE idChecklist = ?`,
+                [idUsuario, data_finalizado || null, qtd_conjuntos || 1, observacao_geral || '', status || 'RASCUNHO', foto_url_pai || null, idChecklist]
+            );
+            // Deletar itens antigos para reinserir os novos
+            await connection.query(`DELETE FROM app_montagem_checklist_itens WHERE idChecklist = ?`, [idChecklist]);
+        } else {
+            // Inserir cabeçalho
+            const [result] = await connection.query(
+                `INSERT INTO app_montagem_checklist (op, item_op, sequen_op, produto_pai, idUsuario, data_finalizado, qtd_conjuntos, observacao_geral, status, foto_url_pai)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [op, item_op, sequen_op, produto_pai, idUsuario, data_finalizado || null, qtd_conjuntos || 1, observacao_geral || '', status || 'RASCUNHO', foto_url_pai || null]
+            );
+            idChecklist = result.insertId;
+        }
+
+        // Inserir itens
+        if (Array.isArray(itens) && itens.length > 0) {
+            for (const item of itens) {
+                await connection.query(
+                    `INSERT INTO app_montagem_checklist_itens (idChecklist, codigo_componente, descricao_componente, montado, observacao, foto_url, qtd_necessaria, qtd_montada)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        idChecklist,
+                        item.codigo_componente || item.codigo,
+                        item.descricao_componente || item.descricao || '',
+                        item.montado ? 1 : 0,
+                        item.observacao || '',
+                        item.foto_url || null,
+                        parseFloat(item.qtd_necessaria) || 1.0000,
+                        parseFloat(item.qtd_montada) || 0.0000
+                    ]
+                );
+            }
+        }
+
+        await connection.commit();
+        res.json({ success: true, idChecklist });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao salvar checklist:', error);
+        res.status(500).json({ error: 'Erro ao salvar checklist' });
+    } finally {
+        connection.release();
+    }
+});
+
+// 3. Upload de fotos para o checklist
+router.post('/checklist/upload', checklistUpload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+        }
+        // Retorna a URL relativa que pode ser acessada estaticamente
+        const fileUrl = `/uploads/checklists/${req.file.filename}`;
+        res.json({ url: fileUrl });
+    } catch (error) {
+        console.error('Erro no upload de foto do checklist:', error);
+        res.status(500).json({ error: 'Erro ao processar upload da foto.' });
+    }
 });
 
 module.exports = router;

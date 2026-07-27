@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Shield, Search, CheckCircle, AlertTriangle, Clock, Filter, Printer, FileText, Camera, X, Mail, TrendingUp, Activity, Wrench, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { getAllRncs, updateRnc, getSgqNaoConformidades, getProcessList, getFileUrl, getRncApontamentos, createRncApontamento, deleteRncApontamento } from '../../services/api';
+import { getAllRncs, updateRnc, getSgqNaoConformidades, getProcessList, getFileUrl, getRncApontamentos, createRncApontamento, deleteRncApontamento, getAllSincoRestricoesSz0 } from '../../services/api';
 import { generateRNCPdf, generateSingleRNCPdf } from '../../services/rncPdfGenerator';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -13,6 +13,7 @@ import {
 export default function GestaoRNCs() {
     const { user } = useAuth();
     const [allRncs, setAllRncs] = useState([]);
+    const [sz0Restricoes, setSz0Restricoes] = useState([]);
     const [activeTab, setActiveTab] = useState('lista');
     const [loading, setLoading] = useState(false);
     const [statusFilter, setStatusFilter] = useState('');
@@ -51,6 +52,9 @@ export default function GestaoRNCs() {
 
     const [disposicaoRetrabalho, setDisposicaoRetrabalho] = useState(false);
     const [disposicaoNovaPeca, setDisposicaoNovaPeca] = useState(false);
+    const [protheusPerdaQuant, setProtheusPerdaQuant] = useState('');
+    const [protheusPerdaOperac, setProtheusPerdaOperac] = useState('');
+    const [protheusPerdaLocaliz, setProtheusPerdaLocaliz] = useState('');
     
     const [eficAcoesImplementadas, setEficAcoesImplementadas] = useState('');
     const [eficCorrigiram, setEficCorrigiram] = useState('');
@@ -149,8 +153,12 @@ export default function GestaoRNCs() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const data = await getAllRncs({});
+            const [data, sz0Data] = await Promise.all([
+                getAllRncs({}),
+                getAllSincoRestricoesSz0().catch(e => { console.error('Erro ao buscar SZ0:', e); return []; })
+            ]);
             setAllRncs(data || []);
+            setSz0Restricoes(sz0Data || []);
         } catch (error) {
             console.error('Erro ao buscar RNCs:', error);
             toast.error('Falha ao carregar lista de RNCs.');
@@ -348,6 +356,9 @@ export default function GestaoRNCs() {
                     w2h_frequencia: w2hFrequencia,
                     disposicao_retrabalho: disposicaoRetrabalho,
                     disposicao_nova_peca: disposicaoNovaPeca,
+                    protheus_perda_quant: protheusPerdaQuant,
+                    protheus_perda_operac: protheusPerdaOperac,
+                    protheus_perda_localiz: protheusPerdaLocaliz,
                     efic_acoes_implementadas: eficAcoesImplementadas,
                     efic_corrigiram: eficCorrigiram,
                     efic_reincidencia: eficReincidencia,
@@ -566,7 +577,18 @@ export default function GestaoRNCs() {
                     }`}
                 >
                     <Activity className="w-4 h-4 text-emerald-600" />
-                    Painel de KPIs & Gráficos
+                    KPIs e Gráficos
+                </button>
+                <button
+                    onClick={() => setActiveTab('sz0')}
+                    className={`px-4 py-2.5 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                        activeTab === 'sz0'
+                            ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40 rounded-t-lg'
+                            : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    }`}
+                >
+                    <Wrench className="w-4 h-4 text-orange-600" />
+                    Restrições (SZ0)
                 </button>
                 <button
                     onClick={() => setActiveTab('reposicoes')}
@@ -764,6 +786,9 @@ export default function GestaoRNCs() {
                                                                     setW2hFrequencia(tData.w2h_frequencia || '');
                                                                     setDisposicaoRetrabalho(!!tData.disposicao_retrabalho);
                                                                     setDisposicaoNovaPeca(!!tData.disposicao_nova_peca);
+                                                                    setProtheusPerdaQuant(tData.protheus_perda_quant || '');
+                                                                    setProtheusPerdaOperac(tData.protheus_perda_operac || '');
+                                                                    setProtheusPerdaLocaliz(tData.protheus_perda_localiz || '');
                                                                     setEficAcoesImplementadas(tData.efic_acoes_implementadas || '');
                                                                     setEficCorrigiram(tData.efic_corrigiram || '');
                                                                     setEficReincidencia(tData.efic_reincidencia || '');
@@ -813,6 +838,70 @@ export default function GestaoRNCs() {
                         </div>
                     )}
                 </>
+            )}
+
+            {activeTab === 'sz0' && (
+                <div className="space-y-6 animate-fadeIn">
+                    <div className="bg-white rounded-lg shadow-sm border p-4 flex justify-between items-center">
+                        <h2 className="font-bold text-slate-700 text-lg flex items-center gap-2">
+                            <Wrench className="w-5 h-5 text-orange-600" />
+                            Restrições de Engenharia (SZ0)
+                        </h2>
+                        <div className="text-sm text-slate-500">Total: {sz0Restricoes.length} restrições</div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {Object.entries(sz0Restricoes.reduce((acc, r) => {
+                            if (!acc[r.produto]) acc[r.produto] = [];
+                            acc[r.produto].push(r);
+                            return acc;
+                        }, {})).map(([produto, restricoes]) => (
+                            <div key={produto} className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-800 text-base">{produto} - {restricoes[0]?.descricao_oficial || 'Produto'}</h3>
+                                    <span className="bg-slate-200 text-slate-700 text-xs font-bold px-2 py-1 rounded-full">{restricoes.length}</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-100 text-slate-600">
+                                                <th className="px-4 py-2 border-b w-16">Item</th>
+                                                <th className="px-4 py-2 border-b w-24">Status</th>
+                                                <th className="px-4 py-2 border-b">Resumo</th>
+                                                <th className="px-4 py-2 border-b">Descrição</th>
+                                                <th className="px-4 py-2 border-b w-16 text-center">Rev.</th>
+                                                <th className="px-4 py-2 border-b w-32">Responsável</th>
+                                                <th className="px-4 py-2 border-b w-32">Últ. Alt.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {restricoes.sort((a,b) => Number(a.item) - Number(b.item)).map((r, i) => (
+                                                <tr key={i} className="hover:bg-orange-50/50 transition-colors">
+                                                    <td className="px-4 py-2 font-mono font-medium">{r.item}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${r.status === 'P' ? 'bg-amber-100 text-amber-700' : r.status === 'A' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {r.status === 'P' ? 'Pendente' : r.status === 'A' ? 'Aprovada' : r.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2 font-medium text-slate-700">{r.resumo}</td>
+                                                    <td className="px-4 py-2 text-slate-600 max-w-md truncate" title={r.restricao}>{r.restricao}</td>
+                                                    <td className="px-4 py-2 text-center font-mono font-bold text-slate-500">{r.revisao}</td>
+                                                    <td className="px-4 py-2 text-slate-500">{r.responsavel}</td>
+                                                    <td className="px-4 py-2 text-slate-500">{(r.dt_ultima_alt || '').replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1')} {r.hr_ultima_alt}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ))}
+                        {sz0Restricoes.length === 0 && !loading && (
+                            <div className="text-center py-12 bg-white rounded-lg shadow-sm border text-slate-500">
+                                Nenhuma restrição de engenharia encontrada.
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
 
             {activeTab === 'kpis' && (
@@ -899,7 +988,7 @@ export default function GestaoRNCs() {
                             </div>
                             <div className="h-[280px] w-full">
                                 {defectsData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={defectsData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                                             <XAxis type="number" stroke="#94a3b8" fontSize={10} tickLine={false} />
@@ -929,7 +1018,7 @@ export default function GestaoRNCs() {
                             </div>
                             <div className="h-[280px] w-full">
                                 {recursosData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={recursosData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                                             <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
@@ -964,7 +1053,7 @@ export default function GestaoRNCs() {
                             </div>
                             <div className="h-[250px] w-full">
                                 {trendData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                             <defs>
                                                 <linearGradient id="colorQuant" x1="0" y1="0" x2="0" y2="1">
@@ -995,7 +1084,7 @@ export default function GestaoRNCs() {
                             </div>
                             <div className="h-[200px] w-full relative flex items-center justify-center">
                                 {severityData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <PieChart>
                                             <Pie
                                                 data={severityData}
@@ -1440,6 +1529,24 @@ export default function GestaoRNCs() {
 
                                         {disposicaoNovaPeca && (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                                                <div className="bg-orange-50 border border-orange-100 p-2 rounded mb-2">
+                                                    <h5 className="text-xs font-bold text-orange-800 mb-2">Apontamento de Perda Protheus (Opcional)</h5>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div>
+                                                            <label className="block text-[10px] text-slate-500 mb-1">Quantidade (BC_QUANT)</label>
+                                                            <input type="number" value={protheusPerdaQuant} onChange={e => setProtheusPerdaQuant(e.target.value)} className="w-full text-xs p-1 border border-slate-200 rounded" placeholder="Ex: 1" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] text-slate-500 mb-1">Operação (BC_OPERAC)</label>
+                                                            <input type="text" value={protheusPerdaOperac} onChange={e => setProtheusPerdaOperac(e.target.value)} className="w-full text-xs p-1 border border-slate-200 rounded" placeholder="Ex: 10" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] text-slate-500 mb-1">Localização (BC_LOCALIZ)</label>
+                                                            <input type="text" value={protheusPerdaLocaliz} onChange={e => setProtheusPerdaLocaliz(e.target.value)} className="w-full text-xs p-1 border border-slate-200 rounded" placeholder="Ex: GERAL" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
                                                 <button
                                                     type="button"
                                                     onClick={() => {

@@ -38,7 +38,7 @@ const addDays = (base, n) => {
 const dow = (d) => safeDate(d).getDay();
 
 // ── Gerador principal ─────────────────────────────────────────────────────────
-export const generateGanttPDF = async (opData, orderedGroups, operationPlans) => {
+export const generateGanttPDF = async (opData, orderedGroups, operationPlans, aiAnalysisText) => {
     try {
         // ── Configuração da página: A4 Paisagem ──────────────────────────────
         const doc = new jsPDF('l', 'mm', 'a4');
@@ -264,14 +264,14 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans) =>
                 doc.setFontSize(isWeekend ? 5 : 5.5);
                 doc.setFont('helvetica', isWeekend ? 'italic' : 'bold');
                 doc.setTextColor(isWeekend ? 140 : 30, isWeekend ? 140 : 30, isWeekend ? 140 : 30);
-                doc.text(dayLabel,         x + dayW / 2, GANTT_TOP + HALF_HDR - 1.2, { align: 'center' });
+                doc.text(dayLabel,           x + dayW / 2, GANTT_TOP + HALF_HDR + 2.5, { align: 'center' });
                 doc.setFontSize(4.5);
                 doc.setFont('helvetica','normal');
-                doc.text(weekNames[weekday], x + dayW / 2, GANTT_TOP + HALF_HDR + 2,  { align: 'center' });
+                doc.text(weekNames[weekday], x + dayW / 2, GANTT_TOP + HALF_HDR + 4.5, { align: 'center' });
             } else if (dayW >= 2 && d.getDate() % 2 === 0) {
                 // Datas muito comprimidas: mostra apenas números pares
                 doc.setFontSize(4); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50);
-                doc.text(String(d.getDate()), x + dayW / 2, GANTT_TOP + HALF_HDR, { align: 'center' });
+                doc.text(String(d.getDate()), x + dayW / 2, GANTT_TOP + HALF_HDR + 3.5, { align: 'center' });
             }
         }
 
@@ -367,24 +367,32 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans) =>
                 doc.rect(barX, barY, barW, barH * 0.4, 'F');
                 doc.setGState(new doc.GState({ opacity: 1 }));
 
-                // ── Texto dentro da barra ────────────────────────────────────
-                const textMaxW = barW - 3;
-                if (textMaxW > 8) {
-                    // Data de início e fim
-                    const label = `${fmtShortDate(plan.start)} › ${fmtShortDate(plan.end)}`;
-                    doc.setFontSize(5.5);
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(255, 255, 255);
-                    const labelTrunc = doc.getTextWidth(label) <= textMaxW
-                        ? label
-                        : `${fmtShortDate(plan.start)}`;
-                    doc.text(labelTrunc, barX + barW / 2, midY + 0.5, { align: 'center' });
+                // ── Texto dentro ou fora da barra ────────────────────────────
+                const label = `${fmtShortDate(plan.start)} › ${fmtShortDate(plan.end)}`;
+                doc.setFontSize(5.5);
+                doc.setFont('helvetica', 'bold');
+                const labelW = doc.getTextWidth(label);
 
+                if (labelW <= barW - 3) {
+                    // Cabe dentro
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(label, barX + barW / 2, midY + 0.5, { align: 'center' });
+                    
                     // Duração
                     if (barW > 18) {
                         doc.setFontSize(4.5); doc.setFont('helvetica','normal');
                         doc.setTextColor(220, 235, 255);
                         doc.text(`${plan.duracao}d`, barX + barW / 2, midY + 3.5, { align: 'center' });
+                    }
+                } else {
+                    // Não cabe, mostra fora (à direita ou à esquerda se bater na borda)
+                    doc.setTextColor(40, 40, 40); // preto/cinza escuro
+                    if (barX + barW + 2 + labelW > PW - MR) {
+                        // Se vazar a página pela direita, mostra à esquerda
+                        doc.text(label, barX - 2, midY + 0.5, { align: 'right' });
+                    } else {
+                        // Normal: mostra à direita
+                        doc.text(label, barX + barW + 2, midY + 0.5, { align: 'left' });
                     }
                 }
 
@@ -426,6 +434,34 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans) =>
         );
         doc.text(`Pág. 2`, PW - MR, PH - 4, { align: 'right' });
         doc.setTextColor(0,0,0);
+
+        // ── ABA 3 (Opcional) — Análise PCP IA ────────────────────────────────
+        if (aiAnalysisText) {
+            doc.addPage('a4', 'l');
+            drawHeader('ANÁLISE PCP IA');
+            drawProduct();
+
+            const AI_TOP = PRD_Y + PRD_H + 8;
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(40, 40, 40);
+
+            // Clean Markdown markers like ** and ##
+            let cleanText = aiAnalysisText.replace(/\*\*/g, '').replace(/#/g, '');
+
+            const lines = doc.splitTextToSize(cleanText, PW - ML - MR - 4);
+            doc.text(lines, ML + 2, AI_TOP);
+
+            // Rodapé da página 3
+            doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(130,130,130);
+            doc.text(
+                `Gerado em ${fmtDate(new Date())}  |  MetalFisa PCP System`,
+                PW / 2, PH - 4, { align: 'center' }
+            );
+            doc.text(`Pág. 3`, PW - MR, PH - 4, { align: 'right' });
+            doc.setTextColor(0,0,0);
+        }
 
         // ── Salva ─────────────────────────────────────────────────────────────
         doc.save(`Gantt_Sequencial_OP_${opNumber}.pdf`);

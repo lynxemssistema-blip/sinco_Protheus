@@ -498,7 +498,7 @@ router.get('/carga-maquinas-tv', async (req, res) => {
             return res.json({ success: true, maquinas: [] });
         }
 
-        const opNums = [...new Set(planRows.map(r => r.op_numero))];
+        const opNums = [...new Set(planRows.map(r => r.op_numero).filter(Boolean))];
         const opMap = {};
         const apptMap = {};
 
@@ -506,10 +506,12 @@ router.get('/carga-maquinas-tv', async (req, res) => {
         for (let i = 0; i < opNums.length; i += CHUNK_SIZE) {
             const chunk = opNums.slice(i, i + CHUNK_SIZE);
 
+            if (chunk.length === 0) continue;
+
             const { rows: pgRows } = await db.query(`
                 SELECT TRIM(c2_num) AS op_num, TRIM(c2_item) AS item_op, TRIM(c2_produto) AS produto, c2_quant
                 FROM public.sc2010
-                WHERE c2_num = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
+                WHERE c2_num = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') = ''
             `, [chunk]);
 
             pgRows.forEach(r => opMap[`${r.op_num}|${r.item_op}`] = { 
@@ -530,6 +532,7 @@ router.get('/carga-maquinas-tv', async (req, res) => {
         const maquinasMap = {};
         for(const r of planRows) {
             const key = r.recurso_codigo;
+            if(!key) continue; // skip rows with null/empty recurso_codigo
             if(!maquinasMap[key]) maquinasMap[key] = { recurso: key, ops: [] };
             
             const opData = opMap[`${r.op_numero}|${r.op_item}`] || { produto: 'N/A', quant: 0 };
@@ -557,7 +560,7 @@ router.get('/carga-maquinas-tv', async (req, res) => {
         });
 
         // Sort machines by id
-        maquinas.sort((a, b) => a.recurso.localeCompare(b.recurso));
+        maquinas.sort((a, b) => (a.recurso || '').localeCompare(b.recurso || ''));
 
         res.json({ success: true, maquinas });
 

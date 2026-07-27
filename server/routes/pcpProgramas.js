@@ -24,6 +24,48 @@ function secondsToHhmmss(totalSecs) {
     ].join(':');
 }
 
+// Garante que a ordem_execucao de uma maquina é estrita (1, 2, 3...)
+async function normalizeMachineSequence(maquina_id) {
+    if (!maquina_id) return;
+    try {
+        const [rows] = await mysqlPool.query(`
+            SELECT id FROM pcp_programas_liberados 
+            WHERE maquina_id = ? AND status NOT IN ('CONCLUIDO', 'CANCELADO')
+            ORDER BY CASE WHEN ordem_execucao <= 0 THEN -999 ELSE ordem_execucao END ASC, id DESC
+        `, [maquina_id]);
+        
+        for (let i = 0; i < rows.length; i++) {
+            await mysqlPool.query(
+                `UPDATE pcp_programas_liberados SET ordem_execucao = ? WHERE id = ?`,
+                [i + 1, rows[i].id]
+            );
+        }
+    } catch (err) {
+        console.error("Erro ao normalizar sequencia:", err);
+    }
+}
+
+// Garante que a ordem_execucao de uma maquina é estrita (1, 2, 3...)
+async function normalizeMachineSequence(maquina_id) {
+    if (!maquina_id) return;
+    try {
+        const [rows] = await mysqlPool.query(`
+            SELECT id FROM pcp_programas_liberados 
+            WHERE maquina_id = ? AND status NOT IN ('CONCLUIDO', 'CANCELADO')
+            ORDER BY CASE WHEN ordem_execucao <= 0 THEN -999 ELSE ordem_execucao END ASC, id DESC
+        `, [maquina_id]);
+        
+        for (let i = 0; i < rows.length; i++) {
+            await mysqlPool.query(
+                `UPDATE pcp_programas_liberados SET ordem_execucao = ? WHERE id = ?`,
+                [i + 1, rows[i].id]
+            );
+        }
+    } catch (err) {
+        console.error("Erro ao normalizar sequencia:", err);
+    }
+}
+
 // 1. Criar Liberação de Programa
 // POST /api/pcp/programas
 router.post('/', async (req, res) => {
@@ -105,6 +147,9 @@ router.post('/', async (req, res) => {
             turno_previsao,
             parseInt(ordem_execucao) || 0
         ]);
+
+        // Normaliza a sequência para garantir numeração única 1, 2, 3...
+        await normalizeMachineSequence(maquina_id);
 
         const io = req.app.get('io');
         if (io) io.emit('tv:programas_atualizados');
@@ -551,6 +596,27 @@ router.post('/:id/execucoes/cancelar', async (req, res) => {
     } catch (err) {
         console.error("Erro ao cancelar/reiniciar execução de chapa:", err);
         res.status(500).json({ error: "Erro interno ao reiniciar chapa." });
+    }
+});
+
+// Atualizar tempo de cálculo (base-time) do programa
+router.put('/liberados/:id/base-time', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { base_time_calculo } = req.body;
+
+        await mysqlPool.query(
+            `UPDATE pcp_programas_liberados SET base_time_calculo = ? WHERE id = ?`,
+            [base_time_calculo, id]
+        );
+        
+        const io = req.app.get('io');
+        if (io) io.emit('tv:programas_atualizados');
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Erro ao atualizar base-time:", err);
+        res.status(500).json({ error: "Erro interno" });
     }
 });
 

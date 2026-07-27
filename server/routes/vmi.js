@@ -83,9 +83,56 @@ async function initTables() {
             INDEX idx_data   (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+
+    // ── OC's de Fornecedores ─────────────────────────────────────────────────
+    await mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS app_vmi_oc_lotes (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            lote_id         VARCHAR(36)  NOT NULL UNIQUE,
+            nome_arquivo    VARCHAR(255) DEFAULT NULL,
+            hash_conteudo   VARCHAR(64)  DEFAULT NULL,
+            total_linhas    INT          DEFAULT 0,
+            total_produtos  INT          DEFAULT 0,
+            total_ocs       INT          DEFAULT 0,
+            qtde_total      DECIMAL(15,4) DEFAULT 0,
+            custo_total     DECIMAL(15,2) DEFAULT 0,
+            usuario_id      INT          DEFAULT NULL,
+            usuario_nome    VARCHAR(150) DEFAULT NULL,
+            created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_lote (lote_id),
+            INDEX idx_data (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS app_vmi_oc_itens (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            lote_id         VARCHAR(36)   NOT NULL,
+            oc              VARCHAR(20)   DEFAULT NULL,
+            item_oc         VARCHAR(10)   DEFAULT NULL,
+            produto         VARCHAR(80)   DEFAULT NULL,
+            produto_clean   VARCHAR(80)   DEFAULT NULL,
+            desc_produto    TEXT          DEFAULT NULL,
+            nome_fornecedor VARCHAR(255)  DEFAULT NULL,
+            dt_emissao      DATE          DEFAULT NULL,
+            dt_neg          DATE          DEFAULT NULL,
+            responsavel     VARCHAR(100)  DEFAULT NULL,
+            qtde_em_aberto  DECIMAL(12,4) DEFAULT 0,
+            custo_uni       DECIMAL(14,6) DEFAULT 0,
+            custo_total     DECIMAL(12,2) DEFAULT 0,
+            situacao        VARCHAR(20)   DEFAULT NULL,
+            arm             VARCHAR(10)   DEFAULT NULL,
+            b1_cod          VARCHAR(80)   DEFAULT NULL,
+            INDEX idx_lote    (lote_id),
+            INDEX idx_produto (produto(60)),
+            INDEX idx_b1cod   (b1_cod(60)),
+            INDEX idx_oc      (oc)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
 }
 
 initTables().catch(err => console.error('❌ VMI table init error:', err.message));
+
 
 // Migração incremental: adiciona colunas novas à tabela de cache se ainda não existirem
 (async () => {
@@ -98,6 +145,16 @@ initTables().catch(err => console.error('❌ VMI table init error:', err.message
     ];
     for (const sql of alters) {
         try { await mysqlPool.query(sql); } catch (_) { /* ignora se coluna/índice já existe */ }
+    }
+})();
+
+// Migração incremental: adiciona custo_protheus à tabela de itens OC
+(async () => {
+    const alters = [
+        `ALTER TABLE app_vmi_oc_itens ADD COLUMN custo_protheus DECIMAL(14,6) DEFAULT NULL AFTER b1_cod`,
+    ];
+    for (const sql of alters) {
+        try { await mysqlPool.query(sql); } catch (_) { /* ignora se já existe */ }
     }
 })();
 
@@ -958,15 +1015,24 @@ LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadas
                         const statusMap = {};
                         pgResult.rows.forEach(r => { statusMap[r.b1_cod] = r; });
 
-                        // 2.5 Busca PDFs — tabela opcional, não bloqueia o enriquecimento
+                        // 2.5 Busca PDFs via produtos_docs — mesma tabela e lógica da página /produtos
                         const pdfMap = {};
                         try {
                             const [pdfRows] = await mysqlPool.execute(
-                                `SELECT b1_cod, pdf_url FROM app_vmi_pdfs WHERE b1_cod IN (${b1Cods.map(() => '?').join(',')})`,
+                                `SELECT produto_codigo, url_arquivo
+                                 FROM produtos_docs
+                                 WHERE produto_codigo IN (${b1Cods.map(() => '?').join(',')})
+                                 ORDER BY CASE WHEN tipo = 'Desenho' THEN 0 ELSE 1 END, created_at DESC`,
                                 b1Cods
                             );
-                            pdfRows.forEach(p => { pdfMap[p.b1_cod] = p.pdf_url; });
-                        } catch (_) { /* tabela app_vmi_pdfs pode não existir */ }
+                            // Pega somente o primeiro resultado por produto (Desenho priorizado)
+                            pdfRows.forEach(r => {
+                                const key = String(r.produto_codigo).trim();
+                                if (!pdfMap[key]) pdfMap[key] = r.url_arquivo;
+                            });
+                        } catch (pdfErr) {
+                            console.warn('[VMI] Aviso: não foi possível buscar PDFs em produtos_docs:', pdfErr.message);
+                        }
 
                         // 3. Mescla os dados diretamente em rows (mutação in-place)
                         rows.forEach(r => {
@@ -2206,3 +2272,675 @@ router.post('/ops-progresso', async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar progresso das OPs', details: err.message });
     }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OC'S DE FORNECEDORES — Upload, Salvamento, Listagem e Cruzamento
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Normaliza um código de produto Metalfisa (ex: "33.12.10537.00" → "3312105370")
+// Remove apenas caracteres não-alfanuméricos, mantém TODOS os dígitos/letras
+function normalizeProdutoCode(str) {
+    if (!str) return '';
+    return String(str).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+// Busca o b1_cod no Protheus a partir do código normalizado da coluna C
+// Estratégia: primeiro tenta SB1 direto (pois Col C já é código Metalfisa),
+// depois SZ1 como fallback (tabela de mapeamento cliente-produto)
+async function lookupB1CodFromProduto(normalizedCode) {
+    if (!normalizedCode || normalizedCode.length < 3) return null;
+    const searchCode = normalizedCode.length > 9 ? normalizedCode.substring(0, 9) : normalizedCode;
+    const EXCLUDED_PREFIXES = 'MTC|SCL|MTI|MTA|MT8|MMP|MT7|MT1|MTB|COM';
+    try {
+        // 1. Busca direta no SB1 (catálogo de produtos Metalfisa)
+        const sb1Result = await db.query(`
+            SELECT TRIM(b1_cod) as b1_cod
+            FROM public.sb1010
+            WHERE upper(regexp_replace(trim(b1_cod), '[^a-zA-Z0-9]', '', 'g')) = $1
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+              AND trim(b1_cod) !~* $2
+            LIMIT 1
+        `, [searchCode, EXCLUDED_PREFIXES]);
+        if (sb1Result.rows.length > 0) return sb1Result.rows[0].b1_cod;
+
+        // 2. Busca parcial no SB1 (primeiros 9 chars)
+        const sb1Partial = await db.query(`
+            SELECT TRIM(b1_cod) as b1_cod
+            FROM public.sb1010
+            WHERE upper(left(regexp_replace(trim(b1_cod), '[^a-zA-Z0-9]', '', 'g'), ${searchCode.length})) = $1
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+              AND trim(b1_cod) !~* $2
+            LIMIT 1
+        `, [searchCode, EXCLUDED_PREFIXES]);
+        if (sb1Partial.rows.length > 0) return sb1Partial.rows[0].b1_cod;
+
+        // 3. Fallback: SZ1 (z1_codcli → z1_produto)
+        const sz1Result = await db.query(`
+            SELECT TRIM(z1_produto) as b1_cod
+            FROM public.sz1010
+            WHERE upper(regexp_replace(trim(z1_codcli), '[^a-zA-Z0-9]', '', 'g')) ILIKE $1
+              AND COALESCE(d_e_l_e_t_, '') <> '*'
+              AND trim(z1_produto) <> ''
+            LIMIT 1
+        `, [`%${searchCode}%`]);
+        if (sz1Result.rows.length > 0) return sz1Result.rows[0].b1_cod;
+
+    } catch (err) {
+        console.error(`[OC b1_cod lookup] Erro para "${normalizedCode}":`, err.message);
+    }
+    return null;
+}
+
+// ── POST /api/vmi/oc-fornecedores/upload ──────────────────────────────────────
+// Recebe o arquivo xlsx, faz parse, resolve b1_cod e retorna preview (sem salvar)
+router.post('/oc-fornecedores/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+
+        const wb = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+
+        if (rows.length < 2) return res.status(400).json({ error: 'Planilha vazia ou inválida.' });
+
+        // Validação do cabeçalho esperado (Col C deve conter PRODUTO)
+        const header = rows[0] || [];
+        const headerNorm = header.map(h => String(h || '').trim().toUpperCase());
+        if (!headerNorm.includes('PRODUTO') && !headerNorm.includes('OC')) {
+            return res.status(400).json({
+                error: 'Formato de planilha inválido. Esperado: OC, ITEM_OC, PRODUTO, DESC_PRODUTO, NOME_FORNECEDOR, DT_EMISSAO, DT_NEG, RESPONSAVEL, QTDE_EM_ABERTO, CUSTO_UNI, CUSTO_TOTAL, SITUACAO, ARM',
+                modelo_invalido: true
+            });
+        }
+
+        // Mapeia índices das colunas dinamicamente (robusto a reordenação)
+        const colIdx = {};
+        headerNorm.forEach((h, i) => { colIdx[h] = i; });
+        const ci = (name) => colIdx[name] ?? -1;
+
+        const parseDate = (v) => {
+            if (!v) return null;
+            if (v instanceof Date) return v.toISOString().slice(0, 10);
+            const s = String(v).trim();
+            // DD/MM/YYYY
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+                const [d, m, y] = s.split('/');
+                return `${y}-${m}-${d}`;
+            }
+            try { const dt = new Date(s); return isNaN(dt) ? null : dt.toISOString().slice(0, 10); } catch { return null; }
+        };
+        const parseNum = (v) => {
+            if (v === null || v === undefined || v === '') return 0;
+            const n = parseFloat(String(v).replace(',', '.'));
+            return isNaN(n) ? 0 : n;
+        };
+
+        // Parse das linhas de dados
+        const itens = [];
+        const produtosUnicos = new Set();
+        const ocsUnicas = new Set();
+
+        for (let r = 1; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row) continue;
+            const oc      = ci('OC')      >= 0 ? String(row[ci('OC')]      || '').trim() : '';
+            const produto  = ci('PRODUTO') >= 0 ? String(row[ci('PRODUTO')] || '').trim() : '';
+            if (!oc && !produto) continue; // linha em branco
+
+            const item = {
+                oc,
+                item_oc:        ci('ITEM_OC')        >= 0 ? String(row[ci('ITEM_OC')]        || '').trim() : '',
+                produto,
+                produto_clean:  normalizeProdutoCode(produto),
+                desc_produto:   ci('DESC_PRODUTO')   >= 0 ? String(row[ci('DESC_PRODUTO')]   || '').trim() : '',
+                nome_fornecedor:ci('NOME_FORNECEDOR') >= 0 ? String(row[ci('NOME_FORNECEDOR')]|| '').trim() : '',
+                dt_emissao:     parseDate(ci('DT_EMISSAO')  >= 0 ? row[ci('DT_EMISSAO')]  : null),
+                dt_neg:         parseDate(ci('DT_NEG')       >= 0 ? row[ci('DT_NEG')]       : null),
+                responsavel:    ci('RESPONSAVEL')    >= 0 ? String(row[ci('RESPONSAVEL')]    || '').trim() : '',
+                qtde_em_aberto: parseNum(ci('QTDE_EM_ABERTO') >= 0 ? row[ci('QTDE_EM_ABERTO')] : 0),
+                custo_uni:      parseNum(ci('CUSTO_UNI')       >= 0 ? row[ci('CUSTO_UNI')]       : 0),
+                custo_total:    parseNum(ci('CUSTO_TOTAL')     >= 0 ? row[ci('CUSTO_TOTAL')]     : 0),
+                situacao:       ci('SITUACAO')       >= 0 ? String(row[ci('SITUACAO')]       || '').trim() : '',
+                arm:            ci('ARM')            >= 0 ? String(row[ci('ARM')]            || '').trim() : '',
+                b1_cod:         null // será resolvido abaixo
+            };
+
+            if (produto) produtosUnicos.add(produto);
+            if (oc) ocsUnicas.add(oc);
+            itens.push(item);
+        }
+
+        if (itens.length === 0) return res.status(400).json({ error: 'Nenhum item válido encontrado na planilha.' });
+
+        // Resolve b1_cod em paralelo para todos os produtos únicos
+        const produtosArr = [...produtosUnicos];
+        const b1CodMap = {};
+
+        // Primeiro: verifica mapeamento manual (app_demanda_vmi_map) para produto_clean
+        const cleanCodes = produtosArr.map(p => normalizeProdutoCode(p)).filter(Boolean);
+        if (cleanCodes.length > 0) {
+            try {
+                const [mapRows] = await mysqlPool.query(
+                    `SELECT codigo_produto_cliente, b1_cod FROM app_demanda_vmi_map
+                     WHERE REPLACE(REPLACE(REPLACE(codigo_produto_cliente, '.', ''), '-', ''), '_', '') IN (${cleanCodes.map(() => '?').join(',')})`,
+                    cleanCodes
+                );
+                mapRows.forEach(m => {
+                    const clean = normalizeProdutoCode(m.codigo_produto_cliente);
+                    if (clean && m.b1_cod) b1CodMap[clean] = m.b1_cod;
+                });
+            } catch (_) {}
+        }
+
+        // Para os que não foram resolvidos pelo mapeamento manual: busca no Protheus
+        const semB1 = produtosArr.filter(p => !b1CodMap[normalizeProdutoCode(p)]);
+        if (semB1.length > 0) {
+            const lookups = await Promise.all(semB1.map(async p => ({
+                produto: p,
+                b1_cod: await lookupB1CodFromProduto(normalizeProdutoCode(p))
+            })));
+            lookups.forEach(({ produto, b1_cod }) => {
+                if (b1_cod) b1CodMap[normalizeProdutoCode(produto)] = b1_cod;
+            });
+        }
+
+        // Aplica b1_cod nos itens
+        itens.forEach(item => {
+            item.b1_cod = b1CodMap[item.produto_clean] || null;
+        });
+
+        // Estatísticas para o preview
+        const qtdeTotal   = itens.reduce((s, i) => s + i.qtde_em_aberto, 0);
+        const custoTotal  = itens.reduce((s, i) => s + i.custo_total, 0);
+        const mapeados    = itens.filter(i => i.b1_cod).length;
+
+        res.json({
+            success: true,
+            preview: itens,
+            stats: {
+                total_linhas:   itens.length,
+                total_produtos: produtosUnicos.size,
+                total_ocs:      ocsUnicas.size,
+                qtde_total:     qtdeTotal,
+                custo_total:    custoTotal,
+                mapeados,
+                sem_b1cod:      itens.length - mapeados
+            },
+            nome_arquivo: req.file.originalname ? Buffer.from(req.file.originalname, 'latin1').toString('utf8') : 'Lote',
+            sheet_name:   sheetName
+        });
+
+    } catch (err) {
+        console.error('[OC Upload]', err);
+        res.status(500).json({ error: 'Erro ao processar arquivo: ' + err.message });
+    }
+});
+
+// ── POST /api/vmi/oc-fornecedores/save ───────────────────────────────────────
+// Salva o lote previamente processado no banco
+router.post('/oc-fornecedores/save', async (req, res) => {
+    const { itens, nome_arquivo, sheet_name } = req.body;
+    if (!Array.isArray(itens) || itens.length === 0)
+        return res.status(400).json({ error: 'Nenhum item para salvar.' });
+
+    const lote_id     = uuidv4();
+    const qtdeTotal   = itens.reduce((s, i) => s + Number(i.qtde_em_aberto || 0), 0);
+    const custoTotal  = itens.reduce((s, i) => s + Number(i.custo_total    || 0), 0);
+    const prodUnicos  = new Set(itens.map(i => i.produto).filter(Boolean)).size;
+    const ocsUnicas   = new Set(itens.map(i => i.oc).filter(Boolean)).size;
+    const hashContent = require('crypto').createHash('md5').update(JSON.stringify(itens.slice(0, 5))).digest('hex');
+
+    const conn = await mysqlPool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        await conn.query(
+            `INSERT INTO app_vmi_oc_lotes
+             (lote_id, nome_arquivo, hash_conteudo, total_linhas, total_produtos, total_ocs, qtde_total, custo_total, usuario_id, usuario_nome)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [lote_id, nome_arquivo || '', hashContent, itens.length, prodUnicos, ocsUnicas,
+             qtdeTotal, custoTotal,
+             req.user?.id || req.user?.idUsuario || null,
+             req.user?.nome || req.user?.NomeCompleto || null]
+        );
+
+        // Bulk insert por chunks de 200
+        const CHUNK = 200;
+        for (let i = 0; i < itens.length; i += CHUNK) {
+            const chunk = itens.slice(i, i + CHUNK);
+            const values = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+            const params = chunk.flatMap(item => [
+                lote_id,
+                item.oc            || null,
+                item.item_oc       || null,
+                item.produto       || null,
+                item.produto_clean || null,
+                item.desc_produto  || null,
+                item.nome_fornecedor || null,
+                item.dt_emissao    || null,
+                item.dt_neg        || null,
+                item.responsavel   || null,
+                Number(item.qtde_em_aberto || 0),
+                Number(item.custo_uni      || 0),
+                Number(item.custo_total    || 0),
+                item.situacao      || null,
+                item.arm           || null,
+                item.b1_cod        || null,
+                item.produto_clean || null  // duplicate for produto_clean already set above
+            ]);
+            // Ajuste: 17 params por linha mas a tabela tem 16 campos (sem id AUTO)
+            const values16 = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+            const params16 = chunk.flatMap(item => [
+                lote_id,
+                item.oc            || null,
+                item.item_oc       || null,
+                item.produto       || null,
+                item.produto_clean || null,
+                item.desc_produto  || null,
+                item.nome_fornecedor || null,
+                item.dt_emissao    || null,
+                item.dt_neg        || null,
+                item.responsavel   || null,
+                Number(item.qtde_em_aberto || 0),
+                Number(item.custo_uni      || 0),
+                Number(item.custo_total    || 0),
+                item.situacao      || null,
+                item.arm           || null,
+                item.b1_cod        || null
+            ]);
+            await conn.query(
+                `INSERT INTO app_vmi_oc_itens
+                 (lote_id, oc, item_oc, produto, produto_clean, desc_produto, nome_fornecedor,
+                  dt_emissao, dt_neg, responsavel, qtde_em_aberto, custo_uni, custo_total,
+                  situacao, arm, b1_cod)
+                 VALUES ${values16}`,
+                params16
+            );
+        }
+
+        await conn.commit();
+        res.json({ success: true, lote_id, msg: `${itens.length} itens salvos com sucesso!` });
+
+    } catch (err) {
+        await conn.rollback();
+        console.error('[OC Save]', err);
+        res.status(500).json({ error: 'Erro ao salvar lote: ' + err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// ── GET /api/vmi/oc-fornecedores/lotes ──────────────────────────────────────
+router.get('/oc-fornecedores/lotes', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(
+            `SELECT lote_id, nome_arquivo, total_linhas, total_produtos, total_ocs,
+                    qtde_total, custo_total, usuario_nome, created_at
+             FROM app_vmi_oc_lotes
+             ORDER BY created_at DESC
+             LIMIT 20`
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('[OC Lotes GET]', err);
+        res.status(500).json({ error: 'Erro ao listar lotes.' });
+    }
+});
+
+// ── GET /api/vmi/oc-fornecedores ────────────────────────────────────────────
+// Retorna dados agrupados por produto (Col C), com soma de QTDE_EM_ABERTO
+// Suporta filtros: ?lote=, ?situacao=, ?fornecedor=, ?search=
+router.get('/oc-fornecedores', async (req, res) => {
+    try {
+        const { lote, situacao, fornecedor, search } = req.query;
+
+        let where = ['1=1'];
+        let params = [];
+
+        if (lote)       { where.push('lote_id = ?');            params.push(lote); }
+        if (situacao)   { where.push('situacao = ?');           params.push(situacao); }
+        if (fornecedor) { where.push('nome_fornecedor LIKE ?'); params.push(`%${fornecedor}%`); }
+        if (search)     { where.push('(produto LIKE ? OR desc_produto LIKE ? OR oc LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+
+        const whereClause = where.join(' AND ');
+
+        // Busca os itens individuais para agrupamento no backend
+        const [rows] = await mysqlPool.query(
+            `SELECT oc, item_oc, produto, produto_clean, desc_produto, nome_fornecedor,
+                    dt_emissao, dt_neg, responsavel, qtde_em_aberto, custo_uni, custo_total,
+                    situacao, arm, b1_cod, lote_id, custo_protheus
+             FROM app_vmi_oc_itens
+             WHERE ${whereClause}
+             ORDER BY produto, oc, item_oc`,
+            params
+        );
+
+        // Busca demandas VMI para cruzamento via b1_cod (saldo VMI em aberto)
+        const b1Cods = [...new Set(rows.map(r => r.b1_cod).filter(Boolean))];
+        const demandaMap = {};
+        const pdfMap = {};
+        const protheusPrecoMap = {}; // custo médio Protheus por b1_cod
+        if (b1Cods.length > 0) {
+            try {
+                const [demRows] = await mysqlPool.query(
+                    `SELECT b1_cod,
+                            SUM(saldo_entregar) as saldo_vmi,
+                            SUM(qtd_pedido)     as qtd_pedido_vmi,
+                            SUM(qtd_entregue)   as qtd_entregue_vmi
+                     FROM app_demanda_vmi_pedidos_cache
+                     WHERE b1_cod IN (${b1Cods.map(() => '?').join(',')})
+                     GROUP BY b1_cod`,
+                    b1Cods
+                );
+                demRows.forEach(r => { demandaMap[r.b1_cod] = r; });
+            } catch (_) { /* tabela pode não existir ainda */ }
+
+            // Busca PDF url via produtos_docs — mesma lógica da página /produtos
+            try {
+                const [pdfRows] = await mysqlPool.execute(
+                    `SELECT produto_codigo, url_arquivo
+                     FROM produtos_docs
+                     WHERE produto_codigo IN (${b1Cods.map(() => '?').join(',')})
+                     ORDER BY CASE WHEN tipo = 'Desenho' THEN 0 ELSE 1 END, created_at DESC`,
+                    b1Cods
+                );
+                // Pega somente o primeiro resultado por produto (Desenho priorizado)
+                pdfRows.forEach(r => {
+                    const key = String(r.produto_codigo).trim();
+                    if (!pdfMap[key]) pdfMap[key] = r.url_arquivo;
+                });
+            } catch (pdfErr) {
+                console.warn('[VMI OC] Aviso: não foi possível buscar PDFs em produtos_docs:', pdfErr.message);
+            }
+
+            // Busca custo médio (B1_CUSTD) no Protheus via SB1010
+            try {
+                const placeholders = b1Cods.map((_, i) => `$${i + 1}`).join(',');
+                const protheusRes = await db.query(
+                    `SELECT TRIM(B1_COD) AS b1_cod,
+                            COALESCE(B1_CUSTD, 0)::numeric AS custo_medio,
+                            COALESCE(B1_UPRC,  0)::numeric AS custo_padrao
+                     FROM public.SB1010
+                     WHERE TRIM(COALESCE(D_E_L_E_T_, '')) = ''
+                       AND TRIM(B1_COD) = ANY(ARRAY[${placeholders}])`,
+                    b1Cods
+                );
+                protheusRes.rows.forEach(r => {
+                    protheusPrecoMap[String(r.b1_cod).trim()] = {
+                        custo_medio:  Number(r.custo_medio  || 0),
+                        custo_padrao: Number(r.custo_padrao || 0)
+                    };
+                });
+            } catch (prErr) {
+                console.warn('[VMI OC] Aviso: não foi possível buscar preços no Protheus:', prErr.message);
+            }
+        }
+
+        // Agrupa por produto
+        const grupos = {};
+        rows.forEach(row => {
+            const key = row.produto || `_SEM_PRODUTO_${row.oc}`;
+            if (!grupos[key]) {
+                const b1key = row.b1_cod ? String(row.b1_cod).trim() : null;
+                // custo_protheus: preferência ao valor salvo no banco; fallback ao map on-the-fly
+                const dbPreco  = row.custo_protheus != null ? Number(row.custo_protheus) : null;
+                const livePreco = b1key ? (protheusPrecoMap[b1key] || null) : null;
+                grupos[key] = {
+                    produto:           row.produto,
+                    produto_clean:     row.produto_clean,
+                    desc_produto:      row.desc_produto,
+                    b1_cod:            row.b1_cod,
+                    pdf_url:           b1key ? (pdfMap[b1key] || null) : null,
+                    qtde_total:        0,
+                    custo_total:       0,
+                    custo_uni:         Number(row.custo_uni || 0),
+                    custo_protheus:    dbPreco != null
+                                           ? { custo_medio: dbPreco, custo_padrao: dbPreco }
+                                           : livePreco,
+                    custo_protheus_salvo: dbPreco != null, // indica se já foi sincronizado
+                    itens:             [],
+                    ocs:               new Set(),
+                    fornecedores:      new Set(),
+                    situacoes:         new Set(),
+                    demanda_vmi:       row.b1_cod ? (demandaMap[row.b1_cod] || null) : null
+                };
+            }
+            const g = grupos[key];
+            g.qtde_total  += Number(row.qtde_em_aberto || 0);
+            g.custo_total += Number(row.custo_total    || 0);
+            if (!g.custo_uni && row.custo_uni) g.custo_uni = Number(row.custo_uni);
+            // Se algum item do grupo já tem custo_protheus salvo no banco, usa ele
+            if (row.custo_protheus != null && !g.custo_protheus_salvo) {
+                const dbP = Number(row.custo_protheus);
+                g.custo_protheus = { custo_medio: dbP, custo_padrao: dbP };
+                g.custo_protheus_salvo = true;
+            }
+            g.itens.push(row);
+            if (row.oc)              g.ocs.add(row.oc);
+            if (row.nome_fornecedor) g.fornecedores.add(row.nome_fornecedor);
+            if (row.situacao)        g.situacoes.add(row.situacao);
+            if (!g.b1_cod && row.b1_cod) {
+                const bk = String(row.b1_cod).trim();
+                g.b1_cod        = row.b1_cod;
+                g.demanda_vmi   = demandaMap[row.b1_cod] || null;
+                if (!g.custo_protheus_salvo) g.custo_protheus = protheusPrecoMap[bk] || null;
+                if (!g.pdf_url) g.pdf_url = pdfMap[bk] || null;
+            }
+        });
+
+        // Serializa Sets para arrays
+        const resultado = Object.values(grupos).map(g => ({
+            ...g,
+            ocs:         [...g.ocs],
+            fornecedores:[...g.fornecedores],
+            situacoes:   [...g.situacoes]
+        })).sort((a, b) => (a.produto || '').localeCompare(b.produto || ''));
+
+        // Totais gerais
+        const totalQtde  = resultado.reduce((s, g) => s + g.qtde_total,  0);
+        const totalCusto = resultado.reduce((s, g) => s + g.custo_total, 0);
+        const totalItens = rows.length;
+
+        res.json({
+            success: true,
+            data:    resultado,
+            totais:  { total_grupos: resultado.length, total_itens: totalItens, qtde_total: totalQtde, custo_total: totalCusto }
+        });
+
+    } catch (err) {
+        console.error('[OC GET]', err);
+        res.status(500).json({ error: 'Erro ao buscar dados: ' + err.message });
+    }
+});
+
+// ── POST /api/vmi/oc-fornecedores/lotes/:loteId/sync-prices ──────────────────
+// Busca B1_CUSTD no Protheus para cada item com b1_cod e salva em custo_protheus
+router.post('/oc-fornecedores/lotes/:loteId/sync-prices', async (req, res) => {
+    const { loteId } = req.params;
+    try {
+        // 1. Busca todos os itens com b1_cod do lote
+        const [itens] = await mysqlPool.query(
+            `SELECT id, b1_cod FROM app_vmi_oc_itens
+             WHERE lote_id = ? AND b1_cod IS NOT NULL AND b1_cod <> ''`,
+            [loteId]
+        );
+
+        if (itens.length === 0)
+            return res.json({ success: true, atualizados: 0, msg: 'Nenhum item com b1_cod para buscar preço.' });
+
+        // 2. Lista única de b1_cods
+        const b1Cods = [...new Set(itens.map(i => String(i.b1_cod).trim()).filter(Boolean))];
+
+        // 3. Busca B1_CUSTD em lote no Protheus
+        const precoMap = {};
+        try {
+            const placeholders = b1Cods.map((_, i) => `$${i + 1}`).join(',');
+            const pgRes = await db.query(
+                `SELECT TRIM(SB1.B1_COD) AS b1_cod,
+                        COALESCE(
+                            NULLIF(SB1.B1_CUSTD, 0), 
+                            (SELECT C6_PRCVEN FROM public.SC6010 WHERE TRIM(C6_PRODUTO) = TRIM(SB1.B1_COD) AND TRIM(COALESCE(D_E_L_E_T_, '')) = '' ORDER BY R_E_C_N_O_ DESC LIMIT 1),
+                            0
+                        )::numeric AS custo_medio
+                 FROM public.SB1010 SB1
+                 WHERE TRIM(COALESCE(SB1.D_E_L_E_T_, '')) = ''
+                   AND TRIM(SB1.B1_COD) = ANY(ARRAY[${placeholders}])`,
+                b1Cods
+            );
+            pgRes.rows.forEach(r => {
+                precoMap[String(r.b1_cod).trim()] = Number(r.custo_medio || 0);
+            });
+        } catch (pgErr) {
+            return res.status(500).json({ error: 'Erro ao consultar Protheus: ' + pgErr.message });
+        }
+
+        // 4. Salva custo_protheus nos itens
+        let atualizados = 0;
+        const conn = await mysqlPool.getConnection();
+        try {
+            await conn.beginTransaction();
+            for (const item of itens) {
+                const bk    = String(item.b1_cod).trim();
+                const preco = precoMap[bk];
+                if (preco !== undefined) {
+                    await conn.query(
+                        'UPDATE app_vmi_oc_itens SET custo_protheus = ? WHERE id = ?',
+                        [preco, item.id]
+                    );
+                    atualizados++;
+                }
+            }
+            await conn.commit();
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+
+        const semPreco = b1Cods.length - Object.keys(precoMap).length;
+        res.json({
+            success: true,
+            atualizados,
+            total_verificados: itens.length,
+            sem_preco: semPreco,
+            msg: `${atualizados} itens atualizados com preço Protheus.${ semPreco > 0 ? ` ${semPreco} produto(s) sem custo cadastrado.` : '' }`
+        });
+
+    } catch (err) {
+        console.error('[OC Sync Prices]', err);
+        res.status(500).json({ error: 'Erro ao sincronizar preços: ' + err.message });
+    }
+});
+
+// ── POST /api/vmi/oc-fornecedores/lotes/:loteId/resync ───────────────────────
+// Re-resolve b1_cod no Protheus para todos os itens do lote.
+// Query param: ?force=true → re-resolve TODOS (inclusive os que já têm b1_cod)
+router.post('/oc-fornecedores/lotes/:loteId/resync', async (req, res) => {
+    const { loteId } = req.params;
+    const force = req.query.force === 'true';
+
+    try {
+        // Busca os itens do lote
+        const whereB1 = force ? '1=1' : 'b1_cod IS NULL';
+        const [itens] = await mysqlPool.query(
+            `SELECT id, produto, produto_clean FROM app_vmi_oc_itens
+             WHERE lote_id = ? AND ${whereB1}`,
+            [loteId]
+        );
+
+        if (itens.length === 0) {
+            return res.json({ success: true, atualizados: 0, msg: 'Nenhum item para atualizar.' });
+        }
+
+        // Coleta produtos únicos (sem b1_cod) para resolver
+        const produtosUnicos = [...new Set(itens.map(i => i.produto_clean || normalizeProdutoCode(i.produto)).filter(Boolean))];
+
+        const b1CodMap = {};
+
+        // 1. Mapeamento manual (app_demanda_vmi_map)
+        if (produtosUnicos.length > 0) {
+            try {
+                const [mapRows] = await mysqlPool.query(
+                    `SELECT codigo_produto_cliente, b1_cod FROM app_demanda_vmi_map
+                     WHERE REPLACE(REPLACE(REPLACE(codigo_produto_cliente, '.', ''), '-', ''), '_', '') IN (${produtosUnicos.map(() => '?').join(',')})`,
+                    produtosUnicos
+                );
+                mapRows.forEach(m => {
+                    const clean = normalizeProdutoCode(m.codigo_produto_cliente);
+                    if (clean && m.b1_cod) b1CodMap[clean] = m.b1_cod;
+                });
+            } catch (_) {}
+        }
+
+        // 2. Busca no Protheus para os que ainda não foram resolvidos
+        const semB1 = produtosUnicos.filter(p => !b1CodMap[p]);
+        if (semB1.length > 0) {
+            const lookups = await Promise.all(semB1.map(async p => ({
+                produto_clean: p,
+                b1_cod: await lookupB1CodFromProduto(p)
+            })));
+            lookups.forEach(({ produto_clean, b1_cod }) => {
+                if (b1_cod) b1CodMap[produto_clean] = b1_cod;
+            });
+        }
+
+        // 3. Atualiza no banco somente os que tiveram b1_cod resolvido
+        let atualizados = 0;
+        const conn = await mysqlPool.getConnection();
+        try {
+            await conn.beginTransaction();
+            for (const item of itens) {
+                const clean = item.produto_clean || normalizeProdutoCode(item.produto);
+                const b1 = b1CodMap[clean] || null;
+                if (b1) {
+                    await conn.query(
+                        'UPDATE app_vmi_oc_itens SET b1_cod = ? WHERE id = ?',
+                        [b1, item.id]
+                    );
+                    atualizados++;
+                }
+            }
+            await conn.commit();
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+
+        res.json({
+            success: true,
+            atualizados,
+            total_verificados: itens.length,
+            msg: `${atualizados} de ${itens.length} itens atualizados com b1_cod do Protheus.`
+        });
+
+    } catch (err) {
+        console.error('[OC Resync]', err);
+        res.status(500).json({ error: 'Erro ao re-sincronizar: ' + err.message });
+    }
+});
+
+
+
+router.delete('/oc-fornecedores/lotes/:loteId', async (req, res) => {
+    const { loteId } = req.params;
+    const conn = await mysqlPool.getConnection();
+    try {
+        await conn.beginTransaction();
+        await conn.query('DELETE FROM app_vmi_oc_itens WHERE lote_id = ?', [loteId]);
+        await conn.query('DELETE FROM app_vmi_oc_lotes WHERE lote_id = ?', [loteId]);
+        await conn.commit();
+        res.json({ success: true, msg: 'Lote removido com sucesso.' });
+    } catch (err) {
+        await conn.rollback();
+        console.error('[OC Delete Lote]', err);
+        res.status(500).json({ error: 'Erro ao remover lote.' });
+    } finally {
+        conn.release();
+    }
+});
+
+

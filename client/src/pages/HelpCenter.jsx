@@ -4,9 +4,11 @@ import {
     Search, HelpCircle, ChevronRight, BookOpen, ShoppingCart, Factory,
     Package, Settings, Truck, FileText, BarChart, Calendar, Database,
     ShieldCheck, Lightbulb, Zap, ArrowRight, Home, List, Grid,
-    CheckSquare, TrendingUp, Bell, User, Layers
+    CheckSquare, TrendingUp, Bell, User, Layers, ClipboardCheck, Lock
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
+import { useAuth } from '../contexts/AuthContext';
+import RelatorioEntrega from './RelatorioEntrega';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_MAP = {
@@ -45,11 +47,14 @@ function getStyle(category) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function HelpCenter() {
     const navigate = useNavigate();
+    const { isAdmin } = useAuth();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedId, setSelectedId] = useState(null);
     const [activeCategory, setActiveCategory] = useState('Todos');
     const { allModules, openHelp, loadingHelp } = useHelp();
     const [activeTabId, setActiveTabId] = useState(null);
+    // Main-level tab: 'docs' (default) | 'entrega' (admin-only)
+    const [activeMainTab, setActiveMainTab] = useState('docs');
 
     const selectedModule = useMemo(
         () => allModules.find(m => m.id === selectedId) || null,
@@ -135,36 +140,91 @@ export default function HelpCenter() {
                                 </span>
                             </div>
                             <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-none mb-2">
-                                Documentação
-                                <span className="text-blue-400"> Completa</span>
+                                {activeMainTab === 'entrega' ? (
+                                    <>Entrega para <span className="text-emerald-400">Produção</span></>
+                                ) : (
+                                    <>Documentação <span className="text-blue-400">Completa</span></>
+                                )}
                             </h1>
                             <p className="text-slate-400 text-base max-w-lg">
-                                {allModules.length} módulos documentados. Clique em qualquer módulo para ver o guia detalhado de uso.
+                                {activeMainTab === 'entrega'
+                                    ? 'Relatório técnico oficial de entrega do sistema MetalFisa ERP em produção.'
+                                    : `${allModules.length} módulos documentados. Clique em qualquer módulo para ver o guia detalhado de uso.`
+                                }
                             </p>
                         </div>
 
-                        {/* Search */}
-                        <div className="relative w-full md:w-96">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                            <input
-                                autoFocus
-                                type="text"
-                                placeholder="Buscar por módulo, função ou dica..."
-                                className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/10 border border-white/10 text-white placeholder:text-slate-500 focus:bg-white focus:text-slate-900 focus:placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 transition-all outline-none text-sm"
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                            />
-                            {searchTerm && (
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] bg-white/10 text-slate-300 font-bold px-2 py-0.5 rounded-full">
-                                    {filteredModules.length} resultado{filteredModules.length !== 1 && 's'}
-                                </span>
+                        {/* Right side: search (docs) or nothing (entrega) */}
+                        <div className="flex flex-col gap-3 items-end">
+
+                            {/* ── Main Tab Switcher (admin-only) ── */}
+                            {isAdmin && (
+                                <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1 ring-1 ring-white/10">
+                                    <button
+                                        id="help-tab-docs"
+                                        onClick={() => setActiveMainTab('docs')}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                            activeMainTab === 'docs'
+                                                ? 'bg-white text-slate-900 shadow-sm'
+                                                : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                        }`}
+                                    >
+                                        <BookOpen className="h-3.5 w-3.5" />
+                                        Documentação
+                                    </button>
+                                    <button
+                                        id="help-tab-entrega"
+                                        onClick={() => setActiveMainTab('entrega')}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                            activeMainTab === 'entrega'
+                                                ? 'bg-emerald-500 text-white shadow-sm'
+                                                : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                        }`}
+                                    >
+                                        <ClipboardCheck className="h-3.5 w-3.5" />
+                                        Entrega para Produção
+                                        {activeMainTab !== 'entrega' && (
+                                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase tracking-wider ring-1 ring-emerald-500/30">
+                                                Admin
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Search — only visible on docs tab */}
+                            {activeMainTab === 'docs' && (
+                                <div className="relative w-full md:w-96">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="Buscar por módulo, função ou dica..."
+                                        className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/10 border border-white/10 text-white placeholder:text-slate-500 focus:bg-white focus:text-slate-900 focus:placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 transition-all outline-none text-sm"
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                    />
+                                    {searchTerm && (
+                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] bg-white/10 text-slate-300 font-bold px-2 py-0.5 rounded-full">
+                                            {filteredModules.length} resultado{filteredModules.length !== 1 && 's'}
+                                        </span>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* ── BODY ── */}
+            {/* ── ENTREGA PARA PRODUÇÃO TAB (admin-only) ── */}
+            {activeMainTab === 'entrega' && isAdmin && (
+                <div className="max-w-7xl mx-auto px-6 py-4">
+                    <RelatorioEntrega embedded />
+                </div>
+            )}
+
+            {/* ── BODY (docs tab) ── */}
+            {activeMainTab === 'docs' && (
             <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6">
 
                 {/* ── LEFT SIDEBAR (Category Nav) ── */}
@@ -488,13 +548,16 @@ export default function HelpCenter() {
                     )}
                 </div>
             </div>
+            )} {/* end activeMainTab === 'docs' */}
 
             {/* Footer */}
+            {activeMainTab === 'docs' && (
             <div className="max-w-7xl mx-auto px-6 pb-12 text-center">
                 <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
                     MetalFisa PCP · Central de Ajuda · {allModules.length} módulos documentados
                 </p>
             </div>
+            )}
         </div>
     );
 }

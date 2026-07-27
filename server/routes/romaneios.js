@@ -208,6 +208,93 @@ router.get('/check-op-item', async (req, res) => {
     }
 });
 
+// --- PORTAL DO FORNECEDOR (MySQL) ---
+router.get('/portal/list', async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user || user.tipo !== 'CLI') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas fornecedores.' });
+        }
+
+        let params = [];
+        let filterSql = "";
+
+        if (user.pedidos_autorizados) {
+            const pedidos = user.pedidos_autorizados.split(',').map(p => p.trim()).filter(p => p);
+            if (pedidos.length > 0) {
+                const placeholders = pedidos.map(() => '?').join(',');
+                filterSql = `r.id IN (SELECT romaneio_id FROM app_romaneio_items WHERE pedido IN (${placeholders}))`;
+                params.push(...pedidos);
+            } else {
+                filterSql = "1=0";
+            }
+        } else if (user.idFornecedor) {
+            filterSql = "r.cliente_cod = ?";
+            params.push(user.idFornecedor);
+            if (user.lojaFornecedor) {
+                filterSql += " AND r.cliente_loja = ?";
+                params.push(user.lojaFornecedor);
+            }
+        } else {
+            return res.json([]);
+        }
+
+        const query = `
+            SELECT r.*,
+                   (SELECT COUNT(*) FROM app_romaneio_items i WHERE i.romaneio_id = r.id) as itens_count
+            FROM app_romaneios r
+            WHERE ${filterSql}
+            ORDER BY r.data_liberacao DESC
+            LIMIT 100
+        `;
+        const [rows] = await mysqlPool.query(query, params);
+        res.json(rows);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get('/portal/details/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user;
+        if (!user || user.tipo !== 'CLI') {
+             return res.status(403).json({ error: 'Acesso negado.' });
+        }
+        
+        let params = [id];
+        let filterSql = "";
+        
+        if (user.pedidos_autorizados) {
+            const pedidos = user.pedidos_autorizados.split(',').map(p => p.trim()).filter(p => p);
+            if (pedidos.length > 0) {
+                const placeholders = pedidos.map(() => '?').join(',');
+                filterSql = `AND id IN (SELECT romaneio_id FROM app_romaneio_items WHERE pedido IN (${placeholders}))`;
+                params.push(...pedidos);
+            } else {
+                filterSql = "AND 1=0";
+            }
+        } else if (user.idFornecedor) {
+            filterSql = "AND cliente_cod = ?";
+            params.push(user.idFornecedor);
+            if (user.lojaFornecedor) {
+                filterSql += " AND cliente_loja = ?";
+                params.push(user.lojaFornecedor);
+            }
+        }
+
+        const [romRows] = await mysqlPool.query(`SELECT * FROM app_romaneios WHERE id = ? ${filterSql}`, params);
+        if (romRows.length === 0) return res.status(404).json({ error: 'Romaneio não encontrado ou sem acesso.' });
+
+        const [items] = await mysqlPool.query('SELECT * FROM app_romaneio_items WHERE romaneio_id = ?', [id]);
+        
+        res.json({ romaneio: romRows[0], items });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- TIPOS (MySQL) ---
 router.get('/types', async (req, res) => {
     try {
@@ -1035,7 +1122,7 @@ router.get('/items/search', async (req, res) => {
 // 1. Listar itens de romaneios com saldo pendente ou já recebido (Filtros avançados)
 router.get('/recebimentos/pendentes', async (req, res) => {
     try {
-        const { search, fornecedor, romaneioId, viewMode, tipoRomaneio, pedido } = req.query;
+        const { search, fornecedor, romaneioId, viewMode, tipoRomaneio, pedido, qtde } = req.query;
         // viewMode: 'pendentes' ou 'todos'
 
         let query = `
@@ -1080,6 +1167,11 @@ router.get('/recebimentos/pendentes', async (req, res) => {
         if (pedido) {
             query += ` AND (i.pedido LIKE ? OR i.item_pedido LIKE ?)`;
             params.push(`%${pedido}%`, `%${pedido}%`);
+        }
+
+        if (qtde) {
+            query += ` AND i.quantidade = ?`;
+            params.push(qtde);
         }
 
         query += ` GROUP BY i.id, i.romaneio_id, i.codigo_produto, i.descricao_produto, i.quantidade, i.pedido, i.item_pedido, r.cliente_nome, r.cliente_cod, r.data_liberacao, r.status, r.data_previsao_retorno, t.description, t.id`;

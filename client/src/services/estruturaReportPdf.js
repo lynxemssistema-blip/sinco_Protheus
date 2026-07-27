@@ -366,11 +366,16 @@ function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr
 export const generateEstruturaReport = async (structure, routesMap, options = {}) => {
   if (!structure || structure.length === 0) return;
 
-  const title      = options.title      || 'RELAÇÃO SIMPLIFICADA DAS ESTRUTURAS — MATR225Cus';
-  const footerTitle = options.footerTitle || 'Relação Simplificada das Estruturas';
-  const isNivel1   = options.isNivel1 === true;
-  const carimbo    = options.carimbo   || null;
-  const returnBytes = options.returnBytes === true;
+  const { 
+    title = 'RELAÇÃO SIMPLIFICADA DAS ESTRUTURAS — MATR225Cus', 
+    footerTitle = 'Relação Simplificada das Estruturas', 
+    isNivel1 = false, 
+    includeSubLevelRestrictions = false,
+    sz0Records = [],
+    productStatuses = {},
+    carimbo = null,
+    returnBytes = false
+  } = options;
 
   const doc     = new jsPDF('landscape', 'mm', 'a4');
   const PW      = doc.internal.pageSize.getWidth();
@@ -387,12 +392,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
 
     let seq = 1;
     const matRows = nivel1Items.map((item) => {
-      const codCli = item.referencias && item.referencias.length > 0
-        ? item.referencias.map((r) => r.desenho).filter(Boolean).join(' / ')
-        : '';
-      const revCli = item.referencias && item.referencias.length > 0
-        ? (item.referencias[0].rev_cliente || item.referencias[0].revisao || '')
-        : '';
+      const restCount = item.is_restricted ? 1 : 0;
       return {
         nivel: item.nivel,
         isRestricted: item.is_restricted,
@@ -404,31 +404,33 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           fmtQtd(item.qtd_necessaria),
           item.unidade || '—',
           item.rev_metalfisa || '',
-          codCli,
-          revCli,
+          item.cod_prod_cliente || '',
+          item.rev_cliente || '',
           item.is_restricted ? 'R' : '',
+          productStatuses[item.codigo] || 'NORMAL'
         ],
       };
     });
 
     autoTable(doc, {
       startY: 41,
-      head: [['ITEM', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSÁRIA', 'UM', 'Rv MF', 'Cód Prod Cliente', 'Rv Cliente', 'Restr.']],
+      head: [['ITEM', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSÁRIA', 'UM', 'Rv MF', 'Cód Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
       body: matRows.map((r) => r.data),
       theme: 'grid',
       styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'courier' },
       headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 12 },
-        1: { halign: 'center', cellWidth: 10 },
-        2: { halign: 'left',   cellWidth: 34 },
+        0: { halign: 'center', cellWidth: 10 },
+        1: { halign: 'center', cellWidth: 8 },
+        2: { halign: 'left',   cellWidth: 32 },
         3: { halign: 'left',   overflow: 'linebreak' },
-        4: { halign: 'right',  cellWidth: 26 },
-        5: { halign: 'center', cellWidth: 12 },
-        6: { halign: 'center', cellWidth: 18 },
-        7: { halign: 'left',   cellWidth: 32 },
-        8: { halign: 'center', cellWidth: 16 },
-        9: { halign: 'center', cellWidth: 14 },
+        4: { halign: 'right',  cellWidth: 24 },
+        5: { halign: 'center', cellWidth: 10 },
+        6: { halign: 'center', cellWidth: 16 },
+        7: { halign: 'left',   cellWidth: 30 },
+        8: { halign: 'center', cellWidth: 14 },
+        9: { halign: 'center', cellWidth: 12 },
+        10: { halign: 'center', cellWidth: 16 },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return;
@@ -553,12 +555,12 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       });
     }
     // Nova tabela SZ0 detalhada do produto pai
-    if (options.sz0Records && options.sz0Records.length > 0) {
-      drawSZ0DetailsTable(doc, options.sz0Records, root, PW, ML, MR, dateStr, timeStr, title);
+    if (sz0Records && sz0Records.length > 0) {
+      drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr, title);
     }
 
     // Nível 00 sempre exibido; subitens (Nv.01+) apenas se a opção estiver ativa
-    const restrictionLevelFilter = options.includeSubLevelRestrictions ? null : 0;
+    const restrictionLevelFilter = includeSubLevelRestrictions ? null : 0;
     drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeStr, title, restrictionLevelFilter);
   } else {
     // MODO COMPLETO
@@ -569,12 +571,24 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const nivel = item.nivel || 0;
       const nivelStr = String(nivel).padStart(2, '0');
       const indent = '  '.repeat(nivel);
-      const codCli = item.referencias && item.referencias.length > 0 ? item.referencias.map((r) => r.desenho).filter(Boolean).join(' / ') : '';
-      const revCli = item.referencias && item.referencias.length > 0 ? (item.referencias[0].rev_cliente || item.referencias[0].revisao || '') : '';
+      const restCount = item.is_restricted ? 1 : 0;
       allRows.push({
         type: 'component',
         nivel,
-        data: [String(seq++).padStart(3, '0'), (item.tipo_produto || 'MP').toUpperCase().trim(), nivelStr, indent + (item.codigo || '—'), indent + (item.descricao || '—'), fmtQtd(item.qtd_necessaria), item.unidade || '—', item.rev_metalfisa || '', codCli, revCli, item.is_restricted ? 'R' : ''],
+        data: [
+          String(seq++).padStart(3, '0'),
+          (item.tipo_produto || 'MP').toUpperCase().trim(),
+          nivelStr,
+          indent + (item.codigo || '—'),
+          indent + (item.descricao || '—'),
+          fmtQtd(item.qtd_necessaria),
+          item.unidade || '—',
+          item.rev_metalfisa || '',
+          item.cod_prod_cliente || '',
+          item.rev_cliente || '',
+          item.is_restricted ? 'R' : '',
+          productStatuses[item.codigo] || 'NORMAL'
+        ],
       });
       const k = (item.codigo || '').trim();
       const ops = routesMap[k] || [];
@@ -582,14 +596,27 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
         allRows.push({
           type: 'operation',
           nivel,
-          data: [String(seq++).padStart(3, '0'), 'PR', nivelStr + '+', indent + '  ' + (op.operacao || '—'), indent + '  ' + (op.descricao || '—').trim(), op.tempo_padrao ? parseFloat(op.tempo_padrao).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '0', 'MIN', (op.recurso || '').trim(), (op.departamento || '').trim(), '', ''],
+          data: [
+            String(seq++).padStart(3, '0'), 
+            'PR', 
+            nivelStr + '+', 
+            indent + '  ' + (op.operacao || '—'), 
+            indent + '  ' + (op.descricao || '—').trim(), 
+            op.tempo_padrao ? parseFloat(op.tempo_padrao).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '0', 
+            'MIN', 
+            (op.recurso || '').trim(), 
+            (op.departamento || '').trim(), 
+            '', 
+            '',
+            ''
+          ],
         });
       });
     });
 
     autoTable(doc, {
       startY: 41,
-      head: [['ITEM', 'TP', 'NÍVEL', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSARIA', 'UM', 'Rv Metalfisa', 'Cod Prod Cliente', 'Rv Cliente', 'Restrição']],
+      head: [['ITEM', 'TP', 'NÍVEL', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSARIA', 'UM', 'Rv MF', 'Cod Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
       body: allRows.map((r) => r.data),
       theme: 'grid',
       styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'courier' },

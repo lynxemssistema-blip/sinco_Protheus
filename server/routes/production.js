@@ -252,7 +252,7 @@ router.get('/tracking-comparison', async (req, res) => {
         if (appointmentOps.length > 0) {
             // Optimization: If list is huge, this might be slow, but for 50-100 items it's fine.
             // Using ANY($n) for cleaner array handling
-            opScopeClause = `( ${criteriaClause} OR TRIM(c2.c2_num) = ANY($${paramCount}) )`;
+            opScopeClause = `( ${criteriaClause} OR TRIM(c2.c2_num) = ANY($${paramCount}::text[]) )`;
             protheusParams.push(appointmentOps);
             paramCount++;
         }
@@ -1287,6 +1287,8 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
                 ...row,
                 data_planejada_inicio: plan?.data_planejada_inicio || null,
                 data_planejada_fim: plan?.data_planejada_fim || null,
+                ordem_recurso: plan?.ordem_recurso ?? null,
+                selecionado: plan?.selecionado ?? null,
                 dias_espera: plan?.dias_espera || 0,
                 qtd_produzida_real: prog?.total_produzido || 0,
                 tem_pendencia_conferencia: prog ? prog.pendencias_conferencia > 0 : false,
@@ -1906,6 +1908,8 @@ router.get('/operations/:id', async (req, res) => {
             pedido_venda: pedido_final,
             data_planejada_inicio: plan?.data_planejada_inicio || null,
             data_planejada_fim: plan?.data_planejada_fim || null,
+            ordem_recurso: plan?.ordem_recurso ?? null,
+            selecionado: plan?.selecionado ?? null,
             qtd_produzida_real: progress?.total_produzido || 0,
             ultimo_apontamento: progress?.ultimo_apontamento || null,
             data_real_fim: progress?.data_real_fim || null,
@@ -2215,7 +2219,7 @@ router.post('/cascade-preview', async (req, res) => {
 //               campo de observação, gravação em app_planning_history
 router.post('/plan-batch', async (req, res) => {
     try {
-        const { plans, observacao, modo_calculo, preferencias } = req.body;
+        const { plans, observacao, modo_calculo, preferencias, atualizar_data_pcp, data_entrega_pcp_valor, pedido_pcp, item_pcp } = req.body;
 
         if (!Array.isArray(plans) || plans.length === 0) {
             return res.status(400).json({ error: 'Nenhum plano fornecido.' });
@@ -2291,14 +2295,14 @@ router.post('/plan-batch', async (req, res) => {
                 const chunk = plans.slice(i, i + CHUNK_SIZE);
                 if (chunk.length === 0) continue;
 
-                const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+                const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
                 const sql = `
                     INSERT INTO app_production_planning
                         (op_numero, op_item, op_sequencia, operacao_codigo,
                          recurso_codigo, produto_codigo,
                          data_planejada_inicio, data_planejada_fim,
                          lote_id, usuario_planejador, observacao_lote,
-                         duracao_dias, modo_calculo)
+                         duracao_dias, modo_calculo, ordem_recurso, selecionado)
                     VALUES ${placeholders}
                     ON DUPLICATE KEY UPDATE
                         recurso_codigo        = COALESCE(VALUES(recurso_codigo), recurso_codigo),
@@ -2309,7 +2313,9 @@ router.post('/plan-batch', async (req, res) => {
                         usuario_planejador     = VALUES(usuario_planejador),
                         observacao_lote        = VALUES(observacao_lote),
                         duracao_dias           = VALUES(duracao_dias),
-                        modo_calculo           = VALUES(modo_calculo)
+                        modo_calculo           = VALUES(modo_calculo),
+                        ordem_recurso          = VALUES(ordem_recurso),
+                        selecionado            = VALUES(selecionado)
                 `;
 
                 const values = [];
@@ -2321,7 +2327,9 @@ router.post('/plan-batch', async (req, res) => {
                         p.data_inicio, p.data_fim,
                         lote_id, usuario, observacao || null,
                         p.duracao_dias || null,
-                        modo_calculo || null
+                        modo_calculo || null,
+                        p.ordem_recurso ?? null,
+                        p.selecionado === false ? 0 : 1
                     );
                 });
                 await connection.execute(sql, values);
@@ -2433,6 +2441,31 @@ router.post('/plan-batch', async (req, res) => {
 
             await connection.commit();
             console.log(`✅ [BATCH PLAN v2] Sucesso — lote ${lote_id}`);
+
+            // ── UPSERT Data PCP do Produto Pai (opcional) ────────────────────────────────────
+            // Apenas quando: OP é produto pai (sequen=001) E usuário marcou a opção
+            if (atualizar_data_pcp && data_entrega_pcp_valor && pedido_pcp && item_pcp) {
+                try {
+                    await mysqlPool.query(`
+                        INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, usuario_pcp, updated_at)
+                        VALUES (?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE
+                            data_entrega_pcp = VALUES(data_entrega_pcp),
+                            usuario_pcp      = VALUES(usuario_pcp),
+                            updated_at       = NOW()
+                    `, [
+                        String(pedido_pcp).trim(),
+                        String(item_pcp).trim(),
+                        data_entrega_pcp_valor,
+                        usuario
+                    ]);
+                    console.log(`📅 [DATA PCP] Atualizado: pedido=${pedido_pcp} item=${item_pcp} data=${data_entrega_pcp_valor}`);
+                } catch (pcpErr) {
+                    // Não bloqueia o retorno, apenas loga o erro
+                    console.error('⚠️ [DATA PCP] Erro ao atualizar data_entrega_pcp:', pcpErr.message);
+                }
+            }
+
             res.json({
                 message: 'Planejamento salvo com sucesso!',
                 lote_id,
@@ -2547,9 +2580,7 @@ router.get('/planning-history/:op', async (req, res) => {
         const result = lotes.map((lote, idx) => ({
             lote_id: lote.lote_id,
             op_numero: lote.op_numero,
-            usuario: lote.usuario,
-            observacao: lote.observacao,
-            modo_calculo: lote.modo_calculo,
+                         modo_calculo: lote.modo_calculo,
             dias_modo: lote.dias_modo,
             inclui_sabado: !!lote.inclui_sabado,
             inclui_domingo: !!lote.inclui_domingo,
@@ -2568,10 +2599,44 @@ router.get('/planning-history/:op', async (req, res) => {
     }
 });
 
-// GET /api/production/planning-prefs/:op - Prefer\u00eancias do \u00faltimo lote de planejamento da OP
-// Usado para restaurar as prefer\u00eancias salvas pelo usu\u00e1rio anterior ao abrir o modal
+// PUT /api/production/planning-prefs/:op - Salva preferências isoladas (sem precisar de datas)
+// Persiste daysMode, sábado, domingo, ST mesmo antes de calcular o cronograma
+router.put('/planning-prefs/:op', async (req, res) => {
+    try {
+        const op = String(req.params.op).trim();
+        const { diasModo, incluiSabado, incluiDomingo, incluiST, ordemRecursos } = req.body;
+        const usuario = req.user?.login || req.user?.Login || req.user?.username || req.user?.name || 'planejador';
+
+        const [existing] = await mysqlPool.query(
+            `SELECT lote_id FROM app_planning_lotes WHERE op_numero = ? ORDER BY criado_em DESC LIMIT 1`,
+            [op]
+        );
+
+        if (existing.length > 0) {
+            await mysqlPool.execute(
+                `UPDATE app_planning_lotes SET dias_modo=?, inclui_sabado=?, inclui_domingo=?, inclui_st=?, ordem_recursos=?, usuario=? WHERE lote_id=?`,
+                [diasModo || 'calendar', incluiSabado ? 1 : 0, incluiDomingo ? 1 : 0, incluiST ? 1 : 0,
+                 ordemRecursos ? JSON.stringify(ordemRecursos) : null, usuario, existing[0].lote_id]
+            );
+        } else {
+            const lote_id = `PREFS-${Date.now().toString(16).toUpperCase()}-${Math.random().toString(16).slice(2,6).toUpperCase()}`;
+            await mysqlPool.execute(
+                `INSERT INTO app_planning_lotes (lote_id, op_numero, usuario, observacao, modo_calculo, dias_modo, inclui_sabado, inclui_domingo, inclui_st, ordem_recursos) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+                [lote_id, op, usuario, null, null, diasModo || 'calendar', incluiSabado ? 1 : 0, incluiDomingo ? 1 : 0, incluiST ? 1 : 0, ordemRecursos ? JSON.stringify(ordemRecursos) : null]
+            );
+        }
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[PLANNING-PREFS PUT]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/production/planning-prefs/:op - Preferências do último lote de planejamento da OP
+// Usado para restaurar as preferências salvas pelo usuário anterior ao abrir o modal
 router.get('/planning-prefs/:op', async (req, res) => {
     try {
+
         const op = String(req.params.op).trim();
         const [rows] = await mysqlPool.query(`
             SELECT dias_modo, inclui_sabado, inclui_domingo, inclui_st, ordem_recursos, usuario, criado_em
@@ -3395,14 +3460,17 @@ const trackingEvolutionHandler = async (req, res) => {
         }
 
         // 2. Fetch Sales Orders with Items and OPs (Refactored for Roteiro Explosion)
+        // NOTE: convert_from(convert_to(...)) sanitiza dados WIN1252 corrompidos do Protheus
+        const safeText = (col) => `convert_from(convert_to(${col}::text, 'WIN1252'), 'UTF8')`;
+
         const query = `
             WITH PedidosBase AS(
         SELECT DISTINCT
                     c5.c5_num AS pedido,
         c5.c5_cliente AS cod_cliente,
         c5.c5_lojacli AS loja_cliente,
-        a1.a1_nome AS nome_cliente,
-        a1.a1_nreduz AS fantasia_cliente,
+        ${safeText('a1.a1_nome')} AS nome_cliente,
+        ${safeText('a1.a1_nreduz')} AS fantasia_cliente,
         c5.c5_emissao AS data_emissao
                 FROM public.sc5010 c5
                 LEFT JOIN public.sa1010 a1 
@@ -3418,7 +3486,7 @@ const trackingEvolutionHandler = async (req, res) => {
                     c6.c6_num AS pedido,
         c6.c6_item AS item,
         c6.c6_produto AS cod_produto,
-        TRIM(c6.c6_descri) AS desc_produto,
+        TRIM(${safeText('c6.c6_descri')}) AS desc_produto,
         c6.c6_qtdven:: numeric AS qtd_item,
         c6.c6_entreg AS data_entrega
                 FROM public.sc6010 c6
@@ -3474,9 +3542,9 @@ const trackingEvolutionHandler = async (req, res) => {
     op.pedido,
     op.item_pedido,
     op.qtd_planejada,
-    TRIM(g2.g2_operac) AS sequencia, --Real Operation Sequence(01, 05, 10)
-                    TRIM(g2.g2_recurso) AS recurso,
-    TRIM(g2.g2_descri) AS desc_operacao
+    TRIM(g2.g2_operac) AS sequencia,
+                    TRIM(${safeText('g2.g2_recurso')}) AS recurso,
+    TRIM(${safeText('g2.g2_descri')}) AS desc_operacao
                 FROM OPsCabecalho op
                 LEFT JOIN public.sg2010 g2 
                     ON btrim(g2.g2_produto) = btrim(op.cod_produto) 
@@ -3708,6 +3776,15 @@ SUM(quantidade) as total_produzido,
         });
 
     } catch (err) {
+        // Erro específico de encoding (dados WIN1252 corrompidos do Protheus)
+        if (err.message && err.message.includes('encoding')) {
+            console.error('❌ [PEDIDOS-EVOLUTION] Erro de encoding (WIN1252→UTF8):', err.message);
+            return res.status(500).json({
+                error: 'Erro de codificação de caracteres nos dados do ERP (WIN1252). Verifique o registro que contém caracteres especiais inválidos.',
+                detail: err.message,
+                code: 'ENCODING_ERROR'
+            });
+        }
         console.error('❌ [PEDIDOS-EVOLUTION] Error:', err);
         res.status(500).json({ error: err.message });
     }
@@ -4474,14 +4551,18 @@ WHERE(i.CodMatFabricante = ? OR i.CodMatFabricante = ?) AND i.ProdutoPrincipal =
                     const docsMap = {};
                     docs.forEach(d => {
                         if (!docsMap[d.produto_codigo]) {
-                            docsMap[d.produto_codigo] = d.url_arquivo;
+                            docsMap[d.produto_codigo] = [];
                         }
+                        docsMap[d.produto_codigo].push(d.url_arquivo);
                     });
 
                     finalItems.forEach(i => {
-                        if (docsMap[i.codigo]) {
+                        if (docsMap[i.codigo] && docsMap[i.codigo].length > 0) {
                             i.tem_arquivos = true;
-                            i.primeiro_arquivo = docsMap[i.codigo];
+                            i.primeiro_arquivo = docsMap[i.codigo][0];
+                            i.arquivos = docsMap[i.codigo];
+                        } else {
+                            i.arquivos = [];
                         }
                     });
                 }
@@ -5057,5 +5138,100 @@ router.get('/daily-schedule', async (req, res) => {
     }
 });
 
+// POST /api/production/op-materials - Retorna os empenhos (SD4) das OPs solicitadas
+router.post('/op-materials', async (req, res) => {
+    try {
+        const { ops } = req.body;
+        if (!ops || !Array.isArray(ops) || ops.length === 0) {
+            return res.json({ success: true, materials: [] });
+        }
+
+        // Build array of D4_OP values (concatenation of OP + ITEM + SEQUEN)
+        const d4Ops = ops.map(op => {
+            const num = String(op.op).padEnd(6, ' ');
+            const item = String(op.item_op).padStart(2, '0');
+            const seq = String(op.sequen).padStart(3, '0');
+            return `'${num}${item}${seq}'`;
+        }).join(',');
+
+        const query = `
+            SELECT 
+                TRIM(SD4.D4_OP) as op_formatada,
+                TRIM(SD4.D4_COD) as material_codigo,
+                TRIM(SB1.B1_DESC) as material_descricao,
+                TRIM(SB1.B1_UM) as um,
+                TRIM(SB1.B1_TIPO) as tipo,
+                TRIM(SB1.B1_GRUPO) as grupo,
+                SD4.D4_QTDEORI as qtd_original,
+                SD4.D4_QUANT as qtd_pendente,
+                TRIM(SD4.D4_DATA) as data_necessidade_op,
+                SD4.D4_LOCAL as armazem,
+                
+
+                -- Solicitação (Compras)
+                TRIM(SC1.C1_NUM) as num_sc,
+                TRIM(SC1.C1_EMISSAO) as data_emissao_sc,
+                TRIM(SC1.C1_DATPRF) as data_sc,
+                
+                -- Pedido (Compras)
+                TRIM(SC7.C7_NUM) as num_pc,
+                TRIM(SC7.C7_EMISSAO) as data_emissao_pc,
+                TRIM(SC7.C7_DATPRF) as data_pc,
+                TRIM(SC7.C7_FORNECE) as fornecedor_cod
+                
+            FROM SD4010 SD4
+            INNER JOIN SB1010 SB1 ON TRIM(SB1.B1_COD) = TRIM(SD4.D4_COD) AND SB1.D_E_L_E_T_ = ''
+            LEFT JOIN SC1010 SC1 ON TRIM(SC1.C1_OP) = TRIM(SD4.D4_OP) AND TRIM(SC1.C1_PRODUTO) = TRIM(SD4.D4_COD) AND SC1.D_E_L_E_T_ = ''
+            LEFT JOIN SC7010 SC7 ON TRIM(SC7.C7_NUMSC) = TRIM(SC1.C1_NUM) AND TRIM(SC7.C7_ITEMSC) = TRIM(SC1.C1_ITEM) AND SC7.D_E_L_E_T_ = ''
+            WHERE SD4.D_E_L_E_T_ = ''
+              AND TRIM(SD4.D4_OP) IN (${ops.map(op => `'${String(op.op).trim()}${String(op.item_op).trim()}${String(op.sequen).trim()}'`).join(',')})
+              AND TRIM(SB1.B1_TIPO) = 'MP'
+            ORDER BY TRIM(SD4.D4_OP), TRIM(SD4.D4_COD)
+        `;
+
+        const result = await db.query(query);
+        const materials = result.rows;
+
+        // Fetch stock across ALL warehouses for these materials
+        if (materials.length > 0) {
+            const uniqueCodes = [...new Set(materials.map(m => m.material_codigo))];
+            const sb2Query = `
+                SELECT 
+                    TRIM(B2_COD) as material_codigo,
+                    TRIM(B2_LOCAL) as armazem,
+                    B2_QATU as qatu,
+                    B2_QEMP as qemp
+                FROM SB2010
+                WHERE D_E_L_E_T_ = ''
+                  AND TRIM(B2_COD) IN (${uniqueCodes.map(c => `'${c}'`).join(',')})
+            `;
+            const sb2Result = await db.query(sb2Query);
+            
+            const stockMap = {};
+            for(const row of sb2Result.rows) {
+                if(!stockMap[row.material_codigo]) stockMap[row.material_codigo] = [];
+                const livre = (row.qatu || 0) - (row.qemp || 0);
+                if (livre > 0 || row.armazem === '03') { // Keep positive stock, or 03 (standard)
+                   stockMap[row.material_codigo].push({ armazem: row.armazem, livre });
+                }
+            }
+
+            for(const m of materials) {
+                const stocks = stockMap[m.material_codigo] || [];
+                m.estoques_detalhe = stocks.sort((a,b) => b.livre - a.livre);
+                // Set total available stock so frontend logic (estoque_atual - estoque_empenhado) still works for total
+                m.estoque_atual = stocks.reduce((acc, curr) => acc + curr.livre, 0);
+                m.estoque_empenhado = 0; 
+            }
+        }
+
+        res.json({ success: true, materials: materials });
+    } catch (err) {
+        console.error('[OP MATERIALS ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
+
 

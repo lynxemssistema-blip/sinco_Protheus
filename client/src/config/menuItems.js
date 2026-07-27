@@ -4,11 +4,18 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
 
+    {
+        id: 'cliente',
+        label: 'Acesso Cliente',
+        items: [
+            { id: 'canal_cliente', label: 'Meus Projetos (Portal)', path: '/portal-cliente', icon: Monitor }
+        ]
+    },
     {
         id: 'pessoal',
         label: 'Meu Painel',
@@ -92,7 +99,8 @@ export const MENU_GROUPS = [
             { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link },
             { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight },
             { id: 'pcp_controle_execucao', label: 'Controle de Execução', path: '/pcp/controle-execucao', icon: Play },
-            { id: 'pcp_programas_ncn', label: 'Programa CNC', path: '/pcp/programas-ncn', icon: FileText }
+            { id: 'pcp_programas_ncn', label: 'Programa CNC', path: '/pcp/programas-ncn', icon: FileText },
+            { id: 'montagem_solicitacoes', label: 'Pendências da Montagem', path: '/pcp/montagem-solicitacoes', icon: ClipboardList }
         ]
     },
     {
@@ -125,6 +133,7 @@ export const MENU_GROUPS = [
         label: 'Logística',
         items: [
             { id: 'romaneios', label: 'Expedição (Romaneios)', path: '/romaneios', icon: Truck },
+            { id: 'portal_fornecedor', label: 'Portal do Fornecedor', path: '/fornecedor/romaneios', icon: Truck },
             { id: 'recebimentos', label: 'Recebimento de Retornos', path: '/recebimentos', icon: Inbox },
             { id: 'estoque', label: 'Estoque & Saldos', path: '/saldo-materiais', icon: Package }
         ]

@@ -1046,33 +1046,51 @@ router.get('/fila-dependencias', async (req, res) => {
         
         if (produtosDoRecurso.size === 0) return res.json({ inbound: [], outbound: [] });
 
-        // 2. Buscar OPs ativas ate dataLimite
-        const opsQuery = `
-            SELECT
-                RTRIM(pl.c2_num)       AS op,
-                RTRIM(pl.c2_item)      AS item_op,
-                RTRIM(pl.c2_sequen)    AS sequen,
-                RTRIM(pl.c2_pedido)    AS pedido_venda,
-                RTRIM(pl.c2_itempv)    AS item_pv,
-                TRIM(pl.c2_produto)    AS cod_produto,
-                COALESCE(pl.c2_quant, 0) AS qtd_total,
-                RTRIM(pl.c2_datpri)    AS data_planejada,
-                RTRIM(pl.c2_datprf)    AS data_fim_planejada,
-                RTRIM(sb1.b1_desc)     AS desc_produto,
-                RTRIM(c.a1_nome)     AS nome_cliente
-            FROM sc2010 pl
-            LEFT JOIN sb1010 sb1 ON pl.c2_produto = sb1.b1_cod AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '
-            INNER JOIN sc5010 pv ON pl.c2_pedido = pv.c5_num AND COALESCE(pv.d_e_l_e_t_, ' ') = ' '
-            INNER JOIN sc6010 c6 ON pl.c2_pedido = c6.c6_num AND pl.c2_itempv = c6.c6_item AND COALESCE(c6.d_e_l_e_t_, ' ') = ' '
-            LEFT JOIN sa1010 c ON pv.c5_cliente = c.a1_cod AND pv.c5_lojacli = c.a1_loja AND COALESCE(c.d_e_l_e_t_, ' ') = ' '
-            WHERE pl.c2_datpri <= $1
-              AND COALESCE(pl.c2_quant, 0) > COALESCE(pl.c2_quje, 0)
-              AND COALESCE(pl.d_e_l_e_t_, ' ') = ' '
-              AND TRIM(pl.c2_pedido) != ''
-              AND COALESCE(c6.c6_qtdven, 0) > COALESCE(c6.c6_qtdent, 0)
-            ORDER BY RTRIM(pl.c2_datpri) ASC
-        `;
-        const { rows: allOps } = await db.query(opsQuery, [dataLimite]);
+        // 2. Buscar OPs ativas ate dataLimite (EM LOTE POR PRODUTO)
+        const produtosArr = Array.from(produtosDoRecurso);
+        let allOps = [];
+        
+        if (produtosArr.length > 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < produtosArr.length; i += chunkSize) {
+                const chunk = produtosArr.slice(i, i + chunkSize);
+                
+                const opsQuery = `
+                    SELECT
+                        RTRIM(pl.c2_num)       AS op,
+                        RTRIM(pl.c2_item)      AS item_op,
+                        RTRIM(pl.c2_sequen)    AS sequen,
+                        RTRIM(pl.c2_pedido)    AS pedido_venda,
+                        RTRIM(pl.c2_itempv)    AS item_pv,
+                        TRIM(pl.c2_produto)    AS cod_produto,
+                        COALESCE(pl.c2_quant, 0) AS qtd_total,
+                        RTRIM(pl.c2_datpri)    AS data_planejada,
+                        RTRIM(pl.c2_datprf)    AS data_fim_planejada,
+                        RTRIM(sb1.b1_desc)     AS desc_produto,
+                        RTRIM(c.a1_nome)     AS nome_cliente
+                    FROM sc2010 pl
+                    LEFT JOIN sb1010 sb1 ON pl.c2_produto = sb1.b1_cod AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '
+                    INNER JOIN sc5010 pv ON pl.c2_pedido = pv.c5_num AND COALESCE(pv.d_e_l_e_t_, ' ') = ' '
+                    INNER JOIN sc6010 c6 ON pl.c2_pedido = c6.c6_num AND pl.c2_itempv = c6.c6_item AND COALESCE(c6.d_e_l_e_t_, ' ') = ' '
+                    LEFT JOIN sa1010 c ON pv.c5_cliente = c.a1_cod AND pv.c5_lojacli = c.a1_loja AND COALESCE(c.d_e_l_e_t_, ' ') = ' '
+                    WHERE pl.c2_datpri <= $1
+                      AND TRIM(pl.c2_produto) = ANY($2)
+                      AND COALESCE(pl.c2_quant, 0) > COALESCE(pl.c2_quje, 0)
+                      AND COALESCE(pl.d_e_l_e_t_, ' ') = ' '
+                      AND TRIM(pl.c2_pedido) != ''
+                      AND COALESCE(c6.c6_qtdven, 0) > COALESCE(c6.c6_qtdent, 0)
+                `;
+                const { rows } = await db.query(opsQuery, [dataLimite, chunk]);
+                allOps.push(...rows);
+            }
+        }
+        
+        // Ordena por data
+        allOps.sort((a, b) => {
+            const dataA = a.data_planejada || '';
+            const dataB = b.data_planejada || '';
+            return dataA.localeCompare(dataB);
+        });
 
         // VERIFICAR CONFIGURAÇÃO DE PEDIDOS INATIVOS
         let activeOps = allOps;
@@ -1089,8 +1107,7 @@ router.get('/fila-dependencias', async (req, res) => {
             console.error('Erro ao buscar status de pedidos inativos:', e);
         }
         
-        // Filtrar OPs que possuem roteiro passando pelo recurso
-        const ops = activeOps.filter(o => produtosDoRecurso.has(o.cod_produto));
+        const ops = activeOps;
 
         if (ops.length === 0) return res.json({ inbound: [], outbound: [] });
 

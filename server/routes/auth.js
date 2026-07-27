@@ -24,7 +24,7 @@ router.post('/login', async (req, res) => {
 
     try {
         const [rows] = await db.execute(
-            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, Senha FROM usuario WHERE Login = ?',
+            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, Senha, idFornecedor, lojaFornecedor, pedidos_autorizados FROM usuario WHERE Login = ?',
             [login]
         );
 
@@ -64,7 +64,7 @@ router.post('/login', async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.idUsuario, login: user.Login, nome: user.NomeCompleto, tipo: user.TipoUsuario },
+            { id: user.idUsuario, login: user.Login, nome: user.NomeCompleto, tipo: user.TipoUsuario, idFornecedor: user.idFornecedor, lojaFornecedor: user.lojaFornecedor },
             SECRET_KEY,
             { expiresIn: '8h' }
         );
@@ -77,7 +77,10 @@ router.post('/login', async (req, res) => {
                 login: user.Login,
                 tipo: user.TipoUsuario,
                 fotoUsuario: user.fotoUsuario,
-                email: user.email
+                email: user.email,
+                idFornecedor: user.idFornecedor,
+                lojaFornecedor: user.lojaFornecedor,
+                pedidos_autorizados: user.pedidos_autorizados
             }
         });
 

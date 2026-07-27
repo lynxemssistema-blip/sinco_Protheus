@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '../contexts/AuthContext';
 
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info } from 'lucide-react';
 
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getSincoProcessosList } from '../services/api';
 
 import api from '../services/api';
 
@@ -55,6 +55,8 @@ export default function Settings() {
         { id: 'permissions', label: 'Permissões', icon: Shield },
 
         { id: 'reports', label: 'Relatórios', icon: FileText },
+
+        { id: 'automations', label: 'Automações & Avisos', icon: Send },
 
         { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
 
@@ -141,6 +143,12 @@ export default function Settings() {
 
 
     const [protheusFornecedores, setProtheusFornecedores] = useState([]);
+    
+    const [processosList, setProcessosList] = useState([]);
+    const [showSgqModal, setShowSgqModal] = useState(false);
+    const [showProtheusInfo, setShowProtheusInfo] = useState(false);
+    const [showPerdasInfo, setShowPerdasInfo] = useState(false);
+    const [webhookLog, setWebhookLog] = useState([]);
 
 
 
@@ -181,19 +189,15 @@ export default function Settings() {
 
 
     useEffect(() => {
-
         if (activeTab === 'general' || activeTab === 'users' || activeTab === 'permissions' || activeTab === 'pending') {
-
             loadUsers();
-
         }
-
         if (activeTab === 'users' && protheusFornecedores.length === 0) {
-
             loadFornecedores();
-
         }
-
+        if (activeTab === 'automations' && processosList.length === 0) {
+            getSincoProcessosList().then(setProcessosList).catch(console.error);
+        }
     }, [activeTab]);
 
 
@@ -1809,404 +1813,581 @@ export default function Settings() {
                                             disabled={loadingCompany}
 
                                             onClick={handleRomaneioNumberSubmit}
-
                                             className="bg-blue-600 text-white font-medium p-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap text-sm disabled:opacity-50"
-
                                         >
-
                                             Definir Número Inicial
-
-                                        </button>
-
-                                    </div>
-
-                                </div>
-
-                                
-
-
-
-                                {/* Notificações de Faturamento por E-mail */}
-
-                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                    <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Mail className="w-5 h-5 text-indigo-500" /> Notificações de Faturamento</h4>
-
-                                    <p className="text-sm text-slate-500 mb-4">Selecione os usuários que receberão um e-mail automático com os detalhes das novas solicitações de faturamento criadas pela Expedição.</p>
-
-                                    <div className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
-
-                                        {usersList.filter(u => u.aprovado === 1 && u.email).map(u => {
-
-                                            const isChecked = (companyForm.general_config?.faturamento_emails || []).includes(u.idUsuario);
-
-                                            return (
-
-                                                <label key={u.idUsuario} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border-b border-gray-50 last:border-0">
-
-                                                    <input 
-
-                                                        type="checkbox" 
-
-                                                        checked={isChecked}
-
-                                                        onChange={(e) => {
-
-                                                            const currentEmails = companyForm.general_config?.faturamento_emails || [];
-
-                                                            let newEmails;
-
-                                                            if (e.target.checked) {
-
-                                                                newEmails = [...currentEmails, u.idUsuario];
-
-                                                            } else {
-
-                                                                newEmails = currentEmails.filter(id => id !== u.idUsuario);
-
-                                                            }
-
-                                                            setCompanyForm(prev => ({
-
-                                                                ...prev,
-
-                                                                general_config: { ...prev.general_config, faturamento_emails: newEmails }
-
-                                                            }));
-
-                                                        }}
-
-                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-
-                                                    />
-
-                                                    <div className="flex flex-col cursor-pointer">
-
-                                                        <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
-
-                                                        <span className="text-xs text-slate-500">{u.email}</span>
-
-                                                    </div>
-
-                                                </label>
-
-                                            );
-
-                                        })}
-
-                                        {usersList.filter(u => u.aprovado === 1 && u.email).length === 0 && (
-
-                                            <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário com e-mail válido cadastrado no sistema.</p>
-
-                                        )}
-
-                                    </div>
-
-                                </div>
-
-
-
-                                {/* Automação: Relatório de Faturamento Diário */}
-
-                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-4">
-
-                                    <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Calendar className="w-5 h-5 text-emerald-500" /> Automação de Relatório Faturamento Diário</h4>
-
-                                    <p className="text-sm text-slate-500 mb-4">Configure o grupo de usuários e os horários para o envio automático do consolidado diário de faturamento via E-mail e WhatsApp.</p>
-
-                                    
-
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
-
-                                        <div>
-
-                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Horário de Envio (Ex: 15:00)</label>
-
-                                            <div className="flex items-center gap-2">
-
-                                                <input 
-
-                                                    type="time" 
-
-                                                    className="p-2 border rounded-lg text-sm bg-white focus:ring-emerald-500 focus:border-emerald-500"
-
-                                                    value={(companyForm.general_config?.faturamento_automation?.times || ['15:00'])[0]}
-
-                                                    onChange={(e) => {
-
-                                                        const newVal = e.target.value;
-
-                                                        setCompanyForm(prev => ({
-
-                                                            ...prev,
-
-                                                            general_config: { 
-
-                                                                ...prev.general_config, 
-
-                                                                faturamento_automation: { 
-
-                                                                    ...(prev.general_config?.faturamento_automation || { days: [1,2,3,4,5], users: [] }), 
-
-                                                                    times: [newVal] 
-
-                                                                } 
-
-                                                            }
-
-                                                        }));
-
-                                                    }}
-
-                                                />
-
-                                            </div>
-
-                                        </div>
-
-                                        <div>
-
-                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Dias da Semana</label>
-
-                                            <div className="flex gap-1 flex-wrap">
-
-                                                {[{id: 1, label: 'Seg'}, {id: 2, label: 'Ter'}, {id: 3, label: 'Qua'}, {id: 4, label: 'Qui'}, {id: 5, label: 'Sex'}, {id: 6, label: 'Sáb'}, {id: 0, label: 'Dom'}].map(day => {
-
-                                                    const activeDays = companyForm.general_config?.faturamento_automation?.days || [1,2,3,4,5];
-
-                                                    const isActive = activeDays.includes(day.id);
-
-                                                    return (
-
-                                                        <button
-
-                                                            key={day.id}
-
-                                                            type="button"
-
-                                                            onClick={() => {
-
-                                                                let newDays;
-
-                                                                if (isActive) newDays = activeDays.filter(d => d !== day.id);
-
-                                                                else newDays = [...activeDays, day.id];
-
-                                                                setCompanyForm(prev => ({
-
-                                                                    ...prev,
-
-                                                                    general_config: { 
-
-                                                                        ...prev.general_config, 
-
-                                                                        faturamento_automation: { 
-
-                                                                            ...(prev.general_config?.faturamento_automation || { times: ['15:00'], users: [] }), 
-
-                                                                            days: newDays 
-
-                                                                        } 
-
-                                                                    }
-
-                                                                }));
-
-                                                            }}
-
-                                                            className={`px-2 py-1 text-xs font-medium rounded border ${isActive ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-500'}`}
-
-                                                        >
-
-                                                            {day.label}
-
-                                                        </button>
-
-                                                    );
-
-                                                })}
-
-                                            </div>
-
-                                        </div>
-
-                                    </div>
-
-
-
-                                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Usuários e Canais de Recebimento</label>
-
-                                    <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
-
-                                        {usersList.filter(u => u.aprovado === 1).map(u => {
-
-                                            const autoConfig = companyForm.general_config?.faturamento_automation || { times: ['15:00'], days: [1,2,3,4,5], users: [] };
-
-                                            const userPref = autoConfig.users.find(x => x.id === u.idUsuario);
-
-                                            const isInGroup = !!userPref;
-
-                                            
-
-                                            return (
-
-                                                <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded border-b border-gray-50 last:border-0">
-
-                                                    <label className="flex items-center gap-3 cursor-pointer">
-
-                                                        <input 
-
-                                                            type="checkbox" 
-
-                                                            checked={isInGroup}
-
-                                                            onChange={(e) => {
-
-                                                                let newUsers = [...autoConfig.users];
-
-                                                                if (e.target.checked) {
-
-                                                                    newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
-
-                                                                } else {
-
-                                                                    newUsers = newUsers.filter(x => x.id !== u.idUsuario);
-
-                                                                }
-
-                                                                setCompanyForm(prev => ({
-
-                                                                    ...prev,
-
-                                                                    general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
-
-                                                                }));
-
-                                                            }}
-
-                                                            className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
-
-                                                        />
-
-                                                        <div className="flex flex-col">
-
-                                                            <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
-
-                                                            <span className="text-xs text-slate-500">{u.email || 'Sem e-mail'} | {u.telefone || 'Sem telefone'}</span>
-
-                                                        </div>
-
-                                                    </label>
-
-                                                    
-
-                                                    {isInGroup && (
-
-                                                        <div className="flex items-center gap-4 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-
-                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
-
-                                                                <input 
-
-                                                                    type="checkbox" 
-
-                                                                    checked={userPref.email}
-
-                                                                    disabled={!u.email}
-
-                                                                    onChange={(e) => {
-
-                                                                        const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
-
-                                                                        setCompanyForm(prev => ({
-
-                                                                            ...prev,
-
-                                                                            general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
-
-                                                                        }));
-
-                                                                    }}
-
-                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
-
-                                                                /> E-mail
-
-                                                            </label>
-
-                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
-
-                                                                <input 
-
-                                                                    type="checkbox" 
-
-                                                                    checked={userPref.whatsapp}
-
-                                                                    disabled={!u.telefone}
-
-                                                                    onChange={(e) => {
-
-                                                                        const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
-
-                                                                        setCompanyForm(prev => ({
-
-                                                                            ...prev,
-
-                                                                            general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
-
-                                                                        }));
-
-                                                                    }}
-
-                                                                    className="w-3.5 h-3.5 text-green-500 rounded border-gray-300"
-
-                                                                /> WhatsApp
-
-                                                            </label>
-
-                                                        </div>
-
-                                                    )}
-
-                                                </div>
-
-                                            );
-
-                                        })}
-
-                                    </div>
-                                    <div className="mt-3 flex justify-end">
-                                        <button
-                                            type="button"
-                                            disabled={loadingCompany}
-                                            onClick={async () => {
-                                                try {
-                                                    setLoadingCompany(true);
-                                                    await updateGeneralSettings({ general_config: companyForm.general_config });
-                                                    alert('Configurações de notificação do Faturamento salvas com sucesso!');
-                                                } catch (err) {
-                                                    alert('Erro ao salvar notificações do Faturamento: ' + err.message);
-                                                } finally {
-                                                    setLoadingCompany(false);
-                                                }
-                                            }}
-                                            className="bg-emerald-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-emerald-700 text-sm disabled:opacity-50 transition-colors"
-                                        >
-                                            {loadingCompany ? 'Salvando...' : 'Salvar Configurações de Faturamento'}
                                         </button>
                                     </div>
-
                                 </div>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 )}
 
+                {/* AUTOMAÇÕES TAB */}
+                {activeTab === 'automations' && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-4xl animate-fadeIn">
+                        <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
+                            <div className="flex items-center gap-3">
+                                <Send className="w-6 h-6 text-indigo-600" />
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">Automações & Avisos (WhatsApp)</h2>
+                                    <p className="text-sm text-slate-500">Ative ou desative o envio automático de avisos, resumos e alertas gerados pelo sistema.</p>
+                                </div>
+                            </div>
+                            <button 
+                                type="button"
+                                disabled={loadingCompany}
+                                onClick={async () => {
+                                    try {
+                                        setLoadingCompany(true);
+                                        await updateGeneralSettings({ general_config: companyForm.general_config });
+                                        alert('Configurações de automações salvas com sucesso!');
+                                    } catch (err) {
+                                        alert('Erro ao salvar automações: ' + err.message);
+                                    } finally {
+                                        setLoadingCompany(false);
+                                    }
+                                }}
+                                className="bg-blue-600 text-white font-medium p-2 px-4 rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <Save className="w-4 h-4" />
+                                Salvar Alterações
+                            </button>
+                        </div>
 
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Notificações Meu Canal */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Notificação Meu Canal (Performance)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Resumo diário enviado por E-mail/WhatsApp às 06:00 e 15:00.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.meu_canal_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, meu_canal_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.meu_canal_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.meu_canal_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Agente de IA WhatsApp */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Resumo Diário (Agente de IA)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Resumo das atividades enviado para grupos do WhatsApp às 15:00.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.ai_whatsapp_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, ai_whatsapp_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.ai_whatsapp_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.ai_whatsapp_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Visão Gerencial Faturamento */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Visão Gerencial (Faturamento)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Alerta noturno sobre solicitações de faturamento em aberto (18:01).</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.visao_gerencial_faturamento_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, visao_gerencial_faturamento_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.visao_gerencial_faturamento_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.visao_gerencial_faturamento_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                
+                                {/* Integração Protheus */}
+                                <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100 flex flex-col justify-between shadow-sm md:col-span-2">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <h4 className="font-bold text-indigo-900">Integração de Baixa Protheus (Apontamento)</h4>
+                                            <p className="text-xs text-indigo-700 mt-1">Aciona automaticamente a API de baixa do Protheus ao apontar processos selecionados.</p>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                const current = companyForm.general_config?.apontamento_simples_protheus_active === true;
+                                                setCompanyForm(prev => ({
+                                                    ...prev,
+                                                    general_config: { ...prev.general_config, apontamento_simples_protheus_active: !current }
+                                                }));
+                                            }}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.apontamento_simples_protheus_active === true ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                                        >
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.apontamento_simples_protheus_active === true ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                    {companyForm.general_config?.apontamento_simples_protheus_active === true && (
+                                        <div className="mt-2 border-t border-indigo-100 pt-3">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="block text-sm font-semibold text-indigo-900">
+                                                    Processos que ativam a baixa
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowProtheusInfo(!showProtheusInfo)}
+                                                    className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-xs font-medium bg-indigo-100 hover:bg-indigo-200 px-2 py-1 rounded"
+                                                >
+                                                    <Info className="w-3.5 h-3.5" />
+                                                    Como isso funciona?
+                                                </button>
+                                            </div>
+                                            
+                                            {showProtheusInfo && (
+                                                <div className="mb-4 p-3 bg-white border border-indigo-200 rounded-lg text-sm text-slate-700 shadow-sm animate-fadeIn">
+                                                    <h5 className="font-bold text-indigo-800 mb-1">Como a baixa acontece?</h5>
+                                                    <p className="mb-2">Ao apontar um dos processos marcados abaixo no módulo PCP/Chão de Fábrica, o sistema enviará um pacote invisível para a API do Protheus contendo a OP, o Código do Produto e a Quantidade Apontada.</p>
+                                                    <h5 className="font-bold text-indigo-800 mb-1">Gera saldo de estoque no Protheus?</h5>
+                                                    <p><b>Sim.</b> O Protheus (via MATA680/NOPER: 3) fará a entrada automática do produto pai no estoque (credita a quantidade apontada) e consumirá os insumos/componentes empenhados na OP.</p>
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                                                {processosList.map(proc => {
+                                                    const current = companyForm.general_config?.apontamento_simples_processos || '';
+                                                    const selectedArr = current.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+                                                    const procIdStr = proc.Codigo ? proc.Codigo.trim().toUpperCase() : '';
+                                                    const isChecked = procIdStr ? selectedArr.includes(procIdStr) : false;
+                                                    
+                                                    return (
+                                                        <label key={proc.IdProcesso} className="flex items-center gap-2 p-2 bg-white border border-indigo-100 rounded hover:bg-indigo-50 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                                                checked={isChecked}
+                                                                onChange={(e) => {
+                                                                    if (!proc.Codigo) return; // Se não tiver código, não permite selecionar
+                                                                    const arr = current.split(',').map(s => s.trim()).filter(Boolean);
+                                                                    let updated;
+                                                                    if (e.target.checked) {
+                                                                        updated = [...arr, proc.Codigo.trim()].join(', ');
+                                                                    } else {
+                                                                        updated = arr.filter(p => p.toUpperCase() !== proc.Codigo.trim().toUpperCase()).join(', ');
+                                                                    }
+                                                                    setCompanyForm(prev => ({
+                                                                        ...prev,
+                                                                        general_config: { ...prev.general_config, apontamento_simples_processos: updated }
+                                                                    }));
+                                                                }}
+                                                            />
+                                                            <span className="text-xs font-medium text-slate-700">
+                                                                {proc.Codigo ? `${proc.Codigo} — ` : ''}{proc.Descricao}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                                {processosList.length === 0 && (
+                                                    <div className="col-span-full p-4 text-center text-sm text-slate-500">
+                                                        Carregando processos...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Integração Protheus (Perdas MATA685) */}
+                                <div className="p-4 bg-red-50 rounded-lg border border-red-100 flex flex-col justify-between shadow-sm md:col-span-2">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-bold text-red-900">Integração de Perdas Protheus (RNC)</h4>
+                                            <p className="text-xs text-red-700 mt-1">Aciona automaticamente a API de perdas (MATA685) ao salvar uma RNC com "Nova Peça" marcada.</p>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                const current = companyForm.general_config?.apontamento_perdas_protheus_active === true;
+                                                setCompanyForm(prev => ({
+                                                    ...prev,
+                                                    general_config: { ...prev.general_config, apontamento_perdas_protheus_active: !current }
+                                                }));
+                                            }}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.apontamento_perdas_protheus_active === true ? 'bg-red-600' : 'bg-slate-300'}`}
+                                        >
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.apontamento_perdas_protheus_active === true ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                    {companyForm.general_config?.apontamento_perdas_protheus_active === true && (
+                                        <div className="mt-2 border-t border-red-100 pt-3">
+                                            <div className="flex justify-end">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPerdasInfo(!showPerdasInfo)}
+                                                    className="text-red-600 hover:text-red-800 flex items-center gap-1 text-xs font-medium bg-red-100 hover:bg-red-200 px-2 py-1 rounded"
+                                                >
+                                                    <Info className="w-3.5 h-3.5" />
+                                                    Como isso funciona?
+                                                </button>
+                                            </div>
+                                            
+                                            {showPerdasInfo && (
+                                                <div className="mt-2 p-3 bg-white border border-red-200 rounded-lg text-sm text-slate-700 shadow-sm animate-fadeIn">
+                                                    <h5 className="font-bold text-red-800 mb-1">Apontamento de Perda e Estorno</h5>
+                                                    <p className="mb-2">Quando um apontador cria uma Tratativa de RNC no módulo SGQ marcando a opção <b>"Nova Peça"</b> e insere a Quantidade e Operação, o sistema envia o apontamento de perda para o Protheus (NOPER: 3) e registra o número RECNO gerado.</p>
+                                                    <p>Se o usuário desmarcar a "Nova Peça" em uma RNC que já foi enviada, o sistema usa o RECNO salvo para realizar automaticamente o <b>Estorno</b> da perda no Protheus (NOPER: 6).</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Alertas SGQ */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Alertas SGQ (Calibração)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Avisos diários matinais sobre vencimento da calibração de instrumentos.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.sgq_alerts_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, sgq_alerts_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.sgq_alerts_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.sgq_alerts_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Relatórios de Faturamento/Compras */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Relatórios Diários (Fat./Compras)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Relatório consolidado via WhatsApp/E-mail nos horários programados.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.relatorios_faturamento_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, relatorios_faturamento_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.relatorios_faturamento_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.relatorios_faturamento_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+
+                            <div className="flex items-center gap-3 mt-8 mb-4">
+                                <div className="p-2 bg-indigo-100 rounded-lg">
+                                    <Mail className="w-6 h-6 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">Automações & Avisos (E-mail)</h2>
+                                    <p className="text-sm text-slate-500">Controle independente para disparo de relatórios e alertas por e-mail.</p>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Notificações Meu Canal (Email) */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Notificação Meu Canal (Performance)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Resumo diário enviado por E-mail às 06:00 e 15:00.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.meu_canal_email_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, meu_canal_email_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.meu_canal_email_active !== false ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.meu_canal_email_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Visão Gerencial Faturamento (Email) */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Visão Gerencial (Faturamento)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Alerta noturno sobre solicitações em aberto por E-mail (18:01).</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.visao_gerencial_faturamento_email_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, visao_gerencial_faturamento_email_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.visao_gerencial_faturamento_email_active !== false ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.visao_gerencial_faturamento_email_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Alertas SGQ (Email) */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Alertas SGQ (Calibração)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Avisos diários matinais sobre vencimento por E-mail.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.sgq_alerts_email_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, sgq_alerts_email_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.sgq_alerts_email_active !== false ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.sgq_alerts_email_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Relatórios de Faturamento/Compras (Email) */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Relatórios Diários (Fat./Compras)</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Relatório consolidado por E-mail nos horários programados.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.relatorios_faturamento_email_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, relatorios_faturamento_email_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.relatorios_faturamento_email_active !== false ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.relatorios_faturamento_email_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Notificações de Faturamento por E-mail */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-6">
+                                <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Mail className="w-5 h-5 text-indigo-500" /> Notificações de Solicitações de Faturamento</h4>
+                                <p className="text-sm text-slate-500 mb-4">Selecione os usuários que receberão um e-mail automático com os detalhes das novas solicitações criadas pela Expedição.</p>
+                                <div className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
+                                    {usersList.filter(u => u.aprovado === 1 && u.email).map(u => {
+                                        const isChecked = (companyForm.general_config?.faturamento_emails || []).includes(u.idUsuario);
+                                        return (
+                                            <label key={u.idUsuario} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border-b border-gray-50 last:border-0">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isChecked}
+                                                    onChange={(e) => {
+                                                        const currentEmails = companyForm.general_config?.faturamento_emails || [];
+                                                        let newEmails = e.target.checked ? [...currentEmails, u.idUsuario] : currentEmails.filter(id => id !== u.idUsuario);
+                                                        setCompanyForm(prev => ({
+                                                            ...prev,
+                                                            general_config: { ...prev.general_config, faturamento_emails: newEmails }
+                                                        }));
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                                <div className="flex flex-col cursor-pointer">
+                                                    <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
+                                                    <span className="text-xs text-slate-500">{u.email}</span>
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                    {usersList.filter(u => u.aprovado === 1 && u.email).length === 0 && (
+                                        <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário com e-mail válido cadastrado.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Automação: Relatório de Faturamento Diário */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-4">
+                                <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2"><Calendar className="w-5 h-5 text-emerald-500" /> Automação de Relatório (Faturamento, Compras, Acumulado)</h4>
+                                <p className="text-sm text-slate-500 mb-4">Configure o grupo de usuários e os horários para o envio automático do consolidado diário via E-mail e WhatsApp.</p>
+                                
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Horário de Envio (Ex: 15:00)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="time" 
+                                                className="p-2 border rounded-lg text-sm bg-white focus:ring-emerald-500 focus:border-emerald-500"
+                                                value={(companyForm.general_config?.faturamento_automation?.times || ['15:00'])[0]}
+                                                onChange={(e) => {
+                                                    const newVal = e.target.value;
+                                                    setCompanyForm(prev => ({
+                                                        ...prev,
+                                                        general_config: { 
+                                                            ...prev.general_config, 
+                                                            faturamento_automation: { 
+                                                                ...(prev.general_config?.faturamento_automation || { days: [1,2,3,4,5], users: [] }), 
+                                                                times: [newVal] 
+                                                            } 
+                                                        }
+                                                    }));
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Dias da Semana</label>
+                                        <div className="flex gap-1 flex-wrap">
+                                            {[{id: 1, label: 'Seg'}, {id: 2, label: 'Ter'}, {id: 3, label: 'Qua'}, {id: 4, label: 'Qui'}, {id: 5, label: 'Sex'}, {id: 6, label: 'Sáb'}, {id: 0, label: 'Dom'}].map(day => {
+                                                const activeDays = companyForm.general_config?.faturamento_automation?.days || [1,2,3,4,5];
+                                                const isActive = activeDays.includes(day.id);
+                                                return (
+                                                    <button
+                                                        key={day.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            let newDays = isActive ? activeDays.filter(d => d !== day.id) : [...activeDays, day.id];
+                                                            setCompanyForm(prev => ({
+                                                                ...prev,
+                                                                general_config: { 
+                                                                    ...prev.general_config, 
+                                                                    faturamento_automation: { 
+                                                                        ...(prev.general_config?.faturamento_automation || { times: ['15:00'], users: [] }), 
+                                                                        days: newDays 
+                                                                    } 
+                                                                }
+                                                            }));
+                                                        }}
+                                                        className={`px-2 py-1 text-xs font-medium rounded border ${isActive ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-500'}`}
+                                                    >
+                                                        {day.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Usuários e Canais de Recebimento</label>
+                                <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
+                                    {usersList.filter(u => u.aprovado === 1).map(u => {
+                                        const autoConfig = companyForm.general_config?.faturamento_automation || { times: ['15:00'], days: [1,2,3,4,5], users: [] };
+                                        const userPref = autoConfig.users.find(x => x.id === u.idUsuario);
+                                        const isInGroup = !!userPref;
+                                        
+                                        return (
+                                            <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded border-b border-gray-50 last:border-0">
+                                                <label className="flex items-center gap-3 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isInGroup}
+                                                        onChange={(e) => {
+                                                            let newUsers = [...autoConfig.users];
+                                                            if (e.target.checked) {
+                                                                newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
+                                                            } else {
+                                                                newUsers = newUsers.filter(x => x.id !== u.idUsuario);
+                                                            }
+                                                            setCompanyForm(prev => ({
+                                                                ...prev,
+                                                                general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                            }));
+                                                        }}
+                                                        className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                                                    />
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
+                                                        <span className="text-xs text-slate-500">{u.email || 'Sem e-mail'} | {u.telefone || 'Sem telefone'}</span>
+                                                    </div>
+                                                </label>
+                                                
+                                                {isInGroup && (
+                                                    <div className="flex items-center gap-4 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                                        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={userPref.email}
+                                                                disabled={!u.email}
+                                                                onChange={(e) => {
+                                                                    const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
+                                                                    setCompanyForm(prev => ({
+                                                                        ...prev,
+                                                                        general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                                    }));
+                                                                }}
+                                                                className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
+                                                            /> E-mail
+                                                        </label>
+                                                        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={userPref.whatsapp}
+                                                                disabled={!u.telefone}
+                                                                onChange={(e) => {
+                                                                    const newUsers = autoConfig.users.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
+                                                                    setCompanyForm(prev => ({
+                                                                        ...prev,
+                                                                        general_config: { ...prev.general_config, faturamento_automation: { ...autoConfig, users: newUsers } }
+                                                                    }));
+                                                                }}
+                                                                className="w-3.5 h-3.5 text-green-500 rounded border-gray-300"
+                                                            /> WhatsApp
+                                                        </label>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="mt-3 flex justify-end">
+                                    <button
+                                        type="button"
+                                        disabled={loadingCompany}
+                                        onClick={async () => {
+                                            try {
+                                                setLoadingCompany(true);
+                                                await updateGeneralSettings({ general_config: companyForm.general_config });
+                                                alert('Configurações de notificação do Faturamento salvas com sucesso!');
+                                            } catch (err) {
+                                                alert('Erro ao salvar notificações do Faturamento: ' + err.message);
+                                            } finally {
+                                                setLoadingCompany(false);
+                                            }
+                                        }}
+                                        className="bg-emerald-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-emerald-700 text-sm disabled:opacity-50 transition-colors"
+                                    >
+                                        {loadingCompany ? 'Salvando...' : 'Salvar Configurações de Faturamento'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* VISIBILIDADE DE PEDIDOS TAB */}
 

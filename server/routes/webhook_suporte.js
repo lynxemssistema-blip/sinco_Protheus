@@ -53,6 +53,17 @@ router.post('/suporte-ia', async (req, res) => {
 
         const data = body.data;
         if (!data) return res.status(200).send('OK');
+
+        // Verifica configurações globais para saber se o Agente está ativo
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (configRows.length && configRows[0].general_config) {
+            const cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (cfg?.automations?.ai_whatsapp_active === false) {
+                // Agente desativado globalmente, apenas ignora a mensagem silenciosamente
+                return res.status(200).send('OK');
+            }
+        }
+
         
         // Em mensagens de upsert, a Evolution manda o message dentro do object (as vezes varia a versão)
         let msg = data.message;

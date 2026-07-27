@@ -18,7 +18,12 @@ const mediaUrl = (url) => getFileUrl(url);
 const MediaBubble = ({ msg }) => {
     const [lightbox, setLightbox] = useState(false);
 
-    if (msg.tipo_midia === 'image' && msg.midia_url) {
+    const filename = msg.midia_nome || '';
+    const ext = filename.toLowerCase().split('.').pop();
+    const isImage = msg.tipo_midia === 'image' || (msg.midia_url && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext));
+    const isAudio = msg.tipo_midia === 'audio' || (msg.midia_url && ['mp3', 'ogg', 'wav', 'm4a'].includes(ext));
+
+    if (isImage && msg.midia_url) {
         return (
             <>
                 <img
@@ -49,7 +54,7 @@ const MediaBubble = ({ msg }) => {
         );
     }
 
-    if (msg.tipo_midia === 'audio' && msg.midia_url) {
+    if (isAudio && msg.midia_url) {
         return (
             <div className="flex flex-col gap-1">
                 <audio controls preload="metadata" className="max-w-[260px]">
@@ -61,7 +66,7 @@ const MediaBubble = ({ msg }) => {
         );
     }
 
-    if (msg.tipo_midia === 'file' && msg.midia_url) {
+    if (msg.midia_url) {
         return (
             <div className="flex flex-col gap-1">
                 <a
@@ -174,6 +179,8 @@ const AvisosHistorico = () => {
 
     // Group Modal State
     const [showGroupModal, setShowGroupModal] = useState(false);
+    const [editGroupMode, setEditGroupMode] = useState(false);
+    const [editGroupId, setEditGroupId] = useState(null);
     const [newGroupName, setNewGroupName] = useState('');
     const [selectedMembros, setSelectedMembros] = useState([]);
 
@@ -404,19 +411,65 @@ const AvisosHistorico = () => {
     const handleCreateGroup = async () => {
         if (!newGroupName.trim() || selectedMembros.length === 0) return;
         try {
-            const res = await api.post('/avisos/grupos', {
-                nome: newGroupName,
-                idCriador: user.id,
-                membros: selectedMembros
-            });
-            setGrupos(prev => [...prev, { ...res.data, totalMembros: selectedMembros.length + 1 }]);
-            setShowGroupModal(false);
-            setNewGroupName('');
-            setSelectedMembros([]);
-            if (socket) socket.emit('join_group', res.data.idGrupo);
+            if (editGroupMode && editGroupId) {
+                // Atualizar grupo existente
+                const res = await api.put(`/avisos/grupos/${editGroupId}`, {
+                    nome: newGroupName,
+                    membros: selectedMembros
+                });
+                
+                // Recarrega os grupos do servidor para refletir a contagem correta e etc
+                const resGrupos = await api.get(`/avisos/grupos/usuario/${user.id}`);
+                setGrupos(resGrupos.data || []);
+            } else {
+                // Criar novo grupo
+                const res = await api.post('/avisos/grupos', {
+                    nome: newGroupName,
+                    idCriador: user.id,
+                    membros: selectedMembros
+                });
+                setGrupos(prev => [...prev, { ...res.data, totalMembros: selectedMembros.length + 1, ativo: 1 }]);
+                if (socket) socket.emit('join_group', res.data.idGrupo);
+            }
+            
+            closeGroupModal();
         } catch (err) {
-            alert('Erro ao criar grupo');
+            alert('Erro ao salvar grupo');
         }
+    };
+
+    const handleToggleGroupStatus = async (idGrupo, currentStatus) => {
+        if (!window.confirm(`Deseja realmente ${currentStatus ? 'desabilitar' : 'habilitar'} este grupo?`)) return;
+        try {
+            await api.put(`/avisos/grupos/${idGrupo}/status`, { ativo: !currentStatus });
+            const resGrupos = await api.get(`/avisos/grupos/usuario/${user.id}`);
+            setGrupos(resGrupos.data || []);
+            closeGroupModal();
+        } catch (err) {
+            alert('Erro ao alterar status do grupo');
+        }
+    };
+
+    const openEditGroupModal = (group) => {
+        setEditGroupMode(true);
+        setEditGroupId(group.idGrupo);
+        setNewGroupName(group.nome);
+        
+        // Precisamos buscar os membros do grupo. Como a lista atual não traz os ids dos membros, 
+        // vamos buscar do banco os membros atuais ou assumir que quem está editando vai refazer a lista.
+        // O ideal seria ter uma rota GET /grupos/:id/membros, mas para simplificar, se não tivermos, o usuário terá que remarcar.
+        // Vamos marcar todos por padrão apenas visualmente ou deixar vazio (exigindo remarcação).
+        // Vamos deixar vazio para o usuário selecionar quem deve ficar.
+        setSelectedMembros([]);
+        setShowGroupModal(true);
+    };
+
+    const closeGroupModal = () => {
+        setShowGroupModal(false);
+        setEditGroupMode(false);
+        setEditGroupId(null);
+        setNewGroupName('');
+        setSelectedMembros([]);
     };
 
     const handleSearchGlobal = async (e) => {
@@ -519,25 +572,25 @@ const AvisosHistorico = () => {
 
     const sortedUsers = useMemo(() => {
         return usuarios
-            .filter(u => u.NomeCompleto?.toLowerCase().includes(contactSearch.toLowerCase()))
+            .filter(u => u.NomeCompleto?.toLowerCase().includes(globalSearch.toLowerCase()))
             .sort((a, b) => {
                 const la = getUltimaMsgInfo(a.idUsuario, false);
                 const lb = getUltimaMsgInfo(b.idUsuario, false);
                 if (la && lb) return new Date(lb.data_envio) - new Date(la.data_envio);
                 return la ? -1 : 1;
             });
-    }, [usuarios, historico, contactSearch]);
+    }, [usuarios, historico, globalSearch]);
 
     const sortedGroups = useMemo(() => {
         return grupos
-            .filter(g => g.nome?.toLowerCase().includes(groupSearch.toLowerCase()))
+            .filter(g => g.nome?.toLowerCase().includes(globalSearch.toLowerCase()))
             .sort((a, b) => {
                 const la = getUltimaMsgInfo(a.idGrupo, true);
                 const lb = getUltimaMsgInfo(b.idGrupo, true);
                 if (la && lb) return new Date(lb.data_envio) - new Date(la.data_envio);
                 return la ? -1 : 1;
             });
-    }, [grupos, historico, groupSearch]);
+    }, [grupos, historico, globalSearch]);
 
     const selectedTargetObj = activeGroupId
         ? grupos.find(g => g.idGrupo === activeGroupId)
@@ -545,74 +598,52 @@ const AvisosHistorico = () => {
 
     // ========== RENDER ==========
     return (
-        <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-7xl mx-auto w-full px-2 md:px-4 mb-2">
+        <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] w-full px-2 md:px-4 mb-2 pb-2">
             <div className="flex-1 flex bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden mt-2">
 
                 {/* ===== SIDEBAR ===== */}
                 <div className={`w-full md:w-96 border-r border-slate-200 flex flex-col bg-slate-50 shrink-0 ${activeUserId || activeGroupId ? 'hidden md:flex' : 'flex'}`}>
-                    <div className="p-4 bg-white space-y-3 shadow-sm z-20">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-bold text-slate-800">Mensagens</h2>
-                            <button onClick={() => setShowGroupModal(true)} className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors" title="Novo Grupo">
-                                <Plus className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="relative">
-                            <input type="text" placeholder="Buscar em conversas..." className="w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border-0 bg-slate-100 focus:ring-2 focus:ring-blue-500 transition-all outline-none" value={globalSearch} onChange={handleSearchGlobal} />
-                            <FileSearch className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                        </div>
-                        <div className="flex p-1 bg-slate-100 rounded-lg">
-                            <button onClick={() => { setActiveTab('chats'); setGlobalSearch(''); setSearchResults([]); }} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-md transition-all ${activeTab === 'chats' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                                <User className="w-3.5 h-3.5" /> Contatos
-                            </button>
-                            <button onClick={() => { setActiveTab('grupos'); setGlobalSearch(''); setSearchResults([]); }} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-md transition-all ${activeTab === 'grupos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                                <Users className="w-3.5 h-3.5" /> Grupos
-                            </button>
-                        </div>
-                        {!globalSearch && activeTab === 'chats' && (
-                            <div className="relative">
-                                <input type="text" placeholder="Filtrar contatos..." className="w-full text-sm pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 transition-all outline-none" value={contactSearch} onChange={e => setContactSearch(e.target.value)} />
-                                <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <div className="p-3 bg-white space-y-3 z-20 border-b border-slate-200">
+                        <div className="flex items-center justify-between px-2 pt-1">
+                            <h2 className="text-[22px] font-bold text-[#111b21]">Conversas</h2>
+                            <div className="flex gap-2">
+                                <button onClick={() => { closeGroupModal(); setShowGroupModal(true); }} className="p-2 text-[#54656f] hover:bg-slate-100 rounded-full transition-colors" title="Novo Grupo">
+                                    <Users className="w-5 h-5" />
+                                </button>
+                                <button className="p-2 text-[#54656f] hover:bg-slate-100 rounded-full transition-colors" title="Nova Conversa">
+                                    <Plus className="w-5 h-5" />
+                                </button>
                             </div>
-                        )}
-                        {!globalSearch && activeTab === 'grupos' && (
-                            <div className="relative">
-                                <input type="text" placeholder="Filtrar grupos..." className="w-full text-sm pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 transition-all outline-none" value={groupSearch} onChange={e => setGroupSearch(e.target.value)} />
-                                <Users className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                            </div>
-                        )}
+                        </div>
+                        
+                        <div className="relative flex items-center bg-[#f0f2f5] rounded-lg px-3 py-1.5 mx-1">
+                            {globalSearch ? (
+                                <button onClick={() => setGlobalSearch('')} className="text-[#00a884] hover:text-[#008f6f]"><ArrowLeft className="w-5 h-5 transition-transform" /></button>
+                            ) : (
+                                <Search className="w-4 h-4 text-[#54656f] ml-1" />
+                            )}
+                            <input type="text" placeholder="Pesquisar..." className="w-full text-[15px] pl-4 pr-2 py-1 bg-transparent border-0 focus:ring-0 outline-none text-[#111b21] placeholder:text-[#8696a0]" value={globalSearch} onChange={handleSearchGlobal} />
+                        </div>
+                        
+                        <div className="flex p-1 mx-1 bg-[#f0f2f5] rounded-lg">
+                            <button onClick={() => { setActiveTab('chats'); setGlobalSearch(''); setSearchResults([]); }} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'chats' ? 'bg-white text-[#111b21] shadow-sm' : 'text-[#54656f] hover:text-[#111b21]'}`}>
+                                Contatos
+                            </button>
+                            <button onClick={() => { setActiveTab('grupos'); setGlobalSearch(''); setSearchResults([]); }} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'grupos' ? 'bg-white text-[#111b21] shadow-sm' : 'text-[#54656f] hover:text-[#111b21]'}`}>
+                                Grupos
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
-                        {globalSearch.length >= 3 ? (
-                            <div className="p-2 space-y-1">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase px-3 py-1">Resultados da Busca Global</p>
-                                {isSearchingGlobal ? (
-                                    <div className="flex items-center justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
-                                ) : (searchResults || []).length === 0 ? (
-                                    <div className="p-4 text-center text-sm text-slate-500">Nenhum trecho encontrado.</div>
-                                ) : (
-                                    (searchResults || []).map(msg => (
-                                        <div key={msg.idAviso} onClick={() => {
-                                            if (msg.idGrupo) { setActiveGroupId(msg.idGrupo); setActiveUserId(null); }
-                                            else { setActiveUserId(msg.idRemetente === user.id ? msg.idDestinatario : msg.idRemetente); setActiveGroupId(null); }
-                                            setGlobalSearch('');
-                                        }} className="p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:bg-blue-50 transition-colors">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-500">{msg.grupoNome || 'Direta'}</span>
-                                                <span className="text-[10px] text-slate-400">{format(parseISO(msg.data_envio), 'dd/MM HH:mm')}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-700 font-semibold">{msg.remetenteNome}</p>
-                                            <p className="text-xs text-slate-500 line-clamp-2 mt-0.5 italic">"{msg.mensagem}"</p>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        ) : activeTab === 'chats' ? (
+                        {/* Seção de Contatos/Grupos Locais Filtrados */}
+                        {globalSearch && <p className="text-[13px] font-semibold text-[#00a884] px-4 py-3 uppercase tracking-wide bg-white border-b border-slate-100">{activeTab === 'chats' ? 'Contatos' : 'Grupos'}</p>}
+                        
+                        {activeTab === 'chats' ? (
                             (sortedUsers || []).map(u => {
                                 const last = getUltimaMsgInfo(u.idUsuario, false);
                                 return (
-                                    <div key={u.idUsuario} onClick={() => { setActiveUserId(u.idUsuario); setActiveGroupId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-all border-b border-slate-100/50 ${activeUserId === u.idUsuario ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-white'}`}>
+                                    <div key={u.idUsuario} onClick={() => { setActiveUserId(u.idUsuario); setActiveGroupId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-colors border-b border-slate-100/50 ${activeUserId === u.idUsuario ? 'bg-slate-100' : 'bg-white'}`}>
                                         <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0 shadow-sm overflow-hidden">
                                             {u.fotoUsuario ? <img src={u.fotoUsuario} alt={`Foto de ${u.NomeCompleto}`} className="w-full h-full object-cover" /> : <User className="w-6 h-6" />}
                                         </div>
@@ -632,13 +663,16 @@ const AvisosHistorico = () => {
                             (sortedGroups || []).map(g => {
                                 const last = getUltimaMsgInfo(g.idGrupo, true);
                                 return (
-                                    <div key={g.idGrupo} onClick={() => { setActiveGroupId(g.idGrupo); setActiveUserId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-all border-b border-slate-100/50 ${activeGroupId === g.idGrupo ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-white'}`}>
-                                        <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm overflow-hidden border-2 border-indigo-50">
+                                    <div key={g.idGrupo} onClick={() => { setActiveGroupId(g.idGrupo); setActiveUserId(null); }} className={`p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-colors border-b border-slate-100/50 ${activeGroupId === g.idGrupo ? 'bg-slate-100' : 'bg-white'}`}>
+                                        <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm overflow-hidden border border-indigo-50">
                                             {g.fotoGrupo ? <img src={g.fotoGrupo} alt={`Foto do grupo ${g.nome}`} className="w-full h-full object-cover" /> : <Users className="w-6 h-6" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex justify-between items-baseline">
-                                                <h4 className="text-sm font-bold text-slate-800 truncate">{g.nome}</h4>
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-sm font-bold text-slate-800 truncate">{g.nome}</h4>
+                                                    {g.ativo === 0 && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded font-bold uppercase">Inativo</span>}
+                                                </div>
                                                 {last && <span className="text-[10px] text-slate-400 font-medium">{format(parseISO(last.data_envio), 'HH:mm')}</span>}
                                             </div>
                                             <p className="text-xs text-slate-500 truncate mt-1">
@@ -649,12 +683,44 @@ const AvisosHistorico = () => {
                                 );
                             })
                         )}
+
+                        {/* Seção de Busca Global de Mensagens */}
+                        {globalSearch.length >= 3 && (
+                            <div className="mt-2 space-y-1">
+                                <p className="text-[13px] font-semibold text-[#00a884] px-4 py-3 uppercase tracking-wide bg-white border-b border-slate-100">Mensagens</p>
+                                {isSearchingGlobal ? (
+                                    <div className="flex items-center justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+                                ) : (searchResults || []).length === 0 ? (
+                                    <div className="p-4 text-center text-sm text-slate-500">Nenhum trecho encontrado.</div>
+                                ) : (
+                                    (searchResults || []).map(msg => (
+                                        <div key={msg.idAviso} onClick={() => {
+                                            if (msg.idGrupo) { setActiveGroupId(msg.idGrupo); setActiveUserId(null); }
+                                            else { setActiveUserId(msg.idRemetente === user.id ? msg.idDestinatario : msg.idRemetente); setActiveGroupId(null); }
+                                            setGlobalSearch('');
+                                        }} className="p-4 bg-white border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors flex gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                                                <Search className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-baseline">
+                                                    <span className="text-sm font-bold text-slate-800 truncate">{msg.grupoNome || msg.remetenteNome}</span>
+                                                    <span className="text-[10px] text-slate-400">{format(parseISO(msg.data_envio), 'dd/MM')}</span>
+                                                </div>
+                                                <p className="text-xs text-[#54656f] mt-1 break-words line-clamp-2">"{msg.mensagem}"</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* ===== CHAT AREA ===== */}
                 <div
-                    className={`flex-1 flex flex-col bg-[#efeae2] relative ${!activeUserId && !activeGroupId ? 'hidden md:flex' : 'flex'}`}
+                    className={`flex-1 flex flex-col bg-[#efeae2] relative overflow-hidden ${!activeUserId && !activeGroupId ? 'hidden md:flex' : 'flex'}`}
+                    style={{ backgroundImage: 'url("https://web.whatsapp.com/img/bg-chat-tile-dark_a4be512e7195b6b733d9110b408f075d.png")', backgroundSize: '400px', backgroundRepeat: 'repeat', backgroundBlendMode: 'overlay', backgroundColor: 'rgba(239, 234, 226, 0.95)' }}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -670,24 +736,40 @@ const AvisosHistorico = () => {
                     {(activeUserId || activeGroupId) ? (
                         <>
                             {/* HEADER */}
-                            <div className="h-16 px-4 md:px-6 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm z-30 shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <button onClick={() => { setActiveUserId(null); setActiveGroupId(null); }} className="md:hidden p-2 text-slate-500"><ArrowLeft className="w-5 h-5" /></button>
-                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
-                                        {activeGroupId ? <Users className="w-5 h-5 text-indigo-500" /> : <User className="w-5 h-5 text-blue-500" />}
+                            {selectedTargetObj && (
+                                <div className="px-4 py-3 bg-[#f0f2f5] border-b border-slate-200 flex items-center gap-4 z-20">
+                                    <button onClick={() => { setActiveUserId(null); setActiveGroupId(null); }} className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-200 rounded-full">
+                                        <ChevronLeft className="w-6 h-6" />
+                                    </button>
+                                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 shrink-0 overflow-hidden shadow-sm">
+                                        {activeGroupId ? (
+                                            selectedTargetObj.fotoGrupo ? <img src={selectedTargetObj.fotoGrupo} alt="Grupo" className="w-full h-full object-cover" /> : <Users className="w-5 h-5" />
+                                        ) : (
+                                            selectedTargetObj.fotoUsuario ? <img src={selectedTargetObj.fotoUsuario} alt="Usuario" className="w-full h-full object-cover" /> : <User className="w-5 h-5" />
+                                        )}
                                     </div>
-                                    <div>
-                                        <h3 className="text-sm font-bold text-slate-800">{selectedTargetObj?.nome || selectedTargetObj?.NomeCompleto}</h3>
-                                        <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                                            {activeGroupId ? `${selectedTargetObj?.totalMembros} participantes` : selectedTargetObj?.Setor}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-[#111b21] text-base truncate">
+                                                {activeGroupId ? selectedTargetObj.nome : selectedTargetObj.NomeCompleto}
+                                            </h3>
+                                            {activeGroupId && selectedTargetObj.ativo === 0 && (
+                                                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">Inativo</span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-[#54656f] truncate">
+                                            {activeGroupId ? `${selectedTargetObj.totalMembros} participantes` : 'Online'}
                                         </p>
                                     </div>
+                                    
+                                    {/* Botão de edição do grupo */}
+                                    {activeGroupId && (
+                                        <button onClick={() => openEditGroupModal(selectedTargetObj)} className="p-2 text-[#54656f] hover:bg-slate-200 rounded-full transition-colors" title="Configurações do Grupo">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"></path></svg>
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <button className="p-2 text-slate-400 hover:text-slate-600"><Search className="w-5 h-5" /></button>
-                                    <button className="p-2 text-slate-400 hover:text-slate-600"><MoreVertical className="w-5 h-5" /></button>
-                                </div>
-                            </div>
+                            )}
 
                             {/* MESSAGES */}
                             <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 scrollbar-thin scrollbar-thumb-slate-300">
@@ -704,14 +786,21 @@ const AvisosHistorico = () => {
                                                 const isMine = parseInt(msg.idRemetente) === currentUserId;
                                                 const showName = activeGroupId && !isMine;
                                                 return (
-                                                    <div key={msg.idAviso} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
-                                                        <div className={`max-w-[85%] md:max-w-[70%] px-3 py-2 rounded-xl shadow-sm relative ${isMine ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none border border-slate-100'}`}>
-                                                            {showName && <p className="text-[10px] font-bold text-indigo-600 mb-1">{msg.remetenteNome}</p>}
-                                                            <MediaBubble msg={msg} />
-                                                            <div className="flex items-center justify-end gap-1.5 mt-1">
-                                                                <span className="text-[9px] text-slate-400 font-medium">{format(parseISO(msg.data_envio), 'HH:mm')}</span>
-                                                                {isMine && <CheckCircle className={`w-3 h-3 ${msg.lido ? 'text-blue-500' : 'text-slate-300'}`} />}
+                                                    <div key={msg.idAviso} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} group`}>
+                                                        <div className={`max-w-[85%] md:max-w-[65%] px-2.5 pt-1.5 pb-2 rounded-xl shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] relative ${isMine ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none'}`}>
+                                                            {/* Bubble Tail */}
+                                                            <div className={`absolute top-0 w-2 h-3 ${isMine ? 'right-[-8px] text-[#dcf8c6]' : 'left-[-8px] text-white'}`}>
+                                                                <svg viewBox="0 0 8 13" width="8" height="13" fill="currentColor">
+                                                                    {isMine ? <path d="M0 0v13h.158c3.541 0 6.666-2.502 7.553-5.908l.182-.697C8.197 5.253 7.64 4 6.48 4H0V0z" /> : <path d="M8 0v13h-.158C4.301 13 1.176 10.498.289 7.092l-.182-.697C-.197 5.253.36 4 1.52 4H8V0z" />}
+                                                                </svg>
                                                             </div>
+                                                            {showName && <p className="text-[13px] font-medium text-emerald-600 mb-0.5 leading-tight">{msg.remetenteNome}</p>}
+                                                            <MediaBubble msg={msg} />
+                                                            <div className="flex items-center justify-end gap-1 mt-0.5 float-right ml-3 text-[#667781]">
+                                                                <span className="text-[11px] leading-none pt-1">{format(parseISO(msg.data_envio), 'HH:mm')}</span>
+                                                                {isMine && <CheckCircle className={`w-[14px] h-[14px] mt-0.5 ${msg.lido ? 'text-[#53bdeb]' : 'text-[#8696a0]'}`} />}
+                                                            </div>
+                                                            <div className="clear-both"></div>
                                                         </div>
                                                     </div>
                                                 );
@@ -744,50 +833,50 @@ const AvisosHistorico = () => {
                             )}
 
                             {/* INPUT BAR */}
-                            <div className="p-4 bg-white border-t border-slate-200">
+                            <div className="pl-4 pr-16 md:pr-20 py-3 bg-[#f0f2f5] flex items-end gap-2 z-30">
                                 {/* Hidden file inputs */}
                                 <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFileSelected(e, 'camera')} />
                                 <input ref={galleryInputRef} type="file" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt,.zip" className="hidden" onChange={(e) => handleFileSelected(e, 'gallery')} />
 
                                 {audioRecorder.recording ? (
                                     /* Audio Recording Mode */
-                                    <div className="flex items-center gap-3 max-w-4xl mx-auto">
-                                        <button onClick={audioRecorder.cancel} className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-500 hover:bg-red-200 transition-all active:scale-95" title="Cancelar gravação">
+                                    <div className="flex-1 flex items-center gap-3">
+                                        <button onClick={audioRecorder.cancel} className="w-10 h-10 rounded-full flex items-center justify-center text-red-500 hover:bg-red-50 transition-all" title="Cancelar gravação">
                                             <X className="w-6 h-6" />
                                         </button>
-                                        <div className="flex-1 bg-red-50 rounded-2xl px-4 py-3 flex items-center gap-3">
+                                        <div className="flex-1 bg-white rounded-full px-4 py-2.5 flex items-center gap-3 shadow-sm">
                                             <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                                            <span className="text-sm font-semibold text-red-600">
-                                                Gravando... {Math.floor(audioRecorder.recordingTime / 60)}:{(audioRecorder.recordingTime % 60).toString().padStart(2, '0')}
+                                            <span className="text-[15px] font-medium text-slate-700">
+                                                {Math.floor(audioRecorder.recordingTime / 60)}:{(audioRecorder.recordingTime % 60).toString().padStart(2, '0')}
                                             </span>
                                         </div>
-                                        <button onClick={handleAudioStop} className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg hover:bg-emerald-600 transition-all active:scale-95" title="Enviar áudio">
-                                            <Send className="w-5 h-5 ml-0.5" />
+                                        <button onClick={handleAudioStop} className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white shadow-sm hover:bg-[#008f6f] transition-all" title="Enviar áudio">
+                                            <Send className="w-4 h-4 ml-0.5" />
                                         </button>
                                     </div>
                                 ) : (
                                     /* Normal Input Mode */
-                                    <form onSubmit={handleEnviar} className="flex gap-2 items-end max-w-4xl mx-auto">
-                                        {/* Attach/Association button */}
-                                        <button type="button" onClick={() => setShowAttachModal(true)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-blue-100 hover:text-blue-600 transition-all shrink-0 active:scale-95" title="Associar Pedido/OP/OS">
-                                            <Plus className="w-5 h-5" />
-                                        </button>
-
-                                        {/* Camera button (opens native camera on mobile) */}
-                                        <button type="button" onClick={() => cameraInputRef.current?.click()} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-green-100 hover:text-green-600 transition-all shrink-0 active:scale-95" title="Câmera">
-                                            <Camera className="w-5 h-5" />
-                                        </button>
-
-                                        {/* Gallery/File button */}
-                                        <button type="button" onClick={() => galleryInputRef.current?.click()} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-indigo-100 hover:text-indigo-600 transition-all shrink-0 active:scale-95" title="Galeria / Arquivo">
-                                            <Paperclip className="w-5 h-5" />
-                                        </button>
+                                    <form onSubmit={handleEnviar} className="flex-1 flex gap-2 items-end">
+                                        <div className="flex items-center gap-1 pb-1">
+                                            {/* Attach/Association button */}
+                                            <button type="button" onClick={() => setShowAttachModal(true)} className="p-2.5 text-[#54656f] hover:bg-slate-200 rounded-full transition-all" title="Associar Pedido/OP/OS">
+                                                <Plus className="w-[22px] h-[22px]" />
+                                            </button>
+                                            {/* Gallery/File button */}
+                                            <button type="button" onClick={() => galleryInputRef.current?.click()} className="p-2.5 text-[#54656f] hover:bg-slate-200 rounded-full transition-all" title="Galeria / Arquivo">
+                                                <Paperclip className="w-[22px] h-[22px]" />
+                                            </button>
+                                            {/* Camera button */}
+                                            <button type="button" onClick={() => cameraInputRef.current?.click()} className="p-2.5 text-[#54656f] hover:bg-slate-200 rounded-full transition-all hidden md:flex" title="Câmera">
+                                                <Camera className="w-[22px] h-[22px]" />
+                                            </button>
+                                        </div>
 
                                         {/* Text input */}
-                                        <div className="flex-1 bg-slate-100 rounded-2xl px-4 py-2 flex items-center">
+                                        <div className="flex-1 bg-white rounded-xl shadow-sm px-4 py-2 flex items-center min-h-[44px]">
                                             <textarea
-                                                className="w-full bg-transparent border-0 ring-0 focus:ring-0 text-sm py-2 resize-none min-h-[40px] max-h-32 outline-none"
-                                                placeholder="Mensagem... (Ctrl+V para colar imagem)"
+                                                className="w-full bg-transparent border-0 ring-0 focus:ring-0 text-[15px] text-[#111b21] py-1 resize-none max-h-32 outline-none leading-relaxed placeholder:text-[#8696a0]"
+                                                placeholder="Mensagem"
                                                 rows={1}
                                                 value={mensagem}
                                                 onChange={(e) => setMensagem(e.target.value)}
@@ -797,15 +886,17 @@ const AvisosHistorico = () => {
                                         </div>
 
                                         {/* Send or Mic */}
-                                        {(mensagem.trim() || mediaPreview) ? (
-                                            <button type="submit" disabled={enviando || uploading} className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg hover:bg-emerald-600 transition-all active:scale-95 disabled:opacity-50">
-                                                {(enviando || uploading) ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
-                                            </button>
-                                        ) : (
-                                            <button type="button" onClick={audioRecorder.start} className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg hover:bg-emerald-600 transition-all active:scale-95" title="Gravar Áudio">
-                                                <Mic className="w-5 h-5" />
-                                            </button>
-                                        )}
+                                        <div className="pb-0.5">
+                                            {(mensagem.trim() || mediaPreview) ? (
+                                                <button type="submit" disabled={enviando || uploading} className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white shadow-sm hover:bg-[#008f6f] transition-all disabled:opacity-50">
+                                                    {(enviando || uploading) ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
+                                                </button>
+                                            ) : (
+                                                <button type="button" onClick={audioRecorder.start} className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-white shadow-sm hover:bg-[#008f6f] transition-all" title="Gravar Áudio">
+                                                    <Mic className="w-5 h-5" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </form>
                                 )}
                             </div>
@@ -824,36 +915,60 @@ const AvisosHistorico = () => {
                 </div>
             </div>
 
+
             {/* ===== MODAL GRUPOS ===== */}
             {showGroupModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+                        <div className="p-6 bg-[#00a884] text-white flex justify-between items-center shrink-0">
                             <div>
-                                <h3 className="text-lg font-bold">Novo Grupo</h3>
-                                <p className="text-xs opacity-75">Selecione membros e dê um nome</p>
+                                <h3 className="text-lg font-bold">{editGroupMode ? 'Editar Grupo' : 'Novo Grupo'}</h3>
+                                <p className="text-xs opacity-90">{editGroupMode ? 'Altere o nome e os membros' : 'Selecione membros e dê um nome'}</p>
                             </div>
-                            <button onClick={() => setShowGroupModal(false)} className="p-2 hover:bg-white/10 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
+                            <button onClick={closeGroupModal} className="p-2 hover:bg-white/10 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
                         </div>
-                        <div className="p-6 space-y-5">
+                        <div className="p-6 space-y-5 overflow-y-auto">
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nome do Grupo</label>
-                                <input type="text" className="w-full px-4 py-2.5 bg-slate-100 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Equipe de Vendas" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
+                                <input type="text" className="w-full px-4 py-2.5 bg-slate-100 border-0 rounded-xl focus:ring-2 focus:ring-[#00a884] outline-none" placeholder="Ex: Equipe de Vendas" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
                             </div>
+                            
+                            {editGroupMode && (
+                                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                                    <p className="text-xs text-amber-700 font-medium text-center">
+                                        Selecione novamente todos os membros que farão parte deste grupo. Os não marcados serão removidos.
+                                    </p>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Membros ({(selectedMembros || []).length})</label>
-                                <div className="max-h-64 overflow-y-auto space-y-1 pr-2">
+                                <div className="max-h-64 overflow-y-auto space-y-1 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
                                     {(usuarios || []).map(u => (
-                                        <label key={u.idUsuario} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors">
-                                            <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" checked={selectedMembros.includes(u.idUsuario)} onChange={() => setSelectedMembros(prev => prev.includes(u.idUsuario) ? prev.filter(id => id !== u.idUsuario) : [...prev, u.idUsuario])} />
+                                        <label key={u.idUsuario} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                                            <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-[#00a884] focus:ring-[#00a884]" checked={selectedMembros.includes(u.idUsuario)} onChange={() => setSelectedMembros(prev => prev.includes(u.idUsuario) ? prev.filter(id => id !== u.idUsuario) : [...prev, u.idUsuario])} />
                                             <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
                                         </label>
                                     ))}
                                 </div>
                             </div>
-                            <button onClick={handleCreateGroup} disabled={!newGroupName.trim() || selectedMembros.length === 0} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:opacity-30 transition-all active:scale-[0.98]">
-                                Criar Grupo
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 shrink-0 space-y-3">
+                            <button onClick={handleCreateGroup} disabled={!newGroupName.trim() || selectedMembros.length === 0} className="w-full py-3 bg-[#00a884] text-white font-bold rounded-xl hover:bg-[#008f6f] disabled:opacity-30 transition-all active:scale-[0.98]">
+                                {editGroupMode ? 'Salvar Alterações' : 'Criar Grupo'}
                             </button>
+                            
+                            {editGroupMode && editGroupId && (
+                                <button 
+                                    onClick={() => {
+                                        const g = grupos.find(x => x.idGrupo === editGroupId);
+                                        handleToggleGroupStatus(editGroupId, g?.ativo !== 0);
+                                    }} 
+                                    className={`w-full py-2.5 font-bold rounded-xl transition-all active:scale-[0.98] ${grupos.find(x => x.idGrupo === editGroupId)?.ativo === 0 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
+                                >
+                                    {grupos.find(x => x.idGrupo === editGroupId)?.ativo === 0 ? 'Habilitar Grupo' : 'Desabilitar Grupo'}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

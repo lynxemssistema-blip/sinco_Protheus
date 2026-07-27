@@ -1,10 +1,11 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp } from 'lucide-react';
-import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0 } from '../services/api';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp, PackageCheck, Loader2, X, History } from 'lucide-react';
+import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0, getProductStatus, setProductStatus, getProductStatusesBatch, setProductStatusBatch } from '../services/api';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
 import EngineeringReleaseModal from '../components/EngineeringReleaseModal';
+import ProductStatusHistoryModal from '../components/ProductStatusHistoryModal';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
 import { generateMergedDrawingsPdf } from '../services/pdfMergerService';
 
@@ -22,12 +23,29 @@ const ProductStructure = () => {
     const [expandedRoutes, setExpandedRoutes] = useState({}); // Track which items have route expanded
     const [routes, setRoutes] = useState({}); // Store routes for each product
     const [showReleaseModal, setShowReleaseModal] = useState(false);
+    const [selectedFiles, setSelectedFiles] = useState(null);
     const [inclSubNiveisRestricao, setInclSubNiveisRestricao] = useState(false);
+    const [productStatus, setProductStatusState] = useState('NORMAL');
+    const [productStatuses, setProductStatuses] = useState({});
+    const [showStatusHistory, setShowStatusHistory] = useState(false);
+    const [historyModalCode, setHistoryModalCode] = useState(null);
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
     const fetchStructure = async () => {
         try {
+            setLoading(true);
             const data = await getEstruturaProduto(codigo);
             setStructure(data);
+
+            try {
+                const allCodes = [codigo, ...data.map(i => i.codigo)];
+                const statusesMap = await getProductStatusesBatch(allCodes);
+                setProductStatuses(statusesMap);
+                setProductStatusState(statusesMap[codigo] || 'NORMAL');
+            } catch (statusErr) {
+                console.error("Erro ao buscar status do produto", statusErr);
+            }
+
             await fetchBalances(data);
         } catch (err) {
             setError('Não foi possível carregar a estrutura deste produto.');
@@ -74,6 +92,54 @@ const ProductStructure = () => {
         setExpandedRoutes(prev => ({ ...prev, [key]: true }));
     };
 
+    const handleUpdateStatus = async (novoEstado) => {
+        try {
+            setIsUpdatingStatus(true);
+            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            const usuarioNome = user?.nome || 'Desconhecido';
+            
+            // Build list of codes (PAI + all non-MP children)
+            const targetCodes = [codigo];
+            structure.forEach(item => {
+                if (item.tipo_produto?.trim().toUpperCase() !== 'MP' && !targetCodes.includes(item.codigo)) {
+                    targetCodes.push(item.codigo);
+                }
+            });
+
+            await setProductStatusBatch(targetCodes, novoEstado, usuarioNome, 'MARCACAO_MANUAL_LOTE');
+            
+            setProductStatuses(prev => {
+                const next = { ...prev };
+                targetCodes.forEach(c => next[c] = novoEstado);
+                return next;
+            });
+            setProductStatusState(novoEstado);
+        } catch (err) {
+            console.error('Erro ao atualizar status do produto:', err);
+            alert('Falha ao atualizar o status do produto.');
+        } finally {
+            setIsUpdatingStatus(false);
+        }
+    };
+
+    const handleRowStatusChange = async (itemCodigo, novoEstado) => {
+        try {
+            setIsUpdatingStatus(true);
+            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            const usuarioNome = user?.nome || 'Desconhecido';
+            
+            await setProductStatus(itemCodigo, novoEstado, usuarioNome, 'MARCACAO_MANUAL');
+            
+            setProductStatuses(prev => ({ ...prev, [itemCodigo]: novoEstado }));
+            if (itemCodigo === codigo) setProductStatusState(novoEstado);
+        } catch (err) {
+            console.error('Erro ao atualizar status do item:', err);
+            alert('Falha ao atualizar o status do item.');
+        } finally {
+            setIsUpdatingStatus(false);
+        }
+    };
+
     useEffect(() => {
         if (codigo) {
             fetchStructure();
@@ -97,7 +163,7 @@ const ProductStructure = () => {
     const backLabel = 'Voltar';
 
     const handleDownloadDrawings = () => {
-        generateMergedDrawingsPdf(structure, codigo);
+        generateMergedDrawingsPdf(structure, codigo, productStatuses);
     };
 
     const handleGeneratePDF = async () => {
@@ -131,7 +197,7 @@ const ProductStructure = () => {
             // Atualiza o cache de roteiros na tela também
             setRoutes(allRoutesMap);
 
-            await generateEstruturaReport(structure, allRoutesMap, { sz0Records });
+            await generateEstruturaReport(structure, allRoutesMap, { sz0Records, productStatuses });
 
         } catch (err) {
             console.error('Erro ao gerar relatório:', err);
@@ -178,7 +244,8 @@ const ProductStructure = () => {
                 footerTitle: 'Estrutura Compacta (Nível 1)',
                 isNivel1: true,
                 includeSubLevelRestrictions: inclSubNiveisRestricao,
-                sz0Records
+                sz0Records,
+                productStatuses
             });
 
         } catch (err) {
@@ -200,19 +267,76 @@ const ProductStructure = () => {
                     {backLabel}
                 </button>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
-                    <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-6 transition-colors ${
+                    productStatus === 'NOVO' ? 'border-green-300 ring-1 ring-green-100' :
+                    productStatus === 'REVISAO' ? 'border-yellow-400 ring-1 ring-yellow-100' :
+                    'border-gray-100'
+                }`}>
+                    <div className={`p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+                        productStatus === 'NOVO' ? 'bg-green-50/50 border-green-100' :
+                        productStatus === 'REVISAO' ? 'bg-yellow-50/50 border-yellow-200' :
+                        'bg-white border-gray-100'
+                    }`}>
                         <div>
                             <div className="flex items-center gap-3 mb-2">
-                                <Layers className="h-6 w-6 text-blue-600" />
+                                <Layers className={`h-6 w-6 ${
+                                    productStatus === 'NOVO' ? 'text-green-600' :
+                                    productStatus === 'REVISAO' ? 'text-yellow-600' :
+                                    'text-blue-600'
+                                }`} />
                                 <h1 className="text-2xl font-bold text-gray-900">Estrutura do Produto</h1>
+                                {productStatus === 'NOVO' && (
+                                    <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ml-2 shadow-sm border border-green-200">Novo</span>
+                                )}
+                                {productStatus === 'REVISAO' && (
+                                    <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ml-2 shadow-sm border border-yellow-200">Revisão</span>
+                                )}
                             </div>
-                            <p className="text-gray-500 font-mono bg-gray-100 inline-block px-2 py-1 rounded text-sm">
+                            <p className="text-gray-500 font-mono inline-block px-2 py-1 rounded text-sm shadow-sm border border-gray-100 bg-white">
                                 {codigo}
                             </p>
                         </div>
 
                         <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
+                            {/* Controle de Status */}
+                            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+                                <button
+                                    onClick={() => handleUpdateStatus('NOVO')}
+                                    disabled={isUpdatingStatus}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-colors ${
+                                        productStatus === 'NOVO' ? 'bg-green-500 text-white' : 'hover:bg-green-50 text-green-700'
+                                    }`}
+                                >
+                                    Novo
+                                </button>
+                                <button
+                                    onClick={() => handleUpdateStatus('REVISAO')}
+                                    disabled={isUpdatingStatus}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-colors ${
+                                        productStatus === 'REVISAO' ? 'bg-yellow-400 text-yellow-900' : 'hover:bg-yellow-50 text-yellow-700'
+                                    }`}
+                                >
+                                    Revisão
+                                </button>
+                                <button
+                                    onClick={() => handleUpdateStatus('NORMAL')}
+                                    disabled={isUpdatingStatus}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-colors ${
+                                        productStatus === 'NORMAL' ? 'bg-gray-200 text-gray-700' : 'hover:bg-gray-100 text-gray-500'
+                                    }`}
+                                >
+                                    Normal
+                                </button>
+                                <div className="h-5 w-px bg-slate-200 mx-1"></div>
+                                <button
+                                    onClick={() => setShowStatusHistory(true)}
+                                    title="Ver histórico de status"
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                >
+                                    <History className="h-4 w-4" />
+                                </button>
+                            </div>
+
                             {/* Bloco de Relatórios */}
                             <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                                 <button
@@ -308,13 +432,14 @@ const ProductStructure = () => {
                                     <th className="px-6 py-4">UM</th>
                                     <th className="px-6 py-4 text-right">Qtd Nec.</th>
                                     <th className="px-6 py-4">Ref. Cliente</th>
+                                    <th className="px-6 py-4 text-center">Status Eng.</th>
                                     <th className="px-6 py-4 text-center">Roteiro</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {loading && (
                                     <tr>
-                                        <td colSpan="8" className="p-8 text-center">
+                                        <td colSpan="9" className="p-8 text-center">
                                             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                                         </td>
                                     </tr>
@@ -322,7 +447,7 @@ const ProductStructure = () => {
 
                                 {error && (
                                     <tr>
-                                        <td colSpan="8" className="p-8 text-center text-red-500 font-medium">
+                                        <td colSpan="9" className="p-8 text-center text-red-500 font-medium">
                                             {error}
                                         </td>
                                     </tr>
@@ -330,7 +455,11 @@ const ProductStructure = () => {
 
                                 {!loading && !error && structure.map((item, idx) => (
                                     <Fragment key={idx}>
-                                        <tr className={`hover:bg-slate-50 transition-colors ${item.nivel === 0 ? 'bg-blue-50/30' : ''}`}>
+                                        <tr className={`transition-colors ${
+                                            productStatuses[item.codigo] === 'NOVO' ? 'bg-green-50/50 hover:bg-green-100/50' : 
+                                            productStatuses[item.codigo] === 'REVISAO' ? 'bg-yellow-50/50 hover:bg-yellow-100/50' : 
+                                            item.nivel === 0 ? 'bg-blue-50/30 hover:bg-blue-50' : 'hover:bg-slate-50'
+                                        }`}>
                                             
                                             {/* Nível */}
                                             <td className="px-6 py-3 text-center">
@@ -365,7 +494,9 @@ const ProductStructure = () => {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                if (item.primeiro_arquivo) {
+                                                                if (item.arquivos && item.arquivos.length > 1) {
+                                                                    setSelectedFiles(item.arquivos);
+                                                                } else if (item.primeiro_arquivo) {
                                                                     window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.primeiro_arquivo)}`), '_blank');
                                                                 }
                                                             }}
@@ -410,6 +541,33 @@ const ProductStructure = () => {
                                                 )}
                                             </td>
 
+                                            {/* Status Eng. (Dropdown) */}
+                                            <td className="px-6 py-3 whitespace-nowrap">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <select 
+                                                        value={productStatuses[item.codigo] || 'NORMAL'}
+                                                        onChange={(e) => handleRowStatusChange(item.codigo, e.target.value)}
+                                                        disabled={isUpdatingStatus}
+                                                        className={`text-[10px] font-bold rounded-sm px-1 py-1 border transition-colors cursor-pointer appearance-none text-center shadow-sm ${
+                                                            productStatuses[item.codigo] === 'NOVO' ? 'bg-green-100 text-green-800 border-green-300' :
+                                                            productStatuses[item.codigo] === 'REVISAO' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                                            'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        <option value="NORMAL" className="bg-white text-gray-700">NORMAL</option>
+                                                        <option value="NOVO" className="bg-white text-green-700">NOVO</option>
+                                                        <option value="REVISAO" className="bg-white text-yellow-700">REVISÃO</option>
+                                                    </select>
+                                                    <button 
+                                                        onClick={() => { setHistoryModalCode(item.codigo); setShowStatusHistory(true); }}
+                                                        className="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+                                                        title="Histórico de Status"
+                                                    >
+                                                        <History className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
+
                                             {/* Roteiro */}
                                             <td className="px-6 py-3 text-center">
                                                 <button
@@ -429,7 +587,7 @@ const ProductStructure = () => {
                                         {/* Route Details Row */}
                                         {expandedRoutes[item.codigo.trim()] && (
                                             <tr className="bg-slate-50">
-                                                <td colSpan="8" className="px-6 py-4">
+                                                <td colSpan="9" className="px-6 py-4">
                                                     <div className="pl-8">
                                                         <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Roteiro de Fabricação</div>
                                                         {!routes[item.codigo.trim()] || routes[item.codigo.trim()].length === 0 ? (
@@ -467,7 +625,7 @@ const ProductStructure = () => {
 
                                 {!loading && !error && structure.length === 0 && (
                                     <tr>
-                                        <td colSpan="8" className="p-8 text-center text-gray-500">
+                                        <td colSpan="9" className="p-8 text-center text-gray-500">
                                             Nenhum item encontrado na estrutura (BOM).
                                             <br />
                                             <span className="text-xs text-gray-400">Verifique se o produto possui cadastro na SG1.</span>
@@ -508,9 +666,57 @@ const ProductStructure = () => {
                             codigo={codigo}
                             initialPedido={location.state?.pedido || queryPedido}
                             initialItem={location.state?.item || queryItem}
+                            productStatuses={productStatuses}
+                            onReleaseSuccess={fetchStructure}
                         />
                     );
                 })()}
+
+                {/* Modal de Arquivos Múltiplos */}
+                {selectedFiles && selectedFiles.length > 0 && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-xl shadow-xl border w-full max-w-md overflow-hidden animate-fadeIn">
+                            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                <h2 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                                    <FileText className="h-5 w-5 text-blue-600" />
+                                    Arquivos Disponíveis
+                                </h2>
+                                <button
+                                    onClick={() => setSelectedFiles(null)}
+                                    className="p-1 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <div className="p-6">
+                                <div className="space-y-3">
+                                    {selectedFiles.map((fileUrl, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => {
+                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(fileUrl)}`), '_blank');
+                                                setSelectedFiles(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                                        >
+                                            <span className="font-medium text-gray-700 group-hover:text-blue-700 truncate max-w-[90%] text-sm" title={fileUrl.split('/').pop()}>
+                                                {fileUrl.split('/').pop()}
+                                            </span>
+                                            <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-blue-600 shrink-0" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Histórico de Status */}
+                <ProductStatusHistoryModal
+                    isOpen={showStatusHistory}
+                    onClose={() => setShowStatusHistory(false)}
+                    codigo={historyModalCode || codigo}
+                />
             </div>
         </div>
     );

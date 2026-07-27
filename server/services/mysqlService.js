@@ -7,7 +7,7 @@ const pool = mysql.createPool({
     password: process.env.MYSQL_PASS,
     database: process.env.MYSQL_DB,
     waitForConnections: true,
-    connectionLimit: 25,       // Aumentado: 5 era insuficiente para cargas simultâneas
+    connectionLimit: 15,       // Limitado a 15 porque max_user_connections no DB é 25
     queueLimit: 200,           // Fila maior para absorver picos de requisições
     charset: 'utf8mb4',
     enableKeepAlive: true,

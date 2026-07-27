@@ -286,6 +286,49 @@ export const generateMrpExcel = (resultados, filtrosLabel = '') => {
         XLSX.utils.book_append_sheet(wb, wsAberto, 'Em Aberto');
     }
 
+    // ── Aba SOLDA: materiais de produtos que passam pelo recurso MO0020 ───────
+    // O backend retorna tem_solda=true para MPs consumidas por produtos cujo roteiro
+    // inclui o recurso de solda (MO0020 — SOLDA MIG/TIG).
+    const materiaisSolda = resultados.materiais.filter(m => m.tem_solda === true);
+    if (materiaisSolda.length > 0) {
+        const soldaProdutosLabel = Array.isArray(resultados.solda_produtos) && resultados.solda_produtos.length > 0
+            ? `Produtos com operação de SOLDA (${resultados.recurso_solda || 'MO0020'}): ${resultados.solda_produtos.join(', ')}`
+            : `Recurso de SOLDA: ${resultados.recurso_solda || 'MO0020'}`;
+
+        const wsSolda = XLSX.utils.aoa_to_sheet([
+            ['MetalFisa — Materiais de SOLDA (MIG/TIG)'],
+            [`Emissão: ${new Date().toLocaleString('pt-BR')}`],
+            [soldaProdutosLabel],
+            [],
+            ['Código MP', 'Descrição', 'Tipo', 'Un', 'Qtd Necessária', 'Almox 01', 'Almox 03', 'Nec. Líquida', 'Status'],
+            ...materiaisSolda.map(m => [
+                m.codigo,
+                m.descricao,
+                m.tipo,
+                m.unidade,
+                Number(m.qtd_total_necessaria),
+                Number(m.saldo_almox01),
+                Number(m.saldo_almox03),
+                Number(m.necessidade_liquida),
+                Number(m.necessidade_liquida) <= 0 ? 'OK' : 'NECESSIDADE EM ABERTO',
+            ]),
+            [], // separador
+            [
+                'TOTAL SOLDA', '', '', '',
+                materiaisSolda.reduce((s, m) => s + Number(m.qtd_total_necessaria), 0),
+                materiaisSolda.reduce((s, m) => s + Number(m.saldo_almox01), 0),
+                materiaisSolda.reduce((s, m) => s + Number(m.saldo_almox03), 0),
+                materiaisSolda.reduce((s, m) => s + Number(m.necessidade_liquida), 0),
+                `${materiaisSolda.filter(m => Number(m.necessidade_liquida) > 0).length} itens em aberto`,
+            ],
+        ]);
+        wsSolda['!cols'] = [
+            { wch: 18 }, { wch: 45 }, { wch: 8 }, { wch: 6 },
+            { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 25 },
+        ];
+        XLSX.utils.book_append_sheet(wb, wsSolda, 'Materiais SOLDA');
+    }
+
     const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 16);
     XLSX.writeFile(wb, `mrp_necessidades_${ts}.xlsx`);
 };

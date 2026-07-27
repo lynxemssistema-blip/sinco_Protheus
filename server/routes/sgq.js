@@ -460,9 +460,13 @@ router.put('/rncs/:id', async (req, res) => {
         const queryParams = [status || 'EM ANDAMENTO', tratativa_resposta || null, tratado_por || 'Sistema'];
         let queryStr = `UPDATE app_sgq_rncs SET status = ?, tratativa_resposta = ?, tratado_por = ?, data_tratativa = CURRENT_TIMESTAMP`;
         
+        let f097Obj = null;
         if (f097_dados !== undefined) {
             queryStr += `, f097_dados = ?`;
             queryParams.push(f097_dados ? (typeof f097_dados === 'string' ? f097_dados : JSON.stringify(f097_dados)) : null);
+            try {
+                f097Obj = typeof f097_dados === 'string' ? JSON.parse(f097_dados) : f097_dados;
+            } catch(e){}
         }
         if (fotos_tratativa !== undefined) {
             queryStr += `, fotos_tratativa = ?`;
@@ -513,6 +517,113 @@ router.put('/rncs/:id', async (req, res) => {
         queryParams.push(id);
 
         await db.query(queryStr, queryParams);
+
+        // -------------------------------------------------------------------------
+        // INTEGRAÇÃO PROTHEUS (APONTAMENTO DE PERDA E ESTORNO - MATA685)
+        // -------------------------------------------------------------------------
+        try {
+            // Verifica a config global da empresa
+            const [configRows] = await db.query(`SELECT general_config FROM app_company_settings LIMIT 1`);
+            let companyConfig = {};
+            if (configRows && configRows.length > 0) {
+                companyConfig = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            }
+
+            if (companyConfig.apontamento_perdas_protheus_active && f097Obj && f097Obj.tratativa) {
+                const tratativa = f097Obj.tratativa;
+                const disposicaoNovaPeca = !!tratativa.disposicao_nova_peca;
+
+                // Busca RNC atualizada para ter acesso à OP, Recurso, Produto e RECNO salvo
+                const [rncRows] = await db.query(`SELECT op, produto, recurso_inconformidade, protheus_perda_recno FROM app_sgq_rncs WHERE id = ?`, [id]);
+                if (rncRows && rncRows.length > 0) {
+                    const rnc = rncRows[0];
+                    const opNumero = rnc.op;
+                    const produto = rnc.produto;
+                    const recurso = rnc.recurso_inconformidade; // Pode vir vazio ou do form
+                    
+                    const axios = require('axios');
+                    const https = require('https');
+                    const agent = new https.Agent({ rejectUnauthorized: false });
+
+                    // 1. APONTAMENTO DE PERDA (NOPER: 3)
+                    if (disposicaoNovaPeca && !rnc.protheus_perda_recno && opNumero && produto) {
+                        const qtdStr = tratativa.protheus_perda_quant;
+                        const operacStr = tratativa.protheus_perda_operac;
+                        const localizStr = tratativa.protheus_perda_localiz;
+
+                        if (qtdStr && operacStr && localizStr) {
+                            const payload = {
+                                data: {
+                                    EMPRESA: "01",
+                                    CFILANT: "0101",
+                                    apontamentosPerdas: [{
+                                        BC_OP: String(opNumero).trim(),
+                                        BC_OPERAC: String(operacStr).trim(),
+                                        BC_RECURSO: String(recurso).trim() || '',
+                                        NOPER: 3,
+                                        aItens: [{
+                                            BC_PRODUTO: String(produto).trim(),
+                                            BC_LOCORIG: "03",
+                                            BC_LOCALIZ: String(localizStr).trim(),
+                                            BC_TIPO: "R",
+                                            BC_QUANT: Number(qtdStr)
+                                        }]
+                                    }]
+                                }
+                            };
+
+                            console.log(`[PROTHEUS API] Engatilhando apontamento de perda para RNC ${id} (OP ${opNumero})`);
+                            axios.post(
+                                'https://192.168.1.60:47500/ordem-producao/apontamento-perdas',
+                                payload,
+                                { httpsAgent: agent, timeout: 15000 }
+                            ).then(async (response) => {
+                                console.log(`[PROTHEUS API SUCESSO] Apontamento Perda RNC ${id}:`, response.data);
+                                // Extrai o RECNO retornado (adaptar caso o formato mude)
+                                // Assumindo que vem como response.data.recno ou similar, vamos gravar o json puro caso não saibamos o campo exato
+                                const recno = response.data?.recno || response.data?.RECNO || JSON.stringify(response.data);
+                                await db.query(`UPDATE app_sgq_rncs SET protheus_perda_recno = ? WHERE id = ?`, [String(recno), id]);
+                            }).catch(err => {
+                                console.error(`[PROTHEUS API ERRO] Falha na perda RNC ${id}:`, err.response?.data || err.message);
+                            });
+                        }
+                    }
+
+                    // 2. ESTORNO DE PERDA (NOPER: 6)
+                    if (!disposicaoNovaPeca && rnc.protheus_perda_recno && opNumero) {
+                        const payload = {
+                            data: {
+                                EMPRESA: "01",
+                                CFILANT: "0101",
+                                apontamentosPerdas: [{
+                                    BC_OP: String(opNumero).trim(),
+                                    NOPER: 6,
+                                    aItens: [{
+                                        RECNO_ESTORNO: Number(rnc.protheus_perda_recno) || rnc.protheus_perda_recno
+                                    }]
+                                }]
+                            }
+                        };
+
+                        console.log(`[PROTHEUS API] Engatilhando estorno de perda para RNC ${id} (OP ${opNumero})`);
+                        axios.post(
+                            'https://192.168.1.60:47500/ordem-producao/apontamento-perdas',
+                            payload,
+                            { httpsAgent: agent, timeout: 15000 }
+                        ).then(async (response) => {
+                            console.log(`[PROTHEUS API SUCESSO] Estorno Perda RNC ${id}:`, response.data);
+                            await db.query(`UPDATE app_sgq_rncs SET protheus_perda_recno = NULL WHERE id = ?`, [id]);
+                        }).catch(err => {
+                            console.error(`[PROTHEUS API ERRO] Falha no estorno RNC ${id}:`, err.response?.data || err.message);
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Erro na integração de perdas Protheus:', e);
+        }
+        // -------------------------------------------------------------------------
+
         res.json({ message: 'RNC updated successfully' });
     } catch (error) {
         console.error('Erro ao atualizar RNC:', error);

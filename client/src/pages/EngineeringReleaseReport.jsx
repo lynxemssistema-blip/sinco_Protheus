@@ -3,12 +3,13 @@ import api, { getFileUrl } from '../services/api';
 import { 
     ClipboardList, Search, Calendar, User, Package, 
     Download, Mail, Filter, Loader2, AlertCircle, 
-    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText, Scissors
+    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText, Scissors, FileSpreadsheet
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { generateSingleRNCPdf } from '../services/rncPdfGenerator';
 import RNCSendEmailModal from '../components/RNCSendEmailModal';
 import CorteReleaseTab from '../components/CorteReleaseTab';
+import ReportStructureModal from '../components/ReportStructureModal';
 
 
 // ─── Aba Engenharia ───────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ const EngineeringTab = () => {
     const [releases, setReleases] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState({ startDate: '', endDate: '', product: '', user: '', pedido: '', item: '' });
+    const [structureCode, setStructureCode] = useState(null);
 
     const fetchReleases = async (params = filters) => {
         setLoading(true);
@@ -37,6 +39,125 @@ const EngineeringTab = () => {
     const formatDate = dateStr => {
         if (!dateStr) return '—';
         return new Date(dateStr).toLocaleString('pt-BR', { day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit' });
+    };
+
+    const handleExportExcel = () => {
+        import('xlsx').then(XLSX => {
+            const data = releases.map(r => ({
+                'Produto': r.codigo_produto,
+                'Descrição do Produto': r.descricao_produto,
+                'Cód. Liberação': r.codigo_liberacao || '-',
+                'Ação': r.tipo_acao,
+                'Data': formatDate(r.data_hora),
+                'Pedido': r.pedido || '-',
+                'Item': r.item || '-',
+                'Usuário': r.usuario,
+                'Modo': r.modo === 'FULL' ? 'COMPLETO' : 'NÍVEL 1',
+                'Destinatários': r.destinatarios || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Liberações");
+            XLSX.writeFile(wb, `Relatorio_Liberacoes_${new Date().getTime()}.xlsx`);
+        });
+    };
+
+    const handleExportPdf = () => {
+        Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable')
+        ]).then(([jsPDFLib, autoTableModule]) => {
+            const jsPDF = jsPDFLib.jsPDF || jsPDFLib.default;
+            const autoTable = autoTableModule.default;
+            const doc = new jsPDF('landscape', 'mm', 'a4');
+            
+            const drawHeader = () => {
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const ML = 10;
+                const MR = 10;
+                const usableW = pageWidth - ML - MR;
+                const hY = 8;
+                const hH = 16;
+                
+                doc.setDrawColor(0);
+                doc.setLineWidth(0.3);
+                doc.rect(ML, hY, usableW, hH);
+
+                const col1 = ML + 52;
+                const col2 = ML + 165;
+                const col3 = ML + 222;
+                doc.setLineWidth(0.2);
+                [col1, col2, col3].forEach(x => doc.line(x, hY, x, hY + hH));
+
+                // Logo
+                doc.setFontSize(13);
+                doc.setFont('helvetica', 'bold');
+                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.setFontSize(5.5);
+                doc.setFont('helvetica', 'normal');
+                doc.text('Transformando metais em excelência', ML + 4, hY + 10);
+
+                // Company
+                doc.setFontSize(7.5);
+                doc.setFont('helvetica', 'bold');
+                doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(6.5);
+                doc.text('CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
+                doc.text('PCP - Planejamento e Controle de Produção', col1 + 3, hY + 13.5);
+
+                // Emission
+                doc.setFontSize(6.5);
+                doc.setFont('helvetica', 'bold');
+                doc.text('EMISSÃO:', col2 + 3, hY + 5.5);
+                doc.setFont('helvetica', 'normal');
+                
+                const now = new Date();
+                const emissionDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                doc.text(emissionDate, col2 + 20, hY + 5.5);
+
+                // Title
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.text('RELATÓRIO DE LIBERAÇÕES DE ENGENHARIA', col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
+                doc.setFontSize(8);
+                doc.text(`Total: ${releases.length} registros`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
+                
+                return hY + hH + 4;
+            };
+
+            const startY = drawHeader();
+            
+            const tableData = releases.map(r => [
+                r.codigo_liberacao || '-',
+                r.codigo_produto,
+                r.tipo_acao,
+                formatDate(r.data_hora),
+                r.pedido || '-',
+                r.usuario,
+                r.modo === 'FULL' ? 'COMPLETO' : 'NÍVEL 1'
+            ]);
+
+            autoTable(doc, {
+                startY,
+                head: [['Cód. Lib.', 'Produto', 'Ação', 'Data', 'Pedido', 'Usuário', 'Modo']],
+                body: tableData,
+                styles: { fontSize: 7, font: 'helvetica' },
+                headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [245, 247, 250] },
+                margin: { left: 10, right: 10 },
+                didDrawPage: (data) => {
+                    if (data.pageNumber > 1) {
+                        drawHeader();
+                    }
+                    const str = 'Página ' + doc.internal.getNumberOfPages();
+                    doc.setFontSize(6);
+                    doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 5);
+                }
+            });
+
+            doc.save(`Relatorio_Liberacoes_${new Date().getTime()}.pdf`);
+        });
     };
 
     const groupedReleases = useMemo(() => {
@@ -86,19 +207,29 @@ const EngineeringTab = () => {
                         </div>
                     ))}
                 </div>
-                <div className="flex justify-end gap-3 pt-1">
-                    <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all">Limpar</button>
-                    <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow shadow-red-200 hover:bg-red-700 transition-all">
-                        <Search className="w-4 h-4" /> Aplicar
-                    </button>
+                <div className="flex justify-between items-center gap-3 pt-1">
+                    <div className="flex gap-2">
+                        <button onClick={handleExportExcel} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-semibold hover:bg-green-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                            <FileSpreadsheet className="w-4 h-4" /> Excel
+                        </button>
+                        <button onClick={handleExportPdf} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold hover:bg-red-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                            <FileText className="w-4 h-4" /> PDF
+                        </button>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all">Limpar</button>
+                        <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow shadow-red-200 hover:bg-red-700 transition-all">
+                            <Search className="w-4 h-4" /> Aplicar
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Tabela */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
                     <table className="w-full text-left border-collapse">
-                        <thead>
+                        <thead className="sticky top-0 z-10 shadow-sm">
                             <tr className="bg-slate-50 border-b border-slate-100">
                                 {['Cód. Lib.','Ação / Data','Pedido / Item','Usuário','Detalhes'].map(h => (
                                     <th key={h} className="px-5 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">{h}</th>
@@ -120,8 +251,17 @@ const EngineeringTab = () => {
                                                     <h3 className="text-sm font-bold text-slate-800 font-mono">{group.codigo_produto}</h3>
                                                     <p className="text-[11px] text-slate-500">{group.descricao_produto}</p>
                                                 </div>
-                                                <div className="ml-auto flex items-center gap-2 text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
-                                                    {group.items.length} registro(s)
+                                                <div className="ml-auto flex items-center gap-3">
+                                                    <button 
+                                                        onClick={() => setStructureCode(group.codigo_produto)}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded-lg text-[11px] font-bold hover:bg-red-50 transition-colors shadow-sm"
+                                                    >
+                                                        <Layers className="w-3.5 h-3.5" />
+                                                        Ver Estrutura
+                                                    </button>
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                                                        {group.items.length} registro(s)
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
@@ -185,6 +325,12 @@ const EngineeringTab = () => {
                     </table>
                 </div>
             </div>
+
+            <ReportStructureModal 
+                isOpen={!!structureCode} 
+                onClose={() => setStructureCode(null)} 
+                codigo={structureCode} 
+            />
         </div>
     );
 };
@@ -195,6 +341,7 @@ const PCPTab = () => {
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(new Set());
     const [filters, setFilters] = useState({ startDate:'',endDate:'',lote:'',usuario:'',pedido:'',produto:'',codigo:'' });
+    const [structureCode, setStructureCode] = useState(null);
 
     const fetchReleases = async (params = filters) => {
         setLoading(true);
@@ -217,6 +364,121 @@ const PCPTab = () => {
     const formatDate = dateStr => {
         if (!dateStr) return '—';
         return new Date(dateStr).toLocaleString('pt-BR', { day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit' });
+    };
+
+    const handleExportExcel = () => {
+        import('xlsx').then(XLSX => {
+            const data = releases.map(r => ({
+                'Lote': r.codigo_lote,
+                'Ação': r.tipo_acao,
+                'Data': formatDate(r.data_hora),
+                'Pedido': r.pedido || '-',
+                'Usuário': r.usuario,
+                'Produto': r.codigo_produto || '-',
+                'Destinatários': r.destinatarios || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "PCP");
+            XLSX.writeFile(wb, `Relatorio_PCP_${new Date().getTime()}.xlsx`);
+        });
+    };
+
+    const handleExportPdf = () => {
+        Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable')
+        ]).then(([jsPDFLib, autoTableModule]) => {
+            const jsPDF = jsPDFLib.jsPDF || jsPDFLib.default;
+            const autoTable = autoTableModule.default;
+            const doc = new jsPDF('landscape', 'mm', 'a4');
+            
+            const drawHeader = () => {
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const ML = 10;
+                const MR = 10;
+                const usableW = pageWidth - ML - MR;
+                const hY = 8;
+                const hH = 16;
+                
+                doc.setDrawColor(0);
+                doc.setLineWidth(0.3);
+                doc.rect(ML, hY, usableW, hH);
+
+                const col1 = ML + 52;
+                const col2 = ML + 165;
+                const col3 = ML + 222;
+                doc.setLineWidth(0.2);
+                [col1, col2, col3].forEach(x => doc.line(x, hY, x, hY + hH));
+
+                // Logo
+                doc.setFontSize(13);
+                doc.setFont('helvetica', 'bold');
+                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.setFontSize(5.5);
+                doc.setFont('helvetica', 'normal');
+                doc.text('Transformando metais em excelência', ML + 4, hY + 10);
+
+                // Company
+                doc.setFontSize(7.5);
+                doc.setFont('helvetica', 'bold');
+                doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(6.5);
+                doc.text('CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
+                doc.text('PCP - Planejamento e Controle de Produção', col1 + 3, hY + 13.5);
+
+                // Emission
+                doc.setFontSize(6.5);
+                doc.setFont('helvetica', 'bold');
+                doc.text('EMISSÃO:', col2 + 3, hY + 5.5);
+                doc.setFont('helvetica', 'normal');
+                
+                const now = new Date();
+                const emissionDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                doc.text(emissionDate, col2 + 20, hY + 5.5);
+
+                // Title
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.text('RELATÓRIO DE LIBERAÇÕES PCP', col3 + (usableW - (col3 - ML)) / 2, hY + 5.5, { align: 'center' });
+                doc.setFontSize(8);
+                doc.text(`Total: ${releases.length} registros`, col3 + (usableW - (col3 - ML)) / 2, hY + 10.5, { align: 'center' });
+                
+                return hY + hH + 4;
+            };
+
+            const startY = drawHeader();
+            
+            const tableData = releases.map(r => [
+                r.codigo_lote,
+                r.tipo_acao,
+                formatDate(r.data_hora),
+                r.pedido || '-',
+                r.usuario,
+                r.codigo_produto || '-'
+            ]);
+
+            autoTable(doc, {
+                startY,
+                head: [['Lote', 'Ação', 'Data', 'Pedido', 'Usuário', 'Produto']],
+                body: tableData,
+                styles: { fontSize: 7, font: 'helvetica' },
+                headStyles: { fillColor: [22, 163, 74], textColor: 255, fontStyle: 'bold' }, // Green
+                alternateRowStyles: { fillColor: [245, 247, 250] },
+                margin: { left: 10, right: 10 },
+                didDrawPage: (data) => {
+                    if (data.pageNumber > 1) {
+                        drawHeader();
+                    }
+                    const str = 'Página ' + doc.internal.getNumberOfPages();
+                    doc.setFontSize(6);
+                    doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 5);
+                }
+            });
+
+            doc.save(`Relatorio_PCP_${new Date().getTime()}.pdf`);
+        });
     };
 
     return (
@@ -257,19 +519,29 @@ const PCPTab = () => {
                         </div>
                     ))}
                 </div>
-                <div className="flex justify-end gap-3 pt-1">
-                    <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all">Limpar</button>
-                    <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold shadow shadow-green-200 hover:bg-green-700 transition-all">
-                        <Search className="w-4 h-4" /> Aplicar
-                    </button>
+                <div className="flex justify-between items-center gap-3 pt-1">
+                    <div className="flex gap-2">
+                        <button onClick={handleExportExcel} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-semibold hover:bg-green-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                            <FileSpreadsheet className="w-4 h-4" /> Excel
+                        </button>
+                        <button onClick={handleExportPdf} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold hover:bg-red-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                            <FileText className="w-4 h-4" /> PDF
+                        </button>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all">Limpar</button>
+                        <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold shadow shadow-green-200 hover:bg-green-700 transition-all">
+                            <Search className="w-4 h-4" /> Aplicar
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Tabela */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
                     <table className="w-full text-left border-collapse">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="bg-slate-50 border-b border-slate-100">
                                 {['','Cód. Liberação','Data / Hora','Lote (OPs)','Data PCP','Usuário','Qtd. OPs'].map((h,i) => (
                                     <th key={i} className="px-5 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">{h}</th>
@@ -353,7 +625,14 @@ const PCPTab = () => {
                                                                     <td className="px-4 py-2 text-xs font-mono font-bold text-slate-700">{op.pedido}</td>
                                                                     <td className="px-4 py-2 text-xs text-slate-500">{op.item}</td>
                                                                     <td className="px-4 py-2 text-xs font-mono text-green-700 font-bold">{op.visual_op}</td>
-                                                                    <td className="px-4 py-2 text-xs font-mono text-slate-600">{op.produto}</td>
+                                                                    <td className="px-4 py-2 text-xs font-mono text-slate-600">
+                                                                        <div className="flex items-center gap-2">
+                                                                            {op.produto}
+                                                                            <button onClick={() => setStructureCode(op.produto)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1" title="Ver estrutura completa">
+                                                                                <Layers className="w-3 h-3" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </td>
                                                                     <td className="px-4 py-2 text-xs text-slate-500 max-w-[180px] truncate">{op.descricao}</td>
                                                                     <td className="px-4 py-2 text-xs font-bold text-slate-700">{op.qtd}</td>
                                                                 </tr>
@@ -370,6 +649,12 @@ const PCPTab = () => {
                     </table>
                 </div>
             </div>
+
+            <ReportStructureModal 
+                isOpen={!!structureCode} 
+                onClose={() => setStructureCode(null)} 
+                codigo={structureCode} 
+            />
         </div>
     );
 };
@@ -441,10 +726,10 @@ const RomaneioHistoryTab = () => {
             </div>
 
             {/* Tabela */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
                     <table className="w-full text-left border-collapse">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="bg-slate-50 border-b border-slate-100">
                                 {['Romaneio', 'Cliente', 'Mudança / Motivo', 'Data / Hora', 'Usuário', 'Status Atual', 'PDF'].map(h => (
                                     <th key={h} className="px-5 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">{h}</th>
@@ -634,10 +919,10 @@ const RNCEmailsTab = () => {
             </div>
 
             {/* Tabela */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
                     <table className="w-full text-left border-collapse">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="bg-slate-50 border-b border-slate-100">
                                 {[
                                     'RNC ID',

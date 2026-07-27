@@ -398,7 +398,7 @@ router.get('/where-used/:productCode', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('âŒ [WHERE-USED ERROR]', err);
+        console.error('â Œ [WHERE-USED ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -406,13 +406,31 @@ router.get('/where-used/:productCode', async (req, res) => {
 // POST /api/materials/bulk-explosion - Explosão Aglutinada (Bulk MRP)
 router.post('/bulk-explosion', async (req, res) => {
     try {
-        const { items } = req.body; // Array de { produto, qtd_total }
+        const { items, recurso_solda = 'MO0020' } = req.body; // Array de { produto, qtd_total }
         
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'Nenhum item fornecido para explosão.' });
         }
 
-        console.log(`ðŸ’¥ [BULK EXPLOSION] Iniciando explosão para ${items.length} itens base...`);
+        console.log(`💥 [BULK EXPLOSION] Iniciando explosão para ${items.length} itens base...`);
+
+        // ── ETAPA 0: Identifica produtos que passam pelo recurso de SOLDA (MO0020)
+        //    para poder separar seus materiais no relatório final
+        const prodCodes = items.map(i => (i.produto || '').trim().toUpperCase()).filter(Boolean);
+        let soldaProdutosSet = new Set();
+        if (prodCodes.length > 0) {
+            const ph = prodCodes.map((_, i) => `$${i + 2}`).join(',');
+            const rotRes = await db.query(
+                `SELECT DISTINCT TRIM(g2_produto) AS produto
+                 FROM public.sg2010
+                 WHERE TRIM(g2_recurso) = $1
+                   AND TRIM(g2_produto) IN (${ph})
+                   AND COALESCE(d_e_l_e_t_,'') IN ('', ' ')`,
+                [recurso_solda.trim().toUpperCase(), ...prodCodes]
+            );
+            rotRes.rows.forEach(r => soldaProdutosSet.add(r.produto));
+            console.log(`[BULK EXPLOSION] Produtos com recurso ${recurso_solda}: ${rotRes.rows.length} → ${[...soldaProdutosSet].join(', ')}`);
+        }
 
         // Transforma os itens em JSON string para passar pro Postgres jsonb_to_recordset
         const itemsJson = JSON.stringify(items);
@@ -425,6 +443,7 @@ router.post('/bulk-explosion', async (req, res) => {
                     0 AS nivel,
                     TRIM(g1.g1_cod)  AS produto_pai,
                     TRIM(g1.g1_comp) AS componente,
+                    TRIM(i.produto)  AS produto_raiz,
                     g1.g1_quant::numeric AS qtd_unitaria,
                     g1.g1_quant::numeric * i.qtd_total::numeric AS qtd_total
                 FROM sg1010 g1
@@ -439,6 +458,7 @@ router.post('/bulk-explosion', async (req, res) => {
                     e.nivel + 1,
                     TRIM(e.componente),
                     TRIM(g1.g1_comp),
+                    e.produto_raiz,
                     g1.g1_quant::numeric,
                     e.qtd_total * g1.g1_quant::numeric
                 FROM estrutura e
@@ -450,7 +470,9 @@ router.post('/bulk-explosion', async (req, res) => {
             necessidades AS (
                 SELECT
                     TRIM(e.componente)  AS codigo,
-                    SUM(e.qtd_total)    AS qtd_total_necessaria
+                    SUM(e.qtd_total)    AS qtd_total_necessaria,
+                    -- Mantém array dos produtos raiz que consomem este componente
+                    array_agg(DISTINCT TRIM(e.produto_raiz)) AS produtos_raiz
                 FROM estrutura e
                 JOIN sb1010 b1
                     ON TRIM(b1.b1_cod) = TRIM(e.componente)
@@ -484,6 +506,7 @@ router.post('/bulk-explosion', async (req, res) => {
                 TRIM(b1.b1_tipo)   AS tipo,
                 TRIM(b1.b1_um)     AS unidade,
                 n.qtd_total_necessaria,
+                n.produtos_raiz,
                 COALESCE(e01.saldo, 0) AS saldo_almox01,
                 COALESCE(e03.saldo, 0) AS saldo_almox03
             FROM necessidades n
@@ -498,26 +521,36 @@ router.post('/bulk-explosion', async (req, res) => {
         const pgRes = await db.query(query, [itemsJson]);
 
         // Necessidade liquida calculada APENAS com base no Almox 01
+        // tag tem_solda = true se ALGUM produto raiz que consome este MP passa pelo recurso de solda
+        const soldaProdutosArr = [...soldaProdutosSet];
         const resultados = pgRes.rows.map(mat => {
             const necessidade = Number(mat.qtd_total_necessaria) - Number(mat.saldo_almox01);
+            const produtosRaiz = Array.isArray(mat.produtos_raiz) ? mat.produtos_raiz : [];
+            const temSolda = produtosRaiz.some(p => soldaProdutosSet.has((p || '').trim().toUpperCase()));
             return {
                 ...mat,
-                necessidade_liquida: Math.max(0, necessidade)
+                necessidade_liquida: Math.max(0, necessidade),
+                tem_solda: temSolda,
+                // remove campo interno bruto (não serializa bem em alguns clientes)
+                produtos_raiz: produtosRaiz
             };
         });
 
-        console.log('[BULK EXPLOSION] Concluido. ' + resultados.length + ' MPs encontradas.');
+        console.log('[BULK EXPLOSION] Concluido. ' + resultados.length + ' MPs encontradas. Solda: ' + resultados.filter(r => r.tem_solda).length);
 
         res.json({
             items_base: items.length,
+            recurso_solda,
+            solda_produtos: soldaProdutosArr,
             materiais: resultados
         });
 
     } catch (err) {
-        console.error('â Œ [BULK EXPLOSION ERROR]', err);
+        console.error('❌ [BULK EXPLOSION ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });
+
 // GET /api/materials/mrp-items - Busca leve de itens com saldo a faturar (sem enriquecimento)
 router.get('/mrp-items', async (req, res) => {
     try {

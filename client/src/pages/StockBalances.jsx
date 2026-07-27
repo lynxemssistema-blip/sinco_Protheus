@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import useStickyState from '../hooks/useStickyState';
-import { Search, Filter, Printer, Box, FileText } from 'lucide-react';
+import { Search, Filter, Printer, Box, FileText, Sparkles } from 'lucide-react';
 import { getStockMainBalances, getFileUrl } from '../services/api';
+import CadastroAnaliseTab from '../components/CadastroAnaliseTab';
 
 export default function StockBalances() {
+    const [activeTab, setActiveTab] = useStickyState('saldo', '@metalfisa:stock_activeTab');
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
     const [filters, setFilters] = useStickyState({
@@ -35,21 +37,48 @@ export default function StockBalances() {
 
     return (
         <div className="p-6 max-w-[1600px] mx-auto">
-            {/* Header / Filters - Hidden on Print */}
-            <div className="print:hidden mb-6 space-y-4">
-                <div className="flex items-center justify-between">
+            {/* Header + Tabs - Hidden on Print */}
+            <div className="print:hidden mb-6">
+                <div className="flex items-center justify-between mb-4">
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Box className="w-8 h-8 text-blue-600" />
                         Saldo de Materiais
                     </h1>
+                    {activeTab === 'saldo' && (
+                        <button
+                            onClick={handlePrint}
+                            className="bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800"
+                        >
+                            <Printer className="w-4 h-4" /> Imprimir / PDF
+                        </button>
+                    )}
+                </div>
+                <div className="flex border-b border-slate-200">
                     <button
-                        onClick={handlePrint}
-                        className="bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800"
+                        onClick={() => setActiveTab('saldo')}
+                        className={`py-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${
+                            activeTab === 'saldo' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
                     >
-                        <Printer className="w-4 h-4" /> Imprimir / PDF
+                        <Box className="w-4 h-4" /> Saldo de Materiais
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('analise')}
+                        className={`py-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${
+                            activeTab === 'analise' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        <Sparkles className="w-4 h-4" /> Análise de Cadastro (IA)
                     </button>
                 </div>
+            </div>
 
+            {activeTab === 'analise' && <CadastroAnaliseTab />}
+
+            {activeTab === 'saldo' && (
+            <>
+            {/* Filters - Hidden on Print */}
+            <div className="print:hidden mb-6 space-y-4">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Empresa</label>
@@ -205,6 +234,8 @@ export default function StockBalances() {
                     </tbody>
                 </table>
             </div>
+            </>
+            )}
         </div>
     );
 }

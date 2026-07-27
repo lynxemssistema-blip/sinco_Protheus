@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export const generateMergedDrawingsPdf = async (structure, rootCode) => {
+export const generateMergedDrawingsPdf = async (structure, rootCode, productStatuses = {}) => {
     if (!structure || structure.length === 0) {
         toast.warning("A estrutura está vazia.");
         return;
@@ -45,10 +45,20 @@ export const generateMergedDrawingsPdf = async (structure, rootCode) => {
                 const pages = pdf.getPages();
                 const qtd = parseFloat(item.qtd_necessaria || 0);
                 const qtdFormatada = qtd % 1 === 0 ? qtd.toString() : qtd.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
-                const text = `QTD: ${qtdFormatada}`;
+                const status = productStatuses[item.codigo] || 'NORMAL';
+                const statusText = status !== 'NORMAL' ? ` - STATUS ENG: ${status}` : '';
+                const text = `QTD: ${qtdFormatada}${statusText}`;
 
                 // 10mm ~ 28.34 points font size
                 const fontSize = 28;
+
+                // Adjust color based on status
+                let textColor = rgb(0.85, 0.1, 0.1); // Bright Red (default / NOVO / NORMAL)
+                if (status === 'REVISAO') {
+                    textColor = rgb(0.9, 0.6, 0.0); // Orange/Yellow
+                } else if (status === 'NOVO') {
+                    textColor = rgb(0.1, 0.6, 0.1); // Green
+                }
 
                 for (const page of pages) {
                     const { width, height } = page.getSize();
@@ -58,7 +68,7 @@ export const generateMergedDrawingsPdf = async (structure, rootCode) => {
                         y: height - 40,
                         size: fontSize,
                         font: helveticaFont,
-                        color: rgb(0.85, 0.1, 0.1), // Bright Red color
+                        color: textColor,
                     });
                 }
                 
@@ -142,16 +152,20 @@ export const generateMergedDrawingsPdf = async (structure, rootCode) => {
         doc.setFontSize(12);
         doc.text('Todos os Documentos da Estrutura', marginX, finalY);
 
-        const docs = structure.map(item => [
-            item.nivel.toString(),
-            item.codigo,
-            item.descricao?.trim() || '',
-            (item.tem_arquivos && item.primeiro_arquivo) ? 'SIM' : 'NÃO'
-        ]);
+        const docs = structure.map(item => {
+            const status = productStatuses[item.codigo] || 'NORMAL';
+            return [
+                item.nivel.toString(),
+                item.codigo,
+                item.descricao?.trim() || '',
+                (item.tem_arquivos && item.primeiro_arquivo) ? 'SIM' : 'NÃO',
+                status
+            ];
+        });
 
         autoTable(doc, {
             startY: finalY + 15,
-            head: [['Nível', 'Código', 'Descrição', 'Acompanha PDF?']],
+            head: [['Nível', 'Código', 'Descrição', 'Acompanha PDF?', 'Status Eng.']],
             body: docs,
             styles: { fontSize: 9 },
             headStyles: { fillColor: [41, 128, 185] },

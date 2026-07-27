@@ -204,89 +204,99 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
         setAgentLogs([]);
 
         try {
-            // Visualização de carregamento inicial
-            addLog('Iniciando comunicação com motor de sequenciamento FCS...', <BrainCircuit className="w-4 h-4 text-indigo-500" />);
-            
-            // Faz a requisição de fato
-            const res = await api.post('/pcp-refinado/smart-plan', {
-                ops: opList,
-                data_inicio: dataInicio,
-                include_saturday: includeSaturday
-            }, {
-                timeout: 600000 // 10 minutos (600000ms) para acomodar processamento global do FCS
-            });
+            const BATCH_SIZE = 50;
+            let totalPlans = 0;
+            let finalReport = null;
+            let totalLotes = Math.ceil(opList.length / BATCH_SIZE);
 
-            // Se o backend retornou agent_logs, itera com delay (efeito "digitação") e parseia carga
-            if (res.data.agent_logs && res.data.agent_logs.length > 0) {
-                setAgentLogs([]);
-                pendingAlloc.current = null;
+            addLog(`Iniciando sequenciamento de ${opList.length} OPs em ${totalLotes} lote(s)...`, <BrainCircuit className="w-4 h-4 text-indigo-500" />);
 
-                for (let i = 0; i < res.data.agent_logs.length; i++) {
-                    const log = res.data.agent_logs[i];
+            for (let i = 0; i < opList.length; i += BATCH_SIZE) {
+                const batch = opList.slice(i, i + BATCH_SIZE);
+                const loteNum = Math.floor(i / BATCH_SIZE) + 1;
 
-                    let icon = <Cpu className="w-4 h-4 text-slate-400" />;
-                    if (log.includes('Iniciando') || log.includes('ESTUDO')) icon = <BrainCircuit className="w-4 h-4 text-indigo-500" />;
-                    else if (log.includes('Obtendo') || log.includes('Buscando') || log.includes('Salvando')) icon = <Database className="w-4 h-4 text-blue-500" />;
-                    else if (log.includes('Alocados')) icon = <Clock className="w-4 h-4 text-emerald-500" />;
-                    else if (log.includes('Sem capacidade') || log.includes('Transição')) icon = <Calendar className="w-4 h-4 text-amber-500" />;
+                addLog(`📦 Processando lote ${loteNum}/${totalLotes} (${batch.length} OPs)...`, <FileText className="w-4 h-4 text-indigo-400" />);
 
-                    addLog(log, icon);
+                const res = await api.post('/pcp-refinado/smart-plan', {
+                    ops: batch,
+                    data_inicio: dataInicio,
+                    include_saturday: includeSaturday,
+                    preload_existing: loteNum > 1 // Carrega do BD a partir do lote 2
+                }, {
+                    timeout: 600000 // 10 minutos por lote (600000ms)
+                });
 
-                    // ── PARSER DE CARGA EM TEMPO REAL ──────────────────────────────
-                    // Padrão: "↳ Operação 010 (MEC01): Faltam 5 peças. Requer 250 min. Cap/dia = 480 min."
-                    const opMatch = log.match(/Operação\s+\w+\s+\((\w+)\).*Requer\s+([\d.]+)\s+min.*Cap\/dia\s*=\s*([\d.]+)\s*min/);
-                    if (opMatch) {
-                        pendingAlloc.current = {
-                            recurso: opMatch[1],
-                            minNeeded: parseFloat(opMatch[2]),
-                            capDia: parseFloat(opMatch[3])
-                        };
-                    }
-                    // Padrão: "→ Alocação concluída: de 2026-06-06 até 2026-06-08"
-                    const allocMatch = log.match(/Aloca[çc][aã]o conclu[íi]da: de (\d{4}-\d{2}-\d{2}) at[eé] (\d{4}-\d{2}-\d{2})/);
-                    if (allocMatch && pendingAlloc.current) {
-                        const { recurso, minNeeded, capDia } = pendingAlloc.current;
-                        const d1 = allocMatch[1], d2 = allocMatch[2];
-                        // Distribui pelos dias úteis do span em vez de empilhar tudo no d1
-                        const dayMap = distributeLoad(d1, d2, minNeeded, capDia, includeSaturday);
-                        setResourceChart(prev => {
-                            const next = { ...prev };
-                            if (!next[recurso]) next[recurso] = { capDia, dates: {} };
-                            next[recurso].dates = { ...next[recurso].dates };
-                            Object.entries(dayMap).forEach(([d, min]) => {
-                                next[recurso].dates[d] = (next[recurso].dates[d] || 0) + min;
+                if (res.data.agent_logs && res.data.agent_logs.length > 0) {
+                    pendingAlloc.current = null;
+                    for (let j = 0; j < res.data.agent_logs.length; j++) {
+                        const log = res.data.agent_logs[j];
+
+                        let icon = <Cpu className="w-4 h-4 text-slate-400" />;
+                        if (log.includes('Iniciando') || log.includes('ESTUDO')) icon = <BrainCircuit className="w-4 h-4 text-indigo-500" />;
+                        else if (log.includes('Obtendo') || log.includes('Buscando') || log.includes('Salvando')) icon = <Database className="w-4 h-4 text-blue-500" />;
+                        else if (log.includes('Alocados')) icon = <Clock className="w-4 h-4 text-emerald-500" />;
+                        else if (log.includes('Sem capacidade') || log.includes('Transição')) icon = <Calendar className="w-4 h-4 text-amber-500" />;
+
+                        addLog(log, icon);
+
+                        // ── PARSER DE CARGA EM TEMPO REAL ──────────────────────────────
+                        const opMatch = log.match(/Operação\s+\w+\s+\((\w+)\).*Requer\s+([\d.]+)\s+min.*Cap\/dia\s*=\s*([\d.]+)\s*min/);
+                        if (opMatch) {
+                            pendingAlloc.current = {
+                                recurso: opMatch[1],
+                                minNeeded: parseFloat(opMatch[2]),
+                                capDia: parseFloat(opMatch[3])
+                            };
+                        }
+                        const allocMatch = log.match(/Aloca[çc][aã]o conclu[íi]da: de (\d{4}-\d{2}-\d{2}) at[eé] (\d{4}-\d{2}-\d{2})/);
+                        if (allocMatch && pendingAlloc.current) {
+                            const { recurso, minNeeded, capDia } = pendingAlloc.current;
+                            const d1 = allocMatch[1], d2 = allocMatch[2];
+                            const dayMap = distributeLoad(d1, d2, minNeeded, capDia, includeSaturday);
+                            setResourceChart(prev => {
+                                const next = { ...prev };
+                                if (!next[recurso]) next[recurso] = { capDia, dates: {} };
+                                next[recurso].dates = { ...next[recurso].dates };
+                                Object.entries(dayMap).forEach(([d, min]) => {
+                                    next[recurso].dates[d] = (next[recurso].dates[d] || 0) + min;
+                                });
+                                return next;
                             });
-                            return next;
-                        });
-                        pendingAlloc.current = null;
+                            pendingAlloc.current = null;
+                        }
+                        // ───────────────────────────────────────────────────────────────
+
+                        await new Promise(r => setTimeout(r, 20)); // Delay reduzido p/ lotes
                     }
-                    // ───────────────────────────────────────────────────────────────
-
-                    await new Promise(r => setTimeout(r, 50));
+                } else {
+                    addLog(`Processamento do lote ${loteNum} concluído.`, <CheckCircle className="w-4 h-4 text-green-500" />);
                 }
-            } else {
-                addLog('Processamento concluído de forma instantânea.', <CheckCircle className="w-4 h-4 text-green-500" />);
+
+                totalPlans += res.data.plans || 0;
+                
+                // O último lote sobrescreve com o report completo de carga finalizada (preloaded)
+                if (res.data.report) {
+                    finalReport = res.data.report;
+                    if (res.data.report.carga_diaria) {
+                        setResourceChart(res.data.report.carga_diaria);
+                    }
+                }
             }
 
-            // Após conclusão: usa carga_diaria do report (dado real do resource_buckets do FCS)
-            if (res.data.report?.carga_diaria) {
-                setResourceChart(res.data.report.carga_diaria);
-            }
-
-            setSuccessMessage(`Sucesso! ${res.data.plans} operações sequenciadas pelo agente de IA.`);
+            setSuccessMessage(`Sucesso! ${totalPlans} operações sequenciadas pelo agente de IA.`);
             toast.success('Planejamento inteligente aplicado com sucesso!');
 
-            if (res.data.report) setReportData(res.data.report);
+            if (finalReport) setReportData(finalReport);
             
             if (onPlanSuccess) onPlanSuccess();
 
         } catch (error) {
             if (error.response?.data?.missing_times) {
                 setMissingTimes(error.response.data.missing_times);
-                addLog('Falha: Roteiros incompletos identificados.', <AlertTriangle className="w-4 h-4 text-red-500" />);
+                addLog('Falha: Roteiros incompletos identificados no lote atual.', <AlertTriangle className="w-4 h-4 text-red-500" />);
                 toast.error('Erro de validação: Faltam tempos de operação.');
             } else {
-                addLog('Falha na execução do algoritmo FCS.', <AlertTriangle className="w-4 h-4 text-red-500" />);
+                addLog('Falha na execução do algoritmo FCS em um dos lotes.', <AlertTriangle className="w-4 h-4 text-red-500" />);
                 toast.error(error.response?.data?.error || 'Erro ao executar planejamento inteligente.');
             }
         } finally {

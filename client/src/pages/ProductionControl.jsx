@@ -20,6 +20,7 @@ import EvolucaoApontamentosView from './pcp/EvolucaoApontamentosView';
 import PlanningAuditPanel from '../components/PlanningAuditPanel';
 import ResumoPlanejamentoView from '../components/ResumoPlanejamentoView';
 import ConsolidadoView from '../components/ConsolidadoView';
+import MateriaisOPView from '../components/MateriaisOPView';
 import api, { getProductionDashboard, saveProductionPlan, saveProductionPlanBatch, saveAppointment, getProductDocuments, getOperationById, getEstruturaProduto, getFileUrl, getCompanySettings, reportSystemError, getResourceCapacities } from '../services/api';
 import useStickyState from '../hooks/useStickyState';
 import { generateProductionControlPdf } from '../services/productionControlPdfGenerator';
@@ -501,9 +502,9 @@ export default function ProductionControl() {
             }
         }
     };
-    const handleMacroSaveBatch = async (plans, observacao, modo_calculo, preferencias) => {
+    const handleMacroSaveBatch = async (plans, observacao, modo_calculo, preferencias, dataPcpOpts = {}) => {
         try {
-            await saveProductionPlanBatch(plans, observacao, modo_calculo, preferencias);
+            await saveProductionPlanBatch(plans, observacao, modo_calculo, preferencias, dataPcpOpts);
         } catch (err) {
             console.error(err);
             throw err;
@@ -790,6 +791,10 @@ export default function ProductionControl() {
                             Consolidado por Produto
                             {activeTab === 'consolidado_produto' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                         </button>
+                        <button onClick={() => setActiveTab('materiais')} className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'materiais' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            Materiais (MP)
+                            {activeTab === 'materiais' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                        </button>
                     </div>
 
                 </div>
@@ -1000,8 +1005,13 @@ export default function ProductionControl() {
                                                 {op.data_planejada_inicio ? (
                                                     <div className="text-xs flex flex-col items-center gap-0.5">
                                                         <div className="text-green-700 font-medium whitespace-nowrap">
-                                                            I: {new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR')}
+                                                            I: {new Date(op.data_planejada_inicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                                                         </div>
+                                                        {op.data_planejada_fim && (
+                                                            <div className="text-orange-600 font-medium whitespace-nowrap">
+                                                                F: {new Date(op.data_planejada_fim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                            </div>
+                                                        )}
                                                         {op.dias_espera > 0 && (
                                                             <div className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200" title="Dias aguardando entre recursos">
                                                                 Espera: {op.dias_espera}d
@@ -1097,11 +1107,15 @@ export default function ProductionControl() {
                     <PlanningAuditPanel />
                 ) : activeTab === 'resumo_pedidos' ? (
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-1">
-                        <ResumoPlanejamentoView />
+                        <ResumoPlanejamentoView initialFilter={filters.pedido || filters.op || ''} />
                     </div>
                 ) : activeTab === 'consolidado_produto' ? (
                     <div className="flex-1 min-h-0 flex flex-col">
                         <ConsolidadoView ops={ops} />
+                    </div>
+                ) : activeTab === 'materiais' ? (
+                    <div className="flex-1 min-h-0 flex flex-col p-1">
+                        <MateriaisOPView ops={ops} />
                     </div>
                 ) : (
                     <CurvaSPedido filters={filters} />

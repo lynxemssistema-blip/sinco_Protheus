@@ -264,9 +264,9 @@ const OrderFiltersBar = ({
 
                 {/* Footer Controls (Apenas Pendentes + Ordenação) */}
                 <div className="md:col-span-4 lg:col-span-10 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
-                    <div className="flex flex-col gap-1 flex-1">
-                        <div className="flex items-center gap-2">
-                            <label className="relative inline-flex items-center cursor-pointer">
+                    <div className="flex flex-col gap-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                 <input
                                     type="checkbox"
                                     checked={filters.only_active === 'true'}
@@ -278,8 +278,8 @@ const OrderFiltersBar = ({
                                 <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
                                 <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
                             </label>
-                            <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex">
-                                <AlertCircle className="h-3 w-3" />
+                            <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex shrink-0">
+                                <AlertCircle className="h-3 w-3 shrink-0" />
                                 Desative para uma busca muito mais rápida.
                             </span>
                         </div>

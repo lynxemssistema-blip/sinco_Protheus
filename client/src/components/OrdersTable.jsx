@@ -10,6 +10,7 @@ import autoTable from 'jspdf-autotable';
 import PCPExportTab from './orders/PCPExportTab';
 import OrdersTimelineTab from './orders/OrdersTimelineTab';
 import MaterialRequirementsTab from './orders/MaterialRequirementsTab';
+import DeliveryScheduleTab from './orders/DeliveryScheduleTab';
 import DocsModal from './DocsModal';
 import NotesDrawer from './NotesDrawer';
 import MeetingReportModal from './MeetingReportModal';
@@ -37,6 +38,7 @@ import ColumnSettingsPanel, { loadColConfigLocal, loadColConfigFromServer, saveC
 import * as XLSX from 'xlsx';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import VirtualFlatList from './orders/VirtualFlatList';
+import MasterSheetTab from './MasterSheetTab';
 
 const PREF_KEY = 'visao_geral_col_order_v2';
 export const ALL_FLAT_COLUMNS = [
@@ -120,6 +122,7 @@ const OrdersTable = () => {
     const [corteForecastTarget, setCorteForecastTarget] = useState(null);
     const [pcpBalanceTarget, setPcpBalanceTarget] = useState(null);
     const [reportSelectedItems, setReportSelectedItems] = useState(null);
+    const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
     const [priorityTarget, setPriorityTarget] = useState(null);
@@ -820,17 +823,49 @@ const OrdersTable = () => {
         }
     };
 
-    const handleDownloadExcel = () => {
+    const handleDownloadExcel = async () => {
         const reportFilters = {
-            client: filters.cliente,
-            order: filters.pedido,
-            product: filters.produto,
-            emission_start: filters.dataInicial,
-            emission_end: filters.dataFinal,
-            active_only: filters.only_active
+            client:         filters.cliente,
+            order:          filters.pedido,
+            product:        filters.produto,
+            active_only:    filters.only_active,
+            data_0:         new Date().toISOString().split('T')[0] // Always run simulation on Excel
         };
+        
+        if (filters.dateType === 'entrega') {
+            reportFilters.delivery_start = filters.dataInicial;
+            reportFilters.delivery_end = filters.dataFinal;
+        } else if (filters.dateType === 'pcp') {
+            reportFilters.pcp_start = filters.dataInicial;
+            reportFilters.pcp_end = filters.dataFinal;
+        } else {
+            reportFilters.emission_start = filters.dataInicial;
+            reportFilters.emission_end = filters.dataFinal;
+        }
+
         const url = getReportDownloadUrl('xlsx', reportFilters, 'sales-planning');
-        window.open(url, '_blank');
+
+        setIsGeneratingExcel(true);
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Erro ${response.status}`);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const now = new Date();
+            const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+            a.href = blobUrl;
+            a.download = `Planejamento_Carga_${stamp}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(blobUrl);
+        } catch (err) {
+            console.error('[Excel] Erro ao gerar:', err);
+            alert(`Erro ao gerar Excel: ${err.message}`);
+        } finally {
+            setIsGeneratingExcel(false);
+        }
     };
 
     const handleOpenDocs = (code, name) => {
@@ -963,7 +998,39 @@ const OrdersTable = () => {
                 </div>
             )}
 
-            {/* â”€â”€ BLOQUEIO GLOBAL DE PÃ GINA â”€â”€ Evita consultas simultâneas pesadas */}
+            {/* Overlay: Geração do Excel em andamento */}
+            {isGeneratingExcel && (
+                <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-sm border border-blue-100">
+                        <div className="relative mb-5">
+                            <div className="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <svg className="w-7 h-7 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-1">Gerando Excel…</h3>
+                        <p className="text-sm text-gray-500 mb-4">
+                            O sistema está processando os pedidos e calculando a carga por recurso em todos os níveis da BOM.
+                            Isso pode levar alguns segundos.
+                        </p>
+                        <div className="w-full text-left space-y-2">
+                            {['Consultando dados do Protheus','Calculando carga por recurso (BOM + Roteiro)','Montando planilhas Excel','Preparando download…'].map((step, i) => (
+                                <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="w-4 h-4 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: `${i * 0.5}s` }} />
+                                    </div>
+                                    {step}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── BLOQUEIO GLOBAL DE PÁGINA ── Evita consultas simultâneas pesadas */}
             {pageBlocking && (
                 <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm" style={{ pointerEvents: 'all' }}>
                     <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-md border border-gray-100">
@@ -1444,6 +1511,28 @@ const OrdersTable = () => {
                     >
                         <Package className="w-4 h-4" />
                         ðŸ“¦ Necessidades MP (Almox 01/03)
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('programacao-entregas')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'programacao-entregas'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <Calendar className="w-4 h-4" />
+                        Programação de Entregas
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('planilha-mestra')}
+                        className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'planilha-mestra'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            }`}
+                    >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Planilha Mestra
                     </button>
                 </div>
                 
@@ -2195,7 +2284,7 @@ const OrdersTable = () => {
                                                 setMenuPosition={setMenuPosition}
                                                 handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
                                                 onOpenClassificacaoModal={handleOpenClassificacaoModal}
-                                                canEdit={canEdit}
+
                                             />
                                         )}
                                     </>
@@ -2239,7 +2328,7 @@ const OrdersTable = () => {
             {/* Exportação Materiais PCP */}
             {
                 activeTab === 'pcp-export' && (
-                    <div className="flex-1 overflow-auto min-h-0 p-4">
+                    <div className="flex-1 overflow-hidden min-h-0 p-4 flex flex-col">
                         <PCPExportTab />
                     </div>
                 )
@@ -2255,8 +2344,26 @@ const OrdersTable = () => {
             {/* MRP Bulk - Necessidades */}
             {
                 activeTab === 'mrp-bulk' && (
-                    <div className="flex-1 overflow-auto min-h-0 bg-gray-50">
+                    <div className="flex-1 overflow-hidden min-h-0 bg-gray-50 flex flex-col">
                         <MaterialRequirementsTab setPageBlocking={setPageBlocking} />
+                    </div>
+                )
+            }
+
+            {/* Programação de Entregas Tab */}
+            {
+                activeTab === 'programacao-entregas' && (
+                    <div className="flex-1 overflow-hidden min-h-0 p-4 flex flex-col">
+                        <DeliveryScheduleTab />
+                    </div>
+                )
+            }
+
+            {/* Planilha Mestra Tab */}
+            {
+                activeTab === 'planilha-mestra' && (
+                    <div className="flex-1 overflow-hidden min-h-0 p-4 flex flex-col">
+                        <MasterSheetTab filterParams={filters} />
                     </div>
                 )
             }
@@ -2379,8 +2486,11 @@ const OrdersTable = () => {
                                 let pcpQtd = 0;
                                 if (newProgs && newProgs.length > 0) {
                                     pcpQtd = newProgs.reduce((sum, p) => sum + parseFloat(p.quantidade_pcp || 0), 0);
-                                    const sorted = [...newProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
-                                    pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
+                                    const validProgs = newProgs.filter(p => p.data_entrega_pcp);
+                                    if (validProgs.length > 0) {
+                                        const sorted = [...validProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
+                                        pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
+                                    }
                                 }
                                 
                                 const newData = {

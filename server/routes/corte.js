@@ -20,7 +20,7 @@ router.post('/explosao', async (req, res) => {
             TRIM(sg2.g2_recurso) as recurso, 
             sg2.g2_tempad as tempo_unitario,
             TRIM(sg1_mtc.g1_comp) as mtc_codigo,
-            TRIM(sb1_mct.b1_desc) as mtc_descricao 
+            TRIM(sb1_mct.b1_desc) as mtc_descricao
         FROM sc2010 sc2_pai 
         JOIN sc2010 sc2_filhas ON sc2_filhas.c2_num = sc2_pai.c2_num AND sc2_filhas.d_e_l_e_t_ = '' 
         JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(sc2_filhas.c2_produto) AND sb1.d_e_l_e_t_ = ''
@@ -56,7 +56,7 @@ router.post('/explosao', async (req, res) => {
                     TRIM(sg2.g2_recurso) as recurso, 
                     sg2.g2_tempad as tempo_unitario,
                     TRIM(sg1_mtc.g1_comp) as mtc_codigo,
-                    TRIM(sb1_mct.b1_desc) as mtc_descricao 
+                    TRIM(sb1_mct.b1_desc) as mtc_descricao
                 FROM sc2010 sc2_filhas 
                 JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(sc2_filhas.c2_produto) AND sb1.d_e_l_e_t_ = ''
                 JOIN sg2010 sg2 ON TRIM(sg2.g2_produto) = TRIM(sc2_filhas.c2_produto) AND sg2.d_e_l_e_t_ = '' AND TRIM(sg2.g2_recurso) IN ('MO0013', 'MO0002') 
@@ -85,6 +85,33 @@ router.post('/explosao', async (req, res) => {
                     mtc_descricao: row.mtc_descricao || 'Material não encontrado',
                     qtd_necessaria: parseFloat(row.qtd_necessaria) || 0
                 });
+            }
+        }
+
+        // Buscar roteiros completos em bulk para os componentes
+        if (resultados.length > 0) {
+            const allComponentes = [...new Set(resultados.map(r => r.componente))].filter(Boolean);
+            if (allComponentes.length > 0) {
+                try {
+                    const roteiroQuery = `
+                        SELECT TRIM(g2_produto) as produto, string_agg(TRIM(g2_recurso), '->' ORDER BY g2_operac) as roteiro
+                        FROM sg2010
+                        WHERE TRIM(g2_produto) = ANY($1) AND d_e_l_e_t_ = ''
+                        GROUP BY TRIM(g2_produto)
+                    `;
+                    const roteiroRes = await db.query(roteiroQuery, [allComponentes]);
+                    const roteiroMap = {};
+                    roteiroRes.rows.forEach(row => {
+                        roteiroMap[row.produto] = row.roteiro;
+                    });
+                    
+                    resultados = resultados.map(r => ({
+                        ...r,
+                        roteiro: roteiroMap[r.componente] || ''
+                    }));
+                } catch (rotErr) {
+                    console.error('Erro ao buscar roteiros em bulk:', rotErr.message);
+                }
             }
         }
 
@@ -271,7 +298,7 @@ router.post('/lotes', async (req, res) => {
                     console.log('[Excel] Gerando planilha via COM automation...');
                     const excelItemsMap = {};
                     for (const lote of lotes) {
-                        const recursoNome = lote.recurso === 'MO0013' ? 'Laser' : 'Puncionadeira';
+                        const recursoNome = lote.recurso || 'Geral';
                         for (const item of lote.items) {
                             const key = `${item.componente}|${recursoNome}`;
                             if (!excelItemsMap[key]) {
@@ -355,9 +382,29 @@ router.get('/lotes-detalhados', async (req, res) => {
             WHERE lote_corte_id IN (?)
         `, [loteIds]);
 
+        // Fetch drawings
+        const componentes = [...new Set(itens.map(i => i.componente))].filter(Boolean);
+        const drawingMap = {};
+        if (componentes.length > 0) {
+            try {
+                const [drawings] = await mysqlPool.query(
+                    `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (?) AND tipo LIKE '%desenho%'`,
+                    [componentes]
+                );
+                drawings.forEach(d => { drawingMap[d.produto_codigo] = d.url_arquivo; });
+            } catch (drawErr) {
+                console.error('Erro ao buscar desenhos para lotes detalhados:', drawErr.message);
+            }
+        }
+
+        const itensComDesenho = itens.map(i => ({
+            ...i,
+            pdf_path: drawingMap[i.componente] || null
+        }));
+
         const lotesComItens = lotes.map(l => ({
             ...l,
-            items: itens.filter(i => i.lote_corte_id === l.id)
+            items: itensComDesenho.filter(i => i.lote_corte_id === l.id)
         }));
 
         res.json(lotesComItens);
@@ -550,6 +597,147 @@ router.put('/lotes/status-material-lote', async (req, res) => {
     } catch (e) {
         console.error('Erro no /lotes/status-material-lote:', e);
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Routing Groups CRUD  (Grupos de Roteiro — exclusivos por recurso)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Garante tabela com coluna priority (migração idempotente)
+async function ensureRoutingGroupsTable() {
+    await mysqlPool.query(`CREATE TABLE IF NOT EXISTS app_routing_groups (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        name        VARCHAR(255) NOT NULL,
+        rules       LONGTEXT NOT NULL,
+        priority    INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`);
+    try { await mysqlPool.query('ALTER TABLE app_routing_groups ADD COLUMN priority INT NOT NULL DEFAULT 0'); } catch (_) {}
+}
+
+// Verifica se já existe um grupo com EXATAMENTE o mesmo conjunto de recursos
+// Regra: combinações diferentes são permitidas ([MO0013] e [MO0013, MO0002] são grupos distintos)
+async function isDuplicateCombination(newIncludes, excludeId = null) {
+    const [rows] = await mysqlPool.query('SELECT id, rules FROM app_routing_groups');
+    const newSorted = [...newIncludes].sort().join(',');
+    for (const row of rows) {
+        if (excludeId !== null && String(row.id) === String(excludeId)) continue;
+        const rules = typeof row.rules === 'string' ? JSON.parse(row.rules) : row.rules;
+        const existingSorted = [...(rules.includes || [])].map(r => r.toUpperCase()).sort().join(',');
+        if (existingSorted === newSorted) return row.id;
+    }
+    return null;
+}
+
+router.get('/routing-groups', async (req, res) => {
+    try {
+        await ensureRoutingGroupsTable();
+        const [rows] = await mysqlPool.query('SELECT * FROM app_routing_groups ORDER BY priority ASC, id ASC');
+        const groups = rows.map(r => ({
+            ...r,
+            rules: typeof r.rules === 'string' ? JSON.parse(r.rules) : r.rules
+        }));
+        res.json({ success: true, groups });
+    } catch (e) {
+        if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ success: true, groups: [] });
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao buscar grupos.' });
+    }
+});
+
+router.post('/routing-groups', async (req, res) => {
+    try {
+        await ensureRoutingGroupsTable();
+        const { name, rules } = req.body;
+
+        if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
+        if (!rules?.expression?.trim()) return res.status(400).json({ error: 'Expressão não pode ser vazia.' });
+
+        const expression = rules.expression.trim().toUpperCase();
+        // Extract all resource codes from expression to validate duplicates
+        const newIncludes = (expression.match(/[A-Z0-9_]+/g) || [])
+            .filter(w => !['AND', 'OR', 'NOT', 'TRUE', 'FALSE'].includes(w))
+            .sort();
+
+        // Validação: não pode existir outro grupo com EXATAMENTE a mesma expressão
+        const [rows] = await mysqlPool.query('SELECT id, rules FROM app_routing_groups');
+        let dup = false;
+        for (const row of rows) {
+            let rRules = row.rules;
+            if (typeof rRules === 'string') {
+                try { rRules = JSON.parse(rRules); } catch (_) { continue; }
+            }
+            if (rRules.expression === expression) {
+                dup = true;
+                break;
+            }
+        }
+        
+        if (dup) {
+            return res.status(409).json({
+                error: `Já existe um grupo com exatamente essa mesma expressão.`
+            });
+        }
+
+        const [[{ maxPri }]] = await mysqlPool.query('SELECT COALESCE(MAX(priority), -1) as maxPri FROM app_routing_groups');
+        const rulesStr = JSON.stringify({
+            expression,
+            includes: newIncludes,
+            excludes: []
+        });
+        await mysqlPool.query(
+            'INSERT INTO app_routing_groups (name, rules, priority) VALUES (?, ?, ?)',
+            [name.trim(), rulesStr, maxPri + 1]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro no servidor: ' + e.message });
+    }
+});
+
+router.put('/routing-groups/:id', async (req, res) => {
+    try {
+        const { name, rules, priority } = req.body;
+        const { id } = req.params;
+
+        const newIncludes = (rules?.includes || []).map(r => String(r).trim().toUpperCase()).sort();
+        if (newIncludes.length === 0) return res.status(400).json({ error: 'Selecione pelo menos um recurso.' });
+
+        // Validação: combinação idêntica em outro grupo
+        const dupId = await isDuplicateCombination(newIncludes, id);
+        if (dupId) {
+            return res.status(409).json({
+                error: `Já existe um grupo com exatamente esses recursos.`
+            });
+        }
+
+        const rulesStr = JSON.stringify({
+            includes: newIncludes,
+            excludes: [],
+            condition: 'AND'
+        });
+        const updates = ['name = ?', 'rules = ?'];
+        const params = [name.trim(), rulesStr];
+        if (priority !== undefined) { updates.push('priority = ?'); params.push(Number(priority)); }
+        params.push(id);
+        await mysqlPool.query(`UPDATE app_routing_groups SET ${updates.join(', ')} WHERE id = ?`, params);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao atualizar grupo.' });
+    }
+});
+
+router.delete('/routing-groups/:id', async (req, res) => {
+    try {
+        await mysqlPool.query('DELETE FROM app_routing_groups WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao excluir grupo.' });
     }
 });
 

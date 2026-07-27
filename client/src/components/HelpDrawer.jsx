@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     X, HelpCircle, ChevronRight, ArrowRight, Lightbulb,
-    BookOpen, ExternalLink, List, Zap, Pin, PinOff, Layers
+    BookOpen, ExternalLink, List, Zap, Pin, PinOff, Layers, Printer
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 
@@ -94,6 +94,67 @@ export default function HelpDrawer() {
         closeHelp();
     };
 
+    const handlePrint = () => {
+        const doc = helpData;
+        if (!doc) return;
+
+        const allTabs = doc.tabs && doc.tabs.length > 0 ? doc.tabs : null;
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (!printWindow) return;
+
+        const tabsHtml = allTabs
+            ? allTabs.map(tab => `
+                <div class="section">
+                    <h2>${tab.label || ''}</h2>
+                    ${tab.description ? `<p class="desc">${tab.description}</p>` : ''}
+                    ${tab.steps && tab.steps.length > 0
+                        ? `<ol>${tab.steps.map(s => `<li>${s}</li>`).join('')}</ol>`
+                        : ''}
+                </div>`).join('')
+            : '';
+
+        const globalSteps = doc.steps && doc.steps.length > 0 && !allTabs
+            ? `<div class="section"><h2>Como usar</h2><ol>${doc.steps.map(s => `<li>${s}</li>`).join('')}</ol></div>`
+            : '';
+
+        const tips = doc.tips && doc.tips.length > 0
+            ? `<div class="section tips"><h2>💡 Dicas</h2><ul>${doc.tips.map(t => `<li>${t}</li>`).join('')}</ul></div>`
+            : '';
+
+        printWindow.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
+            <meta charset="UTF-8">
+            <title>Ajuda – ${doc.title || 'MetalFisa'}</title>
+            <style>
+                body { font-family: Arial, sans-serif; font-size: 13px; color: #1e293b; margin: 24px 32px; }
+                header { border-bottom: 2px solid #1e3a5f; padding-bottom: 10px; margin-bottom: 18px; }
+                header h1 { font-size: 18px; margin: 0; color: #1e3a5f; }
+                header .badge { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+                .desc { color: #475569; margin: 6px 0 12px; line-height: 1.6; }
+                .section { margin-bottom: 20px; page-break-inside: avoid; }
+                .section h2 { font-size: 13px; font-weight: bold; text-transform: uppercase;
+                    letter-spacing: 0.5px; color: #1e3a5f; border-left: 3px solid #3b82f6;
+                    padding-left: 8px; margin-bottom: 8px; }
+                ol, ul { padding-left: 20px; margin: 0; }
+                li { margin-bottom: 5px; line-height: 1.5; }
+                .tips { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px 16px; }
+                .tips h2 { color: #92400e; border-left-color: #f59e0b; }
+                footer { margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 8px;
+                    font-size: 10px; color: #94a3b8; text-align: center; }
+                @media print { body { margin: 10mm 15mm; } }
+            </style></head><body>
+            <header>
+                <div class="badge">${doc.category || 'MetalFisa'} · Ajuda Contextual</div>
+                <h1>${doc.title || 'Manual'}</h1>
+                ${doc.description ? `<p class="desc">${doc.description}</p>` : ''}
+            </header>
+            ${tabsHtml}${globalSteps}${tips}
+            <footer>MetalFisa Sistema Integrado · Impresso em ${new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</footer>
+            </body></html>`);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 400);
+    };
+
     if (!isOpen && !isPinned) return null;
 
     return (
@@ -127,6 +188,14 @@ export default function HelpDrawer() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={handlePrint}
+                            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                            title="Imprimir ajuda desta tela"
+                            aria-label="Imprimir ajuda"
+                        >
+                            <Printer className="h-4 w-4" />
+                        </button>
                         <button
                             onClick={togglePin}
                             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isPinned ? 'bg-indigo-500/30 text-indigo-200' : 'bg-white/10 hover:bg-white/20'}`}

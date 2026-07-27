@@ -126,6 +126,7 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+
 // --- AI Error Tracker Middleware ---
 const { handleSystemError } = require('./utils/errorHandlerToAgent');
 app.use((req, res, next) => {
@@ -224,6 +225,7 @@ console.log('🔄 [DEBUG] Montando rota /api/materials...');
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/engineering-bom', require('./routes/engineering_bom'));
 app.use('/api/engineering-releases', require('./routes/engineering_releases'));
+app.use('/api/product-status', require('./routes/product_status'));
 app.use('/api/pcp-releases', require('./routes/pcp_releases'));
 app.use('/api/engineering-controls', require('./routes/engineering_controls'));
 app.use('/api/engineering-timesheets', require('./routes/engineering_timesheets'));
@@ -344,7 +346,9 @@ app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/roman
 app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/certificados'), { maxAge: '7d' }));
 app.use('/uploads/sgq_ajuda', express.static(path.join(__dirname, 'uploads/sgq_ajuda'), { maxAge: '7d' }));
 app.use('/uploads/whatsapp', express.static(path.join(__dirname, 'uploads/whatsapp'), { maxAge: '7d' }));
+app.use('/uploads/checklists', express.static(path.join(__dirname, 'uploads/checklists'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
+app.use('/api/montagem', require('./routes/montagem'));
 
 // Rota de Health Check
 app.get('/health', (req, res) => {
@@ -393,6 +397,14 @@ cron.schedule('0 15 * * *', async () => {
             console.log('[CRON] Hoje é final de semana ou feriado. Relatório diário do Agente de IA para WhatsApp pulado.');
             return;
         }
+        const [configRows] = await mysqlService.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (configRows.length && configRows[0].general_config) {
+            const cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (cfg?.automations?.ai_whatsapp_active === false) {
+                console.log('[CRON] Agente de IA para WhatsApp desativado nas configurações globais.');
+                return;
+            }
+        }
         console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
         const [groups] = await mysqlService.query(
             'SELECT grupo_nome, grupo_jid FROM app_whatsapp_grupos_monitorados WHERE grupo_jid IS NOT NULL'
@@ -419,6 +431,15 @@ cron.schedule('0 6,15 * * *', async () => {
         if (isWeekendOrHoliday()) {
             console.log('[CRON] Hoje é final de semana ou feriado. Rotina de Meu Canal pulada.');
             return;
+        }
+        const [configRows] = await mysqlService.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        let cfg = null;
+        if (configRows.length && configRows[0].general_config) {
+            cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (cfg?.automations?.meu_canal_active === false && cfg?.automations?.meu_canal_email_active === false) {
+                console.log('[CRON] Rotina de Meu Canal desativada (WhatsApp e E-mail) nas configurações globais.');
+                return;
+            }
         }
         console.log('[CRON] Iniciando rotina de disparo de e-mails/WhatsApp Meu Canal...');
         const [respRows] = await mysqlService.query(`
@@ -475,7 +496,7 @@ cron.schedule('0 6,15 * * *', async () => {
                     tls: { rejectUnauthorized: false }
                 });
 
-                if (user.email) {
+                if (user.email && cfg?.automations?.meu_canal_email_active !== false) {
                     const emailSubject = 'Meu Canal - Performance Diária do Setor';
                     await transporter.sendMail({
                         from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
@@ -486,7 +507,7 @@ cron.schedule('0 6,15 * * *', async () => {
                     logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
                 }
 
-                if (user.whatsapp) {
+                if (user.whatsapp && cfg?.automations?.meu_canal_active !== false) {
                     const waText = msgMeuCanal({
                         nome: user.NomeCompleto || user.Login,
                         setores: kpiData.setores
@@ -589,3 +610,5 @@ function printRoutes(app) {
 // Trigger nodemon restart
 
 // Trigger nodemon restart 2
+
+// trigger restart

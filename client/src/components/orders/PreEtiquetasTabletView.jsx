@@ -14,6 +14,10 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
     const [selectedItems, setSelectedItems] = useState({});
     const [isSaving, setIsSaving] = useState(false);
 
+    // Controle de distribuição automática por lote/peças
+    const [totalPecas, setTotalPecas] = useState('');
+    const [manualOverrides, setManualOverrides] = useState(new Set());
+
     const handleSearch = async (e) => {
         if (e) e.preventDefault();
         if (!searchQuery.trim()) {
@@ -50,6 +54,11 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                 });
                 
                 setResults(uniqueItems);
+                
+                // Reset distribution states on a fresh successful search
+                setTotalPecas('');
+                setManualOverrides(new Set());
+                setSelectedItems({});
             } else {
                 setResults([]);
                 toast.info("Nenhum pedido ativo encontrado para este desenho.");
@@ -60,6 +69,44 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleTotalPecasChange = (val) => {
+        let numericVal = parseFloat(val);
+        if (isNaN(numericVal) || numericVal < 0) {
+            numericVal = '';
+        }
+        
+        setTotalPecas(numericVal);
+        
+        // Reset manual overrides when changing total pieces
+        const nextOverrides = new Set();
+        setManualOverrides(nextOverrides);
+        
+        if (numericVal === '') {
+            setSelectedItems({});
+            return;
+        }
+        
+        // Distribute numericVal sequentially among results
+        let remaining = numericVal;
+        const nextSelected = {};
+        
+        results.forEach(row => {
+            const key = `${row.pedido}-${row.item}`;
+            const maxSaldo = parseFloat(row.qtd_faturar) || 0;
+            if (remaining > 0 && maxSaldo > 0) {
+                const allocated = Math.min(maxSaldo, remaining);
+                nextSelected[key] = {
+                    quantidade: allocated,
+                    op_num: row.op_num_completa || row.op_num || null,
+                    rowData: row
+                };
+                remaining -= allocated;
+            }
+        });
+        
+        setSelectedItems(nextSelected);
     };
 
     const handleQuantityChange = (row, qty) => {
@@ -73,20 +120,58 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
         }
         
         const key = `${row.pedido}-${row.item}`;
+        
+        // Mark this key as manually overridden
+        const nextOverrides = new Set(manualOverrides);
+        nextOverrides.add(key);
+        setManualOverrides(nextOverrides);
+        
+        // Update this item's value in a temporary selected items map
+        const nextSelected = { ...selectedItems };
         if (val === '' || val === 0) {
-            const next = { ...selectedItems };
-            delete next[key];
-            setSelectedItems(next);
+            delete nextSelected[key];
         } else {
-            setSelectedItems(prev => ({
-                ...prev,
-                [key]: {
-                    quantidade: val,
-                    op_num: row.op_num_completa || row.op_num || null,
-                    rowData: row
-                }
-            }));
+            nextSelected[key] = {
+                quantidade: val,
+                op_num: row.op_num_completa || row.op_num || null,
+                rowData: row
+            };
         }
+        
+        // Recalculate distribution for non-overridden items if totalPecas is active
+        if (totalPecas !== '') {
+            // Sum of manual overrides
+            let sumOverrides = 0;
+            nextOverrides.forEach(k => {
+                if (nextSelected[k]) {
+                    sumOverrides += nextSelected[k].quantidade;
+                }
+            });
+            
+            let remaining = Math.max(0, totalPecas - sumOverrides);
+            
+            // Distribute remaining sequentially to non-overridden items
+            results.forEach(item => {
+                const itemKey = `${item.pedido}-${item.item}`;
+                if (!nextOverrides.has(itemKey)) {
+                    const maxSaldo = parseFloat(item.qtd_faturar) || 0;
+                    if (remaining > 0 && maxSaldo > 0) {
+                        const allocated = Math.min(maxSaldo, remaining);
+                        nextSelected[itemKey] = {
+                            quantidade: allocated,
+                            op_num: item.op_num_completa || item.op_num || null,
+                            rowData: item
+                        };
+                        remaining -= allocated;
+                    } else {
+                        // Clear quantity for items that get nothing
+                        delete nextSelected[itemKey];
+                    }
+                }
+            });
+        }
+        
+        setSelectedItems(nextSelected);
     };
 
     const handleSaveList = async () => {
@@ -125,9 +210,8 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
             setSelectedItems({});
             setResults([]);
             setSearchQuery('');
-            if (onNavigateList) {
-                // onNavigateList(); // Opcional: ir para a aba de pendentes
-            }
+            setTotalPecas('');
+            setManualOverrides(new Set());
         } catch (err) {
             console.error(err);
             toast.error("Erro ao enviar pré-lista.");
@@ -135,6 +219,10 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
             setIsSaving(false);
         }
     };
+
+    // Calcular sobras não distribuídas
+    const totalDistribuido = Object.values(selectedItems).reduce((sum, item) => sum + (item.quantidade || 0), 0);
+    const sobra = totalPecas !== '' ? Math.max(0, totalPecas - totalDistribuido) : 0;
 
     return (
         <div className="p-3 sm:p-4 md:p-8 max-w-5xl mx-auto space-y-4 sm:space-y-8 animate-fade-in pb-40 h-full overflow-y-auto w-full">
@@ -163,24 +251,51 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                 </div>
 
                 <div className="p-3 sm:p-6 md:p-8">
-                    <form onSubmit={handleSearch} className="relative group">
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
-                            placeholder="NÚMERO DO DESENHO..."
-                            className="w-full text-lg sm:text-2xl md:text-4xl font-black text-slate-800 placeholder-slate-300 border-2 border-slate-200 rounded-2xl py-4 sm:py-6 md:py-8 pl-4 sm:pl-8 pr-16 sm:pr-24 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all outline-none"
-                            autoFocus
-                        />
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white p-3 sm:p-4 md:p-6 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
-                        >
-                            {loading ? <Loader2 size={24} className="animate-spin sm:hidden" /> : <Search size={24} className="sm:hidden" />}
-                            {loading ? <Loader2 size={32} className="animate-spin hidden sm:block" /> : <Search size={32} className="hidden sm:block" />}
-                        </button>
-                    </form>
+                    <div className="flex flex-col md:flex-row gap-4 items-stretch">
+                        <form onSubmit={handleSearch} className="relative group flex-1">
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
+                                placeholder="NÚMERO DO DESENHO..."
+                                className="w-full text-lg sm:text-2xl md:text-3xl font-black text-slate-800 placeholder-slate-300 border-2 border-slate-200 rounded-2xl py-4 sm:py-6 md:py-8 pl-4 sm:pl-8 pr-16 sm:pr-24 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all outline-none"
+                                autoFocus
+                            />
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white p-3 sm:p-4 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+                            >
+                                {loading ? <Loader2 size={24} className="animate-spin" /> : <Search size={24} />}
+                            </button>
+                        </form>
+
+                        {results.length > 0 && (
+                            <div className="w-full md:w-72 flex flex-col justify-center">
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min="0"
+                                        value={totalPecas}
+                                        onChange={(e) => handleTotalPecasChange(e.target.value)}
+                                        placeholder="QTD. TOTAL..."
+                                        className="w-full text-lg sm:text-2xl md:text-3xl font-black text-emerald-800 placeholder-emerald-300 border-2 border-emerald-200 bg-emerald-50/50 rounded-2xl py-4 sm:py-6 md:py-8 px-4 sm:px-8 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 transition-all outline-none"
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-600 uppercase tracking-wider hidden sm:inline">
+                                        Peças
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {sobra > 0 && (
+                        <div className="mt-3 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl animate-fade-in text-xs sm:text-sm font-bold">
+                            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                            <span>Aviso: {sobra} peça(s) não puderam ser distribuída(s) por falta de saldo nos pedidos.</span>
+                        </div>
+                    )}
                 </div>
             </div>
 

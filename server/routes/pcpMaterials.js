@@ -191,151 +191,173 @@ router.post('/export', async (req, res) => {
         const inactiveSql = getInactiveFilter('p.pedido');
 
         // ── Query 1: BOM consolidada (aglutinada) ─────────────────────────────
+        // FIX: verifica recurso MO0020 em CADA componente individualmente
+        //      em todos os níveis da BOM (não apenas na raiz).
+        //
+        // Lógica:
+        //   - Para cada componente na estrutura, verificamos via LEFT JOIN com sg2010
+        //     se aquele componente específico tem MO0020 no roteiro.
+        //   - Um material (folha da BOM) é marcado como SOLDA se qualquer
+        //     ANCESTRAL na cadeia até a raiz passa por MO0020.
+        //   - A coluna `has_solda_ancestor` acumula: se o pai já é SOLDA, os filhos também.
         const bomQuery = `
-            WITH RECURSIVE has_solda AS (
-                SELECT DISTINCT TRIM(g2_produto) as produto
-                FROM sg2010
-                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
-                  AND TRIM(g2_recurso) = 'MO0020'
-            ),
-            estrutura AS (
+            WITH RECURSIVE estrutura AS (
+                -- Nível 0: raiz — verifica MO0020 no roteiro do produto raiz
                 SELECT
                     0                                      AS nivel,
-                    CAST(p.produto AS TEXT)                AS produto_raiz,
-                    CAST(p.produto AS TEXT)                AS produto_pai,
-                    CAST(p.produto AS TEXT)                AS componente,
+                    CAST(p.produto AS character(15))       AS produto_raiz,
+                    CAST(p.produto AS character(15))       AS produto_pai,
+                    CAST(p.produto AS character(15))       AS componente,
                     1::numeric                             AS qtd_unitaria,
                     p.quantidade::numeric                  AS qtd_total,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
-                    AS TEXT) AS recurso,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
-                    AS TEXT) AS recurso_desc
+                    -- Verifica se o produto raiz passa por MO0020
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM sg2010 sg2root
+                            WHERE TRIM(sg2root.g2_produto) = TRIM(p.produto)
+                              AND TRIM(sg2root.g2_recurso) = 'MO0020'
+                              AND sg2root.g2_filial = '0101'
+                              AND COALESCE(sg2root.d_e_l_e_t_, '') IN ('', ' ')
+                        ) THEN TRUE ELSE FALSE
+                    END AS ancestor_has_solda
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
-                LEFT JOIN has_solda hs ON hs.produto = TRIM(p.produto)
                 WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 
+                -- Níveis recursivos: verifica MO0020 no roteiro do componente atual
+                --                    OU herda do pai se o pai já era SOLDA
                 SELECT
                     e.nivel + 1,
-                    CAST(TRIM(e.produto_raiz) AS TEXT),
-                    CAST(TRIM(e.componente)   AS TEXT) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp)     AS TEXT) AS componente,
+                    e.produto_raiz,
+                    e.componente AS produto_pai,
+                    CAST(TRIM(g1.g1_comp) AS character(15)) AS componente,
                     g1.g1_quant::numeric,
                     e.qtd_total * g1.g1_quant::numeric,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
-                    AS TEXT) AS recurso,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
-                    AS TEXT) AS recurso_desc
+                    -- Propaga: se o pai já tem MO0020, os filhos herdam.
+                    -- Se o componente filho tem MO0020 no roteiro, marca como TRUE.
+                    CASE
+                        WHEN e.ancestor_has_solda THEN TRUE
+                        WHEN EXISTS (
+                            SELECT 1 FROM sg2010 sg2
+                            WHERE TRIM(sg2.g2_produto) = TRIM(g1.g1_comp)
+                              AND TRIM(sg2.g2_recurso) = 'MO0020'
+                              AND sg2.g2_filial = '0101'
+                              AND COALESCE(sg2.d_e_l_e_t_, '') IN ('', ' ')
+                        ) THEN TRUE
+                        ELSE FALSE
+                    END AS ancestor_has_solda
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON  TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND g1.g1_filial = '0101'
                     AND COALESCE(g1.d_e_l_e_t_, '') = ''
-                LEFT JOIN has_solda hs 
-                    ON hs.produto = TRIM(g1.g1_cod)
                 WHERE e.nivel < 10
             )
             SELECT
-                e.componente,
-                TRIM(sb1.b1_desc) AS descricao,
-                TRIM(sb1.b1_um)   AS unidade,
-                e.recurso,
-                e.recurso_desc,
-                SUM(e.qtd_total)  AS qtd_total
+                TRIM(e.componente) AS componente,
+                TRIM(sb1.b1_desc)  AS descricao,
+                TRIM(sb1.b1_um)    AS unidade,
+                CASE WHEN e.ancestor_has_solda THEN 'MO0020' ELSE 'OUTROS' END AS recurso,
+                CASE WHEN e.ancestor_has_solda THEN 'SOLDA'  ELSE 'OUTROS PROCESSOS' END AS recurso_desc,
+                SUM(e.qtd_total)   AS qtd_total
             FROM estrutura e
             LEFT JOIN sb1010 sb1
-                ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
+                ON  sb1.b1_cod = e.componente
+                AND sb1.b1_filial = '01  '
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            -- Somente folhas da BOM (materiais finais, sem filhos)
             WHERE NOT EXISTS (
                 SELECT 1 FROM sg1010 sg1leaf
                 WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
+                  AND sg1leaf.g1_filial = '0101'
                   AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
             )
-            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um, e.recurso, e.recurso_desc
+            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um, e.ancestor_has_solda
             ORDER BY e.componente
         `;
 
         // ── Query 2: BOM detalhada (sem aglutinar — linha por produto pai) ────
         const bomDetalhadaQuery = `
-            WITH RECURSIVE has_solda AS (
-                SELECT DISTINCT TRIM(g2_produto) as produto
-                FROM sg2010
-                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
-                  AND TRIM(g2_recurso) = 'MO0020'
-            ),
-            estrutura AS (
+            WITH RECURSIVE estrutura AS (
+                -- Nível 0: raiz — verifica MO0020 no roteiro do produto raiz
                 SELECT
                     0                                      AS nivel,
-                    CAST(p.produto AS TEXT)                AS produto_raiz,
+                    CAST(p.produto AS character(15))       AS produto_raiz,
                     CAST(p.descricao_pai AS TEXT)          AS descricao_raiz,
                     CAST(p.pedido   AS TEXT)               AS pedido,
                     CAST(p.cliente  AS TEXT)               AS cliente,
-                    CAST(p.produto AS TEXT)                AS produto_pai,
-                    CAST(p.produto AS TEXT)                AS componente,
+                    CAST(p.produto AS character(15))       AS produto_pai,
+                    CAST(p.produto AS character(15))       AS componente,
                     1::numeric                             AS qtd_unitaria,
                     p.quantidade::numeric                  AS qtd_total,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
-                    AS TEXT) AS recurso,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
-                    AS TEXT) AS recurso_desc
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM sg2010 sg2root
+                            WHERE TRIM(sg2root.g2_produto) = TRIM(p.produto)
+                              AND TRIM(sg2root.g2_recurso) = 'MO0020'
+                              AND sg2root.g2_filial = '0101'
+                              AND COALESCE(sg2root.d_e_l_e_t_, '') IN ('', ' ')
+                        ) THEN TRUE ELSE FALSE
+                    END AS ancestor_has_solda
                 FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
-                LEFT JOIN has_solda hs ON hs.produto = TRIM(p.produto)
                 WHERE p.pedido = '' OR (TRUE ${inactiveSql})
 
                 UNION ALL
 
                 SELECT
                     e.nivel + 1,
-                    CAST(TRIM(e.produto_raiz)   AS TEXT),
-                    CAST(TRIM(e.descricao_raiz) AS TEXT),
-                    CAST(TRIM(e.pedido)         AS TEXT),
-                    CAST(TRIM(e.cliente)        AS TEXT),
-                    CAST(TRIM(e.componente)     AS TEXT) AS produto_pai,
-                    CAST(TRIM(g1.g1_comp)       AS TEXT) AS componente,
+                    e.produto_raiz,
+                    e.descricao_raiz,
+                    e.pedido,
+                    e.cliente,
+                    e.componente AS produto_pai,
+                    CAST(TRIM(g1.g1_comp) AS character(15)) AS componente,
                     g1.g1_quant::numeric,
                     e.qtd_total * g1.g1_quant::numeric,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'MO0020' ELSE 'OUTROS' END
-                    AS TEXT) AS recurso,
-                    CAST(
-                      CASE WHEN hs.produto IS NOT NULL THEN 'SOLDA' ELSE 'OUTROS PROCESSOS' END
-                    AS TEXT) AS recurso_desc
+                    CASE
+                        WHEN e.ancestor_has_solda THEN TRUE
+                        WHEN EXISTS (
+                            SELECT 1 FROM sg2010 sg2
+                            WHERE TRIM(sg2.g2_produto) = TRIM(g1.g1_comp)
+                              AND TRIM(sg2.g2_recurso) = 'MO0020'
+                              AND sg2.g2_filial = '0101'
+                              AND COALESCE(sg2.d_e_l_e_t_, '') IN ('', ' ')
+                        ) THEN TRUE
+                        ELSE FALSE
+                    END AS ancestor_has_solda
                 FROM estrutura e
                 JOIN sg1010 g1
                     ON  TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND g1.g1_filial = '0101'
                     AND COALESCE(g1.d_e_l_e_t_, '') = ''
-                LEFT JOIN has_solda hs 
-                    ON hs.produto = TRIM(g1.g1_cod)
                 WHERE e.nivel < 10
             )
             SELECT
-                e.produto_raiz,
+                TRIM(e.produto_raiz)  AS produto_raiz,
                 e.descricao_raiz,
                 e.pedido,
                 e.cliente,
-                e.componente,
-                TRIM(sb1.b1_desc) AS descricao,
-                TRIM(sb1.b1_um)   AS unidade,
-                e.recurso,
-                e.recurso_desc,
+                TRIM(e.componente)   AS componente,
+                TRIM(sb1.b1_desc)    AS descricao,
+                TRIM(sb1.b1_um)      AS unidade,
+                CASE WHEN e.ancestor_has_solda THEN 'MO0020' ELSE 'OUTROS' END AS recurso,
+                CASE WHEN e.ancestor_has_solda THEN 'SOLDA'  ELSE 'OUTROS PROCESSOS' END AS recurso_desc,
                 e.qtd_total
             FROM estrutura e
             LEFT JOIN sb1010 sb1
-                ON  TRIM(sb1.b1_cod) = TRIM(e.componente)
+                ON  sb1.b1_cod = e.componente
+                AND sb1.b1_filial = '01  '
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             WHERE NOT EXISTS (
                 SELECT 1 FROM sg1010 sg1leaf
                 WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
+                  AND sg1leaf.g1_filial = '0101'
                   AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
             )
             ORDER BY e.produto_raiz, e.componente
         `;
+
 
         // ── Executar em lotes para evitar timeout do banco ────────────────────
         const BATCH_SIZE = 10;
@@ -628,7 +650,115 @@ router.post('/export', async (req, res) => {
         res.end();
     } catch (err) {
         console.error('[PCP] Erro em POST /export:', err);
+        require('fs').writeFileSync(require('path').join(__dirname, '../pcp_error.log'), err.stack || err.message);
         res.status(500).json({ error: 'Erro ao gerar exportação', detail: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/pcp/bom-drawings
+// Recebe lista de itens e devolve a BOM explodida agrupada por componente para visualização de desenhos
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/bom-drawings', async (req, res) => {
+    try {
+        const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+        const getInactiveFilter = await getInactiveOrdersFilter();
+        
+        const items = req.body; // [{ produto, quantidade, descricao_pai }]
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'Lista de itens vazia ou inválida' });
+        }
+
+        const itemsPayload = items.map(i => ({
+            produto: String(i.produto).trim(),
+            quantidade: parseFloat(i.quantidade) || 1,
+            pedido:    String(i.pedido   || '').trim(),
+            cliente:   String(i.cliente  || '').trim(),
+            descricao_pai: String(i.descricao_pai || '').trim(),
+        }));
+
+        const inactiveSql = getInactiveFilter('p.pedido');
+
+        const bomQuery = `
+            WITH RECURSIVE estrutura AS (
+                SELECT
+                    0                                      AS nivel,
+                    CAST(p.produto AS character(15))       AS produto_raiz,
+                    CAST(p.produto AS character(15))       AS componente,
+                    p.quantidade::numeric                  AS qtd_total
+                FROM json_to_recordset($1::json) AS p(produto text, quantidade numeric, pedido text, cliente text, descricao_pai text)
+                WHERE p.pedido = '' OR (TRUE ${inactiveSql})
+
+                UNION ALL
+
+                SELECT
+                    e.nivel + 1,
+                    e.produto_raiz,
+                    CAST(TRIM(g1.g1_comp) AS character(15)) AS componente,
+                    e.qtd_total * g1.g1_quant::numeric
+                FROM estrutura e
+                JOIN sg1010 g1
+                    ON  TRIM(g1.g1_cod) = TRIM(e.componente)
+                    AND g1.g1_filial = '0101'
+                    AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                WHERE e.nivel < 10
+            )
+            SELECT
+                TRIM(e.componente) AS componente,
+                TRIM(sb1.b1_desc)  AS descricao,
+                TRIM(sb1.b1_um)    AS unidade,
+                SUM(e.qtd_total)   AS qtd_total
+            FROM estrutura e
+            LEFT JOIN sb1010 sb1
+                ON  sb1.b1_cod = e.componente
+                AND sb1.b1_filial = '01  '
+                AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sg1010 sg1leaf
+                WHERE TRIM(sg1leaf.g1_cod) = TRIM(e.componente)
+                  AND sg1leaf.g1_filial = '0101'
+                  AND COALESCE(sg1leaf.d_e_l_e_t_, '') = ''
+            )
+            GROUP BY e.componente, sb1.b1_desc, sb1.b1_um
+            ORDER BY e.componente
+        `;
+
+        const BATCH_SIZE = 10;
+        const consolidado = new Map();
+
+        const client = await db.connect();
+        try {
+            await client.query("SET statement_timeout = '120000'");
+            for (let i = 0; i < itemsPayload.length; i += BATCH_SIZE) {
+                const batch = itemsPayload.slice(i, i + BATCH_SIZE);
+                const result = await client.query(bomQuery, [JSON.stringify(batch)]);
+                
+                for (const row of result.rows) {
+                    const key = row.componente;
+                    const qtdTotal = parseFloat(row.qtd_total) || 0;
+                    if (consolidado.has(key)) {
+                        consolidado.get(key).quantidade += qtdTotal;
+                    } else {
+                        consolidado.set(key, {
+                            codigo: row.componente,
+                            descricao: row.descricao || '',
+                            unidade: row.unidade || 'UN',
+                            quantidade: qtdTotal,
+                        });
+                    }
+                }
+            }
+        } finally {
+            client.release();
+        }
+
+        const sortedRows = Array.from(consolidado.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
+        res.json({ data: sortedRows });
+
+    } catch (err) {
+        console.error('[PCP] Erro em POST /bom-drawings:', err);
+        res.status(500).json({ error: 'Erro ao gerar lista de desenhos', detail: err.message });
     }
 });
 

@@ -238,7 +238,9 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
                 ? `\n\n📊 **${opsCount} OPs carregadas** na tela${selCount > 0 ? ` | **${selCount} selecionadas**` : ''} — minha análise usa esses dados direto.\nPara consultar o banco de dados, mencione palavras como _"consultar"_, _"histórico de apontamentos"_, _"buscar no banco"_.`
                 : '';
 
-            const greeting = parts.length > 0
+            const greeting = context.page === 'apontamento-vertical'
+                ? `👋 Olá! Sou o **PCPMetal AI**.\n\nEstou pronto para ajudar você na análise da **Fila de Produção por Setor (Vertical)**.${context.recurso ? ` O recurso selecionado atualmente é **${context.recurso}**.` : ''}${dataInfo}\n\nPosso sequenciar OPs, calcular tempos acumulados, verificar gargalos ou responder perguntas sobre o andamento dos processos deste setor. Como posso ajudar?`
+                : parts.length > 0
                 ? `📋 Contexto: ${parts.join(' | ')}${dataInfo}\n\nFaça sua pergunta sobre este pedido ou qualquer análise de produção.`
                 : `👋 Olá! Sou o **PCPMetal**, seu assistente de PCP.${dataInfo}\n\nPosso analisar as OPs da tela, calcular saldos e sugerir estratégias. Como posso ajudar?`;
 

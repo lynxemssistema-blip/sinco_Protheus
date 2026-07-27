@@ -141,11 +141,11 @@ function PedidoCard({ pedido, rows, expanded, onToggle, globalMin, globalMax }) 
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────────
-export default function ResumoPlanejamentoView() {
+export default function ResumoPlanejamentoView({ initialFilter = '' }) {
     const [data, setData]           = useState([]);
     const [loading, setLoading]     = useState(false);
     const [error, setError]         = useState(null);
-    const [pedidoFiltro, setPedidoFiltro] = useState('');
+    const [pedidoFiltro, setPedidoFiltro] = useState(initialFilter);
     const [subView, setSubView]     = useState('individual'); // 'individual' | 'global'
     const [expanded, setExpanded]   = useState({});
 
@@ -169,7 +169,7 @@ export default function ResumoPlanejamentoView() {
         }
     };
 
-    useEffect(() => { loadData(); }, []);
+    useEffect(() => { loadData(initialFilter); }, [initialFilter]);
 
     const handleSearch = () => loadData(pedidoFiltro.trim());
 
@@ -186,10 +186,17 @@ export default function ResumoPlanejamentoView() {
 
     // Range global de datas para a barra de progresso
     const { globalMin, globalMax } = useMemo(() => {
-        const datas = data.flatMap(r => [r.data_inicio, r.data_fim].filter(Boolean).map(d => new Date(d)));
+        const datas = data.flatMap(r => [r.data_inicio, r.data_fim].filter(Boolean).map(d => new Date(d).getTime()));
+        if (datas.length === 0) return { globalMin: null, globalMax: null };
+        let min = datas[0];
+        let max = datas[0];
+        for (let i = 1; i < datas.length; i++) {
+            if (datas[i] < min) min = datas[i];
+            if (datas[i] > max) max = datas[i];
+        }
         return {
-            globalMin: datas.length ? new Date(Math.min(...datas)) : null,
-            globalMax: datas.length ? new Date(Math.max(...datas)) : null,
+            globalMin: new Date(min),
+            globalMax: new Date(max),
         };
     }, [data]);
 

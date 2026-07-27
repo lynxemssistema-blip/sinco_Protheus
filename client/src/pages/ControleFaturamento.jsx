@@ -573,7 +573,7 @@ const ControleFaturamento = () => {
                         ) : chartData.length === 0 ? (
                             <div className="h-full w-full flex items-center justify-center text-gray-400 text-sm">Nenhuma movimentação registrada no período.</div>
                         ) : (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis 

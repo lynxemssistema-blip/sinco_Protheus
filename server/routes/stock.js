@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
+const crypto = require('crypto');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 console.log("🚀🚀🚀 STOCK.JS FILE LOADED - VERSION 2026-01-20 13:47 🚀🚀🚀");
@@ -13,7 +15,10 @@ const dbConfig = {
     port: 3306
 };
 
-// GET /:codigo/saldo - Retorna saldo atual do produto (Protheus SB2010/SB2990)
+const db = require('../db'); // Import Postgres Connection
+const mysqlPool = require('../services/mysqlService'); // Import MySQL Connection
+
+// GET /:codigo/saldo - Retorna saldo atual do produto (Protheus SB2010/SB2990) e Fábrica
 router.get('/:codigo/saldo', async (req, res) => {
     try {
         const { codigo } = req.params;
@@ -27,9 +32,22 @@ router.get('/:codigo/saldo', async (req, res) => {
             ) t
         `;
         const result = await db.query(query, [codLimpo]);
-        const saldo = result.rows[0]?.saldo ? parseFloat(result.rows[0].saldo) : 0;
+        const saldoProtheus = result.rows[0]?.saldo ? parseFloat(result.rows[0].saldo) : 0;
         
-        res.json({ saldo });
+        let saldoFabrica = 0;
+        try {
+            const [localRows] = await mysqlPool.query(
+                'SELECT SUM(CASE WHEN tipo = "E" THEN quantidade ELSE -quantidade END) as saldo FROM app_estoque_movimentos WHERE produto_codigo = ?',
+                [codLimpo]
+            );
+            if (localRows.length > 0 && localRows[0].saldo) {
+                saldoFabrica = parseFloat(localRows[0].saldo);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar saldo fábrica:', e);
+        }
+
+        res.json({ saldoProtheus, saldoFabrica, saldo: saldoProtheus }); // Mantém 'saldo' para retrocompatibilidade
     } catch (error) {
         console.error('Erro ao buscar saldo:', error);
         res.status(500).json({ error: 'Erro ao buscar saldo' });
@@ -79,10 +97,12 @@ router.post('/balances-batch', express.json(), async (req, res) => {
     }
 });
 
-// GET /:codigo/movimentos - Retorna histórico de movimentações (Protheus SD3010)
+// GET /:codigo/movimentos - Retorna histórico de movimentações (Protheus SD3010 + Fábrica)
 router.get('/:codigo/movimentos', async (req, res) => {
     try {
         const { codigo } = req.params;
+        const codLimpo = codigo.trim().toUpperCase();
+        
         const query = `
             SELECT
                 D3_FILIAL as filial,
@@ -99,11 +119,21 @@ router.get('/:codigo/movimentos', async (req, res) => {
             ORDER BY D3_EMISSAO DESC, D3_DOC
             LIMIT 50
         `;
-        const result = await db.query(query, [codigo.trim().toUpperCase()]);
+        const result = await db.query(query, [codLimpo]);
         
-        // Mapear para o formato que o frontend espera (id, produto_codigo, tipo, quantidade, data_movimento, observacao)
-        const rows = result.rows.map((r, index) => ({
-            id: r.documento + '-' + index,
+        let localRows = [];
+        try {
+            const [rows] = await mysqlPool.query(
+                'SELECT * FROM app_estoque_movimentos WHERE produto_codigo = ? ORDER BY data_movimento DESC LIMIT 50',
+                [codLimpo]
+            );
+            localRows = rows;
+        } catch (e) {
+            console.error('Erro ao buscar movimentos fábrica:', e);
+        }
+
+        const protheusRows = result.rows.map((r, index) => ({
+            id: 'PROT-' + r.documento + '-' + index,
             produto_codigo: r.codigo,
             tipo: (r.tm < '500') ? 'E' : 'S',
             quantidade: parseFloat(r.quantidade),
@@ -112,23 +142,484 @@ router.get('/:codigo/movimentos', async (req, res) => {
             usuario: 'Protheus' // Indicador de origem
         }));
 
-        res.json(rows);
+        const fabricaRows = localRows.map(r => ({
+            id: 'FAB-' + r.id,
+            produto_codigo: r.produto_codigo,
+            tipo: r.tipo,
+            quantidade: parseFloat(r.quantidade),
+            data_movimento: r.data_movimento,
+            observacao: r.observacao,
+            usuario: r.usuario || 'Fábrica'
+        }));
+
+        const allRows = [...protheusRows, ...fabricaRows].sort((a, b) => {
+            const dateA = typeof a.data_movimento === 'string' && /^\d{8}$/.test(a.data_movimento) 
+                ? new Date(a.data_movimento.substring(0,4), parseInt(a.data_movimento.substring(4,6))-1, a.data_movimento.substring(6,8))
+                : new Date(a.data_movimento);
+            const dateB = typeof b.data_movimento === 'string' && /^\d{8}$/.test(b.data_movimento)
+                ? new Date(b.data_movimento.substring(0,4), parseInt(b.data_movimento.substring(4,6))-1, b.data_movimento.substring(6,8))
+                : new Date(b.data_movimento);
+            return dateB - dateA;
+        }).slice(0, 50);
+
+        res.json(allRows);
     } catch (error) {
         console.error('Erro ao buscar movimentos:', error);
         res.status(500).json({ error: 'Erro ao buscar movimentos' });
     }
 });
 
-// POST / - Registra nova movimentação
+// POST / - Registra nova movimentação na Fábrica
 router.post('/', async (req, res) => {
-    // Protheus is the source of truth for stock. Manual direct inserts from here are blocked.
-    res.status(501).json({ error: 'Lançamento manual de estoque desativado. O estoque deve ser movimentado via ERP Protheus.' });
+    try {
+        const { produto_codigo, tipo, quantidade, observacao, usuario } = req.body;
+        const codLimpo = produto_codigo.trim().toUpperCase();
+
+        if (!['E', 'S'].includes(tipo) || !quantidade || !codLimpo) {
+            return res.status(400).json({ error: 'Dados inválidos.' });
+        }
+
+        // Calcula saldo anterior
+        const [localRows] = await mysqlPool.query(
+            'SELECT SUM(CASE WHEN tipo = "E" THEN quantidade ELSE -quantidade END) as saldo FROM app_estoque_movimentos WHERE produto_codigo = ?',
+            [codLimpo]
+        );
+        const saldoAnterior = (localRows.length > 0 && localRows[0].saldo) ? parseFloat(localRows[0].saldo) : 0;
+
+        await mysqlPool.query(
+            'INSERT INTO app_estoque_movimentos (produto_codigo, tipo, quantidade, saldo_anterior, observacao, usuario, data_movimento) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+            [codLimpo, tipo, quantidade, saldoAnterior, observacao || null, usuario || 'Local']
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao registrar movimentação local:', error);
+        res.status(500).json({ error: 'Erro ao registrar movimentação local' });
+    }
 });
 
-// ... existing imports
-const db = require('../db'); // Import Postgres Connection
+// Monta a query de saldo (mesma lógica de filtro usada por /balances e /cadastro/analisar)
+function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descricao, grupo, tipo, limit = 500 }) {
+    const params = [];
+    let paramCount = 1;
 
-// ... existing endpoints
+    let whereClause = "WHERE TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' AND TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' ";
+    whereClause += "AND s.b2_cod !~ '^MT[0-9]' "; // Exclusão MT
+
+    if (codigo) {
+        params.push(`%${codigo.toUpperCase()}%`);
+        whereClause += `AND s.b2_cod LIKE $${paramCount++} `;
+    }
+    if (prefixo) {
+        params.push(`${prefixo.toUpperCase()}%`);
+        whereClause += `AND s.b2_cod LIKE $${paramCount++} `;
+    }
+    if (descricao) {
+        params.push(`%${descricao.toUpperCase()}%`);
+        whereClause += `AND p.b1_desc LIKE $${paramCount++} `;
+    }
+    if (grupo) {
+        params.push(`${grupo}%`);
+        whereClause += `AND p.b1_grupo LIKE $${paramCount++} `;
+    }
+    if (tipo) {
+        params.push(`${tipo}%`);
+        whereClause += `AND p.b1_tipo LIKE $${paramCount++} `;
+    }
+    if (filial) {
+        params.push(`${filial}%`);
+        whereClause += `AND s.b2_filial LIKE $${paramCount++} `;
+    }
+    if (almoxarifado) {
+        params.push(`${almoxarifado}%`);
+        whereClause += `AND s.b2_local LIKE $${paramCount++} `;
+    }
+
+    params.push(parseInt(limit));
+    const limitParam = paramCount++;
+
+    const queries = [];
+
+    if (!empresa || empresa === '010') {
+        queries.push(`(
+            SELECT
+                '010'::text as empresa,
+                s.b2_filial as filial,
+                s.b2_local as almoxarifado,
+                s.b2_cod as cod_produto,
+                p.b1_desc as descricao,
+                p.b1_um as unidade,
+                p.b1_tipo as tipo,
+                p.b1_grupo as grupo,
+                s.b2_qatu as saldo_atual,
+                s.b2_qemp as empenho
+            FROM public.sb2010 s
+            JOIN public.sb1010 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
+            ${whereClause}
+            LIMIT $${limitParam}
+        )`);
+    }
+
+    if (!empresa || empresa === '990') {
+        queries.push(`(
+            SELECT
+                '990'::text as empresa,
+                s.b2_filial as filial,
+                s.b2_local as almoxarifado,
+                s.b2_cod as cod_producto,
+                p.b1_desc as descricao,
+                p.b1_um as unidade,
+                p.b1_tipo as tipo,
+                p.b1_grupo as grupo,
+                s.b2_qatu as saldo_atual,
+                s.b2_qemp as empenho
+            FROM public.sb2990 s
+            JOIN public.sb1990 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
+            ${whereClause}
+            LIMIT $${limitParam}
+        )`);
+    }
+
+    return { sql: queries.join(' UNION ALL '), params };
+}
+
+// Normaliza linhas de saldo para o payload enxuto enviado à IA
+function buildCadastroPromptMateriais(rows) {
+    return rows.map(r => ({
+        codigo: (r.cod_produto || r.cod_producto || '').trim(),
+        descricao: (r.descricao || '').trim(),
+        grupo: (r.grupo || '').trim(),
+        tipo: (r.tipo || '').trim(),
+        unidade: (r.unidade || '').trim(),
+        empresa: r.empresa
+    })).filter(m => m.codigo);
+}
+
+// Monta o prompt enviado ao Gemini para identificar duplicatas/equivalências de cadastro
+function buildCadastroSystemPrompt(materiaisPayload, { incluirResposta = false, pergunta, contextoBusca } = {}) {
+    const respostaSchema = incluirResposta
+        ? `  "resposta": "texto curto (2 a 4 frases) em português respondendo diretamente à pergunta do usuário, citando os códigos relevantes encontrados",\n`
+        : '';
+
+    const contexto = incluirResposta
+        ? `\nCONTEXTO DA CONSULTA: ${contextoBusca || 'Nenhum'}\nPERGUNTA DO USUÁRIO: ${pergunta || 'Encontre duplicatas/equivalências para o produto de referência acima.'}\n`
+        : '';
+
+    return `Você é um especialista sênior em cadastro de materiais (MRP/Protheus) de uma indústria metalmecânica.
+Sua tarefa é analisar a lista de materiais abaixo (código, descrição, grupo, tipo, unidade, empresa) e identificar relações entre itens que aparentam ser o mesmo material físico ou substitutos entre si.
+
+Classifique cada relação encontrada em um dos dois tipos:
+- "duplicado": o mesmo item físico foi cadastrado por engano sob 2 ou mais códigos diferentes (mesma especificação completa, inclusive dimensão; a diferença é só erro de digitação ou cadastro repetido). Nesse caso, defina qual código deve ser mantido como correto em "sugestao_codigo_correto".
+- "equivalente": itens fisicamente diferentes mas que podem substituir um ao outro no uso prático (ex: mesma liga/espessura de matéria-prima com dimensão de corte diferente, onde qualquer um atende; ou mesma peça de fornecedores/variações diferentes). Nesse caso nenhum item deve ser bloqueado — eles só ficam marcados como intercambiáveis, e "sugestao_codigo_correto" deve ser null.
+
+Exemplo de referência para calibrar sua classificação:
+- "CHAPA ACO 1006/1008 FQ(4,50MM) - 1200X2000 DO" (código MTC-0872) e "CHAPA ACO 1006/1008 FQ(4,50MM) - 1150X3000 DO" (código MTC-1119): mesma liga e espessura, dimensão de corte diferente, qualquer uma atende → isso é "equivalente", NÃO "duplicado".
+- Só classifique como "duplicado" quando a especificação parece ser 100% a mesma peça (inclusive dimensão) e a diferença é apenas erro de cadastro.
+
+Ignore itens que não têm nenhum par relacionado (não crie grupos de tamanho 1).
+${contexto}
+Retorne ESTRITAMENTE um JSON no formato:
+{
+${respostaSchema}  "groups": [
+    {
+      "tipo": "duplicado" | "equivalente",
+      "motivo": "explicação curta e objetiva em português",
+      "confianca": "alta" | "media" | "baixa",
+      "produtos": [ { "codigo": "...", "descricao": "...", "empresa": "010" } ],
+      "sugestao_codigo_correto": "codigo recomendado como correto (apenas quando tipo='duplicado'; use null quando 'equivalente')"
+    }
+  ]
+}
+
+LISTA DE MATERIAIS:
+${JSON.stringify(materiaisPayload, null, 2)}`;
+}
+
+// Chama o Gemini com o prompt de cadastro e retorna o JSON já parseado
+async function callCadastroGemini(prompt) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'sua_api_key_aqui') {
+        const err = new Error('GEMINI_API_KEY não configurada no servidor.');
+        err.isConfigError = true;
+        throw err;
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: {
+            temperature: 0.2,
+            responseMimeType: 'application/json'
+        }
+    });
+
+    const result = await model.generateContent(prompt);
+    let responseText = await result.response.text();
+    responseText = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+
+    return JSON.parse(responseText);
+}
+
+// POST /cadastro/analisar - Analisa um recorte filtrado do cadastro em busca de duplicatas/equivalências
+router.post('/cadastro/analisar', express.json(), async (req, res) => {
+    try {
+        const { empresa, filial, almoxarifado, codigo, prefixo, descricao, grupo, tipo, limit = 150 } = req.body;
+        const cappedLimit = Math.min(parseInt(limit) || 150, 300);
+
+        const { sql, params } = buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descricao, grupo, tipo, limit: cappedLimit });
+        const result = await db.query(sql, params);
+
+        if (result.rows.length < 2) {
+            return res.json({ groups: [] });
+        }
+
+        const materiaisPayload = buildCadastroPromptMateriais(result.rows);
+        const prompt = buildCadastroSystemPrompt(materiaisPayload);
+
+        let parsed;
+        try {
+            parsed = await callCadastroGemini(prompt);
+        } catch (aiError) {
+            if (aiError.isConfigError) {
+                return res.status(500).json({ error: aiError.message });
+            }
+            console.error('Erro ao interpretar resposta da IA (cadastro/analisar):', aiError.message);
+            return res.status(500).json({ error: 'A IA retornou uma resposta em formato inválido. Tente novamente.' });
+        }
+
+        res.json({ groups: Array.isArray(parsed.groups) ? parsed.groups : [] });
+    } catch (error) {
+        console.error('Erro ao analisar cadastro com IA:', error);
+        res.status(500).json({ error: 'Erro ao analisar cadastro com IA: ' + error.message });
+    }
+});
+
+// POST /cadastro/consultar - Consulta pontual em texto livre (por código de referência ou pergunta livre)
+router.post('/cadastro/consultar', express.json(), async (req, res) => {
+    try {
+        const { pergunta, codigo, empresa } = req.body;
+
+        if (!pergunta && !codigo) {
+            return res.status(400).json({ error: 'Informe uma pergunta ou um código de produto.' });
+        }
+
+        let candidatos = [];
+        let contextoBusca = '';
+
+        if (codigo) {
+            const codLimpo = codigo.trim().toUpperCase();
+
+            const baseQuery = `
+                SELECT '010'::text as empresa, p.b1_cod as cod_produto, p.b1_desc as descricao, p.b1_grupo as grupo, p.b1_tipo as tipo
+                FROM public.sb1010 p WHERE TRIM(p.b1_cod) = $1 AND TRIM(COALESCE(p.d_e_l_e_t_, '')) = ''
+                UNION ALL
+                SELECT '990'::text as empresa, p.b1_cod as cod_produto, p.b1_desc as descricao, p.b1_grupo as grupo, p.b1_tipo as tipo
+                FROM public.sb1990 p WHERE TRIM(p.b1_cod) = $1 AND TRIM(COALESCE(p.d_e_l_e_t_, '')) = ''
+                LIMIT 1
+            `;
+            const baseResult = await db.query(baseQuery, [codLimpo]);
+
+            if (baseResult.rows.length === 0) {
+                return res.json({ resposta: `Não encontrei o produto com código "${codLimpo}" no cadastro.`, groups: [] });
+            }
+
+            const base = baseResult.rows[0];
+            contextoBusca = `Produto de referência: ${base.cod_produto} - ${base.descricao} (grupo ${base.grupo})`;
+
+            const { sql, params } = buildStockQuery({ empresa: empresa || base.empresa, grupo: base.grupo, limit: 150 });
+            const result = await db.query(sql, params);
+            candidatos = result.rows;
+        } else {
+            const palavras = pergunta.split(/\s+/).map(w => w.trim()).filter(w => w.length >= 3).slice(0, 6);
+            if (palavras.length === 0) {
+                return res.json({ resposta: 'Não consegui identificar palavras-chave na pergunta. Tente incluir o nome do material ou um código.', groups: [] });
+            }
+            contextoBusca = `Busca livre: "${pergunta}"`;
+
+            if (!empresa || empresa === '010') {
+                const params010 = [];
+                const cond010 = palavras.map(palavra => {
+                    params010.push(`%${palavra.toUpperCase()}%`);
+                    return `p.b1_desc LIKE $${params010.length}`;
+                }).join(' OR ');
+                const query010 = `
+                    SELECT '010'::text as empresa, p.b1_cod as cod_produto, p.b1_desc as descricao, p.b1_um as unidade, p.b1_tipo as tipo, p.b1_grupo as grupo
+                    FROM public.sb1010 p
+                    WHERE TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' AND (${cond010})
+                    LIMIT 80
+                `;
+                const result010 = await db.query(query010, params010);
+                candidatos = candidatos.concat(result010.rows);
+            }
+
+            if (!empresa || empresa === '990') {
+                const params990 = [];
+                const cond990 = palavras.map(palavra => {
+                    params990.push(`%${palavra.toUpperCase()}%`);
+                    return `p.b1_desc LIKE $${params990.length}`;
+                }).join(' OR ');
+                const query990 = `
+                    SELECT '990'::text as empresa, p.b1_cod as cod_producto, p.b1_desc as descricao, p.b1_um as unidade, p.b1_tipo as tipo, p.b1_grupo as grupo
+                    FROM public.sb1990 p
+                    WHERE TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' AND (${cond990})
+                    LIMIT 80
+                `;
+                const result990 = await db.query(query990, params990);
+                candidatos = candidatos.concat(result990.rows);
+            }
+        }
+
+        if (candidatos.length === 0) {
+            return res.json({ resposta: 'Não encontrei materiais candidatos para essa busca. Tente refinar a descrição ou usar um código.', groups: [] });
+        }
+
+        const materiaisPayload = buildCadastroPromptMateriais(candidatos);
+        const prompt = buildCadastroSystemPrompt(materiaisPayload, { incluirResposta: true, pergunta, contextoBusca });
+
+        let parsed;
+        try {
+            parsed = await callCadastroGemini(prompt);
+        } catch (aiError) {
+            if (aiError.isConfigError) {
+                return res.status(500).json({ error: aiError.message });
+            }
+            console.error('Erro ao interpretar resposta da IA (cadastro/consultar):', aiError.message);
+            return res.status(500).json({ error: 'A IA retornou uma resposta em formato inválido. Tente novamente.' });
+        }
+
+        res.json({
+            resposta: parsed.resposta || '',
+            groups: Array.isArray(parsed.groups) ? parsed.groups : []
+        });
+    } catch (error) {
+        console.error('Erro na consulta pontual de cadastro:', error);
+        res.status(500).json({ error: 'Erro na consulta pontual de cadastro: ' + error.message });
+    }
+});
+
+// POST /cadastro/correcoes - Salva a decisão de um grupo (duplicado ou equivalente) revisado pelo usuário
+router.post('/cadastro/correcoes', express.json(), async (req, res) => {
+    try {
+        const { grupo_uuid, tipo_relacao, motivo_ia, criado_por, itens } = req.body;
+
+        if (!['duplicado', 'equivalente'].includes(tipo_relacao)) {
+            return res.status(400).json({ error: 'tipo_relacao inválido. Use "duplicado" ou "equivalente".' });
+        }
+        if (!Array.isArray(itens) || itens.length < 2) {
+            return res.status(400).json({ error: 'É necessário informar ao menos 2 itens no grupo.' });
+        }
+
+        if (tipo_relacao === 'duplicado') {
+            const corretos = itens.filter(i => i.papel === 'correto');
+            const bloquear = itens.filter(i => i.papel === 'bloquear');
+            if (corretos.length !== 1 || bloquear.length !== itens.length - 1) {
+                return res.status(400).json({ error: 'Grupo do tipo "duplicado" precisa de exatamente 1 item "correto" e o restante "bloquear".' });
+            }
+        } else {
+            const invalido = itens.some(i => i.papel !== 'equivalente');
+            if (invalido) {
+                return res.status(400).json({ error: 'Grupo do tipo "equivalente" precisa que todos os itens tenham papel "equivalente".' });
+            }
+        }
+
+        const grupoId = grupo_uuid || crypto.randomUUID();
+
+        const values = itens.map(item => [
+            grupoId,
+            tipo_relacao,
+            (item.codigo || '').trim().toUpperCase(),
+            item.descricao || null,
+            item.empresa || null,
+            item.papel,
+            motivo_ia || null,
+            criado_por || 'Usuário Desconhecido'
+        ]);
+
+        const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+        const flatValues = values.flat();
+
+        await mysqlPool.query(
+            `INSERT INTO app_cadastro_correcoes (grupo_uuid, tipo_relacao, produto_codigo, produto_descricao, empresa, papel, motivo_ia, criado_por) VALUES ${placeholders}`,
+            flatValues
+        );
+
+        res.json({ success: true, grupo_uuid: grupoId });
+    } catch (error) {
+        console.error('Erro ao salvar correção de cadastro:', error);
+        res.status(500).json({ error: 'Erro ao salvar correção de cadastro: ' + error.message });
+    }
+});
+
+// GET /cadastro/correcoes - Lista correções salvas, agrupadas por grupo_uuid
+router.get('/cadastro/correcoes', async (req, res) => {
+    try {
+        const { status, tipo_relacao } = req.query;
+        let where = 'WHERE 1=1';
+        const params = [];
+        if (status) {
+            where += ' AND status = ?';
+            params.push(status);
+        }
+        if (tipo_relacao) {
+            where += ' AND tipo_relacao = ?';
+            params.push(tipo_relacao);
+        }
+
+        const [rows] = await mysqlPool.query(
+            `SELECT * FROM app_cadastro_correcoes ${where} ORDER BY criado_em DESC`,
+            params
+        );
+
+        const grupos = {};
+        rows.forEach(row => {
+            if (!grupos[row.grupo_uuid]) {
+                grupos[row.grupo_uuid] = {
+                    grupo_uuid: row.grupo_uuid,
+                    tipo_relacao: row.tipo_relacao,
+                    motivo_ia: row.motivo_ia,
+                    status: row.status,
+                    criado_por: row.criado_por,
+                    criado_em: row.criado_em,
+                    itens: []
+                };
+            }
+            grupos[row.grupo_uuid].itens.push({
+                id: row.id,
+                codigo: row.produto_codigo,
+                descricao: row.produto_descricao,
+                empresa: row.empresa,
+                papel: row.papel
+            });
+        });
+
+        res.json(Object.values(grupos));
+    } catch (error) {
+        console.error('Erro ao listar correções de cadastro:', error);
+        res.status(500).json({ error: 'Erro ao listar correções de cadastro: ' + error.message });
+    }
+});
+
+// PATCH /cadastro/correcoes/:grupo_uuid/status - Atualiza o status de um grupo (pendente/aplicado/ignorado)
+router.patch('/cadastro/correcoes/:grupo_uuid/status', express.json(), async (req, res) => {
+    try {
+        const { grupo_uuid } = req.params;
+        const { status } = req.body;
+
+        if (!['pendente', 'aplicado', 'ignorado'].includes(status)) {
+            return res.status(400).json({ error: 'status inválido. Use "pendente", "aplicado" ou "ignorado".' });
+        }
+
+        await mysqlPool.query(
+            'UPDATE app_cadastro_correcoes SET status = ? WHERE grupo_uuid = ?',
+            [status, grupo_uuid]
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao atualizar status de correção de cadastro:', error);
+        res.status(500).json({ error: 'Erro ao atualizar status: ' + error.message });
+    }
+});
 
 // GET /balances - SIMPLIFIED WORKING VERSION
 router.get('/balances', async (req, res) => {
@@ -149,86 +640,7 @@ router.get('/balances', async (req, res) => {
 
         console.log("Parsed params:", { empresa, filial, almoxarifado, codigo, descricao, grupo, tipo, limit });
 
-        const params = [];
-        let paramCount = 1;
-
-        // Simple WHERE clause - no complex logic
-        let whereClause = "WHERE TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' AND TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' ";
-        whereClause += "AND s.b2_cod !~ '^MT[0-9]' "; // Exclusão MT
-
-        // Add filters
-        if (codigo) {
-            params.push(`%${codigo.toUpperCase()}%`);
-            whereClause += `AND s.b2_cod LIKE $${paramCount++} `;
-        }
-        if (descricao) {
-            params.push(`%${descricao.toUpperCase()}%`);
-            whereClause += `AND p.b1_desc LIKE $${paramCount++} `;
-        }
-        if (grupo) {
-            params.push(`${grupo}%`);
-            whereClause += `AND p.b1_grupo LIKE $${paramCount++} `;
-        }
-        if (tipo) {
-            params.push(`${tipo}%`);
-            whereClause += `AND p.b1_tipo LIKE $${paramCount++} `;
-        }
-        if (filial) {
-            params.push(`${filial}%`);
-            whereClause += `AND s.b2_filial LIKE $${paramCount++} `;
-        }
-        if (almoxarifado) {
-            params.push(`${almoxarifado}%`);
-            whereClause += `AND s.b2_local LIKE $${paramCount++} `;
-        }
-
-        params.push(parseInt(limit));
-        const limitParam = paramCount++;
-
-        // Build queries for each branch
-        const queries = [];
-
-        if (!empresa || empresa === '010') {
-            queries.push(`(
-                SELECT 
-                    '010'::text as empresa,
-                    s.b2_filial as filial,
-                    s.b2_local as almoxarifado,
-                    s.b2_cod as cod_produto,
-                    p.b1_desc as descricao,
-                    p.b1_um as unidade,
-                    p.b1_tipo as tipo,
-                    p.b1_grupo as grupo,
-                    s.b2_qatu as saldo_atual,
-                    s.b2_qemp as empenho
-                FROM public.sb2010 s
-                JOIN public.sb1010 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
-                ${whereClause}
-                LIMIT $${limitParam}
-            )`);
-        }
-
-        if (!empresa || empresa === '990') {
-            queries.push(`(
-                SELECT 
-                    '990'::text as empresa,
-                    s.b2_filial as filial,
-                    s.b2_local as almoxarifado,
-                    s.b2_cod as cod_producto,
-                    p.b1_desc as descricao,
-                    p.b1_um as unidade,
-                    p.b1_tipo as tipo,
-                    p.b1_grupo as grupo,
-                    s.b2_qatu as saldo_atual,
-                    s.b2_qemp as empenho
-                FROM public.sb2990 s
-                JOIN public.sb1990 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
-                ${whereClause}
-                LIMIT $${limitParam}
-            )`);
-        }
-
-        const sql = queries.join(' UNION ALL ');
+        const { sql, params } = buildStockQuery({ empresa, filial, almoxarifado, codigo, descricao, grupo, tipo, limit });
 
         console.log("\n=== EXECUTING SQL ===");
         console.log("SQL (FULL):\n", sql);

@@ -365,68 +365,100 @@ export const HELP_CONTENT = {
     title: 'Pedidos de Venda (Visão Geral)',
     icon: 'ShoppingCart',
     image: '/help-images/visao_geral.png',
-    description: 'Interface principal e central de acompanhamento global dos pedidos de venda. Reúne filtros avançados, modos de visualização flexíveis (Agrupado ou Lista Plana) e acesso rápido a ações como exportação, relatórios, previsão de faturamento e geração de Lotes de Produção.',
+    description: 'Central de acompanhamento dos Pedidos de Venda. Reúne filtros avançados, 6 modos de visualização, ações em lote, exportações, planejamento PCP, geração de Lotes de O.P./Corte, Cronograma Gantt, MRP de Materiais e Planilha Mestra — tudo em um único lugar.',
     tabs: [
       {
         id: 'geral',
-        label: 'Aba: Evolução da Carteira (Listagem Geral)',
-        description: 'Tabela principal com todos os pedidos de venda, oferecendo duas visões ("Agrupado" e "Lista Plana") e controles granulares.',
+        label: 'Aba: Evolução da Carteira',
+        description: 'Tabela principal com todos os pedidos de venda. Dois modos: "Agrupado" (pedidos expansíveis com itens aninhados) e "Lista Plana" (cada item em uma linha, com seleção múltipla).',
         steps: [
-          '🔄 COMPORTAMENTO INICIAL: Para não sobrecarregar o sistema, os dados NÃO são carregados automaticamente ao abrir a página. Você DEVE preencher os filtros desejados e clicar em "Filtrar" (ou pressionar Enter).',
-          '👁️ MODOS DE VISUALIZAÇÃO: No canto superior direito da tela, alterne entre "Agrupado" (pedidos principais como pais e itens embutidos/aninhados expansíveis) e "Lista Plana" (cada item como uma linha separada).',
-          '🔍 FILTROS DISPONÍVEIS: Filtre por Cliente, número do Pedido de Venda, Ordem de Compra (PC), ou código do Produto.',
-          '📅 FILTROS DE DATA: Selecione o "Tipo" da data para aplicar a pesquisa: "Emissão Pedido", "Data de Entrega" ou "Emissão NF". Você pode usar os atalhos rápidos ("Atrasados/Hoje" e "Hoje/Futuro") que aparecem abaixo dos calendários ao selecionar Data de Entrega.',
-          '⚖️ APENAS PENDENTES (Filtro Pesado): Localizado abaixo dos filtros de data, este botão ativa a exibição EXCLUSIVA de pedidos com saldo pendente (exclui totalmente faturados e foca na operação ativa). Desative-o se desejar uma busca muito mais rápida.',
-          '🔄 ORDENAÇÃO: Localizada na barra de filtros. Permite ordenar os resultados de forma ascendente ou descendente por: Pedido/Item, Data do Pedido, Data de Entrega (Pedido), Data de Entrega PCP ou Previsão de Faturamento.',
-          '🏭 LOTES DE O.P. E CORTE: Na visão "Lista Plana", é possível selecionar múltiplos itens clicando nas checkboxes da primeira coluna. Com itens selecionados, dois botões aparecerão logo acima da tabela permitindo "Gerar Lote de O.P." ou "Gerar Lote de Corte" de forma aglutinada.',
-          '📝 AÇÕES ESPECÍFICAS DA LINHA (Três Pontinhos): Clique no menu "Mais Ações" de um pedido ou item para opções extras, como: "Imprimir Espelho da OP" (simples, agrupado, ou Fichas de Operação) e exportações.',
-          '📷 FOTOS E DOCUMENTOS: Clique no ícone de imagem/documento na tabela para abrir o modal de "Fotos do Produto" ou documentação de engenharia atrelada.'
+          '🔄 COMPORTAMENTO INICIAL: Os dados NÃO carregam automaticamente. Preencha os filtros e clique em "Filtrar" (ou pressione Enter).',
+          '👁️ MODOS DE VISUALIZAÇÃO: Alterne entre "Agrupado" (pedidos como pais expansíveis) e "Lista Plana" (cada item em linha separada) no canto superior direito.',
+          '🔍 FILTROS DISPONÍVEIS: Cliente (parcial), Nº Pedido, Pedido de Compra (PC), Produto (parcial), Tipo de Item e Status OP.',
+          '📅 FILTROS DE DATA: Selecione o tipo — "Emissão Pedido", "Data de Entrega" ou "Emissão NF". Atalhos rápidos ("Atrasados/Hoje" e "Hoje/Futuro") aparecem ao selecionar Entrega.',
+          '⚖️ APENAS PENDENTES: Toggle que exclui itens totalmente faturados. Desative para buscas muito mais rápidas.',
+          '🔄 ORDENAÇÃO: Ordene por Pedido/Item, Data do Pedido, Entrega, Data PCP ou Prev. Faturamento (ASC/DESC). Também clique nos cabeçalhos com seta.',
+          '⚙️ COLUNAS CONFIGURÁVEIS (Lista Plana): Clique no botão ⚙️ para escolher e reordenar as colunas. A configuração é salva no servidor por usuário e persiste entre sessões.',
+          '☑️ AÇÕES EM LOTE (Lista Plana): Selecione itens com checkbox e use os botões na barra acima da tabela: 🔴 Prioridade · 📝 Ata · 📅 Planejamento PCP · 📦 Gerar Lote de O.P. · ✂️ Gerar Lote de Corte.',
+          '📝 MENU DE AÇÕES (⋮): Por linha — Fotos, Documentos, Classificação, Controle de Engenharia, Notas (Ata Viva), Impressão Espelho OP, Espelho por Operação, Excel por Operação, Previsão de Faturamento, Prioridade e Detalhes NF.',
+          '💰 PREV. FATURAMENTO: Clique diretamente na coluna "Prev. Fat." para editar e salvar inline (sem abrir menu).',
+          '📥 IMPORTAÇÃO PCP: Carregue planilha Excel com datas PCP (formato Protheus) para atualizar múltiplos itens de uma vez.',
+          '🤖 HERMES AI: Assistente de IA contextualizado com a Visão Geral — acione a qualquer momento pelo botão azul.',
         ]
       },
       {
         id: 'pcp-export',
-        label: 'Aba: Exportação Materiais (PCP)',
-        description: 'Visualização focada na relação de materiais atrelados aos pedidos de venda listados.',
+        label: 'Aba: Exportação Materiais',
+        description: 'Geração de lista de materiais para PCP. Selecione pedidos e gere um Excel com 4 abas: Materiais SOLDA, Materiais Outros, Detalhado por produto e Sem Estrutura.',
         steps: [
-          'Selecione a aba "Exportação Materiais" para visualizar a relação de itens e matérias-primas.',
-          'Utilize as opções de filtro para isolar componentes específicos e os exporte para planilhas se necessário para rotinas de requisição ou análise.'
+          'Filtre os itens desejados (data, cliente, pedido, produto, estrutura, pendentes).',
+          'Clique nas linhas para selecionar (ou use "Selecionar todos").',
+          'A barra flutuante azul aparece na parte inferior. Clique em "Gerar Lista de Materiais".',
+          '📊 ABA "Materiais - Solda": Todos os materiais cujos componentes ancestrais passam por MO0020 (Solda) em QUALQUER nível da estrutura de produto (BOM). A verificação percorre recursivamente até o nível 10 — se um sub-componente interno tem MO0020 no roteiro, TODOS os seus materiais filhos aparecem aqui.',
+          '📊 ABA "Materiais - Outros": Materiais de componentes que NÃO passam por MO0020 em nenhum nível.',
+          '📊 ABA "Detalhado": Linhas por produto pai com pedido, cliente, componente, recurso e quantidade — sem aglutinar.',
+          '📊 ABA "Sem Estrutura": Produtos selecionados sem BOM cadastrada no Protheus.',
         ]
       },
       {
         id: 'cronograma',
         label: 'Aba: Cronograma / Gantt',
-        description: 'Visualização visual Gantt dos pedidos de venda agrupados por cliente e produto, com linha do tempo horizontal.',
+        description: 'Visualização gráfica Gantt dos pedidos por cliente e produto com linha do tempo horizontal.',
         steps: [
-          'A linha do tempo exibe cada item de pedido como uma barra horizontal posicionada entre sua data de emissão e data de entrega prevista.',
-          'As cores das barras indicam o status do pedido: Verde = Entregue, Laranja = Pendente, Vermelho = Atrasado (data de entrega já passou).',
-          'Passe o mouse sobre uma barra para ver um tooltip com os detalhes completos: pedido, cliente, produto, quantidade e datas.',
-          '🖨️ IMPRESSÃO DO CRONOGRAMA: Clique no botão "Exportar PDF" (ícone de impressora). O arquivo é gerado no padrão corporativo MetalFisa em A4 Paisagem (297×210 mm) e o cabeçalho azul se repete persistente em todas as páginas se o relatório for longo.'
+          'Cada item é exibido como barra horizontal entre a data de emissão e data de entrega.',
+          '🟢 Verde = Entregue | 🟠 Laranja = Pendente no prazo | 🔴 Vermelho = Atrasado.',
+          'Passe o mouse para ver tooltip com detalhes completos (pedido, cliente, produto, datas).',
+          '🖨️ EXPORTAR PDF: Gera o cronograma em A4 Paisagem no padrão MetalFisa com cabeçalho corporativo repetido em todas as páginas.',
         ]
       },
       {
         id: 'mrp-bulk',
-        label: 'Aba: Necessidades MP (Almox 01/03)',
-        description: 'Verificação rápida de Materiais (MRP Bulk) para os itens e pedidos visíveis no momento.',
+        label: 'Aba: Necessidades MP',
+        description: 'MRP rápido para os pedidos da tela atual — verificação de Matéria-Prima (Almoxarifados 01 e 03).',
         steps: [
-          'Fornece uma visão compilada sobre o que será necessário em termos de Matéria Prima (Almoxarifado 01 e 03) para os pedidos listados.',
-          'Ideal para consultas prévias e planejamento de compras.'
+          'Fornece visão compilada de matéria-prima necessária (Almox 01 e 03) para os pedidos filtrados.',
+          'Ideal para consultas prévias e planejamento de compras antes de liberar produção.',
         ]
-      }
+      },
+      {
+        id: 'programacao-entregas',
+        label: 'Aba: Prog. de Entregas',
+        description: 'Calendário e listagem de entregas programadas — confirme e ajuste datas com integração a Prev. Faturamento e Data PCP.',
+        steps: [
+          'Exibe os compromissos de entrega dos pedidos filtrados em formato de calendário ou lista.',
+          'Permite confirmar e ajustar datas programadas pelo PCP.',
+          'Integrado com os campos Data PCP e Previsão de Faturamento.',
+        ]
+      },
+      {
+        id: 'planilha-mestra',
+        label: 'Aba: Planilha Mestra',
+        description: 'Visão consolidada gerencial integrando dados de pedidos, produção e datas em formato tabular avançado — exportável para reuniões e relatórios executivos.',
+        steps: [
+          'Consolida dados de múltiplas fontes (pedidos, OPs, datas) em uma visão única.',
+          'Ideal para análises gerenciais e apresentações executivas.',
+          'Exportável para uso em reuniões de follow-up.',
+        ]
+      },
     ],
     steps: [
-      '1. Acesse a Visão Geral. A tela estará inicialmente em branco.',
-      '2. Escolha os parâmetros da sua pesquisa e defina a perspectiva de datas (Emissão, Entrega ou Faturamento) e se deseja exibir todos ou apenas Ativos.',
-      '3. Pressione Enter no teclado ou clique em Filtrar.',
-      '4. Com os dados carregados, utilize a barra superior direita para gerar "Download Excel", "Exportar PDF" ou criar uma "Ata (Pedidos da Tela)".',
-      '5. Alterne entre as visões "Agrupado" e "Lista Plana" caso precise extrair relatórios específicos.',
-      '6. Navegue pelas Abas superiores para visualizar dados financeiros (Evolução), de PCP ou o Cronograma Visual Gantt.',
+      '1. Acesse a Visão Geral — a tela estará inicialmente em branco.',
+      '2. Defina o tipo de data (Emissão, Entrega ou NF) e os filtros desejados.',
+      '3. Pressione Enter ou clique em "Filtrar".',
+      '4. Use os botões superiores: 📊 Excel · 📄 PDF · 📝 Ata · 🤖 Hermes AI.',
+      '5. No modo Lista Plana, selecione itens e use as ações em lote (Lote O.P., Corte, Prioridade).',
+      '6. Use o menu ⋮ da linha para ações individuais (impressão, classificação, engenharia, etc.).',
+      '7. Navegue pelas abas para Cronograma, Materiais, MRP, Entregas ou Planilha Mestra.',
     ],
     tips: [
-      '⚡ **Performance**: O filtro "Apenas Pendentes (Filtro Pesado)" realiza verificações extensas no banco. Desativá-lo resultará em pesquisas extremamente mais rápidas e leves.',
-      '📋 **Visão Plana**: A "Lista Plana" é recomendada não apenas para exportação de dados analíticos, mas principalmente porque é a única que ativa as funcionalidades de Geração de Lote (OPs e Corte).',
-      '💰 **Previsão de Faturamento (Billing Forecast)**: Você pode atualizar a data de "Previsão de Faturamento" diretamente da tabela, clicando/editando o campo correspondente. Ele salvará automaticamente.',
-      '🖨️ **Impressão Ágil**: Na listagem geral de pedidos, o Menu de Ações (três pontinhos) permite opções complexas como imprimir Espelhos de OP integrando Desenhos automaticamente.',
-      '⚠️ **Prioridades (Ata Viva)**: Você pode definir prioridade para um item específico (usando o menu de Ações da linha) ou para múltiplos itens de uma vez (usando as checkboxes na Lista Plana e clicando em "Prioridade" no topo). Isso notificará a equipe de PCP/Produção imediatamente no Painel da Ata Viva e via Hermes.',
+      '⚡ **Performance**: O filtro "Apenas Pendentes" é pesado. Desative para buscas muito mais rápidas.',
+      '⚙️ **Colunas**: As configurações são salvas no servidor — persistem entre sessões e dispositivos.',
+      '📋 **Lista Plana**: É a única visão que ativa a seleção múltipla para Lotes de O.P., Corte e Prioridade em lote.',
+      '💰 **Prev. Faturamento**: Clique direto na célula da coluna — salva automaticamente sem abrir menus.',
+      '⚠️ **Prioridades**: Notificam a equipe PCP/Produção em tempo real via Ata Viva e Hermes.',
+      '🔵 **Lógica Solda (MO0020)**: A aba "Materiais - Solda" na Exportação detecta MO0020 em TODOS os níveis da BOM (até nível 10) — não apenas no produto raiz.',
+      '📥 **Importação PCP**: Linhas ocultas por filtros no Excel são ignoradas automaticamente.',
+      '🖨️ **Impressões OP**: Use o menu ⋮ para 3 tipos de impressão — simples, por operação (PDF) ou por operação (Excel com 3 abas).',
     ],
     links: [
       { path: '/comercial/gestao-ops', label: 'Gestão de OPs' },
@@ -3516,6 +3548,82 @@ export const HELP_CONTENT = {
     ],
     links: [
       { path: '/sgq/ativos', label: 'Inventário Geral de Ativos' }
+    ]
+  },
+
+  // ── Pendências da Montagem ─────────────────────────────────────────────────
+  '/pcp/montagem-solicitacoes': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Pendências da Montagem',
+    icon: 'ClipboardList',
+    description: 'Módulo de gestão de solicitações de peças e componentes faltantes para o setor de montagem. Permite criar, rastrear e concluir pedidos de material vinculados a Ordens de Produção (OPs), com ciclo de vida completo: Pendente → Em Andamento → Entregue.',
+    tabs: [
+      {
+        id: 'visao-geral',
+        label: 'Visão Geral',
+        description: 'Painel principal de acompanhamento de todas as solicitações de peças abertas e encerradas do setor de montagem.',
+        steps: [
+          '📋 PROPÓSITO DO MÓDULO: Este módulo centraliza as solicitações de peças que estão faltando para a montagem de um produto final. Quando um montador identifica que um componente não chegou ao posto, ele registra aqui — e o almoxarifado ou outra área pode ver, atender e confirmar a entrega.',
+          '🗂️ CARDS DE STATUS (Contadores): Quatro cards no topo da página mostram o total de solicitações em cada estado. Clique em um deles para filtrar rapidamente a lista abaixo somente por aquele status. Clique novamente para desfazer o filtro.',
+          '📦 CARD "PENDENTE" (amarelo): Solicitações criadas mas que ainda não foram atendidas por ninguém. São as prioridades mais altas — exigem atenção imediata do almoxarifado ou do responsável pela separação.',
+          '🔵 CARD "EM ANDAMENTO" (azul): O responsável clicou em "Em Andamento", sinalizando que já está buscando/separando o componente. Indica que a solicitação foi vista e está sendo resolvida.',
+          '✅ CARD "ENTREGUE" (verde): Solicitações concluídas. O componente foi fisicamente entregue ao montador, e um responsável confirmou a entrega com observações opcionais.',
+          '⬛ CARD "CANCELADO" (cinza): Solicitações anuladas. Podem ter sido criadas por engano ou o componente foi encontrado por outra via sem necessidade de entrega formal.',
+          '🔍 FILTROS: Use os campos de busca logo abaixo dos cards para refinar a lista. Filtre pelo número da OP (ex: "002730") ou pelo código/descrição do componente (ex: "parafuso M8"). Pressione Enter para aplicar a busca imediatamente.'
+        ]
+      },
+      {
+        id: 'nova-solicitacao',
+        label: 'Criar Solicitação',
+        description: 'Passo a passo para registrar uma nova solicitação de peça para a montagem.',
+        steps: [
+          '➕ COMO CRIAR: Clique no botão azul "Nova Solicitação" no canto superior direito da página. Um modal se abrirá com opções para localizar a OP e o componente faltante.',
+          '🔎 PASSO 1 — MODO DE BUSCA: Escolha como deseja encontrar a OP. Há duas abas:\n  • "Buscar por Nº da OP" → Informe diretamente o número da OP (ex: 002730).\n  • "Buscar por Código do Produto" → Informe o código do produto final sendo montado (ex: MT6-1234) para ver todas as OPs abertas para ele.',
+          '🔎 PASSO 2A — BUSCA POR OP: Digite o número da OP no campo e clique em "Buscar" (ou pressione Enter). O sistema consultará o ERP e carregará:\n  • As informações da OP (produto, descrição, número do pedido de venda)\n  • A lista de componentes da estrutura da OP (filhos do produto).',
+          '🔎 PASSO 2B — BUSCA POR PRODUTO: Digite o código do produto no campo e clique em "Buscar". O sistema exibirá uma lista de todas as OPs abertas para aquele produto. Clique em uma delas para selecioná-la e o fluxo continua igual à busca por OP.',
+          '🧩 PASSO 3 — SELECIONAR O COMPONENTE: Com a OP carregada, uma lista de componentes (estrutura do produto) aparecerá. Clique no componente que está faltando. O código, a descrição e a quantidade serão preenchidos automaticamente nos campos abaixo. A origem será marcada como "da estrutura" (identificado com badge roxo no card).\n  • Se a peça que está faltando NÃO está na estrutura oficial, preencha os campos manualmente: Código do Item, Descrição e Quantidade. Neste caso, a origem será "LIVRE".',
+          '📝 PASSO 4 — OBSERVAÇÃO (opcional): Use o campo "Observação do Solicitador" para incluir informações importantes: urgência, localização onde o componente deveria estar, número de lote, referência do cliente, etc. Quanto mais detalhes, mais fácil para o entregador encontrar e atender.',
+          '💾 PASSO 5 — SALVAR: Clique em "Criar Solicitação". A solicitação aparecerá imediatamente na lista principal com status "Pendente". Todos os usuários do sistema que acessarem esta página verão a nova solicitação.'
+        ]
+      },
+      {
+        id: 'ciclo-vida',
+        label: 'Fluxo de Atendimento',
+        description: 'Entenda o ciclo de vida completo de uma solicitação, desde a criação até a entrega ou cancelamento.',
+        steps: [
+          '🔄 FLUXO COMPLETO: Uma solicitação passa pelos estados a seguir:\n  PENDENTE → EM ANDAMENTO → ENTREGUE\n  Em qualquer momento antes da entrega, pode ser CANCELADA.',
+          '▶️ BOTÃO "EM ANDAMENTO": Visível no card quando a solicitação está com status "Pendente". Clique para sinalizar que você já está tratando a solicitação (buscando no estoque, solicitando compra, etc.). Isso avisa à equipe de montagem que alguém está cuidando do caso — evitando esforço duplicado.',
+          '✅ BOTÃO "ENTREGAR": Disponível quando a solicitação está em "Pendente" ou "Em Andamento". Clique para abrir o modal de confirmação de entrega. Você poderá adicionar uma observação de entregador (ex: "entregue na bancada 3" ou "retirado do estoque secundário"). Ao confirmar, o status muda para "Entregue" e o seu nome fica registrado como entregador com data/hora exata.',
+          '❌ BOTÃO "CANCELAR": Localizado à direita no card (texto "Cancelar"). Acione somente se a solicitação foi criada por engano ou se o problema foi resolvido por outro meio. O sistema pedirá confirmação antes de cancelar.',
+          '🔍 EXPANDIR DETALHES DO CARD: Clique na seta (▼/▲) no canto direito do card para ver os detalhes adicionais:\n  • Observação do Solicitador: Mensagem deixada pelo criador da solicitação\n  • Entregador: Nome de quem confirmou a entrega + data/hora\n  • Observação do Entregador: Mensagem deixada no ato da entrega\n  • Badge "da estrutura": Indica que o componente faz parte da estrutura oficial do produto no ERP'
+        ]
+      },
+      {
+        id: 'rastreabilidade',
+        label: 'Rastreabilidade',
+        description: 'Informações registradas em cada solicitação para garantir auditoria e histórico completo.',
+        steps: [
+          '🏷️ DADOS REGISTRADOS POR SOLICITAÇÃO: Cada card exibe e armazena:\n  • Número da OP\n  • Produto da OP e sua descrição (ERP)\n  • Código do item faltante (pode ser da estrutura ou livre)\n  • Descrição do item\n  • Quantidade solicitada\n  • Nome do solicitador + data e hora da criação\n  • Status atual (Pendente / Em Andamento / Entregue / Cancelado)\n  • Badge "da estrutura" quando o componente veio da BOM da OP',
+          '📌 DADOS REGISTRADOS NA ENTREGA:\n  • Nome do entregador (usuário logado que clicou em Confirmar Entrega)\n  • Data e hora da entrega\n  • Observação do entregador (campo livre para descrever onde estava o item, como foi resolvido, etc.)',
+          '🔍 AUDITORIA: As informações ficam permanentemente armazenadas no banco de dados. Solicitações com status "Cancelado" aparecem com opacidade reduzida (60%) na lista, mas não são excluídas — mantendo o histórico de tudo que foi solicitado.',
+          '👤 USUÁRIO AUTENTICADO: O sistema usa o usuário logado para registrar automaticamente quem criou a solicitação e quem realizou a entrega. Nunca é necessário digitar o nome manualmente — ele é preenchido via sessão.'
+        ]
+      }
+    ],
+    tips: [
+      '⚡ Atalho de teclado: Nos campos de busca do modal "Nova Solicitação", pressione Enter após digitar o número da OP ou o código do produto — a busca é acionada sem precisar clicar no botão.',
+      '🔄 Atualização manual: Use o botão de "Atualizar" (ícone ↻) no topo da página para recarregar a lista sem perder os filtros aplicados. Isso é útil quando múltiplos usuários estão usando o sistema ao mesmo tempo.',
+      '🧩 Componente não aparece na lista da estrutura? Pode ser que o produto não tenha estrutura cadastrada no ERP, ou o componente seja de um nível abaixo (subcomponente). Neste caso, use o modo livre: preencha manualmente o código e a descrição do item.',
+      '📋 Filtragem rápida por status + OP: Combine o clique no card de status com a digitação no campo "Filtrar por OP" para isolar rapidamente, por exemplo, todos os componentes pendentes de uma OP específica.',
+      '📊 Dados em tempo real: A lista é carregada diretamente do banco de dados toda vez que você aplica um filtro ou recarrega a página. Para ver atualizações de outros usuários, use o botão de Atualizar.',
+      '🔁 Origem "da estrutura" vs "LIVRE": A badge roxa "da estrutura" no card indica que o componente foi selecionado da BOM oficial do produto. Solicitações LIVRES não têm esta badge e indicam componentes não vinculados à estrutura — útil para peças avulsas, ferramentas ou consumíveis.'
+    ],
+    links: [
+      { path: '/producao', label: 'Ordens de Produção' },
+      { path: '/controle-producao', label: 'Controle de Produção' },
+      { path: '/produtos', label: 'Catálogo de Produtos (Estruturas)' },
+      { path: '/saldo-materiais', label: 'Saldo de Materiais (Almoxarifado)' }
     ]
   }
 

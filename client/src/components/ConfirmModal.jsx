@@ -18,7 +18,7 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title, messag
                         </div>
                         <div className="flex-1 pt-1">
                             <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-                            <p className="text-sm text-slate-500 mt-1 leading-relaxed">{message}</p>
+                            <p className="text-sm text-slate-500 mt-1 leading-relaxed whitespace-pre-wrap">{message}</p>
                         </div>
                         <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
                             <X className="w-5 h-5" />

@@ -890,6 +890,8 @@ router.get('/arvore/:codigo', async (req, res) => {
 });
 
 // GET /api/sinco/produto/:codigo — dados básicos + complementares do produto (SB1 + SB5)
+// ⚠️ Não filtramos d_e_l_e_t_ aqui: o formulário SINCO precisa acessar qualquer produto,
+//    inclusive os que foram excluídos logicamente no ERP (engenharia ainda referencia esses dados).
 router.get('/produto/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
@@ -902,26 +904,33 @@ router.get('/produto/:codigo', async (req, res) => {
                 TRIM(sb1.b1_grupo)   AS grupo,
                 sb1.b1_peso          AS peso,
                 TRIM(sb1.b1_revatu)  AS rev,
+                TRIM(sb1.b1_xrevm)   AS xrevm,
                 sb5.b5_compr         AS comprimento,
                 sb5.b5_larg          AS largura,
-                sb5.b5_espess        AS espessura
+                sb5.b5_espess        AS espessura,
+                COALESCE(sb1.d_e_l_e_t_, '') AS status_delete
             FROM public.sb1010 sb1
             LEFT JOIN public.sb5010 sb5 
-                ON TRIM(sb1.b1_cod) = TRIM(sb5.b5_cod) 
-                AND COALESCE(sb5.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                ON TRIM(sb1.b1_cod) = TRIM(sb5.b5_cod)
             WHERE TRIM(sb1.b1_cod) = $1
-              AND COALESCE(sb1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY sb1.r_e_c_n_o_ DESC
+            LIMIT 1
         `, [codigo]);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Produto não encontrado no Protheus (SB1010).' });
         }
-        res.json(rows[0]);
+
+        const row = rows[0];
+        // Informa o frontend se o produto está excluído no ERP
+        const isDeleted = row.status_delete === '*' || row.status_delete === '  *';
+        res.json({ ...row, erp_excluido: isDeleted });
     } catch (err) {
         console.error('Erro ao buscar produto (Protheus):', err.message);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // GET /api/sinco/produtos/busca?q=... — busca produtos por código ou descrição
 router.get('/produtos/busca', async (req, res) => {
@@ -1071,6 +1080,65 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// GET /api/sinco/restricoes-sz0-todas - Todas as Restrições (SZ0010)
+router.get('/restricoes-sz0-todas', async (req, res) => {
+    try {
+        const rows = await queryProtheus(`
+            SELECT
+                Z0.z0_produto        AS produto,
+                Z0.z0_item           AS item,
+                Z0.z0_status         AS status,
+                Z0.z0_resumo         AS resumo,
+                Z0.z0_restric        AS restricao_raw,
+                Z0.z0_respons        AS responsavel,
+                Z0.z0_dtultal        AS dt_ultima_alt,
+                Z0.z0_hrultal        AS hr_ultima_alt,
+                B1.b1_desc           AS descricao_oficial,
+                B1.b1_tipo           AS tipo,
+                B1.b1_um             AS unidade,
+                Z0.z0_xrevm          AS revisao
+            FROM public.sz0010 Z0
+            INNER JOIN public.sb1010 B1
+                ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
+                AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            WHERE COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY Z0.z0_produto, Z0.z0_item
+        `);
+
+        const decoded = rows.map(row => {
+            const raw = row.restricao_raw;
+            let restricao = '';
+            if (raw) {
+                const buf = Buffer.from(raw).filter(b => b !== 0);
+                const asUtf8 = buf.toString('utf8');
+                restricao = asUtf8.includes('\uFFFD')
+                    ? buf.toString('latin1').trim()
+                    : asUtf8.trim();
+            }
+            return {
+                produto: (row.produto || '').trim(),
+                item: (row.item || '').trim(),
+                status: (row.status || '').trim(),
+                resumo: (row.resumo || '').trim(),
+                responsavel: (row.responsavel || '').trim(),
+                dt_ultima_alt: (row.dt_ultima_alt || '').trim(),
+                hr_ultima_alt: (row.hr_ultima_alt || '').trim(),
+                descricao_oficial: (row.descricao_oficial || '').trim(),
+                tipo: (row.tipo || '').trim(),
+                unidade: (row.unidade || '').trim(),
+                revisao: (row.revisao || '').trim(),
+                restricao
+            };
+        });
+
+        res.json(decoded);
+    } catch (err) {
+        console.error('Erro todas restricoes SZ0:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // POST /api/sinco/restricao/edit — Proxy para API Protheus de inclusão/alteração de restrições
 router.post('/restricao/edit', async (req, res) => {

@@ -28,6 +28,11 @@ const runJob = async (isTest = false, testEmail = null, testWa = null) => {
             return;
         }
 
+        if (configObj.automations?.sgq_alerts_active === false && configObj.automations?.sgq_alerts_email_active === false) {
+            console.log(`[Agendador SGQ] Alertas SGQ desativados nas configurações globais (WhatsApp e E-mail). Cancelando job.`);
+            return;
+        }
+
         const sgqAlertUsers = configObj.sgq_alerts_users || [];
         if (sgqAlertUsers.length === 0) {
             console.log(`[Agendador SGQ] Nenhum usuário configurado para receber alertas do SGQ.`);
@@ -101,7 +106,7 @@ const runJob = async (isTest = false, testEmail = null, testWa = null) => {
                     if (!sysUser) continue;
 
                     // Envio WhatsApp
-                    if (uPref.whatsapp && sysUser.telefone && regrasAplicaveis.some(r => r.notify_whatsapp)) {
+                    if (configObj.automations?.sgq_alerts_active !== false && uPref.whatsapp && sysUser.telefone && regrasAplicaveis.some(r => r.notify_whatsapp)) {
                         const tel = isTest ? testWa : sysUser.telefone;
                         if (tel) {
                             try {
@@ -115,7 +120,7 @@ const runJob = async (isTest = false, testEmail = null, testWa = null) => {
                     }
 
                     // Envio E-mail
-                    if (uPref.email && sysUser.email && regrasAplicaveis.some(r => r.notify_email)) {
+                    if (configObj.automations?.sgq_alerts_email_active !== false && uPref.email && sysUser.email && regrasAplicaveis.some(r => r.notify_email)) {
                         const em = isTest ? testEmail : sysUser.email;
                         if (em) {
                             try {

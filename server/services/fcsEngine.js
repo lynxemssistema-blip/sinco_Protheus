@@ -46,14 +46,23 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             )
         `);
 
-        // Obter capacidades diárias do MySQL
+        // Obter capacidades diárias do MySQL — ordenadas pela ordem definida na página
+        // de Capacidade e Tempos (pcp-refinado/capacidade), garantindo que logs e relatórios
+        // respeitem a sequência configurada pelo usuário.
         agent_logs.push('Obtendo matriz de capacidades diárias por recurso...');
-        const [capRows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade');
-        const capacidades = {};       // cap. diária em minutos
+        const [capRows] = await mysqlPool.query(
+            'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, COALESCE(ordem_exibicao, 9999) AS ordem_exibicao '
+            + 'FROM app_recursos_capacidade '
+            + 'ORDER BY COALESCE(ordem_exibicao, 9999) ASC, recurso_codigo ASC'
+        );
+        const capacidades = {};        // cap. diária em minutos
         const fallbackCapacidade = {}; // tempo padrão unitário em minutos
-        capRows.forEach(r => { 
+        // ordemRecurso: mantém a posição relativa de cada recurso para ordenar relatórios
+        const ordemRecurso = {};
+        capRows.forEach((r, idx) => {
             capacidades[r.recurso_codigo] = Number(r.capacidade_diaria_minutos) || 0;
             fallbackCapacidade[r.recurso_codigo] = Number(r.tempo_padrao_minutos) || 0;
+            ordemRecurso[r.recurso_codigo] = idx; // posição 0-based na ordem configurada
         });
 
         // Buscar descrição dos recursos via roteiro sg2010
@@ -422,6 +431,9 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             
             agent_logs.push(`[ESTUDO] Analisando OP ${op.op_num} (Qtd: ${op.qtde} | Produto: ${op.produto})`);
 
+            // Libera o event loop do Node.js brevemente para não travar outras rotas
+            await new Promise(resolve => setImmediate(resolve));
+
             let prevOpEndDate = null;
 
             for (let i = 0; i < roteiros.length; i++) {
@@ -481,18 +493,39 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     let minutosHoje = 0;
                     let pecasCompletasHoje = 0;
 
-                    while (capRestante > 0 && pecasCompletasHoje < qtdPendente) {
-                        if (tempoRestanteNaPeca <= capRestante) {
-                            // Conclui a peça em andamento com capacidade sobrando
-                            capRestante -= tempoRestanteNaPeca;
-                            minutosHoje += tempoRestanteNaPeca;
-                            pecasCompletasHoje++;
-                            tempoRestanteNaPeca = rot.tempoMinutos; // reinicia para a próxima peça
-                        } else {
-                            // Capacidade do dia se esgota no meio da peça — usa tudo e continua amanhã
-                            minutosHoje += capRestante;
-                            tempoRestanteNaPeca -= capRestante;
-                            capRestante = 0;
+                    if (rot.tempoMinutos <= 0) {
+                        pecasCompletasHoje = Math.ceil(qtdPendente);
+                        minutosHoje = 0;
+                        capRestante = available;
+                    } else {
+                        if (capRestante > 0 && pecasCompletasHoje < qtdPendente) {
+                            if (tempoRestanteNaPeca > capRestante) {
+                                minutosHoje += capRestante;
+                                tempoRestanteNaPeca -= capRestante;
+                                capRestante = 0;
+                            } else {
+                                capRestante -= tempoRestanteNaPeca;
+                                minutosHoje += tempoRestanteNaPeca;
+                                pecasCompletasHoje++;
+                                tempoRestanteNaPeca = rot.tempoMinutos;
+
+                                let maxPecas = Math.floor(capRestante / rot.tempoMinutos);
+                                let pecasRestantes = qtdPendente - pecasCompletasHoje;
+                                let pecasParaFazer = Math.min(maxPecas, pecasRestantes);
+
+                                if (pecasParaFazer > 0) {
+                                    pecasCompletasHoje += pecasParaFazer;
+                                    let minUsados = pecasParaFazer * rot.tempoMinutos;
+                                    capRestante -= minUsados;
+                                    minutosHoje += minUsados;
+                                }
+
+                                if (pecasCompletasHoje < qtdPendente && capRestante > 0) {
+                                    minutosHoje += capRestante;
+                                    tempoRestanteNaPeca -= capRestante;
+                                    capRestante = 0;
+                                }
+                            }
                         }
                     }
 
@@ -788,7 +821,9 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
                     desc_recurso: descRecursoMap[plan.recurso_codigo] || plan.recurso_codigo,
                     capacidade_diaria_min: capDia,
                     total_minutos_alocados: 0,
-                    total_operacoes: 0
+                    total_operacoes: 0,
+                    // ordem configurada na página pcp-refinado/capacidade
+                    ordem_exibicao: ordemRecurso[plan.recurso_codigo] ?? 9999
                 };
             }
             const fatiasDestaOp = slicesByKey[`${plan.op_numero}|${plan.operacao_codigo}`] || [];
@@ -842,13 +877,24 @@ async function runFcsSequencing({ ops, data_inicio, usuario = 'planejamento_inte
             }
         }
 
+        // Ordenar resumo_recursos pelo campo ordem_exibicao antes de retornar
+        const resumo_recursos_sorted = Object.fromEntries(
+            Object.entries(report.resumo_recursos)
+                .sort(([, a], [, b]) => (a.ordem_exibicao ?? 9999) - (b.ordem_exibicao ?? 9999))
+        );
+        // Ordenar carga_diaria (por recurso) na mesma ordem
+        const carga_diaria_sorted = Object.fromEntries(
+            Object.entries(carga_diaria)
+                .sort(([a], [b]) => (ordemRecurso[a] ?? 9999) - (ordemRecurso[b] ?? 9999))
+        );
+
         agent_logs.push(`Fim do processamento.`);
         return {
             success: true,
             plans: newPlans.length,
             daily_slices: dailySlices.length,
             agent_logs,
-            report: { ...report, carga_diaria }
+            report: { ...report, resumo_recursos: resumo_recursos_sorted, carga_diaria: carga_diaria_sorted }
         };
     } catch (error) {
         console.error('❌ Erro no FCS Engine:', error);

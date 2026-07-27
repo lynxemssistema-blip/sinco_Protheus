@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useFilters } from '../../contexts/FilterContext';
 import { useHelp } from '../../contexts/HelpContext';
+import DocsModal from '../DocsModal';
 
 // Use a relative path for the API to ensure it works in both dev and production
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,11 @@ const PCPExportTab = () => {
     const [exporting, setExporting] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState(null);
+
+    const [activeSubTab, setActiveSubTab] = useState('pedidos');
+    const [bomDrawings, setBomDrawings] = useState([]);
+    const [loadingDrawings, setLoadingDrawings] = useState(false);
+    const [docModalProduct, setDocModalProduct] = useState(null);
 
     const { openHelp } = useHelp();
 
@@ -156,15 +162,40 @@ const PCPExportTab = () => {
         }
     };
 
+    const handleFetchDrawings = async () => {
+        const selectedItems = items.filter(it => selected.has(itemKey(it)));
+        if (selectedItems.length === 0) return;
+        
+        setLoadingDrawings(true);
+        try {
+            const payload = selectedItems.map(it => ({
+                produto:       it.produto,
+                quantidade:    parseFloat(it.qtd_faturar) || 0,
+                descricao_pai: it.descricao  || '',
+                pedido:        it.pedido     || '',
+                cliente:       it.cliente    || '',
+            }));
+
+            const { data } = await api.post('/pcp/bom-drawings', payload);
+            setBomDrawings(data.data || []);
+            setActiveSubTab('desenhos');
+        } catch (err) {
+            alert('Erro ao buscar desenhos. Verifique o console.');
+            console.error('[PCPExportTab] Erro desenhos:', err);
+        } finally {
+            setLoadingDrawings(false);
+        }
+    };
+
     // ── Render ───────────────────────────────────────────────────────────────
     const selectedCount = selected.size;
     const semEstrutura = items.filter(it => !it.tem_estrutura).length;
 
     return (
-        <div className="space-y-4 pb-24">
+        <div className="flex flex-col h-full space-y-4 pb-4">
 
             {/* ── FilterBar ─────────────────────────────────────────── */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 shrink-0">
                 <div className="flex flex-wrap gap-3 items-end">
 
                     <div className="flex flex-col gap-1">
@@ -320,11 +351,40 @@ const PCPExportTab = () => {
                 </div>
             )}
 
-            {/* ── Tabela ────────────────────────────────────────────── */}
+            {/* ── Sub-Tabs ──────────────────────────────────────────── */}
             {searched && !loading && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-6 px-2 border-b border-gray-200 shrink-0 mb-2">
+                    <button
+                        onClick={() => setActiveSubTab('pedidos')}
+                        className={`pb-3 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                            activeSubTab === 'pedidos' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                    >
+                        Itens do Pedido
+                        <span className="bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs font-bold">{items.length}</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (activeSubTab !== 'desenhos') {
+                                if (bomDrawings.length === 0 && selected.size > 0) handleFetchDrawings();
+                                else setActiveSubTab('desenhos');
+                            }
+                        }}
+                        className={`pb-3 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                            activeSubTab === 'desenhos' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                    >
+                        Desenhos da Estrutura
+                        {bomDrawings.length > 0 && <span className="bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs font-bold">{bomDrawings.length}</span>}
+                    </button>
+                </div>
+            )}
+
+            {/* ── Tabela Pedidos ────────────────────────────────────────────── */}
+            {searched && !loading && activeSubTab === 'pedidos' && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                     {/* Cabeçalho da tabela com resumo */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
                         <div className="flex items-center gap-3 text-sm text-gray-600">
                             <span className="font-medium">{items.length} item(ns) encontrado(s)</span>
                             {semEstrutura > 0 && (
@@ -350,8 +410,8 @@ const PCPExportTab = () => {
                             <p className="text-sm">Nenhum item encontrado com esses filtros.</p>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
+                        <div className="overflow-auto flex-1 bg-white relative">
+                            <table className="w-full text-sm text-left">
                                 <thead>
                                     <tr className="text-left text-xs text-gray-500 uppercase tracking-wide">
                                         <th className="px-4 py-3 w-10">
@@ -457,6 +517,56 @@ const PCPExportTab = () => {
                 </div>
             )}
 
+            {/* ── Tabela Desenhos ───────────────────────────────────────────── */}
+            {searched && !loading && activeSubTab === 'desenhos' && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+                    {loadingDrawings ? (
+                        <div className="flex flex-col items-center justify-center py-14 text-indigo-500">
+                            <Loader2 className="h-10 w-10 animate-spin mb-2" />
+                            <p className="text-sm">Buscando estrutura de desenhos...</p>
+                        </div>
+                    ) : bomDrawings.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-14 text-gray-400">
+                            <Package className="h-10 w-10 mb-2 opacity-40" />
+                            <p className="text-sm font-medium">Nenhum desenho encontrado.</p>
+                            <p className="text-xs mt-1">Selecione itens na aba "Itens do Pedido" e clique em "Ver Desenhos".</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-auto flex-1 bg-white relative">
+                            <table className="w-full text-sm text-left">
+                                <thead>
+                                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wide bg-gray-50 sticky top-0 shadow-sm z-10">
+                                        <th className="px-4 py-3 font-medium w-48">Código</th>
+                                        <th className="px-4 py-3 font-medium">Descrição</th>
+                                        <th className="px-4 py-3 font-medium text-right w-40">Qtd. Total Estrutura</th>
+                                        <th className="px-4 py-3 font-medium text-center w-36">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {bomDrawings.map((draw) => (
+                                        <tr key={draw.codigo} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-4 py-3 font-mono text-gray-800 font-medium">{draw.codigo}</td>
+                                            <td className="px-4 py-3 text-gray-600 max-w-md truncate" title={draw.descricao}>{draw.descricao}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-gray-800">
+                                                {parseFloat(draw.quantidade).toLocaleString('pt-BR')} <span className="text-xs text-gray-400">{draw.unidade}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <button
+                                                    onClick={() => setDocModalProduct({ codigo: draw.codigo, descricao: draw.descricao })}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 rounded-lg text-xs font-semibold transition-colors"
+                                                >
+                                                    Ver Documentos
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* ── Floating Export Bar ───────────────────────────────── */}
             {selectedCount > 0 && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50
@@ -478,14 +588,35 @@ const PCPExportTab = () => {
                         }
                     </button>
                     <button
+                        onClick={handleFetchDrawings}
+                        disabled={loadingDrawings}
+                        className="flex items-center gap-2 bg-indigo-900/40 text-indigo-50 hover:bg-indigo-900/60
+                                   px-4 py-1.5 rounded-full text-sm font-semibold transition-colors
+                                   disabled:opacity-60"
+                    >
+                        {loadingDrawings
+                            ? <><Loader2 className="h-4 w-4 animate-spin" /> Buscando...</>
+                            : <><Package className="h-4 w-4" /> Ver Desenhos</>
+                        }
+                    </button>
+                    <button
                         onClick={() => setSelected(new Set())}
-                        className="text-indigo-200 hover:text-white transition-colors"
+                        className="text-indigo-200 hover:text-white transition-colors ml-2"
                         title="Limpar seleção"
                     >
                         <X className="h-4 w-4" />
                     </button>
                 </div>
             )}
+
+            {/* Modal de Documentos */}
+            <DocsModal
+                isOpen={!!docModalProduct}
+                onClose={() => setDocModalProduct(null)}
+                productCode={docModalProduct?.codigo || ''}
+                productName={docModalProduct?.descricao || ''}
+                canEdit={false}
+            />
         </div>
     );
 };

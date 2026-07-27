@@ -30,6 +30,14 @@ async function startFaturamentoCron() {
             let config = rows[0].general_config;
             if (typeof config === 'string') config = JSON.parse(config);
 
+            // Verifica as chaves mestre do painel de Automações & Avisos
+            const waActive = config?.automations?.relatorios_faturamento_active !== false;
+            const emailActive = config?.automations?.relatorios_faturamento_email_active !== false;
+            
+            if (!waActive && !emailActive) {
+                return;
+            }
+
             const autoConfig = config?.faturamento_automation;
             if (!autoConfig || !autoConfig.times || !autoConfig.days || !autoConfig.users || autoConfig.users.length === 0) return;
 
@@ -40,13 +48,13 @@ async function startFaturamentoCron() {
             // Marca que rodou nesse minuto
             lastRunStamp = currentHourMin;
             console.log(`[FATURAMENTO] Iniciando geração do relatório automático para as ${currentHourMin}`);
-            await processDailyReport(autoConfig.users);
+            await processDailyReport(autoConfig.users, waActive, emailActive);
             
             console.log(`[COMPRAS] Iniciando geração do relatório automático de compras para as ${currentHourMin}`);
-            await processComprasReport(autoConfig.users);
+            await processComprasReport(autoConfig.users, waActive, emailActive);
 
             console.log(`[ACUMULADO] Iniciando geração do relatório acumulado do mês para as ${currentHourMin}`);
-            await processMonthlyAccumulatedReport(autoConfig.users);
+            await processMonthlyAccumulatedReport(autoConfig.users, waActive, emailActive);
 
         } catch (err) {
             console.error('[CRON FATURAMENTO] Erro ao verificar rotina:', err.message);
@@ -54,7 +62,7 @@ async function startFaturamentoCron() {
     });
 }
 
-async function processDailyReport(users) {
+async function processDailyReport(users, waActive = true, emailActive = true) {
     try {
         // Formata Data Atual para o formato do Protheus (YYYYMMDD) e visual (DD/MM/YYYY)
         const today = new Date();
@@ -230,7 +238,7 @@ async function processDailyReport(users) {
             if (!dbUser) continue;
 
             // WhatsApp
-            if (userConfig.whatsapp && dbUser.telefone) {
+            if (userConfig.whatsapp && dbUser.telefone && waActive) {
                 let tel = dbUser.telefone.replace(/\D/g, '');
                 if (tel.length === 11 || tel.length === 10) tel = '55' + tel;
                 try {
@@ -242,7 +250,7 @@ async function processDailyReport(users) {
             }
 
             // Email
-            if (userConfig.email && dbUser.email && transporter) {
+            if (userConfig.email && dbUser.email && transporter && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
@@ -285,7 +293,7 @@ async function processDailyReport(users) {
     }
 }
 
-async function processComprasReport(users) {
+async function processComprasReport(users, waActive = true, emailActive = true) {
     try {
         const today = new Date();
         const yyyy = today.getFullYear();
@@ -382,7 +390,7 @@ async function processComprasReport(users) {
             if (!dbUser) continue;
 
             // WhatsApp
-            if (userConfig.whatsapp && dbUser.telefone) {
+            if (userConfig.whatsapp && dbUser.telefone && waActive) {
                 let tel = dbUser.telefone.replace(/\\D/g, '');
                 if (tel.length === 11 || tel.length === 10) tel = '55' + tel;
                 try {
@@ -394,7 +402,7 @@ async function processComprasReport(users) {
             }
 
             // Email
-            if (userConfig.email && dbUser.email && transporter) {
+            if (userConfig.email && dbUser.email && transporter && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
@@ -439,7 +447,7 @@ async function processComprasReport(users) {
     }
 }
 
-async function processMonthlyAccumulatedReport(users) {
+async function processMonthlyAccumulatedReport(users, waActive = true, emailActive = true) {
     try {
         const today = new Date();
         const yyyy = today.getFullYear();
@@ -590,7 +598,7 @@ async function processMonthlyAccumulatedReport(users) {
             if (!dbUser) continue;
 
             // WhatsApp
-            if (userConfig.whatsapp && dbUser.telefone) {
+            if (userConfig.whatsapp && dbUser.telefone && waActive) {
                 let tel = dbUser.telefone.replace(/\D/g, '');
                 if (tel.length === 11 || tel.length === 10) tel = '55' + tel;
                 try {
@@ -602,7 +610,7 @@ async function processMonthlyAccumulatedReport(users) {
             }
 
             // Email
-            if (userConfig.email && dbUser.email && transporter) {
+            if (userConfig.email && dbUser.email && transporter && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">

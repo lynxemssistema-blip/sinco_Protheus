@@ -97,9 +97,119 @@ router.post('/log', validate(rules.engineeringReleaseLog), async (req, res) => {
             [codigo_liberacao || null, codigo_produto, descricao_produto, pedido || null, item || null, usuario, tipo_acao, destinatarios || null, modo, caminho_arquivo || null]
         );
 
+        if (tipo_acao === 'EMAIL') {
+            try {
+                // Get previous state
+                const [prevRows] = await mysqlPool.query('SELECT estado FROM app_produto_estados WHERE codigo_produto = ?', [codigo_produto]);
+                const estado_anterior = prevRows.length > 0 ? prevRows[0].estado : 'NORMAL';
+
+                if (estado_anterior !== 'NORMAL') {
+                    // Update state to NORMAL
+                    await mysqlPool.query(`
+                        INSERT INTO app_produto_estados (codigo_produto, estado, updated_by) 
+                        VALUES (?, 'NORMAL', ?)
+                        ON DUPLICATE KEY UPDATE estado = 'NORMAL', updated_by = ?
+                    `, [codigo_produto, usuario, usuario]);
+
+                    // Insert into history
+                    await mysqlPool.query(`
+                        INSERT INTO app_produto_estados_historico (codigo_produto, estado_anterior, estado_novo, acao, usuario)
+                        VALUES (?, ?, 'NORMAL', 'LIBERACAO_ENGENHARIA', ?)
+                    `, [codigo_produto, estado_anterior, usuario]);
+                    
+                    console.log(`✅ [PRODUCT STATUS] Status reset to NORMAL for ${codigo_produto} via LIBERACAO_ENGENHARIA`);
+                }
+            } catch (statusErr) {
+                console.error('❌ Error updating product status on engineering release:', statusErr);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('❌ [LOG ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/engineering-releases/log-batch - Register a batch release (one record per pedido/item)
+// All records share the same codigo_liberacao for full traceability of the batch.
+router.post('/log-batch', async (req, res) => {
+    try {
+        const {
+            codigo_produto,
+            descricao_produto,
+            usuario,
+            tipo_acao,
+            modo,
+            caminho_arquivo,
+            codigo_liberacao,
+            destinatarios,
+            itens // array of { pedido, item }
+        } = req.body;
+
+        if (!codigo_produto || !usuario || !tipo_acao || !modo) {
+            return res.status(400).json({ error: 'Campos obrigatórios ausentes (codigo_produto, usuario, tipo_acao, modo).' });
+        }
+        if (!Array.isArray(itens) || itens.length === 0) {
+            return res.status(400).json({ error: 'Campo "itens" deve ser um array com ao menos 1 item.' });
+        }
+
+        // Resolve the LEN code: use the provided one or generate a new one
+        const codigoLib = codigo_liberacao || await generateCodigoLiberacaoEng();
+
+        // Build multi-row INSERT values — one row per (pedido/item) pair
+        const values = itens.map(i => [
+            codigoLib,
+            codigo_produto,
+            descricao_produto || codigo_produto,
+            (i.pedido || '').trim() || null,
+            (i.item   || '').trim() || null,
+            usuario,
+            tipo_acao,
+            (i.destinatarios || destinatarios || null), // per-item override or global fallback
+            modo,
+            caminho_arquivo || null
+        ]);
+
+        // Insert all rows in a single query for atomicity
+        await mysqlPool.query(
+            `INSERT INTO app_engineering_releases 
+             (codigo_liberacao, codigo_produto, descricao_produto, pedido, item, usuario, tipo_acao, destinatarios, modo, caminho_arquivo)
+             VALUES ?`,
+            [values]
+        );
+
+        if (tipo_acao === 'EMAIL') {
+            try {
+                // Get previous state
+                const [prevRows] = await mysqlPool.query('SELECT estado FROM app_produto_estados WHERE codigo_produto = ?', [codigo_produto]);
+                const estado_anterior = prevRows.length > 0 ? prevRows[0].estado : 'NORMAL';
+
+                if (estado_anterior !== 'NORMAL') {
+                    // Update state to NORMAL
+                    await mysqlPool.query(`
+                        INSERT INTO app_produto_estados (codigo_produto, estado, updated_by) 
+                        VALUES (?, 'NORMAL', ?)
+                        ON DUPLICATE KEY UPDATE estado = 'NORMAL', updated_by = ?
+                    `, [codigo_produto, usuario, usuario]);
+
+                    // Insert into history
+                    await mysqlPool.query(`
+                        INSERT INTO app_produto_estados_historico (codigo_produto, estado_anterior, estado_novo, acao, usuario)
+                        VALUES (?, ?, 'NORMAL', 'LIBERACAO_ENGENHARIA', ?)
+                    `, [codigo_produto, estado_anterior, usuario]);
+                    
+                    console.log(`✅ [PRODUCT STATUS] Status reset to NORMAL for ${codigo_produto} via LIBERACAO_ENGENHARIA (BATCH)`);
+                }
+            } catch (statusErr) {
+                console.error('❌ Error updating product status on engineering batch release:', statusErr);
+            }
+        }
+
+        console.log(`✅ [LOG-BATCH] LEN=${codigoLib} | produto=${codigo_produto} | ${itens.length} registros inseridos`);
+        res.json({ success: true, codigo_liberacao: codigoLib, total_registros: itens.length });
+    } catch (err) {
+        console.error('❌ [LOG-BATCH ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });

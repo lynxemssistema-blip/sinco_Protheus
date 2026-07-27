@@ -85,6 +85,13 @@ const initDB = async () => {
         await addCol('midia_url', 'VARCHAR(500) DEFAULT NULL AFTER tipo_midia');
         await addCol('midia_nome', 'VARCHAR(255) DEFAULT NULL AFTER midia_url');
 
+        // Add 'ativo' column to groups
+        const [groupCols] = await mysqlPool.query('SHOW COLUMNS FROM sistema_avisos_grupos');
+        const groupColNames = groupCols.map(c => c.Field);
+        if (!groupColNames.includes('ativo')) {
+            try { await mysqlPool.query('ALTER TABLE sistema_avisos_grupos ADD COLUMN ativo TINYINT(1) DEFAULT 1'); } catch (_) {}
+        }
+
         // Create performance indexes (IF NOT EXISTS pattern via try/catch on ER_DUP_KEYNAME)
         const createIndex = async (table, name, cols) => {
             try {
@@ -299,6 +306,61 @@ router.post('/grupos', async (req, res) => {
     }
 });
 
+// 5a. Editar Grupo
+router.put('/grupos/:idGrupo', async (req, res) => {
+    try {
+        const { idGrupo } = req.params;
+        const { nome, membros } = req.body;
+
+        // Verifica se o grupo existe e pega os dados
+        const [grupoRows] = await mysqlPool.query('SELECT * FROM sistema_avisos_grupos WHERE idGrupo = ?', [idGrupo]);
+        if (grupoRows.length === 0) return res.status(404).json({ error: 'Grupo não encontrado.' });
+        
+        const idCriador = grupoRows[0].idCriador;
+
+        // Atualiza o nome do grupo
+        await mysqlPool.query('UPDATE sistema_avisos_grupos SET nome = ? WHERE idGrupo = ?', [nome, idGrupo]);
+
+        // Se membros foram enviados, atualiza
+        if (Array.isArray(membros)) {
+            // Garante que o criador sempre esteja no grupo
+            const allMembros = Array.from(new Set([idCriador, ...membros]));
+            
+            // Deleta os membros atuais
+            await mysqlPool.query('DELETE FROM sistema_avisos_grupos_membros WHERE idGrupo = ?', [idGrupo]);
+            
+            // Insere os novos membros
+            const membrosValues = allMembros.map(id => [idGrupo, id]);
+            if (membrosValues.length > 0) {
+                await mysqlPool.query(
+                    'INSERT INTO sistema_avisos_grupos_membros (idGrupo, idUsuario) VALUES ?',
+                    [membrosValues]
+                );
+            }
+        }
+
+        res.json({ success: true, message: 'Grupo atualizado com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao atualizar grupo:', error);
+        res.status(500).json({ error: 'Erro ao atualizar grupo' });
+    }
+});
+
+// 5b. Alterar Status do Grupo (Ativar/Desativar)
+router.put('/grupos/:idGrupo/status', async (req, res) => {
+    try {
+        const { idGrupo } = req.params;
+        const { ativo } = req.body;
+
+        await mysqlPool.query('UPDATE sistema_avisos_grupos SET ativo = ? WHERE idGrupo = ?', [ativo ? 1 : 0, idGrupo]);
+        
+        res.json({ success: true, message: ativo ? 'Grupo habilitado com sucesso.' : 'Grupo desabilitado com sucesso.' });
+    } catch (error) {
+        console.error('Erro ao alterar status do grupo:', error);
+        res.status(500).json({ error: 'Erro ao alterar status do grupo' });
+    }
+});
+
 // 6. Listar Grupos do Usuário
 router.get('/grupos/usuario/:idUsuario', async (req, res) => {
     try {
@@ -325,31 +387,41 @@ router.get('/search/conteudo', async (req, res) => {
         const { q, idUsuario } = req.query;
         if (!q || !idUsuario) return res.status(400).json({ error: 'Parâmetros insuficientes.' });
 
+        const palavras = q.trim().split(/\s+/).filter(p => p.length > 0);
+        if (palavras.length === 0) return res.json([]);
+
+        // Constrói cláusula LIKE dinamicamente para cada palavra (AND entre elas)
+        const likeConditions = palavras.map(() => 'a.mensagem LIKE ?').join(' AND ');
+        const likeValues = palavras.map(p => `%${p}%`);
+
         const query = `
-            SELECT a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, 
-                   a.data_envio, a.data_conclusao, a.idRespostaDe,
-                   a.tipo_midia, a.midia_url, a.midia_nome,
+            SELECT DISTINCT
+                   a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, 
+                   a.data_envio, a.tipo_midia, a.midia_url, a.midia_nome,
                    ur.NomeCompleto as remetenteNome, 
-                   ud.NomeCompleto as destinatarioNome,
                    g.nome as grupoNome
             FROM sistema_avisos a
             JOIN usuario ur ON a.idRemetente = ur.idUsuario
-            LEFT JOIN usuario ud ON a.idDestinatario = ud.idUsuario
             LEFT JOIN sistema_avisos_grupos g ON a.idGrupo = g.idGrupo
-            WHERE a.mensagem LIKE ?
+            LEFT JOIN sistema_avisos_grupos_membros gm ON gm.idGrupo = a.idGrupo AND gm.idUsuario = ?
+            WHERE (${likeConditions})
               AND (
                 a.idRemetente = ? 
                 OR a.idDestinatario = ? 
-                OR a.idGrupo IN (SELECT idGrupo FROM sistema_avisos_grupos_membros WHERE idUsuario = ?)
+                OR gm.idUsuario IS NOT NULL
               )
             ORDER BY a.data_envio DESC
             LIMIT 50
         `;
-        const [rows] = await mysqlPool.query(query, [`%${q}%`, idUsuario, idUsuario, idUsuario]);
+        
+        // idUsuario aparece 3 vezes: gm JOIN, remetente, destinatario
+        const params = [parseInt(idUsuario), ...likeValues, parseInt(idUsuario), parseInt(idUsuario)];
+        
+        const [rows] = await mysqlPool.query(query, params);
         res.json(rows);
     } catch (error) {
-        console.error('Erro na busca global:', error);
-        res.status(500).json({ error: 'Erro na busca global' });
+        console.error('❌ Erro na busca global:', error.message, '| Code:', error.code);
+        res.status(500).json({ error: 'Erro na busca global', details: error.message });
     }
 });
 

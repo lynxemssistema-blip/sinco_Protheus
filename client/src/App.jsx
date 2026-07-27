@@ -8,6 +8,7 @@ import { useHelp } from './contexts/HelpContext';
 import { HelpProvider } from './contexts/HelpProvider';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import GlobalConfirmProvider from './components/GlobalConfirm';
 
 // Core components (eagerly loaded — used on every page)
 import Sidebar from './components/Sidebar';
@@ -28,6 +29,8 @@ const ProductionOrdersByOp = React.lazy(() => import('./pages/ProductionOrdersBy
 const ProductCatalog = React.lazy(() => import('./pages/ProductCatalog'));
 const Romaneios = React.lazy(() => import('./pages/Romaneios'));
 const RecebimentoRomaneios = React.lazy(() => import('./pages/RecebimentoRomaneios'));
+const FornecedorPortal = React.lazy(() => import('./pages/logistica/FornecedorPortal'));
+const FornecedorRomaneioDetalhes = React.lazy(() => import('./pages/logistica/FornecedorRomaneioDetalhes'));
 const BOMGenerator = React.lazy(() => import('./pages/BOMGenerator'));
 const Login = React.lazy(() => import('./pages/Login'));
 const Settings = React.lazy(() => import('./pages/Settings'));
@@ -104,6 +107,8 @@ const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
 const PcpFilaDependencias = React.lazy(() => import('./pages/pcp/PcpFilaDependencias'));
 const ControleExecucao = React.lazy(() => import('./pages/pcp/ControleExecucao'));
 const ProgramasNCN = React.lazy(() => import('./pages/pcp/ProgramasNCN'));
+const MontagemSolicitacoes = React.lazy(() => import('./pages/pcp/MontagemSolicitacoes'));
+const TesteOCR = React.lazy(() => import('./pages/TesteOCR'));
 
 const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
@@ -118,6 +123,7 @@ const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'
 const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
 const TVDashboard = React.lazy(() => import('./pages/TVDashboard'));
 const CalendarioAtividades = React.lazy(() => import('./pages/CalendarioAtividades'));
+
 
 import { MENU_GROUPS } from './config/menuItems';
 
@@ -256,6 +262,7 @@ const Layout = ({ children, fullWidth = true }) => {
 };
 
 const LandingPage = React.lazy(() => import('./pages/LandingPage'));
+const PortalCliente = React.lazy(() => import('./pages/PortalCliente'));
 
 function App() {
     return (
@@ -290,6 +297,11 @@ function App() {
                                         <Route path="/visao-geral" element={
                                             <Layout fullWidth={true}>
                                                 <OrdersTable />
+                                            </Layout>
+                                        } />
+                                        <Route path="/portal-cliente" element={
+                                            <Layout fullWidth={true}>
+                                                <PortalCliente />
                                             </Layout>
                                         } />
                                         <Route path="/comercial/gestao-ops" element={
@@ -376,6 +388,16 @@ function App() {
                                         <Route path="/recebimentos" element={
                                             <Layout>
                                                 <RecebimentoRomaneios />
+                                            </Layout>
+                                        } />
+                                        <Route path="/fornecedor/romaneios" element={
+                                            <Layout>
+                                                <FornecedorPortal />
+                                            </Layout>
+                                        } />
+                                        <Route path="/fornecedor/romaneio/:id" element={
+                                            <Layout>
+                                                <FornecedorRomaneioDetalhes />
                                             </Layout>
                                         } />
                                         <Route path="/saldo-materiais" element={
@@ -821,6 +843,12 @@ function App() {
                                                 <ProgramasNCN />
                                             </Layout>
                                         } />
+                                        <Route path="/pcp/montagem-solicitacoes" element={
+                                            <Layout>
+                                                <MontagemSolicitacoes />
+                                            </Layout>
+                                        } />
+                                        <Route path="/teste-ocr" element={<TesteOCR />} />
                                         {/* PCP Refinado Routes */}
                                         <Route path="/pcp-refinado/capacidade" element={
                                             <Layout fullWidth={true}>
@@ -870,6 +898,7 @@ function App() {
                                                 <GestaoMateriais />
                                             </Layout>
                                         } />
+
                                     </Route>
 
                                 </Routes>
@@ -878,6 +907,7 @@ function App() {
                     </HelpProvider>
                 </TimerProvider>
             </FilterProvider>
+            <GlobalConfirmProvider />
             <ToastContainer
                 position="bottom-right"
                 autoClose={4000}

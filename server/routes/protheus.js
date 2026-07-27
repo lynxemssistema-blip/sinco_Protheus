@@ -646,6 +646,7 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
                 CFILANT: filial || "0101",
                 G1_COD: produto,
                 G1_QUANT: quantidade || 1,
+                AUTOREV: false,
                 estrutura: estrutura.map(item => {
                     let trt = item.G1_TRT;
                     if (!trt || String(trt).trim() === '') {

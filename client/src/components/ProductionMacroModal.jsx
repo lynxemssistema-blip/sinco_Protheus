@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer, History, Clock, RotateCcw, AlertTriangle, CheckCircle, MessageSquare, ChevronLeft, HelpCircle, BookOpen, MousePointer, ArrowRight, Zap, Lock, RefreshCcw } from 'lucide-react';
+import { X, Calendar, Save, CheckSquare, Square, ChevronDown, ChevronRight, GripVertical, MoveUp, MoveDown, Briefcase, Globe, Plus, Minus, Link, Printer, History, Clock, RotateCcw, AlertTriangle, CheckCircle, MessageSquare, ChevronLeft, HelpCircle, BookOpen, MousePointer, ArrowRight, Zap, Lock, RefreshCcw, Bot, Loader2, Shuffle, Pin, PinOff } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 import { generateGanttPDF } from '../services/ganttPdfGenerator';
+import { confirmApp, alertApp } from './GlobalConfirm';
+import { getPlanningPrefs, getPlanningHistory, getRecursosOrdem, savePlanningPrefs } from '../services/api';
 
 export default function ProductionMacroModal({ op, operations, onClose, onSaveBatch }) {
 
@@ -33,6 +35,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     // Controle do Dialog de Confirmação de Salvamento
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [saveObservacao, setSaveObservacao] = useState('');
+    const [saveAtualizarDataPcp, setSaveAtualizarDataPcp] = useState(false);
 
     // Painel lateral de Histórico de Versões
     const [showHistory, setShowHistory] = useState(false);
@@ -56,9 +59,39 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     // Evita que moveGroup chame triggerRecalculation dezenas de vezes/seg
     const [previewGroups, setPreviewGroups] = useState(null);
 
+    // Agente Analista PCP IA
+    const [showPcpAgent, setShowPcpAgent] = useState(false);
+    const [pcpAgentAnalysis, setPcpAgentAnalysis] = useState(null);
+    const [pcpAgentLoading, setPcpAgentLoading] = useState(false);
+    const [pcpAgentError, setPcpAgentError] = useState(null);
+    const [pcpAgentPinned, setPcpAgentPinned] = useState(false); // Fixa o painel: remove o fundo escurecido e o clique-fora-fecha
+
+    // Agente Sequenciador PCP IA
+    const [seqAgentLoading, setSeqAgentLoading] = useState(false);
+    const [seqAgentResult, setSeqAgentResult] = useState(null);  // { suggestedOrder: string[], justification: string }
+    const [showSeqPanel, setShowSeqPanel] = useState(false);
+    const [seqAgentError, setSeqAgentError] = useState(null);
+
+    // ── Auto-Save ─────────────────────────────────────────────────────────────
+    const [autoSaveStatus, setAutoSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+    const autoSaveTimerRef       = useRef(null);
+    const isAutoSavingRef        = useRef(false);
+    const performAutoSaveRef     = useRef(null);
+    const lastAutoSaveTriggerRef = useRef(null); // null = ainda não inicializado
+
     const PREF_KEY = `macroPref_${op.op}`;
 
+    // Nenhuma data do cronograma pode ficar no passado — nem a âncora escolhida
+    // pelo usuário, nem o resultado calculado pela cascata.
+    const todayStr = useMemo(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }, []);
+
     // 1. Agrupamento Inicial por Recurso
+    // FIX SEQUÊNCIA: min_ordem_recurso vem persistido por operação (app_production_planning.ordem_recurso),
+    // salvo junto com as datas no mesmo registro. É a fonte de verdade primária da ordem definida
+    // pelo usuário — não depende de nenhuma preferência auxiliar para ser recuperada.
     const groupedByRecurso = useMemo(() => {
         const groups = {};
         operations.forEach(o => {
@@ -68,24 +101,43 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     code: recursoCode,
                     desc: o.desc_recurso || o.desc_operacao || '',
                     items: [],
-                    min_sequen: 999999
+                    min_sequen: 999999,
+                    min_ordem_recurso: null
                 };
             }
             groups[recursoCode].items.push(o);
             const seq = Number(o.sequen) || 999999;
             if (seq < groups[recursoCode].min_sequen) groups[recursoCode].min_sequen = seq;
+            if (o.ordem_recurso !== null && o.ordem_recurso !== undefined) {
+                const ord = Number(o.ordem_recurso);
+                if (groups[recursoCode].min_ordem_recurso === null || ord < groups[recursoCode].min_ordem_recurso) {
+                    groups[recursoCode].min_ordem_recurso = ord;
+                }
+            }
         });
-        
+
         Object.values(groups).forEach(g => {
             const descricoes = Array.from(new Set(g.items.map(i => i.desc_recurso || i.desc_operacao).filter(Boolean)));
             g.desc = descricoes.join(' + ') || 'Sem descrição';
         });
 
-        return Object.values(groups).sort((a, b) => a.min_sequen - b.min_sequen);
+        return Object.values(groups).sort((a, b) => {
+            const aHas = a.min_ordem_recurso !== null;
+            const bHas = b.min_ordem_recurso !== null;
+            if (aHas && bHas) return a.min_ordem_recurso - b.min_ordem_recurso;
+            if (aHas) return -1; // grupos com ordem salva vêm antes de grupos nunca sequenciados
+            if (bHas) return 1;
+            return a.min_sequen - b.min_sequen;
+        });
     }, [operations]);
 
     // 2. Inicialização do Estado � Lê Baseline do Banco e carrega preferências do servidor
     useEffect(() => {
+        // Reseta o auto-save ao re-inicializar (quando OPs/OP mudam)
+        lastAutoSaveTriggerRef.current = null;
+        isAutoSavingRef.current = false;
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
         let isMounted = true;
 
         const initialize = async () => {
@@ -95,43 +147,80 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             let initialStartDate = '';
             let groupsToUse = [...groupedByRecurso];
             let savedDirection = 'backward';
+            let savedDaysMode = 'calendar';       // capturado das prefs
+            let savedIncludeSaturday = false;     // capturado das prefs
+            let savedIncludeSunday = false;       // capturado das prefs
+            let savedIncludeST = false;           // capturado das prefs
 
-            // ���� Carrega preferências do SERVIDOR (compartilhado entre usuários) ����
-            try {
-                const [prefsRes, recursosRes] = await Promise.all([
-                    fetch(`/api/production/planning-prefs/${encodeURIComponent(op.op)}`),
-                    fetch('/api/pcp-refinado/recursos')
-                ]);
+            // ── Carrega preferências do SERVIDOR (compartilhado entre usuários) ──
+            // FIX 401: usa services/api.js (axios com interceptor de Authorization)
+            // em vez de fetch() cru — fetch() não anexava o Bearer token exigido por
+            // /api/*, então essa leitura sempre falhava silenciosamente e a ordem
+            // salva nunca era restaurada.
+            const [prefsResult, recursosResult] = await Promise.allSettled([
+                getPlanningPrefs(op.op),
+                getRecursosOrdem()
+            ]);
 
-                if (recursosRes.ok && isMounted) {
-                    const recData = await recursosRes.json();
-                    const recMap = {};
-                    recData.forEach(r => {
-                        recMap[r.cod_recurso] = r.ordem_exibicao || 0;
-                    });
-                    
-                    groupsToUse.forEach(g => {
-                        g.ordem_exibicao = recMap[g.code] || 0;
-                    });
-                    
-                    groupsToUse.sort((a, b) => {
-                        if (a.ordem_exibicao !== b.ordem_exibicao) {
-                            return a.ordem_exibicao - b.ordem_exibicao;
-                        }
-                        return a.min_sequen - b.min_sequen;
-                    });
-                }
+            if (recursosResult.status === 'fulfilled' && isMounted) {
+                const recData = recursosResult.value;
+                // Fix #3: normalize key to UPPER-TRIM to match backend
+                const recMap = {};
+                const grupoMap = {};
+                recData.forEach(r => {
+                    const key = (r.cod_recurso || '').trim().toUpperCase();
+                    recMap[key] = r.ordem_exibicao ?? 9999;
+                    if (r.grupo_paralelo) grupoMap[key] = r.grupo_paralelo;
+                });
 
-                if (prefsRes.ok) {
-                    const prefs = await prefsRes.json();
-                    if (prefs && isMounted) {
-                        if (prefs.diasModo)                         setDaysMode(prefs.diasModo);
-                        if (typeof prefs.incluiSabado === 'boolean') setIncludeSaturday(prefs.incluiSabado);
-                        if (typeof prefs.incluiDomingo === 'boolean') setIncludeSunday(prefs.incluiDomingo);
-                        if (typeof prefs.incluiST === 'boolean')     setIncludeST(prefs.incluiST);
+                groupsToUse.forEach(g => {
+                    const key = (g.code || '').trim().toUpperCase();
+                    g.ordem_exibicao = recMap[key] ?? 9999;
+                    g.grupo_paralelo = grupoMap[key] || null;
+                });
 
-                        // Restaura ordem das operações salva no banco
-                        if (prefs.ordemRecursos && Array.isArray(prefs.ordemRecursos)) {
+                // Fix #2: Unified sort that always respects both sources:
+                //   1. ordem_recurso (saved per-operation in the DB) — highest priority
+                //   2. ordem_exibicao (global, from pcp-refinado/capacidade) — tiebreaker
+                //   3. min_sequen (Protheus operation code) — final fallback
+                //
+                // The OLD code only applied ordem_exibicao when ZERO groups had a
+                // persisted order — meaning that after the first save, the global
+                // configuration was completely ignored. This fix always applies it.
+                groupsToUse.sort((a, b) => {
+                    const aOrd = a.min_ordem_recurso ?? null;
+                    const bOrd = b.min_ordem_recurso ?? null;
+                    // Both have DB-persisted order → use it directly
+                    if (aOrd !== null && bOrd !== null) {
+                        if (aOrd !== bOrd) return aOrd - bOrd;
+                        // Same persisted order → fall through to global
+                    }
+                    // Only one has persisted order → it wins
+                    if (aOrd !== null && bOrd === null) return -1;
+                    if (aOrd === null && bOrd !== null) return 1;
+                    // Neither has persisted order → use global ordem_exibicao
+                    const aGlob = a.ordem_exibicao ?? 9999;
+                    const bGlob = b.ordem_exibicao ?? 9999;
+                    if (aGlob !== bGlob) return aGlob - bGlob;
+                    return a.min_sequen - b.min_sequen;
+                });
+            } else if (recursosResult.status === 'rejected') {
+                console.warn('[PREFS] Erro ao carregar ordem global de recursos:', recursosResult.reason);
+            }
+
+            if (prefsResult.status === 'fulfilled') {
+                const prefs = prefsResult.value;
+                if (prefs && isMounted) {
+                    if (prefs.diasModo)                         { setDaysMode(prefs.diasModo); savedDaysMode = prefs.diasModo; }
+                    if (typeof prefs.incluiSabado === 'boolean') { setIncludeSaturday(prefs.incluiSabado); savedIncludeSaturday = prefs.incluiSabado; }
+                    if (typeof prefs.incluiDomingo === 'boolean') { setIncludeSunday(prefs.incluiDomingo); savedIncludeSunday = prefs.incluiDomingo; }
+                    if (typeof prefs.incluiST === 'boolean')     { setIncludeST(prefs.incluiST); savedIncludeST = prefs.incluiST; }
+
+                    // Restaura ordem legada (lotes salvos antes da coluna ordem_recurso
+                    // existir). Só aplica a grupos sem ordem persistida por operação.
+                    if (prefs.ordemRecursos && Array.isArray(prefs.ordemRecursos)) {
+                        const anyPersisted = groupsToUse.some(g => g.min_ordem_recurso !== null && g.min_ordem_recurso !== undefined);
+                        if (!anyPersisted) {
                             const validCodes = new Set(groupsToUse.map(g => g.code));
                             const filtered = prefs.ordemRecursos.filter(c => validCodes.has(c));
                             const sorted = [];
@@ -143,11 +232,26 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         }
                     }
                 }
-            } catch (e) {
-                console.warn('[PREFS] Erro ao carregar preferências do servidor:', e);
+            } else {
+                console.warn('[PREFS] Erro ao carregar preferências do servidor:', prefsResult.reason);
             }
 
-            // ���� Fallback: tenta localStorage apenas para direção (dir) ����
+            // Auto-une recursos adjacentes do mesmo grupo paralelo (configurado em
+            // Configurações → PCP Refinado → Capacidade de Recursos) — equivalente ao
+            // botão "unir" manual do modal, mas pré-configurado uma vez para todo o app
+            // em vez de precisar ser refeito a cada OP.
+            const autoJoinedCodes = new Set();
+            const joinedSetInit = new Set();
+            groupsToUse.forEach((g, idx) => {
+                if (idx === 0) return;
+                const prev = groupsToUse[idx - 1];
+                if (g.grupo_paralelo && prev.grupo_paralelo && g.grupo_paralelo === prev.grupo_paralelo) {
+                    autoJoinedCodes.add(prev.code);
+                    joinedSetInit.add(idx - 1);
+                }
+            });
+
+            // 🗓️ Fallback: tenta localStorage apenas para direção (dir) 🗓️
             try {
                 const saved = localStorage.getItem(PREF_KEY);
                 if (saved) {
@@ -156,7 +260,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 }
             } catch (e) { /* ignora */ }
 
-            // ���� Monta os planos iniciais com base nas datas já salvas ����
+            // 🗓️ Monta os planos iniciais com base nas datas já salvas 🗓️
             groupsToUse.forEach(group => {
                 let existingStart = '';
                 let existingEnd = '';
@@ -173,11 +277,34 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     existingEnd   = parseSafeDate(plannedItem.data_planejada_fim);
                     const s = new Date(existingStart + 'T12:00:00');
                     const e = new Date(existingEnd   + 'T12:00:00');
-                    dur = Math.max(1, countBusinessDays(s, e, false));
+                    // Usa o modo correto das prefs (já lidas acima) para calcular a duração salva
+                    const loadedMode = savedDaysMode || 'calendar';
+                    if (loadedMode === 'business') {
+                        dur = Math.max(1, countBusinessDays(s, e, false));
+                    } else {
+                        // Dias corridos: diferença em dias + 1 (inclui o próprio dia de início e fim)
+                        dur = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1);
+                    }
 
-                    if (!initialEndDate || existingEnd > initialEndDate) initialEndDate = existingEnd;
-                    if (!initialStartDate || existingStart < initialStartDate) initialStartDate = existingStart;
+                    // FIX DEFINITIVO: operações concluídas (locked) podem ter datas antigas no banco
+                    // (ex: 2037 de um planejamento anterior incorreto). Se incluídas no cálculo da
+                    // âncora, contaminariam initialEndDate e fariam toda a cascata partir de 2037.
+                    // Somente operações PENDENTES definem a data-âncora do cronograma.
+                    const isGroupLocked = group.items.length > 0 && group.items.every(
+                        i => Number(i.qtd_planejada_op) > 0 && Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op)
+                    );
+
+                    if (!isGroupLocked) {
+                        if (!initialEndDate || existingEnd > initialEndDate) initialEndDate = existingEnd;
+                        if (!initialStartDate || existingStart < initialStartDate) initialStartDate = existingStart;
+                    }
                 }
+
+                // Restaura o estado do checkbox (ativo/inativo) salvo por operação.
+                // selecionado === 0 é a única forma de "desmarcado" — null/undefined/1
+                // significam ativo (default), preservando o comportamento anterior
+                // para planos salvos antes desta coluna existir.
+                const savedSelected = plannedItem?.selecionado !== 0;
 
                 initialPlans[group.code] = {
                     start: existingStart,
@@ -185,18 +312,57 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                     baselineStart: existingStart,
                     baselineEnd: existingEnd,
                     duracao: dur,
-                    selected: true,
-                    locked: group.items.some(i => Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op)),
+                    selected: savedSelected,
+                    // Travada SOMENTE se TODOS os itens deste recurso já tiverem produção real
+                    // confirmada. FIX: .some() travava o grupo inteiro (dezenas/centenas de itens,
+                    // já que um lote pode juntar várias OPs no mesmo recurso) bastando UM item já
+                    // produzido — mesmo com 90%+ do recurso ainda pendente, o grupo inteiro ficava
+                    // congelado nas datas antigas e nunca mais recalculava. .every() só trava
+                    // quando o recurso está de fato 100% concluído para este lote.
+                    locked: group.items.length > 0 && group.items.every(i => Number(i.qtd_planejada_op) > 0 && Number(i.qtd_produzida_real) >= Number(i.qtd_planejada_op)),
                     isAlreadyPlanned: existingStart !== '',
-                    manuallySet: existingStart !== '',
+                    // manuallySet deve ser false ao carregar:
+                    // "já salvo no banco" NÃO significa "usuário fixou essa data".
+                    // O usuário fixa uma data apenas quando clica e digita diretamente no campo.
+                    // Com false, a cascata recalcula corretamente a partir da data âncora (entrega).
+                    manuallySet: false,
                 };
                 initialExpanded[group.code] = false;
             });
 
             if (!isMounted) return;
-            setOperationPlans(initialPlans);
+
+            // ── Recalcula a cascata a partir da ordem (fonte de verdade) ─────
+            // A sequência dos recursos é quem define o cálculo de datas — não o
+            // contrário. O bug original nunca foi "a cascata recalcula", foi
+            // "a cascata recalcula em cima da ORDEM ERRADA" (ordemRecursos não
+            // era restaurada por causa do 401 em fetch()/sem auth — ver fix
+            // acima). Com a ordem agora persistida por operação (ordem_recurso)
+            // e as preferências (direção, dias úteis/corridos) restauradas
+            // corretamente, recalcular aqui sempre produz datas consistentes
+            // com a sequência exibida — que é exatamente o comportamento
+            // esperado: mudou a ordem, as datas seguem a nova ordem.
+            const anchorForCalc = savedDirection === 'backward' ? initialEndDate : initialStartDate;
+            let plansToSet = initialPlans;
+            if (anchorForCalc) {
+                // joinedSetInit já reflete os grupos paralelos auto-unidos (calculado acima)
+                plansToSet = calcRoutine({
+                    isForward: savedDirection !== 'backward',
+                    anchorDate: anchorForCalc,
+                    plansList: initialPlans,
+                    targetGroups: groupsToUse,
+                    joinedSet: joinedSetInit,
+                    incST: savedIncludeST,
+                    incSat: savedIncludeSaturday,
+                    incSun: savedIncludeSunday,
+                    overrideDaysMode: savedDaysMode,
+                });
+            }
+
+            setOperationPlans(plansToSet);
             setExpandedOps(initialExpanded);
             setOrderedGroups(groupsToUse);
+            setJoinedCodes(autoJoinedCodes);
             setCalcDirection(savedDirection);
             if (initialEndDate) setTargetEndDate(initialEndDate);
             if (initialStartDate) setTargetStartDate(initialStartDate);
@@ -285,7 +451,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         const dMode = overrideDaysMode || daysMode;
         if (!anchorDate) return plansList;
 
-        const newPlans = { ...plansList };
+        const newPlans = {};
+        Object.keys(plansList).forEach(k => {
+            newPlans[k] = { ...plansList[k] };
+        });
 
         // Se forward: processa do index [0 -> N]
         // Se backward: processa do index [N -> 0]
@@ -330,7 +499,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
             blockIndices.forEach(bIdx => {
                 const g = targetGroups[bIdx];
                 const p = newPlans[g.code];
-                if (p && p.selected) maxDur = Math.max(maxDur, parseInt(p.duracao) || 0);
+                // Operações locked não contribuem para a duração do bloco:
+                // se contribuíssem, o cursor de data avançaria sem atualizar a op,
+                // criando uma lacuna (gap) fantasma no cronograma.
+                if (p && p.selected && !p.locked) maxDur = Math.max(maxDur, parseInt(p.duracao) || 0);
             });
 
             const blockAnchorDate = new Date(currentDate);
@@ -360,29 +532,14 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 const g = targetGroups[bIdx];
                 const p = newPlans[g.code];
                 if (p && p.selected) {
-                    if (p.locked) {
-                        // Bloqueado: não altera datas
-                    } else if (p.manuallySet) {
-                        // Ajustado manualmente: atualiza a outra ponta para acompanhar a duração
-                        if (isForward && p.start) {
-                            const baseStart = safeDate(p.start);
-                            const newEnd = p.duracao > 0 ? addDays(baseStart, p.duracao - 1, dMode, incSat, incSun) : baseStart;
-                            const normalizedEnd = dMode === 'business' ? skipToWorkday(newEnd, true, incSat, incSun) : newEnd;
-                            p.end = normalizedEnd.toISOString().split('T')[0];
-                        } else if (!isForward && p.end) {
-                            const baseEnd = safeDate(p.end);
-                            const newStart = p.duracao > 0 ? subtractDays(baseEnd, p.duracao - 1, dMode, incSat, incSun) : baseEnd;
-                            const normalizedStart = dMode === 'business' ? skipToWorkday(newStart, false, incSat, incSun) : newStart;
-                            p.start = normalizedStart.toISOString().split('T')[0];
-                        }
-                    } else {
-                        // Cascata normal
-                        const normalizedEnd = dMode === 'business'
-                            ? skipToWorkday(new Date(eDate), true, incSat, incSun)
-                            : eDate;
-                        p.start = sDate.toISOString().split('T')[0];
-                        p.end = normalizedEnd.toISOString().split('T')[0];
-                    }
+                    // Cascata normal — sempre atualiza, mesmo datas editadas manualmente e mesmo para
+                    // operações concluídas (locked). O usuário solicitou que as datas calculadas sejam
+                    // aplicadas mesmo em recursos já concluídos, para manter o cronograma consistente.
+                    const normalizedEnd = dMode === 'business'
+                        ? skipToWorkday(new Date(eDate), true, incSat, incSun)
+                        : eDate;
+                    p.start = sDate.toISOString().split('T')[0];
+                    p.end = normalizedEnd.toISOString().split('T')[0];
                 }
             });
 
@@ -513,9 +670,24 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const toggleExpand = (code) => setExpandedOps(p => ({ ...p, [code]: !p[code] }));
 
+    // Persiste preferências no banco imediatamente (silencioso, sem bloquear UI)
+    const savePrefsToDB = useCallback((overrides = {}) => {
+        const prefs = {
+            diasModo:      overrides.diasModo      ?? daysMode,
+            incluiSabado:  overrides.incluiSabado  ?? includeSaturday,
+            incluiDomingo: overrides.incluiDomingo ?? includeSunday,
+            incluiST:      overrides.incluiST      ?? includeST,
+            ordemRecursos: orderedGroups.map(g => g.code),
+        };
+        savePlanningPrefs(op.op, prefs).catch(err =>
+            console.warn('[PREFS-SAVE]', err.message)
+        );
+    }, [daysMode, includeSaturday, includeSunday, includeST, orderedGroups, op.op]);
+
     const toggleDaysMode = (mode) => {
         setDaysMode(mode);
         saveCustomLayout(orderedGroups, calcDirection, { daysMode: mode });
+        savePrefsToDB({ diasModo: mode });
         triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes, undefined, undefined, mode);
     };
 
@@ -523,6 +695,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     // em vez de fazer tight-packing (cascata que destrói gaps existentes).
     const handleAnchorDateChange = (type, newVal) => {
         if (!newVal) return;
+        if (newVal < todayStr) newVal = todayStr; // nenhuma data-âncora pode ficar no passado
         const oldVal = type === 'end' ? targetEndDate : targetStartDate;
         let updatedPlans = operationPlans;
 
@@ -553,8 +726,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     // FIX REPLAN: Compactação intencional � remove manuallySet e faz cascata limpa.
     // O usuário aciona isso explicitamente quando QUER a cascata.
-    const handleRepackCascade = () => {
-        if (!confirm('Isso irá compactar todas as operações em cascata a partir da data alvo, removendo espaços entre elas.\n\nConfirmar?')) return;
+    const handleRepackCascade = async () => {
+        const ok = await confirmApp({
+            title: 'Atenção',
+            message: 'Isso irá compactar todas as operações em cascata a partir da data alvo, removendo espaços entre elas.\n\nConfirmar?'
+        });
+        if (!ok) return;
         const updated = {};
         Object.entries(operationPlans).forEach(([code, p]) => {
             updated[code] = { ...p, manuallySet: false };
@@ -589,44 +766,252 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
 
     const hasUnsavedChanges = savedSnapshot !== null && buildSnapshot() !== savedSnapshot;
 
-    // Abre o dialog de confirmação antes de salvar
     const handleSave = () => {
         const anySelected = Object.values(operationPlans).some(p => p.selected && p.start && p.end);
         if (!anySelected) {
-            alert('Nenhuma operação válida selecionada com datas definidas.');
+            alertApp('Nenhuma operação válida selecionada com datas definidas.');
             return;
         }
+
+
+
         setSaveObservacao('');
         setShowSaveDialog(true);
     };
 
-    // Salva de fato após confirmação no dialog
+    // ── Agente PCP IA: análise crítica do cronograma ──────────────────────────
+    const runPcpAgentAnalysis = async () => {
+        const plannedOps = orderedGroups
+            .map(g => ({ ...operationPlans[g.code], recurso: g.code, descricao: g.desc }))
+            .filter(p => p.selected && p.start && p.end);
+
+        if (plannedOps.length === 0) {
+            alertApp('Calcule o cronograma antes de solicitar a análise.');
+            return;
+        }
+
+        setShowPcpAgent(true);
+        setPcpAgentLoading(true);
+        setPcpAgentAnalysis(null);
+        setPcpAgentError(null);
+
+        // Monta o contexto do cronograma como texto estruturado para o agente
+        const dataEntrega = calcDirection === 'backward' ? targetEndDate : targetStartDate;
+        const modo = calcDirection === 'backward' ? 'REGRESSIVO (da entrega para trás)' : 'PROGRESSIVO (do início para frente)';
+        const diasTipo = daysMode === 'business' ? 'Dias Úteis' : 'Dias Corridos';
+
+        const linhasOp = plannedOps.map((p, i) =>
+            `  ${i+1}. [${p.recurso}] ${p.descricao} — Dur: ${p.duracao} ${diasTipo} | Início: ${p.start} | Fim: ${p.end}${p.locked ? ' ⚠️TRAVADO' : ''}`
+        ).join('\n');
+
+        const pergunta = `Você é um especialista em PCP (Planejamento e Controle da Produção).
+
+Analise o cronograma de produção abaixo:
+
+**OP:** ${op.op} | **Modo:** ${modo} | **Data âncora:** ${dataEntrega} | **Tipo de dias:** ${diasTipo}
+
+**Sequência de Operações:**
+${linhasOp}
+
+**ATENÇÃO: SEJA EXTREMAMENTE SUCINTO, DIRETO E RESUMIDO.**
+Forneça apenas:
+1. 🔴 **Riscos** — Gargalos ou prazos apertados.
+2. 💡 **Recomendações** — Sugestões curtas.
+3. ✅ **Veredicto** — Viabilidade (Alta/Média/Baixa).`;
+
+        try {
+            const response = await fetch('/api/pcpmetal/ask-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
+                },
+                body: JSON.stringify({
+                    pergunta,
+                    pedido: op.pedido || op.op,
+                    userId: 'pcp-schedule-analyst',
+                    historico: [],
+                }),
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalAnswer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'result') { finalAnswer = data.answer; }
+                        if (data.type === 'error') { setPcpAgentError(data.message); }
+                    } catch { /* linha incompleta */ }
+                }
+            }
+            if (finalAnswer) setPcpAgentAnalysis(finalAnswer);
+            return finalAnswer;
+        } catch (err) {
+            setPcpAgentError('Erro ao conectar com o agente IA. Verifique a conexão.');
+            return null;
+        } finally {
+            setPcpAgentLoading(false);
+        }
+    };
+
+    // ── Agente PCP IA: Sequenciamento Ótimo das Operações ────────────────────
+    const runPcpAgentSequencing = async () => {
+        if (orderedGroups.length === 0) {
+            alertApp('Nenhuma operação para sequenciar.');
+            return;
+        }
+        setShowSeqPanel(true);
+        setSeqAgentLoading(true);
+        setSeqAgentResult(null);
+        setSeqAgentError(null);
+
+        const opsList = orderedGroups.map((g, i) => {
+            const p = operationPlans[g.code];
+            const locked = p?.locked ? ' [CONCLUÍDA - não mover]' : '';
+            return `  ${i + 1}. Código: "${g.code}" | Recurso: "${g.desc}"${locked} | Duração: ${p?.duracao ?? '?'} dias`;
+        }).join('\n');
+
+        const prompt = `Você é engenheiro especialista em PCP (Planejamento e Controle da Produção) e processos de manufatura metal-mecânica.
+
+Lista atual de operações/recursos desta Ordem de Produção:
+${opsList}
+
+TAREFA: Defina a SEQUÊNCIA ÓTIMA dessas operações seguindo a lógica tecnológica de fabricação metal-mecânica:
+- Operações de preparação primeiro (guilhotina, corte, laser, puncionamento, estamparia)
+- Depois conformação (viradeira, dobramento, cravamento)
+- Depois união (solda MIG/TIG, solda ponto/CAP)
+- Depois tratamento de superfície (rebarbação, esmerilhamento, acabamento)
+- Serviços externos (sufixo -ST) geralmente antes das etapas finais internas
+- Por último montagem, pintura, embalagem
+- Operações marcadas [CONCLUÍDA - não mover] DEVEM permanecer na posição atual (início da lista)
+
+Responda APENAS com JSON válido neste formato exato (sem texto antes ou depois):
+{
+  "ordered_codes": ["CODE1", "CODE2", "CODE3"],
+  "justification": "Justificativa resumida em 2-3 linhas explicando a lógica aplicada"
+}
+
+Os códigos em "ordered_codes" devem ser exatamente iguais aos listados acima.`;
+
+        try {
+            const response = await fetch('/api/pcpmetal/ask-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
+                },
+                body: JSON.stringify({
+                    pergunta: prompt,
+                    pedido: op.pedido || op.op,
+                    userId: 'pcp-sequencer',
+                    historico: [],
+                }),
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalAnswer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'result') finalAnswer = data.answer;
+                        if (data.type === 'error') setSeqAgentError(data.message);
+                    } catch { /* linha incompleta */ }
+                }
+            }
+
+            if (finalAnswer) {
+                const jsonMatch = finalAnswer.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    const validCodes = new Set(orderedGroups.map(g => g.code));
+                    const ordered = (parsed.ordered_codes || []).filter(c => validCodes.has(c));
+                    // Garante que nenhum código foi perdido
+                    orderedGroups.forEach(g => { if (!ordered.includes(g.code)) ordered.push(g.code); });
+                    setSeqAgentResult({ suggestedOrder: ordered, justification: parsed.justification || '' });
+                } else {
+                    setSeqAgentError('A IA não retornou um JSON válido. Tente novamente.');
+                }
+            }
+        } catch (err) {
+            setSeqAgentError(err.message);
+        } finally {
+            setSeqAgentLoading(false);
+        }
+    };
+
+    // Aplica a ordem sugerida → reflete imediatamente na lista do modal
+    const applySeqAgentOrder = () => {
+        if (!seqAgentResult?.suggestedOrder) return;
+        const newOrder = seqAgentResult.suggestedOrder
+            .map(code => orderedGroups.find(g => g.code === code))
+            .filter(Boolean);
+        setOrderedGroups(newOrder);
+        // Recalcula cascata com nova ordem
+        triggerRecalculation(operationPlans, newOrder, calcDirection, includeST, includeSaturday, includeSunday, joinedCodes);
+        setShowSeqPanel(false);
+        setSeqAgentResult(null);
+    };
+
+
     const handleConfirmSave = async () => {
         setShowSaveDialog(false);
         setLoading(true);
         try {
             const plansToSave = [];
             Object.entries(operationPlans).forEach(([code, plan]) => {
-                if (plan.selected && plan.start && plan.end) {
-                    const group = orderedGroups.find(g => g.code === code);
-                    if (group) {
-                        group.items.forEach(item => {
-                            if (!item.operacao) return;
-                            plansToSave.push({
-                                op_numero:         item.op,
-                                op_item:           item.item_op,
-                                op_sequencia:      item.sequen,
-                                operacao_codigo:   item.operacao,
-                                recurso_codigo:    item.recurso         || null,
-                                produto_codigo:    item.cod_produto_op  || null,
-                                data_inicio: plan.start.includes('T') ? plan.start : `${plan.start} 00:00:00`,
-                                data_fim:    plan.end.includes('T')   ? plan.end   : `${plan.end}   23:59:59`,
-                                duracao_dias: plan.duracao || null,
-                                recurso_code: code,
-                                recurso_desc: group.desc || null
-                            });
+                // Datas a persistir: as atuais se selecionado, senão a última data conhecida
+                // (baseline) — isso permite gravar o checkbox "desmarcado" sem perder o
+                // histórico de datas nem violar a obrigatoriedade de data_inicio/data_fim.
+                const dataStart = plan.selected ? plan.start : (plan.start || plan.baselineStart);
+                const dataEnd   = plan.selected ? plan.end   : (plan.end   || plan.baselineEnd);
+                if (!dataStart || !dataEnd) return; // nunca teve data — nada a persistir
+
+                const group = orderedGroups.find(g => g.code === code);
+                // Posição do recurso na sequência definida pelo usuário — persistida
+                // junto com as datas para não depender de nenhuma preferência auxiliar.
+                const ordemRecurso = orderedGroups.findIndex(g => g.code === code);
+                if (group) {
+                    group.items.forEach(item => {
+                        if (!item.operacao) return;
+                        // Todos os itens (incluindo concluídos) recebem a nova data calculada do grupo.
+                        // Antes, itens concluídos eram pulados aqui — fazendo com que ao reabrir o modal,
+                        // as datas antigas do banco fossem carregadas novamente, perdendo o recálculo.
+                        plansToSave.push({
+                            op_numero:         item.op,
+                            op_item:           item.item_op,
+                            op_sequencia:      item.sequen,
+                            operacao_codigo:   item.operacao,
+                            recurso_codigo:    item.recurso         || null,
+                            produto_codigo:    item.cod_produto_op  || null,
+                            data_inicio: dataStart.includes('T') ? dataStart : `${dataStart} 00:00:00`,
+                            data_fim:    dataEnd.includes('T')   ? dataEnd   : `${dataEnd}   23:59:59`,
+                            duracao_dias: plan.duracao || null,
+                            recurso_code: code,
+                            recurso_desc: group.desc || null,
+                            ordem_recurso: ordemRecurso >= 0 ? ordemRecurso : null,
+                            selecionado: !!plan.selected
                         });
-                    }
+                    });
                 }
             });
 
@@ -642,30 +1027,174 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                 incluiST:      includeST,
                 ordemRecursos: orderedGroups.map(g => g.code)
             };
+
+            // Data PCP do Produto Pai (opcional, apenas quando sequen=001)
+            const isProdutoPai = op?.sequen === '001';
+            const dataPcpOpts = isProdutoPai && saveAtualizarDataPcp ? {
+                atualizar_data_pcp:     true,
+                data_entrega_pcp_valor: calcDirection === 'backward' ? targetEndDate : targetStartDate,
+                pedido_pcp:             op?.pedido_venda || op?.pedido || null,
+                item_pcp:               op?.item_op || op?.item || null,
+            } : {};
+
             for (let i = 0; i < chunks.length; i++) {
-                await onSaveBatch(chunks[i], saveObservacao, calcDirection, preferencias);
+                await onSaveBatch(chunks[i], saveObservacao, calcDirection, preferencias, dataPcpOpts);
             }
 
             const now = new Date();
             setLastSavedAt(now);
             setSavedSnapshot(buildSnapshot());
-            alert(`�S& ${plansToSave.length} operações salvas com sucesso!`);
-            onClose(true);
+
+            // Atualiza os baselines para refletir o novo estado salvo no banco.
+            // Isso garante que: badge "Salvo" apareça, indicador "Não salvo" suma,
+            // e a linha de baseline no Gantt seja reposicionada para as datas atuais.
+            setOperationPlans(prev => {
+                const next = { ...prev };
+                Object.entries(next).forEach(([code, plan]) => {
+                    if (plan.start && plan.end) {
+                        next[code] = {
+                            ...plan,
+                            baselineStart: plan.start,
+                            baselineEnd: plan.end,
+                            isAlreadyPlanned: true,
+                        };
+                    }
+                });
+                return next;
+            });
+
+            alertApp(`${plansToSave.length} operações salvas com sucesso!`, 'Sucesso');
         } catch (error) {
             console.error('Erro ao salvar:', error);
-            alert(`Erro ao salvar: ${error.message}`);
+            alertApp(`Erro ao salvar: ${error.message}`, "Erro");
         } finally {
             setLoading(false);
         }
     };
 
+    // ── Auto-Save: salva automaticamente após cada ação do usuário ─────────
+    const performAutoSave = useCallback(async () => {
+        if (isAutoSavingRef.current) return;
+        const anySelected = Object.values(operationPlans).some(p => p.selected && p.start && p.end);
+        if (!anySelected) return;
+
+        // Monta o payload idêntico ao handleConfirmSave
+        const plansToSave = [];
+        Object.entries(operationPlans).forEach(([code, plan]) => {
+            const dataStart = plan.selected ? plan.start : (plan.start || plan.baselineStart);
+            const dataEnd   = plan.selected ? plan.end   : (plan.end   || plan.baselineEnd);
+            if (!dataStart || !dataEnd) return;
+            const group = orderedGroups.find(g => g.code === code);
+            const ordemRecurso = orderedGroups.findIndex(g => g.code === code);
+            if (group) {
+                group.items.forEach(item => {
+                    if (!item.operacao) return;
+                    plansToSave.push({
+                        op_numero:       item.op,
+                        op_item:         item.item_op,
+                        op_sequencia:    item.sequen,
+                        operacao_codigo: item.operacao,
+                        recurso_codigo:  item.recurso        || null,
+                        produto_codigo:  item.cod_produto_op || null,
+                        data_inicio: dataStart.includes('T') ? dataStart : `${dataStart} 00:00:00`,
+                        data_fim:    dataEnd.includes('T')   ? dataEnd   : `${dataEnd}   23:59:59`,
+                        duracao_dias: plan.duracao || null,
+                        recurso_code: code,
+                        recurso_desc: group.desc || null,
+                        ordem_recurso: ordemRecurso >= 0 ? ordemRecurso : null,
+                        selecionado: !!plan.selected,
+                    });
+                });
+            }
+        });
+
+        if (plansToSave.length === 0) return;
+        isAutoSavingRef.current = true;
+        setAutoSaveStatus('saving');
+
+        try {
+            const CHUNK_SIZE = 100;
+            const chunks = [];
+            for (let i = 0; i < plansToSave.length; i += CHUNK_SIZE) {
+                chunks.push(plansToSave.slice(i, i + CHUNK_SIZE));
+            }
+            const preferencias = {
+                diasModo:      daysMode,
+                incluiSabado:  includeSaturday,
+                incluiDomingo: includeSunday,
+                incluiST:      includeST,
+                ordemRecursos: orderedGroups.map(g => g.code),
+            };
+            for (let i = 0; i < chunks.length; i++) {
+                await onSaveBatch(chunks[i], '', calcDirection, preferencias, {});
+            }
+            const now = new Date();
+            setLastSavedAt(now);
+            setSavedSnapshot(buildSnapshot());
+            setAutoSaveStatus('saved');
+            // Sincroniza baselines para refletir o estado recém-salvo
+            setOperationPlans(prev => {
+                const next = { ...prev };
+                Object.entries(next).forEach(([code, plan]) => {
+                    if (plan.start && plan.end) {
+                        next[code] = { ...plan, baselineStart: plan.start, baselineEnd: plan.end, isAlreadyPlanned: true };
+                    }
+                });
+                return next;
+            });
+            setTimeout(() => setAutoSaveStatus(s => s === 'saved' ? null : s), 2500);
+        } catch (err) {
+            console.error('[AUTO-SAVE] Erro ao salvar automaticamente:', err);
+            setAutoSaveStatus('error');
+            setTimeout(() => setAutoSaveStatus(s => s === 'error' ? null : s), 3500);
+        } finally {
+            isAutoSavingRef.current = false;
+        }
+    }, [operationPlans, orderedGroups, daysMode, includeSaturday, includeSunday, includeST, calcDirection, onSaveBatch, buildSnapshot]);
+
+    // Mantém sempre a referência mais recente (evita stale closure dentro do setTimeout)
+    performAutoSaveRef.current = performAutoSave;
+
+    const scheduleAutoSave = useCallback(() => {
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = setTimeout(() => {
+            performAutoSaveRef.current?.();
+        }, 1500); // 1,5s de debounce
+    }, []); // estável — delega à ref para ter closure atualizado
+
+    // Chave de trigger: muda apenas com dados relevantes, ignora baselineStart/End/isAlreadyPlanned
+    // Isso evita que a atualização de baseline (pós-save) re-dispare o auto-save
+    const autoSaveTriggerKey = useMemo(() => JSON.stringify({
+        snap: Object.entries(operationPlans)
+            .filter(([, p]) => p.selected)
+            .map(([code, p]) => ({ code, s: p.start, e: p.end, d: p.duracao }))
+            .sort((a, b) => a.code.localeCompare(b.code)),
+        order:         orderedGroups.map(g => g.code),
+        joined:        [...joinedCodes].sort(),
+        daysMode,
+        includeSaturday,
+        includeSunday,
+        includeST,
+        calcDirection,
+    }), [operationPlans, orderedGroups, joinedCodes, daysMode, includeSaturday, includeSunday, includeST, calcDirection]);
+
+    useEffect(() => {
+        // Primeira execução após (re)inicialização: registra o estado inicial sem salvar
+        if (lastAutoSaveTriggerRef.current === null) {
+            lastAutoSaveTriggerRef.current = autoSaveTriggerKey;
+            return;
+        }
+        // Baseline updates (pós-save) não mudam a trigger key — retorna sem ação
+        if (autoSaveTriggerKey === lastAutoSaveTriggerRef.current) return;
+        lastAutoSaveTriggerRef.current = autoSaveTriggerKey;
+        scheduleAutoSave();
+    }, [autoSaveTriggerKey, scheduleAutoSave]);
+
     // Carrega histórico de versões da OP
     const loadHistory = async () => {
         setHistoryLoading(true);
         try {
-            const res = await fetch(`/api/production/planning-history/${op.op}`);
-            if (!res.ok) throw new Error('Erro ao buscar histórico');
-            const data = await res.json();
+            const data = await getPlanningHistory(op.op);
             setHistoryData(data);
         } catch (e) {
             console.error('[HISTORY]', e);
@@ -676,8 +1205,12 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     // Restaura um lote do histórico como plano atual
-    const handleRestoreLote = (lote) => {
-        if (!confirm(`Restaurar o planejamento do lote ${lote.lote_id}?\nIsso substituirá o plano atual (não salvo ainda).`)) return;
+    const handleRestoreLote = async (lote) => {
+        const ok = await confirmApp({
+            title: 'Restaurar Planejamento',
+            message: `Restaurar o planejamento do lote ${lote.lote_id}?\nIsso substituirá o plano atual (não salvo ainda).`
+        });
+        if (!ok) return;
         const restored = { ...operationPlans };
         lote.operacoes.forEach(op => {
             const code = op.recurso_code || op.operacao_codigo;
@@ -695,8 +1228,24 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
         setShowHistory(false);
     };
 
-    const handlePrint = () => {
-        generateGanttPDF(op, orderedGroups, operationPlans);
+    const handlePrint = async () => {
+        let aiText = pcpAgentAnalysis;
+        const incluir = await confirmApp({
+            title: 'Análise PCP IA',
+            message: "Deseja inserir a análise do 'Analista PCP IA' neste PDF?\n\n(Caso ainda não tenha gerado, a IA irá gerar um resumo agora antes de imprimir)",
+            confirmText: 'Sim, incluir',
+            cancelText: 'Não incluir'
+        });
+        
+        if (incluir) {
+            if (!aiText) {
+                aiText = await runPcpAgentAnalysis();
+            }
+        } else {
+            aiText = null;
+        }
+
+        generateGanttPDF(op, orderedGroups, operationPlans, aiText);
     };
 
     // Atalho Ctrl+S para salvar
@@ -973,7 +1522,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                     ? 'border-amber-400 bg-amber-50/60'
                                                     : 'border-blue-400 bg-blue-50/40';
                                             const cursorCls = plan.locked
-                                                ? 'cursor-not-allowed z-10'
+                                                ? 'cursor-default z-10'
                                                 : isDraggingThis
                                                     ? 'cursor-grabbing z-50'
                                                     : 'cursor-grab z-10';
@@ -1032,9 +1581,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                                     min="1"
                                                                     value={plan.duracao}
                                                                     onChange={e => updateOperationDuration(group.code, e.target.value)}
-                                                                    readOnly={plan.locked}
                                                                     className={`w-8 bg-transparent text-center font-extrabold text-[12px] outline-none appearance-none border-none shadow-none
-                                                                        ${plan.locked ? 'cursor-not-allowed' : 'cursor-text hover:bg-white/20 rounded focus:bg-white/30 focus:ring-1 focus:ring-white/60'}
+                                                                        cursor-text hover:bg-white/20 rounded focus:bg-white/30 focus:ring-1 focus:ring-white/60
                                                                         ${hasDiff ? 'text-amber-900' : 'text-white'}`}
                                                                     style={{ MozAppearance: 'textfield' }}
                                                                     title="Clique para editar duração em dias"
@@ -1059,8 +1607,8 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
     };
 
     return (
-        <><div className="fixed inset-0 bg-black/50 flex flex-col items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-50 shadow-2xl w-[98vw] max-w-[1800px] h-[95vh] flex flex-col overflow-hidden border border-slate-300 rounded-lg">
+        <><div className={`fixed inset-0 bg-black/50 flex flex-col items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm animate-in fade-in duration-300 transition-all ${showPcpAgent && pcpAgentPinned ? 'pr-[520px]' : ''}`}>
+            <div className={`bg-slate-50 shadow-2xl h-[95vh] flex flex-col overflow-hidden border border-slate-300 rounded-lg transition-all duration-300 ${showPcpAgent && pcpAgentPinned ? 'w-[calc(100vw-540px)]' : 'w-[98vw] max-w-[1200px]'}`}>
                 
                 {/* Header Navbar */}
                 <div className="px-3 py-2 border-b border-slate-200 bg-white flex justify-between items-center shadow-sm z-10 shrink-0">
@@ -1084,13 +1632,29 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             </div>
                         )}
 
-                        {/* Indicador de Alterações Não Salvas */}
-                        {hasUnsavedChanges && (
-                            <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full animate-pulse">
-                                <AlertTriangle className="w-3 h-3" /> Não salvo
+                        {/* Indicador de Auto-Save */}
+                        {autoSaveStatus === 'saving' && (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Salvando...
                             </span>
                         )}
-                        {lastSavedAt && !hasUnsavedChanges && (
+                        {autoSaveStatus === 'saved' && (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                                <CheckCircle className="w-3 h-3" /> Salvo ✓
+                            </span>
+                        )}
+                        {autoSaveStatus === 'error' && (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3" /> Erro ao salvar!
+                            </span>
+                        )}
+                        {/* Durante o debounce (1,5s): avisa que vai salvar em breve */}
+                        {hasUnsavedChanges && !autoSaveStatus && (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full animate-pulse">
+                                <Clock className="w-3 h-3" /> Salvando em breve...
+                            </span>
+                        )}
+                        {lastSavedAt && !hasUnsavedChanges && !autoSaveStatus && (
                             <span className="flex items-center gap-1 text-[9px] font-medium text-green-600">
                                 <CheckCircle className="w-3 h-3" /> Salvo {lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -1102,6 +1666,28 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* Botão Analista PCP IA */}
+                        <button
+                            onClick={runPcpAgentAnalysis}
+                            disabled={pcpAgentLoading || seqAgentLoading}
+                            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                showPcpAgent ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+                            } disabled:opacity-50`}
+                            title="Análise Crítica do Cronograma por IA especialista em PCP"
+                        >
+                            {pcpAgentLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />} Analisar IA
+                        </button>
+                        {/* Botão Sequenciador IA */}
+                        <button
+                            onClick={runPcpAgentSequencing}
+                            disabled={seqAgentLoading || pcpAgentLoading}
+                            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                showSeqPanel ? 'bg-violet-600 text-white border-violet-700' : 'bg-white text-violet-700 border-violet-200 hover:bg-violet-50'
+                            } disabled:opacity-50`}
+                            title="IA sugere e aplica a sequência ótima das operações"
+                        >
+                            {seqAgentLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shuffle className="w-3.5 h-3.5" />} Sequenciar IA
+                        </button>
                         {/* Botão Histórico */}
                         <button
                             onClick={() => { setShowHistory(h => { if (!h) loadHistory(); return !h; }); }}
@@ -1121,9 +1707,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         >
                             <HelpCircle className="w-3.5 h-3.5" /> Ajuda
                         </button>
-                        <button onClick={() => {
+                        <button onClick={async () => {
                             if (hasUnsavedChanges) {
-                                if (!confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
+                                const ok = await confirmApp({ title: 'Atenção', message: 'Há alterações não salvas. Deseja fechar mesmo assim?' });
+                                if (!ok) return;
                             }
                             onClose();
                         }} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors">
@@ -1164,6 +1751,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 <input
                                     type="date"
                                     value={targetEndDate}
+                                    min={todayStr}
                                     onChange={e => handleAnchorDateChange('end', e.target.value)}
                                     className="border border-blue-200 bg-blue-50 text-blue-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold"
                                 />
@@ -1174,6 +1762,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                 <input
                                     type="date"
                                     value={targetStartDate}
+                                    min={todayStr}
                                     onChange={e => handleAnchorDateChange('start', e.target.value)}
                                     className="border border-green-200 bg-green-50 text-green-900 text-xs px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-green-500 font-bold"
                                 />
@@ -1202,7 +1791,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             onClick={() => toggleDaysMode('business')}
                             className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${daysMode === 'business' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <Briefcase className="w-3 h-3" /> �ateis
+                            <Briefcase className="w-3 h-3" /> ÚTEIS
                         </button>
                         <label className={`flex items-center gap-1 cursor-pointer text-[9px] font-bold uppercase tracking-tight select-none transition-colors ml-1 pr-1 border-l border-slate-200 pl-1 ${daysMode === 'business' ? 'text-slate-600 hover:text-blue-600' : 'text-slate-300 pointer-events-none'}`}>
                             <input 
@@ -1213,6 +1802,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     const v = e.target.checked;
                                     setIncludeSaturday(v);
                                     saveCustomLayout(orderedGroups, calcDirection, { includeSaturday: v });
+                                    savePrefsToDB({ incluiSabado: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, v, includeSunday, joinedCodes);
                                 }}
                                 className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
@@ -1228,6 +1818,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     const v = e.target.checked;
                                     setIncludeSunday(v);
                                     saveCustomLayout(orderedGroups, calcDirection, { includeSunday: v });
+                                    savePrefsToDB({ incluiDomingo: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, includeST, includeSaturday, v, joinedCodes);
                                 }}
                                 className={`w-3 h-3 rounded focus:ring-blue-500 cursor-pointer ${daysMode === 'business' ? 'text-blue-600 border-slate-300' : 'text-slate-300 border-slate-200 bg-slate-100'}`}
@@ -1246,6 +1837,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                     const v = e.target.checked;
                                     setIncludeST(v);
                                     saveCustomLayout(orderedGroups, calcDirection, { includeST: v });
+                                    savePrefsToDB({ incluiST: v });
                                     triggerRecalculation(operationPlans, orderedGroups, calcDirection, v, includeSaturday, includeSunday, joinedCodes);
                                 }}
                                 className="w-3 h-3 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
@@ -1368,6 +1960,9 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                         {plan.selected && (parseInt(plan.duracao) || 0) === 0 && (
                                                             <span title="Duração zero: não consumirá tempo no sequenciamento � todas as ops seguintes colapsarão nesta data" className="text-[7px] text-orange-600 font-bold bg-orange-50 border border-orange-200 px-1 py-0.5 rounded leading-none">�a� 0d</span>
                                                         )}
+                                                        {plan.selected && !plan.locked && plan.start && plan.start < todayStr && (
+                                                            <span title="Data de início calculada no passado — ajuste a data de entrega ou reduza a duração" className="text-[7px] text-red-600 font-bold bg-red-50 border border-red-200 px-1 py-0.5 rounded leading-none">⚠ Passado</span>
+                                                        )}
                                                         <span className="text-[11px] text-slate-800 font-medium truncate" title={group.desc}>
                                                             {group.desc}
                                                         </span>
@@ -1394,15 +1989,16 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                             </div>
 
                                             {/* Duration Counter */}
-                                            <div className="w-20 px-1 py-1 flex items-center justify-center border-l border-slate-50 bg-slate-50/50">
+                                            <div className="w-24 px-1 py-1 flex items-center justify-center gap-0.5 border-l border-slate-50 bg-slate-50/50">
                                                 <button onClick={() => adjustDuration(group.code, -1)} disabled={!plan.selected} className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-0 rounded bg-white border border-slate-100 shadow-sm"><Minus className="w-2.5 h-2.5" /></button>
                                                 <input type="text" value={plan.duracao} onChange={e => updateOperationDuration(group.code, e.target.value)} disabled={!plan.selected}
                                                     className="w-6 mx-0.5 bg-transparent text-center text-[11px] font-bold text-slate-700 outline-none" />
                                                 <button onClick={() => adjustDuration(group.code, 1)} disabled={!plan.selected} className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-0 rounded bg-white border border-slate-100 shadow-sm"><Plus className="w-2.5 h-2.5" /></button>
+                                                <button onClick={() => updateOperationDuration(group.code, 0)} disabled={!plan.selected || Number(plan.duracao) === 0} title="Zerar dias" className="p-0.5 text-slate-400 hover:text-orange-600 disabled:opacity-0 rounded bg-white border border-slate-100 shadow-sm"><RotateCcw className="w-2.5 h-2.5" /></button>
                                             </div>
 
                                             {/* Calculated Dates Inputs */}
-                                            <div className="w-[140px] px-1 py-1 flex items-center justify-center gap-1 border-l border-slate-50">
+                                            <div className="w-[240px] px-1 py-1 flex items-center justify-center gap-1 border-l border-slate-50">
                                                 <input type="date" value={plan.start ? plan.start.split('T')[0] : ''} 
                                                     onChange={e => { 
                                                         const newStart = e.target.value;
@@ -1418,7 +2014,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                         });
                                                     }} 
                                                     disabled={!plan.selected}
-                                                    className={`w-[66px] text-[9px] px-0.5 py-0.5 border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-center ${plan.start !== plan.baselineStart ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 text-slate-700'}`} />
+                                                    className={`w-[105px] text-[10px] px-1 py-0.5 border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-center ${plan.start !== plan.baselineStart ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 text-slate-700'}`} />
                                                 <span className="text-slate-300 text-[10px]">&gt;</span>
                                                 <input type="date" value={plan.end ? plan.end.split('T')[0] : ''} 
                                                     onChange={e => { 
@@ -1435,7 +2031,7 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                                                         });
                                                     }} 
                                                     disabled={!plan.selected}
-                                                    className={`w-[66px] text-[9px] px-0.5 py-0.5 border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-center ${plan.end !== plan.baselineEnd ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 text-slate-700'}`} />
+                                                    className={`w-[105px] text-[10px] px-1 py-0.5 border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-center ${plan.end !== plan.baselineEnd ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 text-slate-700'}`} />
                                             </div>
 
                                             {/* Expand Button */}
@@ -1499,9 +2095,10 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                         <button onClick={handlePrint} className="px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold text-white transition-colors flex items-center gap-1.5 border border-slate-500">
                             <Printer className="w-3 h-3" /> Imprimir
                         </button>
-                        <button onClick={() => {
+                        <button onClick={async () => {
                             if (hasUnsavedChanges) {
-                                if (!confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
+                                const ok = await confirmApp({ title: 'Atenção', message: 'Há alterações não salvas. Deseja fechar mesmo assim?' });
+                                if (!ok) return;
                             }
                             onClose();
                         }} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] font-bold text-white transition-colors">
@@ -1576,7 +2173,30 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Esta observação será salva no histórico de versões.</p>
                         </div>
-                    </div>
+
+                        {/* Opção: Atualizar Data PCP — somente para produto pai (sequen = '001') */}
+                        {op?.sequen === '001' && (
+                            <div className="mt-1 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                                <label className="flex items-start gap-2.5 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={saveAtualizarDataPcp}
+                                        onChange={e => setSaveAtualizarDataPcp(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500"
+                                    />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-indigo-800 block">
+                                            Atualizar Data PCP do Produto Pai
+                                        </span>
+                                        <span className="text-[10px] text-indigo-600 block mt-0.5">
+                                            Salvar <strong>{(calcDirection === 'backward' ? targetEndDate : targetStartDate)?.split('-').reverse().join('/')}</strong> como <code className="bg-indigo-100 px-1 rounded">data_entrega_pcp</code> do pedido <strong>{op?.pedido_venda || op?.pedido}</strong> / item <strong>{op?.item_op || op?.item}</strong>
+                                        </span>
+                                    </div>
+                                </label>
+                            </div>
+                        )}
+
+                    </div> {/* fim do bloco de conteúdo do dialog */}
 
                     {/* Ações */}
                     <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex gap-2 justify-end">
@@ -1937,6 +2557,195 @@ export default function ProductionMacroModal({ op, operations, onClose, onSaveBa
                             Entendido, fechar
                         </button>
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* ── Painel Analista PCP IA ─────────────────────────────────────── */}
+        {showPcpAgent && (
+            <div
+                className={`fixed inset-0 z-[60] flex justify-end ${pcpAgentPinned ? 'pointer-events-none bg-transparent' : 'bg-black/30'}`}
+                onClick={() => { if (!pcpAgentPinned) setShowPcpAgent(false); }}
+            >
+                <div
+                    className="bg-white h-full w-full max-w-[520px] shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="px-4 py-3 bg-indigo-700 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-2">
+                            <Bot className="w-5 h-5 text-indigo-200" />
+                            <div>
+                                <h3 className="text-sm font-bold text-white">Analista PCP IA</h3>
+                                <p className="text-[10px] text-indigo-300">Especialista em Planejamento e Controle da Produção</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setPcpAgentPinned(p => !p)}
+                                title={pcpAgentPinned ? 'Desafixar painel' : 'Fixar painel (mantém aberto e libera interação com a tela)'}
+                                className={`p-1 rounded border transition-colors ${pcpAgentPinned ? 'bg-white text-indigo-700 border-white' : 'text-indigo-200 border-indigo-500 hover:bg-indigo-600'}`}
+                            >
+                                {pcpAgentPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                                onClick={runPcpAgentAnalysis}
+                                disabled={pcpAgentLoading}
+                                className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded border border-indigo-500 transition-colors disabled:opacity-50"
+                            >
+                                {pcpAgentLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Reanalisar
+                            </button>
+                            <button onClick={() => setShowPcpAgent(false)} className="text-indigo-200 hover:text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Body */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {pcpAgentLoading && (
+                            <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                                <Loader2 className="w-10 h-10 animate-spin text-indigo-400" />
+                                <p className="text-sm font-medium text-center">Analisando o cronograma...<br /><span className="text-xs text-slate-400">O agente está revisando sequência, prazos e riscos</span></p>
+                            </div>
+                        )}
+                        {pcpAgentError && !pcpAgentLoading && (
+                            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>{pcpAgentError}</span>
+                            </div>
+                        )}
+                        {pcpAgentAnalysis && !pcpAgentLoading && (
+                            <div className="prose prose-sm max-w-none text-slate-700">
+                                {pcpAgentAnalysis.split('\n').map((line, i) => {
+                                    if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-indigo-800 mt-4 mb-1">{line.replace('## ', '')}</h2>;
+                                    if (line.startsWith('# ')) return <h1 key={i} className="text-lg font-bold text-indigo-900 mt-4 mb-2">{line.replace('# ', '')}</h1>;
+                                    if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-bold text-slate-700 mt-3 mb-1">{line.replace('### ', '')}</h3>;
+                                    if (line.startsWith('- ') || line.startsWith('* ')) return <li key={i} className="ml-4 text-[13px] my-0.5">{line.replace(/^[-*] /, '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
+                                    if (/^\d+\./.test(line)) return <p key={i} className="text-[13px] my-1 font-medium">{line.replace(/\*\*(.*?)\*\*/g, '$1')}</p>;
+                                    if (line.trim() === '') return <div key={i} className="my-2" />;
+                                    const rendered = line
+                                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                        .replace(/`(.*?)`/g, '<code class="bg-slate-100 px-1 rounded text-xs font-mono text-indigo-700">$1</code>');
+                                    return <p key={i} className="text-[13px] my-1" dangerouslySetInnerHTML={{ __html: rendered }} />;
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-4 py-2 bg-indigo-50 border-t border-indigo-100 shrink-0">
+                        <p className="text-[9px] text-indigo-400 text-center">Análise gerada por IA · Sempre valide com o time de PCP antes de tomar decisões</p>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ── Painel Sequenciador IA ──────────────────────────────────────── */}
+        {showSeqPanel && (
+            <div className="fixed inset-0 bg-black/40 z-[62] flex justify-end" onClick={() => { setShowSeqPanel(false); setSeqAgentResult(null); }}>
+                <div
+                    className="bg-white h-full w-full max-w-[460px] shadow-2xl flex flex-col overflow-hidden"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="px-4 py-3 bg-violet-700 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-2">
+                            <Shuffle className="w-5 h-5 text-violet-200" />
+                            <div>
+                                <h3 className="text-sm font-bold text-white">Sequenciador IA</h3>
+                                <p className="text-[10px] text-violet-300">Ordenação ótima de operações por lógica tecnológica</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={runPcpAgentSequencing}
+                                disabled={seqAgentLoading}
+                                className="flex items-center gap-1 px-2 py-1 bg-violet-600 hover:bg-violet-500 text-white text-[10px] font-bold rounded border border-violet-500 transition-colors disabled:opacity-50"
+                            >
+                                {seqAgentLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Regerar
+                            </button>
+                            <button onClick={() => { setShowSeqPanel(false); setSeqAgentResult(null); }} className="text-violet-200 hover:text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Body */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {seqAgentLoading && (
+                            <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                                <Loader2 className="w-10 h-10 animate-spin text-violet-400" />
+                                <p className="text-sm font-medium text-center text-slate-600">
+                                    Calculando sequência ótima...<br />
+                                    <span className="text-xs text-slate-400">O agente está analisando a lógica tecnológica de fabricação</span>
+                                </p>
+                            </div>
+                        )}
+                        {seqAgentError && !seqAgentLoading && (
+                            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>{seqAgentError}</span>
+                            </div>
+                        )}
+                        {seqAgentResult && !seqAgentLoading && (
+                            <>
+                                {/* Justificativa */}
+                                {seqAgentResult.justification && (
+                                    <div className="p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                                        <p className="text-[10px] font-bold text-violet-700 uppercase tracking-wide mb-1">💡 Lógica aplicada pela IA</p>
+                                        <p className="text-[12px] text-violet-800 leading-relaxed">{seqAgentResult.justification}</p>
+                                    </div>
+                                )}
+
+                                {/* Preview da nova sequência */}
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Nova sequência sugerida</p>
+                                    <ol className="space-y-1">
+                                        {seqAgentResult.suggestedOrder.map((code, idx) => {
+                                            const g = orderedGroups.find(gr => gr.code === code);
+                                            const p = operationPlans[code];
+                                            const currentIdx = orderedGroups.findIndex(gr => gr.code === code);
+                                            const moved = currentIdx !== idx;
+                                            return (
+                                                <li key={code} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] border ${moved ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-200'}`}>
+                                                    <span className="w-5 h-5 rounded-full bg-violet-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                                                    <span className="font-mono text-[10px] text-slate-500 shrink-0">{code}</span>
+                                                    <span className="font-semibold text-slate-700 flex-1 truncate">{g?.desc || code}</span>
+                                                    {moved && <span className="text-[9px] text-violet-600 font-bold shrink-0">↕ movido</span>}
+                                                    {p?.locked && <span className="text-[9px] text-green-600 font-bold shrink-0">✓ travada</span>}
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Footer com ação */}
+                    {seqAgentResult && !seqAgentLoading && (
+                        <div className="px-4 py-3 bg-violet-50 border-t border-violet-200 shrink-0 flex gap-2">
+                            <button
+                                onClick={() => { setShowSeqPanel(false); setSeqAgentResult(null); }}
+                                className="flex-1 px-3 py-2 rounded-lg text-[11px] font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={applySeqAgentOrder}
+                                className="flex-1 px-3 py-2 rounded-lg text-[11px] font-bold text-white bg-violet-600 hover:bg-violet-500 transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-violet-900/30"
+                            >
+                                <Shuffle className="w-3.5 h-3.5" /> Aplicar Sequência
+                            </button>
+                        </div>
+                    )}
+                    {!seqAgentResult && !seqAgentLoading && (
+                        <div className="px-4 py-2 bg-violet-50 border-t border-violet-100 shrink-0">
+                            <p className="text-[9px] text-violet-400 text-center">Sugestão gerada por IA · Revise antes de aplicar · Você pode arrastar para ajustar após aplicar</p>
+                        </div>
+                    )}
                 </div>
             </div>
         )}

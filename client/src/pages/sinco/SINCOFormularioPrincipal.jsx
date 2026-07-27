@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -47,6 +47,7 @@ export default function SINCOFormularioPrincipal() {
     const [operacoes, setOperacoes] = useState([]);
     const [restricoesSz0, setRestricoesSz0] = useState([]);
     const [erroProtheus, setErroProtheus] = useState(null);
+    const [produtoNaoNoMirror, setProdutoNaoNoMirror] = useState(false); // produto existe no ERP mas não está no espelho PostgreSQL
 
     const [loadingArvore, setLoadingArvore] = useState(false);
     const [loadingRest, setLoadingRest] = useState(false);
@@ -256,6 +257,7 @@ export default function SINCOFormularioPrincipal() {
         const codigoSemExtensao = codigo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
 
         setErroProtheus(null);
+        setProdutoNaoNoMirror(false);
         setDados({
             ...estadoVazio,
             arquivo: codigoSemExtensao,
@@ -265,6 +267,7 @@ export default function SINCOFormularioPrincipal() {
         try {
             const p = await getSincoProduto(codigoSemExtensao);
             if (p) {
+                setProdutoNaoNoMirror(false);
                 setDados(prev => ({
                     ...prev,
                     titulo: p.titulo || '',
@@ -272,7 +275,8 @@ export default function SINCOFormularioPrincipal() {
                     unidade: p.unidade || '',
                     grupo: p.grupo || '',
                     peso: p.peso || prev.peso,
-                    rev: p.rev || prev.rev,
+                    // p.xrevm = B1_XREVM (Rev. MetalFisa); p.rev = B1_REVATU (revisão técnica geral)
+                    rev: p.xrevm || prev.rev,
                     espessura: p.espessura || prev.espessura,
                     largura: p.largura || prev.largura,
                     comprimento: p.comprimento || prev.comprimento,
@@ -280,8 +284,11 @@ export default function SINCOFormularioPrincipal() {
                 }));
             }
         } catch (e) {
-            console.warn(`Produto ${codigoSemExtensao} não encontrado no Protheus (SB1/SB5).`);
-            showToast(`Produto ${codigoSemExtensao} não cadastrado. Criando novo...`, 'warning');
+            // Produto não está no espelho PostgreSQL (pode existir no ERP mas ainda não sincronizado)
+            console.warn(`[SINCO] Produto ${codigoSemExtensao} ausente no mirror PostgreSQL (SB1010). Ativando modo de preenchimento manual.`);
+            setProdutoNaoNoMirror(true);
+            // Ativa edição automática para o usuário preencher os dados manualmente
+            setIsEditingDadosGerais(true);
         }
 
         carregarProtheus(codigoSemExtensao);
@@ -303,7 +310,8 @@ export default function SINCOFormularioPrincipal() {
                     unidade: p.unidade || '',
                     grupo: p.grupo || '',
                     peso: p.peso || prev.peso,
-                    rev: p.rev || prev.rev,
+                    // p.xrevm = B1_XREVM (Rev. MetalFisa); p.rev = B1_REVATU (revisão técnica geral)
+                    rev: p.xrevm || prev.rev,
                     espessura: p.espessura || prev.espessura,
                     largura: p.largura || prev.largura,
                     comprimento: p.comprimento || prev.comprimento,
@@ -418,6 +426,42 @@ export default function SINCOFormularioPrincipal() {
             showToast('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message), 'error');
         } finally {
             setSavingSz0(false);
+        }
+    };
+
+    const handleDeletarRestricaoSz0 = async (r) => {
+        if (!confirm(`Tem certeza que deseja excluir a restrição ${r.item}?`)) return;
+        
+        const payload = {
+            data: {
+                restricoes: [{
+                    EMPRESA: '01',
+                    CFILANT: '01',
+                    NOPER: 5,
+                    Z0_PRODUTO: dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase(),
+                    Z0_ITEM: r.item,
+                    Z0_STATUS: r.status,
+                    Z0_RESUMO: r.resumo,
+                    Z0_RESTRIC: r.restricao,
+                    Z0_RESPONS: r.responsavel,
+                    Z0_DTULTAL: r.dt_ultima_alt || '',
+                    Z0_HRULTAL: r.hr_ultima_alt || '',
+                    Z0_XREVM: r.revisao || ''
+                }]
+            }
+        };
+
+        setLoadingSz0(true);
+        try {
+            await createSincoRestricaoSz0(payload);
+            showToast('Restrição excluída com sucesso.', 'success');
+            const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+            const rSz0 = await getSincoRestricoesSz0(produto);
+            setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+        } catch (err) {
+            showToast('Erro do Protheus ao excluir (Provável Erro 500 na API): ' + (err.response?.data?.error || err.response?.data?.message || err.message), 'error');
+        } finally {
+            setLoadingSz0(false);
         }
     };
 
@@ -694,9 +738,6 @@ export default function SINCOFormularioPrincipal() {
         if (!temArquivo) return;
         const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
 
-        const noper = restricoes.length === 0 ? 3 : 4;
-        
-        // Filtramos os deletados e os que não tem cliente válido
         const validos = editedRestricoes.filter(r => !r.deleted && r.cliente && String(r.cliente).trim() !== '');
 
         if (validos.length === 0 && restricoes.length === 0) {
@@ -705,25 +746,73 @@ export default function SINCOFormularioPrincipal() {
             return;
         }
 
-        const payload = {
-            data: {
-                CFILANT: "0101",
-                EMPRESA: "01",
-                NOPER: noper,
-                produtos_clientes: validos.map(r => ({
-                    Z1_CLIENTE: String(r.cliente || '').trim(),
-                    Z1_LOJA: String(r.loja || '0001').trim(),
-                    Z1_PRODUTO: produto,
-                    Z1_CODCLI: String(r.cod_cliente || '').trim(),
-                    Z1_DESCCLI: String(r.desc_cliente || '').trim(),
-                    Z1_REVISAO: String(r.revisao || '').trim()
-                }))
+        // Validação: Não permitir mesma revisão para o mesmo código de cliente
+        const keySet = new Set();
+        for (const r of validos) {
+            const codCli = String(r.cod_cliente || '').trim().toUpperCase();
+            const rev = String(r.revisao || '').trim().toUpperCase();
+            const uniqueKey = `${codCli}-${rev}`;
+            if (keySet.has(uniqueKey)) {
+                showToast(`Erro: A revisão '${rev}' está repetida para o cód. cliente '${codCli}'.`, 'error');
+                return;
             }
-        };
+            keySet.add(uniqueKey);
+        }
+
+        const formatItem = (r) => ({
+            Z1_CLIENTE: String(r.cliente || '').trim().toUpperCase(),
+            Z1_LOJA: String(r.loja || '0001').trim().toUpperCase(),
+            Z1_PRODUTO: produto,
+            Z1_CODCLI: String(r.cod_cliente || '').trim().toUpperCase(),
+            Z1_DESCCLI: String(r.desc_cliente || '').trim().toUpperCase(),
+            Z1_REVISAO: String(r.revisao || '').trim().toUpperCase()
+        });
+
+        const insercoes = [];
+        const alteracoes = [];
+
+        validos.forEach(r => {
+            if (r.isNew) {
+                insercoes.push(formatItem(r));
+            } else {
+                const index = editedRestricoes.indexOf(r);
+                const original = restricoes[index];
+                
+                // Se a chave mudou (revisão ou cod cliente), o Protheus não aceita NOPER=4. Devemos inserir (NOPER=3).
+                const keyChanged = String(original.revisao).trim().toUpperCase() !== String(r.revisao).trim().toUpperCase() || 
+                                   String(original.cod_cliente).trim().toUpperCase() !== String(r.cod_cliente).trim().toUpperCase();
+                
+                if (keyChanged) {
+                    insercoes.push(formatItem(r));
+                } else {
+                    // Só envia alteração se algo mudou
+                    if (String(original.desc_cliente).trim().toUpperCase() !== String(r.desc_cliente).trim().toUpperCase() || 
+                        String(original.cliente).trim().toUpperCase() !== String(r.cliente).trim().toUpperCase() || 
+                        String(original.loja).trim().toUpperCase() !== String(r.loja).trim().toUpperCase()) {
+                        alteracoes.push(formatItem(r));
+                    }
+                }
+            }
+        });
+
+        if (insercoes.length === 0 && alteracoes.length === 0) {
+            showToast('Nenhuma mudança detectada na tabela SZ1.', 'info');
+            setIsEditingRestricoes(false);
+            return;
+        }
 
         setSavingRestricoes(true);
         try {
-            await updateSincoProdutoCliente(payload);
+            if (insercoes.length > 0) {
+                await updateSincoProdutoCliente({
+                    data: { CFILANT: "0101", EMPRESA: "01", NOPER: 3, produtos_clientes: insercoes }
+                });
+            }
+            if (alteracoes.length > 0) {
+                await updateSincoProdutoCliente({
+                    data: { CFILANT: "0101", EMPRESA: "01", NOPER: 4, produtos_clientes: alteracoes }
+                });
+            }
             showToast('Produtos x Cliente atualizados com sucesso no Protheus!', 'success');
             const res = await getSincoRestricoes(produto);
             setRestricoes(Array.isArray(res) ? res : []);
@@ -853,6 +942,21 @@ export default function SINCOFormularioPrincipal() {
                     <span className="font-mono break-all">{erroProtheus}</span>
                 </div>
             )}
+
+            {/* Banner: produto existe no ERP mas não está no espelho PostgreSQL */}
+            {produtoNaoNoMirror && !erroProtheus && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                    <div>
+                        <span className="font-semibold">Produto não encontrado no espelho de dados (PostgreSQL).</span>
+                        <span className="ml-1 text-amber-700">
+                            O produto <strong>{dados.arquivo}</strong> pode existir no ERP Protheus mas ainda não foi sincronizado com o mirror local.
+                            Preencha os campos manualmente e clique em <strong>Salvar</strong> para registrar os dados no Protheus.
+                        </span>
+                    </div>
+                </div>
+            )}
+
 
             {/* Layout do Formulário Principal - Limpo e Compacto */}
             <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden ${isEditingDadosGerais ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
@@ -1705,23 +1809,32 @@ export default function SINCOFormularioPrincipal() {
                                             <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{dtFormatted} {r.hr_ultima_alt || ''}</td>
                                             <td className="px-3 py-2 text-right">
                                                 {temArquivo && (
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditandoRestricao(r);
-                                                            setNovaRestricao({
-                                                                resumo: r.resumo || '',
-                                                                restricao: r.restricao || '',
-                                                                responsavel: (user?.nome || user?.login || '').toUpperCase(),
-                                                                revMetalfisa: r.revisao || dados.rev || '',
-                                                                status: r.status || 'P',
-                                                            });
-                                                            setShowModalSz0(true);
-                                                        }}
-                                                        className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                                                        title="Editar restrição"
-                                                    >
-                                                        <Pencil className="h-3 w-3" />
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditandoRestricao(r);
+                                                                setNovaRestricao({
+                                                                    resumo: r.resumo || '',
+                                                                    restricao: r.restricao || '',
+                                                                    responsavel: (user?.nome || user?.login || '').toUpperCase(),
+                                                                    revMetalfisa: r.revisao || dados.rev || '',
+                                                                    status: r.status || 'P',
+                                                                });
+                                                                setShowModalSz0(true);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                                            title="Editar restrição"
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeletarRestricaoSz0(r)}
+                                                            className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                                                            title="Excluir restrição"
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>

@@ -1059,8 +1059,7 @@ router.get('/dashboard', async (req, res) => {
                 COUNT(DISTINCT s.id)       AS qtd_solicitacoes,
                 COUNT(i.id)                AS qtd_itens,
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
-                COALESCE(SUM(i.valor_total), 0)           AS valor_total,
-                COALESCE(SUM(CASE WHEN s.status = 'Atendido' THEN i.valor_total ELSE 0 END), 0) AS valor_faturado
+                COALESCE(SUM(i.valor_total), 0)           AS valor_total
             FROM app_faturamento_solicitacoes s
             LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
             WHERE ${whereSQL}
@@ -1068,6 +1067,84 @@ router.get('/dashboard', async (req, res) => {
             ORDER BY ${['dia', 'semana', 'mes'].includes(groupBy) ? 'label ASC' : 'valor_total DESC'}
             LIMIT 100
         `, params);
+
+        // 3b. Faturado (NF válida) — sempre lido do Protheus (sd2010/sf2010), nunca do valor_total
+        // planejado nem de um status interno, pois o status 'Atendido' só é atualizado quando alguém
+        // abre a tela de solicitações (buildNFLookup já filtra NF cancelada/deletada via d_e_l_e_t_ = '').
+        const kpiFaturadoNF = { qtd_solicitacoes: 0, qtd_itens: 0, qtd_total: 0, valor_total: 0 };
+        const faturadoPorGrupo = {};
+        try {
+            const [itensParaNF] = await mysqlPool.query(`
+                SELECT s.id AS solicitacao_id, s.usuario, s.status, s.created_at,
+                       i.pedido, i.item, i.codigo_produto, i.nome_cliente, i.pedido_cliente
+                FROM app_faturamento_solicitacoes s
+                JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+                WHERE ${whereSQL} AND s.status != 'Cancelado'
+            `, params);
+
+            if (itensParaNF.length > 0) {
+                const pgPool = require('../services/protheusDB');
+                const uniquePedidos = [...new Set(itensParaNF.map(i => String(i.pedido).trim()))];
+                const nfMap = await buildNFLookup(pgPool, uniquePedidos);
+
+                const normItem = (s) => { const n = parseInt(String(s).trim(), 10); return isNaN(n) ? String(s).trim() : String(n); };
+                const pad2 = n => String(n).padStart(2, '0');
+                const toYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+                const groupValueGetters = {
+                    cliente:        (it) => (it.nome_cliente || '').trim() || 'Não identificado',
+                    produto:        (it) => (it.codigo_produto || '').trim() || 'Não identificado',
+                    usuario:        (it) => (it.usuario || '').trim() || 'Não identificado',
+                    dia:            (it) => toYMD(new Date(it.created_at)),
+                    semana:         (it) => { const d = new Date(it.created_at); const wd = (d.getDay() + 6) % 7; const monday = new Date(d); monday.setDate(d.getDate() - wd); return toYMD(monday); },
+                    mes:            (it) => { const d = new Date(it.created_at); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; },
+                    status:         (it) => it.status,
+                    pedido_cliente: (it) => (it.pedido_cliente || '').trim() || 'Sem PC',
+                };
+                const getLabel = groupValueGetters[groupBy] || groupValueGetters.cliente;
+
+                // Um mesmo pedido+item pode ter sido solicitado em mais de uma solicitação de
+                // faturamento (ex.: remessas parciais pedidas em lotes diferentes). O Protheus não
+                // guarda qual NF pertence a qual solicitação — buildNFLookup devolve TODAS as NFs
+                // daquele pedido+item para cada solicitação que o referencia. Sem este dedup, a mesma
+                // NF real seria somada de novo a cada solicitação duplicada, inflando o valor faturado.
+                const solicSet = new Set();
+                const pedidoItemContabilizado = new Set();
+                itensParaNF.forEach(it => {
+                    const pedTrim = String(it.pedido).trim();
+                    const itemTrim = String(it.item).trim();
+                    const itemNorm = normItem(itemTrim);
+                    const nfs = nfMap[pedTrim + '-' + itemTrim] || nfMap[pedTrim + '-' + itemNorm] || [];
+                    if (nfs.length === 0) return;
+
+                    solicSet.add(it.solicitacao_id);
+
+                    const dedupKey = pedTrim + '|' + itemNorm;
+                    if (pedidoItemContabilizado.has(dedupKey)) return;
+                    pedidoItemContabilizado.add(dedupKey);
+
+                    const qtdNF   = nfs.reduce((acc, nf) => acc + (nf.qtd || 0), 0);
+                    const valorNF = nfs.reduce((acc, nf) => acc + (nf.valor_total || 0), 0);
+
+                    kpiFaturadoNF.qtd_itens += 1;
+                    kpiFaturadoNF.qtd_total += qtdNF;
+                    kpiFaturadoNF.valor_total += valorNF;
+
+                    const label = getLabel(it);
+                    if (!faturadoPorGrupo[label]) faturadoPorGrupo[label] = { valor_total: 0, qtd_total: 0 };
+                    faturadoPorGrupo[label].valor_total += valorNF;
+                    faturadoPorGrupo[label].qtd_total   += qtdNF;
+                });
+                kpiFaturadoNF.qtd_solicitacoes = solicSet.size;
+            }
+        } catch (err) {
+            console.error('[FAT Dashboard] Erro ao calcular Faturado (NF válida):', err.message);
+        }
+
+        agrupamento.forEach(row => {
+            const nf = faturadoPorGrupo[row.label];
+            row.valor_faturado_nf = nf?.valor_total || 0;
+            row.qtd_faturado_nf   = nf?.qtd_total || 0;
+        });
 
         // 4. Top produtos (independente do groupBy)
         const [topProdutos] = await mysqlPool.query(`
@@ -1099,7 +1176,7 @@ router.get('/dashboard', async (req, res) => {
             ORDER BY dia, s.status
         `);
 
-        res.json({ kpis, tendenciaMensal, agrupamento, topProdutos, evolucaoDiaria, groupLabel });
+        res.json({ kpis, kpiFaturadoNF, tendenciaMensal, agrupamento, topProdutos, evolucaoDiaria, groupLabel });
     } catch (err) {
         console.error('Erro GET /faturamento/dashboard:', err);
         res.status(500).json({ error: 'Erro ao gerar dashboard de faturamento.' });
