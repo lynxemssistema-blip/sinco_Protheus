@@ -131,6 +131,9 @@ export default function PPAPsBuscarProduto() {
                             <p className="text-sm text-slate-500 mt-1">
                                 Preenchimento automático do "Desenho MetalFisa" a partir do "Desenho Cliente" na coluna E.
                             </p>
+                            <p className="text-xs text-amber-600 mt-1 font-medium">
+                                Por definição, só preenche produtos já classificados como <strong>PPAP</strong> em algum pedido. Produtos localizados mas sem essa classificação ficam de fora (você recebe o detalhamento por e-mail).
+                            </p>
                         </div>
                     </div>
                 </div>

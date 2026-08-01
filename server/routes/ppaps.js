@@ -58,16 +58,46 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
         let processedCount = 0;
         let notFoundCount = 0;
         let duplicateCount = 0;
-        
+        let ignoredNotPpapCount = 0;
+
         const duplicatesLog = [];
-        
+        const ignoredNotPpapLog = [];
+
+        // --- Pré-carrega o conjunto de produtos classificados como PPAP ---
+        // A classificação vive em app_pedido_itens_classificacao (MySQL), por pedido+item —
+        // não por produto. Cruzamos com o Protheus (sc6010) para descobrir quais PRODUTOS já
+        // foram classificados como PPAP em algum pedido, e só preenchemos a planilha para esses.
+        // Por definição, esta rotina só deve preencher itens cuja classificação seja PPAP.
+        const mysqlPool = require('../services/mysqlService');
+        const ppapProdutos = new Set();
+        try {
+            const [classifRows] = await mysqlPool.query(
+                "SELECT DISTINCT pedido, item FROM app_pedido_itens_classificacao WHERE classificacao IN ('PPAP', 'Jits e PPAP')"
+            );
+            if (classifRows.length > 0) {
+                const pares = classifRows.map(r => [String(r.pedido).trim(), String(r.item).trim()]);
+                const values = pares.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(',');
+                const params = pares.flat();
+                const prodRes = await db.query(
+                    `SELECT DISTINCT TRIM(c6.c6_produto) as produto
+                     FROM public.sc6010 c6
+                     JOIN (VALUES ${values}) AS v(pedido, item) ON TRIM(c6.c6_num) = v.pedido AND TRIM(c6.c6_item) = v.item
+                     WHERE COALESCE(c6.d_e_l_e_t_, '') = ''`,
+                    params
+                );
+                prodRes.rows.forEach(r => ppapProdutos.add(r.produto));
+            }
+        } catch (errPPAP) {
+            console.error('Erro ao carregar produtos classificados como PPAP:', errPPAP);
+        }
+
         // As linhas começam em 4
         const rowCount = worksheet.rowCount;
         for (let r = 4; r <= rowCount; r++) {
             const row = worksheet.getRow(r);
             const valE = row.getCell('E').value;
             const valF = row.getCell('F').value;
-            
+
             const getStringVal = (val) => {
                 if (val === null || val === undefined) return '';
                 if (typeof val === 'object') {
@@ -77,47 +107,51 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                 }
                 return String(val).trim();
             };
-            
+
             const strE = getStringVal(valE).toUpperCase();
             const strF = getStringVal(valF);
-            
+
             if (strE && !strF) {
                 // Realizar a busca no Protheus (PostgreSQL - tabela sz1010)
                 const queryRes = await db.query('SELECT z1_produto FROM public.sz1010 WHERE RTRIM(z1_codcli) = $1 AND COALESCE(d_e_l_e_t_, \' \') = \' \'', [strE]);
                 const rows = queryRes.rows;
-                
+
                 if (rows.length === 0) {
                     notFoundCount++;
                 } else {
                     const uniqueProducts = [...new Set(rows.map(row => String(row.z1_produto).trim()))].filter(Boolean);
-                    
-                    if (uniqueProducts.length > 0) {
+                    const ppapMatches = uniqueProducts.filter(p => ppapProdutos.has(p));
+
+                    if (uniqueProducts.length > 0 && ppapMatches.length === 0) {
+                        // Produto(s) encontrado(s), mas nenhum classificado como PPAP — não preenche.
+                        ignoredNotPpapCount++;
+                        ignoredNotPpapLog.push({ desenho: strE, produtos: uniqueProducts.join(', ') });
+                    } else if (ppapMatches.length > 0) {
                         const cell = row.getCell('F');
-                        cell.value = uniqueProducts.join(' / ');
-                        
+                        cell.value = ppapMatches.join(' / ');
+
                         // Destacar a célula em azul claro para indicar preenchimento automático
                         cell.fill = {
                             type: 'pattern',
                             pattern: 'solid',
                             fgColor: { argb: 'FFD9E1F2' } // Light Blue
                         };
-                        
+
                         row.commit();
                         processedCount++;
-                        
-                        if (uniqueProducts.length > 1) {
+
+                        if (ppapMatches.length > 1) {
                             duplicateCount++;
-                            duplicatesLog.push({ desenho: strE, produtos: uniqueProducts.join(', ') });
+                            duplicatesLog.push({ desenho: strE, produtos: ppapMatches.join(', ') });
                         }
                     }
                 }
             }
         }
-        
+
         const buffer = await workbook.xlsx.writeBuffer();
-        
+
         // Envio de E-mail de Resumo
-        const mysqlPool = require('../services/mysqlService');
         let userEmail = req.user?.email;
         if (!userEmail && req.user?.id) {
             try {
@@ -171,8 +205,36 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                                 <td style="padding: 6px 0; font-weight: bold;">Inconsistências (Duplos):</td>
                                 <td style="padding: 6px 0; color: #d97706; font-weight: bold;">${duplicateCount}</td>
                             </tr>
+                            <tr>
+                                <td style="padding: 6px 0; font-weight: bold;">Ignorados (Produto sem Classificação PPAP):</td>
+                                <td style="padding: 6px 0; color: #64748b; font-weight: bold;">${ignoredNotPpapCount}</td>
+                            </tr>
                         </table>
                     </div>
+
+                    ${ignoredNotPpapCount > 0 ? `
+                        <div style="margin-top: 30px;">
+                            <h3 style="color: #1e293b; font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Ignorados — Produto sem Classificação PPAP</h3>
+                            <p style="color: #64748b; font-size: 13px; margin-bottom: 15px;">O produto foi localizado na SZ1, mas não está classificado como "PPAP" (ou "Jits e PPAP") em nenhum pedido — por definição, esta rotina só preenche itens classificados como PPAP.</p>
+
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <thead>
+                                    <tr style="background-color: #f1f5f9;">
+                                        <th style="padding: 10px; text-align: left; border: 1px solid #cbd5e1; color: #334155;">Desenho Cliente</th>
+                                        <th style="padding: 10px; text-align: left; border: 1px solid #cbd5e1; color: #334155;">Produtos Localizados (não PPAP)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${ignoredNotPpapLog.map(log => `
+                                        <tr>
+                                            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; font-family: monospace;">${log.desenho}</td>
+                                            <td style="padding: 8px 10px; border: 1px solid #cbd5e1;">${log.produtos}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
 
                     ${duplicateCount > 0 ? `
                         <div style="margin-top: 30px;">

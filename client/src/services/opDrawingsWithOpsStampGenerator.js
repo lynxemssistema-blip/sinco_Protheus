@@ -9,7 +9,7 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
  * Scans component.operacoes to build a full routing sequence (e.g., MO0013 -> MO0014)
  * and injects this sequence into the PDF stamp to save paper but maintain full traceability.
  */
-export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
+export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeDescription = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error('[opDrawingsWithOpsStampGenerator] Dados inválidos:', mirrorData);
@@ -53,7 +53,13 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
                 if (component.operacoes && Array.isArray(component.operacoes)) {
                     component.operacoes.forEach(op => {
                          if (op.recurso) {
-                             recursosArr.push(op.recurso.trim().toUpperCase());
+                             const recCode = op.recurso.trim().toUpperCase();
+                             const desc = (op.desc_operacao || op.descricao || op.desc || op.operacao_cod || '').trim().toUpperCase();
+                             if (includeDescription && desc) {
+                                 recursosArr.push(`${recCode}-${desc}`);
+                             } else {
+                                 recursosArr.push(recCode);
+                             }
                          }
                     });
                 }
@@ -208,7 +214,12 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Pacote_OP_${safePedido}_Roteiro_Carimbo.pdf`;
+        const filenameSuffix = includeDescription ? '_Roteiro_Descricao_Carimbo.pdf' : '_Roteiro_Carimbo.pdf';
+        link.download = `Pacote_OP_${safePedido}${filenameSuffix}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

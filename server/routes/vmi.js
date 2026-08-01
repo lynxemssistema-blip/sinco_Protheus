@@ -6,6 +6,7 @@ const xlsx = require('xlsx');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const db = require('../db');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -2574,6 +2575,7 @@ router.post('/oc-fornecedores/save', async (req, res) => {
 // ── GET /api/vmi/oc-fornecedores/lotes ──────────────────────────────────────
 router.get('/oc-fornecedores/lotes', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const [rows] = await mysqlPool.query(
             `SELECT lote_id, nome_arquivo, total_linhas, total_produtos, total_ocs,
                     qtde_total, custo_total, usuario_nome, created_at
@@ -2581,7 +2583,8 @@ router.get('/oc-fornecedores/lotes', async (req, res) => {
              ORDER BY created_at DESC
              LIMIT 20`
         );
-        res.json({ success: true, data: rows });
+        const data = canViewFinancials ? rows : rows.map(({ custo_total, ...rest }) => rest);
+        res.json({ success: true, data });
     } catch (err) {
         console.error('[OC Lotes GET]', err);
         res.status(500).json({ error: 'Erro ao listar lotes.' });
@@ -2593,6 +2596,7 @@ router.get('/oc-fornecedores/lotes', async (req, res) => {
 // Suporta filtros: ?lote=, ?situacao=, ?fornecedor=, ?search=
 router.get('/oc-fornecedores', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const { lote, situacao, fornecedor, search } = req.query;
 
         let where = ['1=1'];
@@ -2742,10 +2746,22 @@ router.get('/oc-fornecedores', async (req, res) => {
         const totalCusto = resultado.reduce((s, g) => s + g.custo_total, 0);
         const totalItens = rows.length;
 
+        const totais = { total_grupos: resultado.length, total_itens: totalItens, qtde_total: totalQtde, custo_total: totalCusto };
+
+        const dataFinal = canViewFinancials
+            ? resultado
+            : resultado.map(({ custo_total, custo_uni, custo_protheus, custo_protheus_salvo, itens, ...rest }) => ({
+                  ...rest,
+                  itens: itens.map(({ custo_uni, custo_total, custo_protheus, ...itemRest }) => itemRest)
+              }));
+        const totaisFinal = canViewFinancials
+            ? totais
+            : (({ custo_total, ...restTotais }) => restTotais)(totais);
+
         res.json({
             success: true,
-            data:    resultado,
-            totais:  { total_grupos: resultado.length, total_itens: totalItens, qtde_total: totalQtde, custo_total: totalCusto }
+            data:    dataFinal,
+            totais:  totaisFinal
         });
 
     } catch (err) {

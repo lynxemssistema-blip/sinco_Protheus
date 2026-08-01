@@ -39,25 +39,32 @@ export const NfTooltipPortal = ({ targetRef, notas_fiscais, unidade, onNfClick }
                 {notas_fiscais.map((nf, idx) => (
                     <div
                         key={idx}
-                        className="py-0.5 flex justify-between gap-3 hover:bg-slate-700/50 cursor-pointer rounded px-1 transition-colors group/nf"
+                        className="py-1 flex flex-col hover:bg-slate-700/50 cursor-pointer rounded px-1 transition-colors group/nf"
                         onClick={(e) => { 
                             e.stopPropagation(); 
                             onNfClick && onNfClick(nf); 
                         }}
                     >
-                        <span>
-                            <span className="text-slate-400">NF:</span> {nf.nota}{' '}
-                            <span className="text-slate-500">({nf.serie})</span>{' '}
-                            <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span>
-                        </span>
-                        <span>
-                            <span className="text-slate-400">Emissão:</span> {nf.emissao}{' '}
-                            <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span>
-                        </span>
-                        <span className="font-semibold text-blue-300 ml-2 flex items-center gap-1">
-                            {nf.qtd} {unidade}
-                            <FileText className="h-3 w-3 opacity-0 group-hover/nf:opacity-100 transition-opacity" />
-                        </span>
+                        <div className="flex justify-between gap-3">
+                            <span>
+                                <span className="text-slate-400">NF:</span> {nf.nota}{' '}
+                                <span className="text-slate-500">({nf.serie})</span>{' '}
+                                <span className="text-blue-300 ml-1">[{nf.natureza || '-'}]</span>
+                            </span>
+                            <span>
+                                <span className="text-slate-400">Emissão:</span> {nf.emissao}{' '}
+                                <span className="text-slate-500 ml-2">CFOP: {nf.cfop || '-'}</span>
+                            </span>
+                            <span className="font-semibold text-blue-300 ml-2 flex items-center gap-1">
+                                {nf.qtd} {unidade}
+                                <FileText className="h-3 w-3 opacity-0 group-hover/nf:opacity-100 transition-opacity" />
+                            </span>
+                        </div>
+                        {nf.nome_cliente && (
+                            <div className="text-[9px] text-slate-300 mt-0.5 truncate max-w-[300px]">
+                                <span className="text-slate-400">Para:</span> {nf.nome_cliente}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db'); // Changed db to pool
 const mysqlPool = require('../services/mysqlService'); // Importar conexão MySQL
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // --- VERIFICAÇÃO DE TABELA (ATA VIVA) ---
 // Garante que a tabela exista para evitar erros nas rotas
@@ -475,16 +476,18 @@ router.get('/:codigo/estrutura', async (req, res) => {
                 AND TRIM(COALESCE(g1.d_e_l_e_t_, '')) <> '*'
             WHERE b.nivel < 20
         )
-        SELECT 
+        SELECT
             b.nivel,
             b.cod_comp  AS codigo,
             sb1.b1_desc AS descricao,
             sb1.b1_um   AS unidade,
             sb1.b1_grupo AS grupo,
+            TRIM(sb1.b1_tipo) AS tipo_produto,
+            COALESCE(sb1.b1_uprc, 0)::numeric(18,4) AS preco_padrao,
             b.qtd_rel   AS qtd_necessaria,
             b.caminho
         FROM bombill b
-        LEFT JOIN public.sb1010 sb1 
+        LEFT JOIN public.sb1010 sb1
             ON TRIM(sb1.b1_cod) = b.cod_comp
             AND TRIM(COALESCE(sb1.d_e_l_e_t_, '')) <> '*'
         ORDER BY b.caminho
@@ -492,6 +495,38 @@ router.get('/:codigo/estrutura', async (req, res) => {
 
         const result = await pool.query(query, [codClean]);
         const items = result.rows;
+
+        // --- ENRICHMENT (CUSTO — OVERRIDE POR ESTRUTURA) ---
+        // Preço padrão vem do Protheus (b1_uprc, último preço de compra). Um override aqui
+        // só vale DENTRO da estrutura deste produto pai (codClean) — nunca altera o preço
+        // global do material, que continua o mesmo para qualquer outro produto que o utilize.
+        const CUSTO_TIPOS = ['MP', 'MC', 'EM'];
+        try {
+            const [overrideRows] = await mysqlPool.execute(
+                'SELECT produto_componente, preco_unitario FROM app_estrutura_custo_override WHERE produto_pai = ?',
+                [codClean]
+            );
+            const overrideMap = {};
+            overrideRows.forEach(r => { overrideMap[r.produto_componente.trim()] = parseFloat(r.preco_unitario); });
+
+            items.forEach(i => {
+                const key = i.codigo.trim();
+                const padrao = parseFloat(i.preco_padrao) || 0;
+                const override = overrideMap[key];
+                i.preco_padrao = padrao;
+                i.preco_override = override != null ? override : null;
+                i.preco_efetivo = override != null ? override : padrao;
+                i.eh_item_custo = CUSTO_TIPOS.includes((i.tipo_produto || '').toUpperCase());
+            });
+        } catch (errCusto) {
+            console.error('Erro ao buscar overrides de custo da estrutura:', errCusto);
+            items.forEach(i => {
+                i.preco_padrao = parseFloat(i.preco_padrao) || 0;
+                i.preco_override = null;
+                i.preco_efetivo = i.preco_padrao;
+                i.eh_item_custo = CUSTO_TIPOS.includes((i.tipo_produto || '').toUpperCase());
+            });
+        }
 
         // --- ENRICHMENT (DOCUMENTOS) ---
         if (items.length > 0) {
@@ -529,11 +564,75 @@ router.get('/:codigo/estrutura', async (req, res) => {
             }
         }
 
+        // Custo é dado sensível — nunca sai do servidor para quem não tem a permissão
+        // "valores_financeiros" (Acessos Sensíveis / RH-Financeiro).
+        if (!(await hasFinancialAccess(req))) {
+            items.forEach(i => {
+                delete i.preco_padrao;
+                delete i.preco_override;
+                delete i.preco_efetivo;
+            });
+        }
+
         res.json(items);
 
     } catch (err) {
         console.error(`Erro ao buscar estrutura do produto ${req.params.codigo}:`, err.message);
         res.status(500).json({ error: 'Erro ao buscar estrutura do produto.', details: err.message });
+    }
+});
+
+// POST /api/produtos/:codigo/estrutura/:componente/preco
+// Define um custo unitário específico para este componente, válido SOMENTE dentro
+// da estrutura do produto :codigo (não altera o preço padrão global do material).
+router.post('/:codigo/estrutura/:componente/preco', async (req, res) => {
+    try {
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Sem permissão para alterar valores financeiros.' });
+        }
+
+        const produtoPai = req.params.codigo.trim();
+        const produtoComponente = req.params.componente.trim();
+        const { preco, usuario } = req.body;
+
+        if (preco === undefined || preco === null || isNaN(parseFloat(preco))) {
+            return res.status(400).json({ error: 'Preço inválido.' });
+        }
+
+        await mysqlPool.execute(
+            `INSERT INTO app_estrutura_custo_override (produto_pai, produto_componente, preco_unitario, atualizado_por)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE preco_unitario = VALUES(preco_unitario), atualizado_por = VALUES(atualizado_por)`,
+            [produtoPai, produtoComponente, parseFloat(preco), usuario || 'Sistema']
+        );
+
+        res.json({ success: true, preco_override: parseFloat(preco) });
+    } catch (err) {
+        console.error('Erro ao salvar custo override da estrutura:', err.message);
+        res.status(500).json({ error: 'Erro ao salvar o custo do componente.' });
+    }
+});
+
+// DELETE /api/produtos/:codigo/estrutura/:componente/preco
+// Remove o override — o componente volta a usar o preço padrão (Protheus) nesta estrutura.
+router.delete('/:codigo/estrutura/:componente/preco', async (req, res) => {
+    try {
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Sem permissão para alterar valores financeiros.' });
+        }
+
+        const produtoPai = req.params.codigo.trim();
+        const produtoComponente = req.params.componente.trim();
+
+        await mysqlPool.execute(
+            'DELETE FROM app_estrutura_custo_override WHERE produto_pai = ? AND produto_componente = ?',
+            [produtoPai, produtoComponente]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Erro ao remover custo override da estrutura:', err.message);
+        res.status(500).json({ error: 'Erro ao remover o custo do componente.' });
     }
 });
 
@@ -569,8 +668,49 @@ router.get('/:codigo/roteiro', async (req, res) => {
 
         const result = await pool.query(query, [codClean]);
 
-        console.log(`🔧 [ROTEIRO] ${result.rows.length} operações para produto ${codClean}`);
-        res.json(result.rows);
+        // Join MySQL resource rates from app_recursos_capacidade
+        let recursoRates = {};
+        try {
+            const mysqlPool = require('../services/mysqlService');
+            const [recursoRows] = await mysqlPool.query('SELECT recurso_codigo, taxa_setup_min, taxa_padrao_min FROM app_recursos_capacidade');
+            recursoRows.forEach(r => {
+                if (r.recurso_codigo) {
+                    recursoRates[r.recurso_codigo.trim().toUpperCase()] = {
+                        taxa_setup_min: parseFloat(r.taxa_setup_min || 0),
+                        taxa_padrao_min: parseFloat(r.taxa_padrao_min || 0)
+                    };
+                }
+            });
+        } catch (mysqlErr) {
+            console.warn('⚠️ [ROTEIRO] Não foi possível carregar taxas de recurso do MySQL:', mysqlErr.message);
+        }
+
+        // Custo é dado sensível — só calcula/expõe se o usuário tiver a permissão
+        // "valores_financeiros" (Acessos Sensíveis / RH-Financeiro).
+        const canSeeFinancials = await hasFinancialAccess(req);
+
+        const rowsWithCost = result.rows.map(row => {
+            if (!canSeeFinancials) return row;
+
+            const recKey = (row.recurso || '').trim().toUpperCase();
+            const rates = recursoRates[recKey] || { taxa_setup_min: 0, taxa_padrao_min: 0 };
+            const setupMin = parseFloat(row.tempo_setup || 0);
+            const padraoMin = parseFloat(row.tempo_padrao || 0);
+            const custoSetup = setupMin * rates.taxa_setup_min;
+            const custoPadrao = padraoMin * rates.taxa_padrao_min;
+            const custoTotalOp = custoSetup + custoPadrao;
+            return {
+                ...row,
+                taxa_setup_min: rates.taxa_setup_min,
+                taxa_padrao_min: rates.taxa_padrao_min,
+                custo_setup: custoSetup,
+                custo_padrao: custoPadrao,
+                custo_total_op: custoTotalOp
+            };
+        });
+
+        console.log(`🔧 [ROTEIRO] ${rowsWithCost.length} operações calculadas para produto ${codClean} (custos ${canSeeFinancials ? 'incluídos' : 'omitidos por permissão'})`);
+        res.json(rowsWithCost);
 
     } catch (err) {
         console.error(`Erro ao buscar roteiro do produto ${req.params.codigo}:`, err.message);

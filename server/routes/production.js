@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
@@ -2446,20 +2447,54 @@ router.post('/plan-batch', async (req, res) => {
             // Apenas quando: OP é produto pai (sequen=001) E usuário marcou a opção
             if (atualizar_data_pcp && data_entrega_pcp_valor && pedido_pcp && item_pcp) {
                 try {
-                    await mysqlPool.query(`
-                        INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, usuario_pcp, updated_at)
-                        VALUES (?, ?, ?, ?, NOW())
-                        ON DUPLICATE KEY UPDATE
-                            data_entrega_pcp = VALUES(data_entrega_pcp),
-                            usuario_pcp      = VALUES(usuario_pcp),
-                            updated_at       = NOW()
-                    `, [
-                        String(pedido_pcp).trim(),
-                        String(item_pcp).trim(),
-                        data_entrega_pcp_valor,
-                        usuario
-                    ]);
-                    console.log(`📅 [DATA PCP] Atualizado: pedido=${pedido_pcp} item=${item_pcp} data=${data_entrega_pcp_valor}`);
+                    let enableHistory = true;
+                    try {
+                        const [paramRows] = await mysqlPool.query("SELECT setting_value FROM system_parameters WHERE setting_key = 'enable_pcp_history'");
+                        if (paramRows.length > 0) {
+                            let val = paramRows[0].setting_value;
+                            if (typeof val === 'string') val = JSON.parse(val);
+                            enableHistory = val !== false;
+                        }
+                    } catch(e) {}
+
+                    if (!enableHistory) {
+                        // Apenas atualizar o último registro existente (ou inserir se não houver)
+                        const [existing] = await mysqlPool.query(
+                            "SELECT id FROM app_pcp_delivery_forecasts WHERE pedido = ? AND item = ? ORDER BY id DESC LIMIT 1",
+                            [String(pedido_pcp).trim(), String(item_pcp).trim()]
+                        );
+                        if (existing.length > 0) {
+                            await mysqlPool.query(`
+                                UPDATE app_pcp_delivery_forecasts 
+                                SET data_entrega_pcp = ?, usuario_pcp = ?, updated_at = NOW()
+                                WHERE id = ?
+                            `, [data_entrega_pcp_valor, usuario, existing[0].id]);
+                        } else {
+                            await mysqlPool.query(`
+                                INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, usuario_pcp, updated_at)
+                                VALUES (?, ?, ?, ?, NOW())
+                            `, [String(pedido_pcp).trim(), String(item_pcp).trim(), data_entrega_pcp_valor, usuario]);
+                        }
+                    } else {
+                        // Gerar histórico (novo registro)
+                        // NOTA: Se houvesse chave única em (pedido, item), isso faria update,
+                        // mas se o objetivo é histórico, assumimos que insere (ou a tabela precisa ser ajustada).
+                        await mysqlPool.query(`
+                            INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, usuario_pcp, updated_at)
+                            VALUES (?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE
+                                data_entrega_pcp = VALUES(data_entrega_pcp),
+                                usuario_pcp      = VALUES(usuario_pcp),
+                                updated_at       = NOW()
+                        `, [
+                            String(pedido_pcp).trim(),
+                            String(item_pcp).trim(),
+                            data_entrega_pcp_valor,
+                            usuario
+                        ]);
+                    }
+
+                    console.log(`📅 [DATA PCP] Atualizado: pedido=${pedido_pcp} item=${item_pcp} data=${data_entrega_pcp_valor} (Histórico: ${enableHistory})`);
                 } catch (pcpErr) {
                     // Não bloqueia o retorno, apenas loga o erro
                     console.error('⚠️ [DATA PCP] Erro ao atualizar data_entrega_pcp:', pcpErr.message);
@@ -2912,7 +2947,7 @@ router.get('/appointments/:op', async (req, res) => {
         const { item, sequencia, operacao } = req.query;
 
         let sql = `
-            SELECT a.*, u.fotoUsuario as usuario_foto 
+            SELECT a.*, MAX(u.fotoUsuario) as usuario_foto 
             FROM app_production_appointments a
             LEFT JOIN usuario u ON u.NomeCompleto = a.usuario OR u.Login = a.usuario
             WHERE a.op_numero = ?
@@ -2933,7 +2968,7 @@ router.get('/appointments/:op', async (req, res) => {
             params.push(operacao);
         }
 
-        sql += ' ORDER BY a.data_inicio DESC';
+        sql += ' GROUP BY a.id ORDER BY a.data_inicio DESC';
 
         const [rows] = await mysqlPool.query(sql, params);
         res.json(rows);
@@ -4391,6 +4426,7 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                         TRIM(b1.b1_xrevm) as rev_metalfisa,
                         TRIM(b1.b1_xrevc) as rev_cliente,
                         b1.b1_msblql as restri_sb1,
+                        COALESCE(b1.b1_uprc, 0)::numeric(18,4) as preco_padrao,
                         1:: numeric as qtd_necessaria,
                         0 as nivel,
                         ARRAY[TRIM(b1.b1_cod)]:: text[] as path_array
@@ -4408,6 +4444,7 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                         TRIM(b1.b1_xrevm) as rev_metalfisa,
                         TRIM(b1.b1_xrevc) as rev_cliente,
                         b1.b1_msblql as restri_sb1,
+                        COALESCE(b1.b1_uprc, 0)::numeric(18,4) as preco_padrao,
                         (e.qtd_necessaria * CAST(g1.g1_quant AS NUMERIC)) as qtd_necessaria,
                         e.nivel + 1,
                         array_append(e.path_array, TRIM(g1.g1_comp))
@@ -4482,6 +4519,7 @@ router.get('/estrutura/:codProduto', async (req, res) => {
                         restri_sz0: restricaoSz0 ? 'P' : '',
                         restricao_sz0_desc: sz0_desc,
                         qtd_necessaria: Number(row.qtd_necessaria),
+                        preco_padrao: parseFloat(row.preco_padrao) || 0,
                         tem_arquivos: false,
                         primeiro_arquivo: null
                     };
@@ -4524,7 +4562,9 @@ WHERE(i.CodMatFabricante = ? OR i.CodMatFabricante = ?) AND i.ProdutoPrincipal =
                     codigo: i.CodMatFabricante,
                     descricao: i.DescResumo,
                     unidade: i.Unidade,
+                    tipo_produto: '',
                     qtd_necessaria: i.QtdeTotal || i.qtde,
+                    preco_padrao: 0,
                     tem_arquivos: false,
                     primeiro_arquivo: null
                 }));
@@ -4606,11 +4646,108 @@ TRIM(z1_produto) as produto,
             }
         }
 
+        // 5. Enriquecimento com Custo (override por estrutura + preço padrão)
+        // Um override aqui só vale DENTRO da estrutura deste produto pai (codLimpo) —
+        // nunca altera o preço global do material para outros produtos que o utilizem.
+        if (finalItems.length > 0) {
+            const CUSTO_TIPOS = ['MP', 'MC', 'EM'];
+            try {
+                const [overrideRows] = await mysqlPool.execute(
+                    'SELECT produto_componente, preco_unitario FROM app_estrutura_custo_override WHERE produto_pai = ?',
+                    [codLimpo]
+                );
+                const overrideMap = {};
+                overrideRows.forEach(r => { overrideMap[r.produto_componente.trim()] = parseFloat(r.preco_unitario); });
+
+                finalItems.forEach(i => {
+                    const padrao = parseFloat(i.preco_padrao) || 0;
+                    const override = overrideMap[(i.codigo || '').trim()];
+                    i.preco_padrao = padrao;
+                    i.preco_override = override != null ? override : null;
+                    i.preco_efetivo = override != null ? override : padrao;
+                    i.eh_item_custo = CUSTO_TIPOS.includes((i.tipo_produto || '').toUpperCase());
+                });
+            } catch (custoErr) {
+                console.error('⚠️ [ESTRUTURA] Erro ao buscar overrides de custo:', custoErr.message);
+                finalItems.forEach(i => {
+                    i.preco_padrao = parseFloat(i.preco_padrao) || 0;
+                    i.preco_override = null;
+                    i.preco_efetivo = i.preco_padrao;
+                    i.eh_item_custo = CUSTO_TIPOS.includes((i.tipo_produto || '').toUpperCase());
+                });
+            }
+        }
+
+        // Custo é dado sensível — nunca sai do servidor para quem não tem a permissão
+        // "valores_financeiros" (Acessos Sensíveis / RH-Financeiro). Esconder só na tela
+        // não é suficiente, pois o valor continuaria visível na aba de rede do navegador.
+        if (!(await hasFinancialAccess(req))) {
+            finalItems.forEach(i => {
+                delete i.preco_padrao;
+                delete i.preco_override;
+                delete i.preco_efetivo;
+            });
+        }
+
         res.json(finalItems);
 
     } catch (err) {
         console.error('[ESTRUTURA ERROR]', err.message);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/production/estrutura/:codigo/:componente/preco
+// Define um custo unitário específico para este componente, válido SOMENTE dentro
+// da estrutura do produto :codigo (não altera o preço padrão global do material).
+router.post('/estrutura/:codigo/:componente/preco', async (req, res) => {
+    try {
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Sem permissão para alterar valores financeiros.' });
+        }
+
+        const produtoPai = req.params.codigo.trim();
+        const produtoComponente = req.params.componente.trim();
+        const { preco, usuario } = req.body;
+
+        if (preco === undefined || preco === null || isNaN(parseFloat(preco))) {
+            return res.status(400).json({ error: 'Preço inválido.' });
+        }
+
+        await mysqlPool.execute(
+            `INSERT INTO app_estrutura_custo_override (produto_pai, produto_componente, preco_unitario, atualizado_por)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE preco_unitario = VALUES(preco_unitario), atualizado_por = VALUES(atualizado_por)`,
+            [produtoPai, produtoComponente, parseFloat(preco), usuario || 'Sistema']
+        );
+
+        res.json({ success: true, preco_override: parseFloat(preco) });
+    } catch (err) {
+        console.error('Erro ao salvar custo override da estrutura:', err.message);
+        res.status(500).json({ error: 'Erro ao salvar o custo do componente.' });
+    }
+});
+
+// DELETE /api/production/estrutura/:codigo/:componente/preco
+// Remove o override — o componente volta a usar o preço padrão (Protheus) nesta estrutura.
+router.delete('/estrutura/:codigo/:componente/preco', async (req, res) => {
+    try {
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Sem permissão para alterar valores financeiros.' });
+        }
+
+        const produtoPai = req.params.codigo.trim();
+        const produtoComponente = req.params.componente.trim();
+
+        await mysqlPool.execute(
+            'DELETE FROM app_estrutura_custo_override WHERE produto_pai = ? AND produto_componente = ?',
+            [produtoPai, produtoComponente]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Erro ao remover custo override da estrutura:', err.message);
+        res.status(500).json({ error: 'Erro ao remover o custo do componente.' });
     }
 });
 
@@ -5228,6 +5365,25 @@ router.post('/op-materials', async (req, res) => {
         res.json({ success: true, materials: materials });
     } catch (err) {
         console.error('[OP MATERIALS ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/production/op-priority
+router.post('/op-priority', async (req, res) => {
+    try {
+        const { op_numero, prioridade, usuario } = req.body;
+        if (!op_numero) return res.status(400).json({ error: 'op_numero is required' });
+        
+        await mysqlPool.execute(`
+            INSERT INTO app_op_priorities (op_numero, prioridade, atualizado_por)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE prioridade = VALUES(prioridade), atualizado_por = VALUES(atualizado_por)
+        `, [op_numero, prioridade || 0, usuario || 'Sistema']);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[OP PRIORITY ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });

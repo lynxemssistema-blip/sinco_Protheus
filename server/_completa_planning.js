@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Migração de Complementação — app_production_planning
  * 
@@ -21,8 +22,8 @@ const LOTE_SIZE = 500;
 
 async function main() {
     const my = await mysql.createConnection({
-        host: "metalfisa.mysql.uhserver.com", port: 3306,
-        database: "metalfisa", user: "ronaldo2", password: "jHAzhFG848@yN@U"
+        host: process.env.MYSQL_HOST, port: 3306,
+        database: process.env.MYSQL_DB, user: process.env.MYSQL_USER, password: process.env.MYSQL_PASS
     });
 
     console.log("╔══════════════════════════════════════════════════════╗");

@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * MetalFisa — Deep SQL Column Validator
  * Extrai todas as colunas referenciadas nas queries SQL dos arquivos de rota
@@ -113,8 +114,8 @@ function parseColumnRefsFromSQL(sql) {
 // ─────────────────────────────────────────────────────────────
 async function main() {
     const conn = await mysql.createConnection({
-        host: 'metalfisa.mysql.uhserver.com',
-        user: 'ronaldo2', password: 'jHAzhFG848@yN@U', database: 'metalfisa'
+        host: process.env.MYSQL_HOST,
+        user: process.env.MYSQL_USER, password: process.env.MYSQL_PASS, database: process.env.MYSQL_DB
     });
 
     console.log('📦 Fetching complete schema...');

@@ -114,6 +114,7 @@ const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto'));
 const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
+const WabtecPPAPsPage = React.lazy(() => import('./pages/wabtec/WabtecPPAPsPage'));
 const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
 const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
 const WabtecDatasSolicitacaoPage = React.lazy(() => import('./pages/wabtec/WabtecDatasSolicitacaoPage'));
@@ -187,6 +188,7 @@ const Layout = ({ children, fullWidth = true }) => {
     const [isHermesChatOpen, setIsHermesChatOpen] = React.useState(false);
     const { toggleHelp, isOpen, isPinned } = useHelp();
     const location = useLocation();
+    const isPortalCliente = location.pathname.startsWith('/portal-cliente');
 
     // Check if we are on mobile to pass to Sidebar
     const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
@@ -216,18 +218,20 @@ const Layout = ({ children, fullWidth = true }) => {
             {/* Main Content */}
             <main className={`flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative ${isOpen && isPinned && !isMobile ? 'pr-[420px]' : ''}`}>
                 <EmailBlockerModal />
-                <FloatingAvisos />
+                {!isPortalCliente && <FloatingAvisos />}
                 <HelpDrawer />
-                <HermesFeed />
-                <PCPMetalDrawer isOpen={isHermesChatOpen} onClose={() => setIsHermesChatOpen(false)} />
+                {!isPortalCliente && <HermesFeed />}
+                {!isPortalCliente && <PCPMetalDrawer isOpen={isHermesChatOpen} onClose={() => setIsHermesChatOpen(false)} />}
 
-                <button
-                    onClick={() => setIsHermesChatOpen(!isHermesChatOpen)}
-                    title="Conversar com o Agente Hermes"
-                    className="fixed bottom-[150px] right-6 z-[990] w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-xl transition-all duration-300 flex items-center justify-center print:hidden"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
-                </button>
+                {!isPortalCliente && (
+                    <button
+                        onClick={() => setIsHermesChatOpen(!isHermesChatOpen)}
+                        title="Conversar com o Agente Hermes"
+                        className="fixed bottom-[150px] right-6 z-[990] w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-xl transition-all duration-300 flex items-center justify-center print:hidden"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
+                    </button>
+                )}
 
                 {/* Topbar Mobile */}
                 <header className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">
@@ -247,15 +251,17 @@ const Layout = ({ children, fullWidth = true }) => {
                     </div>
                 </div>
 
-                {/* Floating Help Button — visible on every page */}
-                <button
-                    onClick={toggleHelp}
-                    title="Ajuda desta tela"
-                    aria-label="Abrir ajuda contextual"
-                    className="fixed bottom-6 right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
-                >
-                    <HelpCircle className="h-5 w-5" />
-                </button>
+                {/* Floating Help Button — visible on pages except Portal Cliente */}
+                {!isPortalCliente && (
+                    <button
+                        onClick={toggleHelp}
+                        title="Ajuda desta tela"
+                        aria-label="Abrir ajuda contextual"
+                        className="fixed bottom-6 right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
+                    >
+                        <HelpCircle className="h-5 w-5" />
+                    </button>
+                )}
             </main>
         </div>
     );
@@ -761,6 +767,13 @@ function App() {
                                         } />
 
                                         {/* WabTec Routes */}
+                                        <Route path="/wabtec/ppaps" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando PPAP's...</div>}>
+                                                    <WabtecPPAPsPage />
+                                                </Suspense>
+                                            </Layout>
+                                        } />
                                         <Route path="/wabtec/escopo" element={
                                             <Layout fullWidth={true}>
                                                 <WabtecEscopoPage />

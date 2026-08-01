@@ -301,10 +301,10 @@ function TipoBadge({ tipo, detalhe }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 const EngineeringOrdersPage = () => {
     const location = useLocation();
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const { orderFilters, updateOrderFilters } = useFilters();
-    
-    const canViewFinancials = user?.permissoes?.some(p => p.page_id === 'valores_financeiros' && p.can_view);
+
+    const canViewFinancials = hasPermission('valores_financeiros', 'view');
 
     const viewMode = 'flat';
     const [orders, setOrders] = useState([]);

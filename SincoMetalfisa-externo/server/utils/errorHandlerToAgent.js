@@ -69,6 +69,16 @@ async function handleSystemError(req, errorBody) {
 
         const msgToUser = `🤖 *Suporte Lynx - Detecção Automática*\n\nOlá, *${nome}*.\n\nIdentifiquei que você encontrou um erro no sistema ao tentar acessar a funcionalidade:\n👉 _${rota}_\n\n*Detalhe técnico:* ${stringErro.substring(0, 100)}...\n\nFique tranquilo(a)! Já registrei este problema na nossa Lista de Erros e um programador da Lynx já foi acionado para analisar a causa e deixar o app mais completo e robusto.\n\nVocê poderá acompanhar a resolução desse erro.`;
 
+        // Verifica se a automação está ativa nas configurações da empresa
+        const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        if (configRows.length && configRows[0].general_config) {
+            const cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            if (cfg?.automations?.suporte_lynx_active === false) {
+                console.log(`[AI Suporte Error Tracker] Notificação WhatsApp (Suporte Lynx) desativada. Erro salvo apenas no DB para ${nome} (${phone}) sobre a rota ${rota}`);
+                return;
+            }
+        }
+
         // Usa a instancia do suporte para disparar a mensagem!
         await sendText(phone, msgToUser, 'Notificação Automática de Erro do Sistema - IA Lynx');
 

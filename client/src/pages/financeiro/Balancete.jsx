@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, RefreshCw, FolderTree, AlertCircle, Calendar, Download, Eye } from 'lucide-react';
+import { Search, RefreshCw, FolderTree, AlertCircle, Calendar, Download, Eye, Lock } from 'lucide-react';
+import CompanyFilter from '../../components/CompanyFilter';
 import api from '../../services/api';
 import { format, startOfYear, endOfMonth } from 'date-fns';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Balancete = () => {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     // Filter State
     const [dataInicio, setDataInicio] = useState(format(startOfYear(new Date()), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
     const [filtroTexto, setFiltroTexto] = useState('');
     const [filial, setFilial] = useState('010');
+    const [selectedFiliais, setSelectedFiliais] = useState([]);
 
     // Data State
     const [contas, setContas] = useState([]);
@@ -24,7 +29,12 @@ const Balancete = () => {
         setLoading(true);
         try {
             const { data } = await api.get('/financeiro/balancete', {
-                params: { data_inicio: dataInicio, data_fim: dataFim, filial }
+                params: { 
+                    data_inicio: dataInicio, 
+                    data_fim: dataFim, 
+                    filial,
+                    filiais: selectedFiliais.join(',')
+                }
             });
             setContas(data);
         } catch (error) {
@@ -37,7 +47,7 @@ const Balancete = () => {
     useEffect(() => {
         fetchBalancete();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [selectedFiliais]);
 
     // Formatter
     const formatCurrency = (value) => {
@@ -100,7 +110,13 @@ const Balancete = () => {
         setLoadingRazonete(true);
         try {
             const { data } = await api.get('/financeiro/razonete', {
-                params: { conta: conta.codigo, data_inicio: dataInicio, data_fim: dataFim, filial }
+                params: { 
+                    conta: conta.codigo, 
+                    data_inicio: dataInicio, 
+                    data_fim: dataFim, 
+                    filial,
+                    filiais: selectedFiliais.join(',')
+                }
             });
             setRazonetes(data);
         } catch (error) {
@@ -110,6 +126,16 @@ const Balancete = () => {
             setLoadingRazonete(false);
         }
     };
+
+    if (!canViewValues) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[calc(100vh-80px)] p-8 text-center">
+                <Lock className="w-16 h-16 text-gray-400 mb-4 opacity-50" />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Acesso Restrito</h2>
+                <p className="text-sm text-gray-500 max-w-md">Você não possui a permissão <strong>valores_financeiros</strong> necessária para visualizar o Balancete Dinâmico.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-[calc(100vh-80px)] space-y-4">
@@ -123,6 +149,15 @@ const Balancete = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-4 items-end">
+                    <div className="flex flex-col">
+                        <label className="text-xs font-semibold text-slate-600 mb-1">Empresas</label>
+                        <CompanyFilter 
+                            selectedFiliais={selectedFiliais} 
+                            onChange={setSelectedFiliais} 
+                            defaultAll={true} 
+                        />
+                    </div>
+                    
                     <div className="flex flex-col">
                         <label className="text-xs font-semibold text-slate-600 mb-1">Data Início</label>
                         <div className="relative">

@@ -9,7 +9,7 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
  * Adds a divider page for each Resource.
  * Prints multiple copies of the same part drawing if it passes through multiple resources.
  */
-export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
+export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeRoteiroStamp = false, includeDesc = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error('[opDrawingsByResourceGenerator] Dados inválidos:', mirrorData);
@@ -51,16 +51,27 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                 const op_num = component.op_num || itemGroup.produto_principal?.op_num || '-';
                 
                 const recursosComponente = [];
+                const roteiroArr = [];
                 if (component.operacoes && Array.isArray(component.operacoes)) {
                     component.operacoes.forEach(op => {
                          if (op.recurso) {
+                             const recCode = op.recurso.trim().toUpperCase();
+                             const desc = (op.desc_operacao || op.descricao || op.desc || op.operacao_cod || '').trim().toUpperCase();
                              recursosComponente.push({
-                                 recurso: op.recurso.trim().toUpperCase(),
-                                 descricao: op.desc_operacao ? op.desc_operacao.trim().toUpperCase() : ''
+                                 recurso: recCode,
+                                 descricao: desc
                              });
+                             if (includeRoteiroStamp) {
+                                 if (includeDesc && desc) {
+                                     roteiroArr.push(`${recCode}-${desc}`);
+                                 } else {
+                                     roteiroArr.push(recCode);
+                                 }
+                             }
                          }
                     });
                 }
+                const roteiroStr = includeRoteiroStamp && roteiroArr.length > 0 ? roteiroArr.join(' -> ') : '';
 
                 if (partsSummaryMap.has(code)) {
                     const existingPart = partsSummaryMap.get(code);
@@ -71,6 +82,9 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                             existingPart.recursos.push(rc);
                         }
                     });
+                    if (existingPart.roteiro === '' && roteiroStr !== '') {
+                        existingPart.roteiro = roteiroStr;
+                    }
                 } else {
                     partsSummaryMap.set(code, {
                         codigo: code,
@@ -79,7 +93,8 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                         tipo: component.tipoProduto || component.tipo_produto || component.tipo || '',
                         qtdTotal: rawQtd,
                         sources: [op_num],
-                        recursos: recursosComponente
+                        recursos: recursosComponente,
+                        roteiro: roteiroStr
                     });
                 }
             };
@@ -216,7 +231,11 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                     
                     const safePedidoNum = mirrorData?.pedido?.pedido || '-';
                     const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
-                    const baseInfo = `RECURSO: ${recursoCode} | CÓD: ${part.codigo} | ENT. LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
+                    let baseInfo = `RECURSO: ${recursoCode} | CÓD: ${part.codigo} | ENT. LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
+                    
+                    if (includeRoteiroStamp && part.roteiro) {
+                        baseInfo = `ROTEIRO: ${part.roteiro} | ` + baseInfo;
+                    }
                     
                     const chunkedInfo = chunkText(baseInfo, 105);
                     const allLines = [textLine1, ...chunkedInfo];
@@ -273,7 +292,11 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Pacote_OP_${safePedido}_Por_Recursos.pdf`;
+        let filenameSuffix = '_Por_Recursos.pdf';
+        if (includeRoteiroStamp) {
+            filenameSuffix = includeDesc ? '_Por_Recursos_Roteiro_Descricao.pdf' : '_Por_Recursos_Roteiro.pdf';
+        }
+        link.download = `Pacote_OP_${safePedido}${filenameSuffix}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

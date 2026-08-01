@@ -102,17 +102,24 @@ export const AuthProvider = ({ children }) => {
         setCustomProfiles([]);
     };
 
+    // Acessos sensíveis (financeiro) nunca são liberados automaticamente por ser Admin —
+    // precisam ser aprovados explicitamente por usuário em Configurações/Permissões,
+    // mesmo para quem tem TipoUsuario 'A'/'SA'.
+    const NEVER_ADMIN_BYPASS = ['valores_financeiros', 'aba_financeiro_faturar'];
+
     // hasPermission(pageId, action) — action: 'view' | 'create' | 'edit' | 'delete'
     const hasPermission = useCallback((pageId, action = 'view') => {
         if (!user) return false;
 
         const userTipo = (user.tipo || '').trim();
 
-        // Tipo 'A' e 'SA' têm acesso total, sempre
-        if (userTipo === 'A' || userTipo === 'SA') return true;
+        if (!NEVER_ADMIN_BYPASS.includes(pageId)) {
+            // Tipo 'A' e 'SA' têm acesso total, sempre
+            if (userTipo === 'A' || userTipo === 'SA') return true;
 
-        // Perfil customizado com isAdmin também tem acesso total
-        if (customProfiles.find(p => p.code === userTipo)?.isAdmin === true) return true;
+            // Perfil customizado com isAdmin também tem acesso total
+            if (customProfiles.find(p => p.code === userTipo)?.isAdmin === true) return true;
+        }
 
         const perm = permissions[pageId];
         if (!perm) return false;

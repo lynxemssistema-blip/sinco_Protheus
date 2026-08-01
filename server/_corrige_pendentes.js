@@ -1,3 +1,4 @@
+require('dotenv').config();
 require("dotenv").config();
 const { Pool } = require("pg");
 const mysql = require("mysql2/promise");
@@ -5,7 +6,7 @@ const mysql = require("mysql2/promise");
 const pg = new Pool({ host:process.env.PGHOST, port:process.env.PGPORT||5432, database:process.env.PGDATABASE||"p12prd", user:process.env.PGUSER, password:process.env.PGPASSWORD });
 
 async function main() {
-    const my = await mysql.createConnection({host:"metalfisa.mysql.uhserver.com",port:3306,database:"metalfisa",user:"ronaldo2",password:"jHAzhFG848@yN@U"});
+    const my = await mysql.createConnection({host:process.env.MYSQL_HOST,port:3306,database: process.env.MYSQL_DB,user:process.env.MYSQL_USER,password:process.env.MYSQL_PASS});
 
     console.log("=== ANALISE DOS PENDENTES ===\n");
 

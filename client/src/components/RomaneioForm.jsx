@@ -19,7 +19,8 @@ import NfSearchModal from './RomaneioModals/NfSearchModal';
 import NfMirrorModal from './RomaneioModals/NfMirrorModal';
 
 export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess }) {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [step, setStep] = useState(initialStep);
     const [loading, setLoading] = useState(false);
     const [types, setTypes] = useState([]);
@@ -1128,16 +1129,18 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                 <label className="text-xs font-bold block mb-1">Qtd</label>
                                                 <input type="number" className="border p-2 rounded w-20 text-sm" value={manualItem.qtd} onChange={e => setManualItem({ ...manualItem, qtd: e.target.value })} />
                                             </div>
-                                            <div>
-                                                <label className="text-xs font-bold block mb-1">Valor Unit. (R$)</label>
-                                                <input
-                                                    type="number" step="0.01"
-                                                    className="border p-2 rounded w-24 text-sm"
-                                                    value={manualItem.valor_unitario || ''}
-                                                    onChange={e => setManualItem({ ...manualItem, valor_unitario: e.target.value })}
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
+                                            {canViewValues && (
+                                                <div>
+                                                    <label className="text-xs font-bold block mb-1">Valor Unit. (R$)</label>
+                                                    <input
+                                                        type="number" step="0.01"
+                                                        className="border p-2 rounded w-24 text-sm"
+                                                        value={manualItem.valor_unitario || ''}
+                                                        onChange={e => setManualItem({ ...manualItem, valor_unitario: e.target.value })}
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            )}
                                             <div className="flex-1 min-w-[200px]">
                                                 <label className="text-xs font-bold block mb-1">Observação</label>
                                                 <input
@@ -1213,10 +1216,12 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     <label className="block text-xs font-bold">Observação</label>
                                     <input className="border p-2 rounded w-full" value={editingItem.comentario} onChange={e => setEditingItem({ ...editingItem, comentario: e.target.value })} />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold">Valor (R$)</label>
-                                    <input type="number" step="0.01" className="border p-2 rounded w-24" value={editingItem.valor_unitario} onChange={e => setEditingItem({ ...editingItem, valor_unitario: e.target.value })} />
-                                </div>
+                                {canViewValues && (
+                                    <div>
+                                        <label className="block text-xs font-bold">Valor (R$)</label>
+                                        <input type="number" step="0.01" className="border p-2 rounded w-24" value={editingItem.valor_unitario} onChange={e => setEditingItem({ ...editingItem, valor_unitario: e.target.value })} />
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-xs font-bold">Peso Unit. (kg)</label>
                                     <input type="number" step="0.001" className="border p-2 rounded w-28" placeholder={editingItem.peso_kg ? Number(editingItem.peso_kg).toFixed(3) : '0.000'} value={editingItem.peso_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, peso_unitario: e.target.value })} />
@@ -1247,8 +1252,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 <th className="p-2 text-right">Qtd Rec.</th>
                                 <th className="p-2 text-left">Obs</th>
                                 <th className="p-2 text-center">PDF</th>
-                                <th className="p-2 text-right">Vlr. Unit</th>
-                                <th className="p-2 text-right">Total</th>
+                                {canViewValues && <th className="p-2 text-right">Vlr. Unit</th>}
+                                {canViewValues && <th className="p-2 text-right">Total</th>}
                                 <th className="p-2 w-24"></th>
                             </tr>
                         </thead>
@@ -1287,12 +1292,16 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             </div>
                                         )}
                                     </td>
-                                    <td className="p-2 text-right">
-                                        R$ {it.valor_unitario ? Number(it.valor_unitario).toFixed(2) : '0.00'}
-                                    </td>
-                                    <td className="p-2 text-right font-bold text-slate-700">
-                                        R$ {(Number(it.valor_unitario || 0) * Number(it.quantidade || 0)).toFixed(2)}
-                                    </td>
+                                    {canViewValues && (
+                                        <td className="p-2 text-right">
+                                            R$ {it.valor_unitario ? Number(it.valor_unitario).toFixed(2) : '0.00'}
+                                        </td>
+                                    )}
+                                    {canViewValues && (
+                                        <td className="p-2 text-right font-bold text-slate-700">
+                                            R$ {(Number(it.valor_unitario || 0) * Number(it.quantidade || 0)).toFixed(2)}
+                                        </td>
+                                    )}
                                     <td className="p-2 w-24">
                                         {currRomaneioData?.status === 'Rascunho' && (
                                             <div className="flex gap-2 justify-end">
@@ -1319,10 +1328,12 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 </td>
                                 <td>{/* Obs */}</td>
                                 <td>{/* PDF */}</td>
-                                <td>{/* Vlr Unit */}</td>
-                                <td className="p-2 text-right text-green-700 text-sm border-x border-green-200 bg-green-50">
-                                    R$ {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
-                                </td>
+                                {canViewValues && <td>{/* Vlr Unit */}</td>}
+                                {canViewValues && (
+                                    <td className="p-2 text-right text-green-700 text-sm border-x border-green-200 bg-green-50">
+                                        R$ {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
+                                    </td>
+                                )}
                                 <td>{/* Actions */}</td>
                             </tr>
                         </tfoot>

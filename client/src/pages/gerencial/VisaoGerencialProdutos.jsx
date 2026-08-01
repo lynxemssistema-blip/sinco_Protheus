@@ -11,7 +11,7 @@ import html2canvas from 'html2canvas';
 import ErrorStateOverlay from '../../components/ErrorStateOverlay';
 
 const VisaoGerencialProdutos = () => {
-    const { user, hasPermission, isAdmin } = useAuth();
+    const { user, hasPermission } = useAuth();
     // Core State
     const [data, setData] = useState([]);
     const [kpiData, setKpiData] = useState([]);
@@ -46,7 +46,7 @@ const VisaoGerencialProdutos = () => {
         setExpandedGantt(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
-    const canViewFinance = isAdmin || hasPermission('financeiro', 'view');
+    const canViewFinance = hasPermission('valores_financeiros', 'view');
 
     const fetchData = async (startDate = null, endDate = null) => {
         setLoading(true);

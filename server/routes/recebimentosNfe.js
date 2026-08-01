@@ -2,14 +2,17 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../services/mysqlService');
 const protheusDB = require('../services/protheusDB');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // ==========================================
 // LISTAR NOTAS FISCAIS
 // ==========================================
 router.get('/', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const [rows] = await pool.query('SELECT id, chave_acesso, numero_nf, emitente_nome, emitente_cnpj, data_emissao, valor_total, status, usuario_inclusao, created_at FROM nfe_recebimentos ORDER BY id DESC');
-        res.json(rows);
+        const result = canViewFinancials ? rows : rows.map(({ valor_total, ...rest }) => rest);
+        res.json(result);
     } catch (error) {
         console.error('Erro ao listar NFs:', error);
         res.status(500).json({ error: 'Erro ao listar notas fiscais.' });
@@ -22,20 +25,21 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const [nfs] = await pool.query('SELECT * FROM nfe_recebimentos WHERE id = ?', [id]);
         if (nfs.length === 0) return res.status(404).json({ error: 'NF não encontrada.' });
 
         const [itens] = await pool.query('SELECT * FROM nfe_recebimento_itens WHERE id_nfe = ?', [id]);
         const [logs] = await pool.query(`
-            SELECT l.*, i.xProd, i.cProd, i.cProd_metalfisa 
+            SELECT l.*, i.xProd, i.cProd, i.cProd_metalfisa
             FROM nfe_recebimento_logs l
             JOIN nfe_recebimento_itens i ON l.id_nfe_item = i.id
             WHERE i.id_nfe = ?
             ORDER BY l.created_at DESC
         `, [id]);
 
-        const nf = nfs[0];
-        nf.itens = itens;
+        const nf = canViewFinancials ? nfs[0] : (({ valor_total, ...rest }) => rest)(nfs[0]);
+        nf.itens = canViewFinancials ? itens : itens.map(({ vUnCom, vProd, ...rest }) => rest);
         nf.logs = logs;
 
         res.json(nf);

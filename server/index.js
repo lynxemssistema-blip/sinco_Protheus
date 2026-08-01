@@ -398,12 +398,13 @@ cron.schedule('0 15 * * *', async () => {
             return;
         }
         const [configRows] = await mysqlService.query('SELECT general_config FROM app_company_settings WHERE id = 1');
+        let cfg = null;
         if (configRows.length && configRows[0].general_config) {
-            const cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-            if (cfg?.automations?.ai_whatsapp_active === false) {
-                console.log('[CRON] Agente de IA para WhatsApp desativado nas configurações globais.');
-                return;
-            }
+            cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+        }
+        if (cfg?.automations?.ai_whatsapp_active === false) {
+            console.log('[CRON] Agente de IA para WhatsApp desativado nas configurações globais.');
+            return;
         }
         console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
         const [groups] = await mysqlService.query(
@@ -535,6 +536,9 @@ startBackupCron();
 
 const { startFaturamentoCron } = require('./services/faturamentoCron');
 startFaturamentoCron();
+
+const { init: startFaturamentoEmailJob } = require('./services/cronJobs/faturamentoEmailJob');
+startFaturamentoEmailJob();
 
 const { startHermesScheduler } = require('./services/hermes/scheduler');
 startHermesScheduler();

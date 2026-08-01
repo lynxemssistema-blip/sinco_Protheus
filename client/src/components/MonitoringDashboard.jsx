@@ -10,13 +10,15 @@ export default function MonitoringDashboard() {
     const [metrics, setMetrics] = useState([]);
     const [connections, setConnections] = useState({ mysql: 0, postgres: 0 });
     const [loading, setLoading] = useState(true);
+    const [pcpHistoryEnabled, setPcpHistoryEnabled] = useState(true); // Default to true
 
     const loadMetrics = async () => {
         setLoading(true);
         try {
-            const [historicoRes, conexoesRes] = await Promise.all([
+            const [historicoRes, conexoesRes, pcpConfigRes] = await Promise.all([
                 api.get('/monitoramento/historico').catch(e => ({ data: { success: false } })),
-                api.get('/monitoramento/conexoes').catch(e => ({ data: { success: false } }))
+                api.get('/monitoramento/conexoes').catch(e => ({ data: { success: false } })),
+                api.get('/settings/enable_pcp_history').catch(e => ({ data: { value: true } }))
             ]);
 
             if (historicoRes.data && historicoRes.data.success) {
@@ -24,6 +26,14 @@ export default function MonitoringDashboard() {
             }
             if (conexoesRes.data && conexoesRes.data.success) {
                 setConnections(conexoesRes.data.data);
+            }
+            if (pcpConfigRes.data && pcpConfigRes.data.value !== undefined) {
+                // If it's a string from DB, parse it.
+                let val = pcpConfigRes.data.value;
+                if (typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch(e) {}
+                }
+                setPcpHistoryEnabled(val !== false); // Default true if null/undefined
             }
         } catch (error) {
             console.error('Erro ao carregar métricas:', error);
@@ -46,21 +56,48 @@ export default function MonitoringDashboard() {
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
+    const togglePcpHistory = async () => {
+        const newValue = !pcpHistoryEnabled;
+        setPcpHistoryEnabled(newValue);
+        try {
+            await api.post('/settings/enable_pcp_history', { value: newValue });
+            alert(`Histórico do PCP foi ${newValue ? 'ATIVADO' : 'DESATIVADO'}.`);
+        } catch (error) {
+            console.error('Erro ao salvar configuração de PCP:', error);
+            const msg = error.response?.data?.message || error.message || 'Falha ao salvar configuração.';
+            alert(`Falha ao salvar configuração: ${msg}`);
+            setPcpHistoryEnabled(!newValue); // rollback
+        }
+    };
+
     return (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-center mb-6 border-b pb-4">
+            <div className="flex justify-between items-center mb-6 border-b pb-4 flex-wrap gap-4">
                 <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                     <Activity className="w-6 h-6 text-blue-600" />
                     Monitoramento do Sistema
                 </h2>
-                <button 
-                    onClick={loadMetrics}
-                    disabled={loading}
-                    className="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    Atualizar
-                </button>
+                <div className="flex items-center gap-4">
+                    {/* PCP History Toggle */}
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
+                        <span className="text-sm font-medium text-slate-700">Histórico do PCP:</span>
+                        <button 
+                            onClick={togglePcpHistory}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${pcpHistoryEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+                        >
+                            <span className={`${pcpHistoryEnabled ? 'translate-x-4' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform`} />
+                        </button>
+                    </div>
+
+                    <button 
+                        onClick={loadMetrics}
+                        disabled={loading}
+                        className="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        Atualizar
+                    </button>
+                </div>
             </div>
 
             {loading && metrics.length === 0 ? (

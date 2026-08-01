@@ -33,6 +33,7 @@ const VirtualFlatList = ({
     setEngineeringTarget,
     setPcpForecastTarget,
     setNotesTarget,
+    setPriorityTarget,
     setSelectedInvoice,
     setInvoiceModalItem,
     setOpenActionMenu,
@@ -43,6 +44,9 @@ const VirtualFlatList = ({
     handlePrintOPByOperationWithDrawings,
     handlePrintOPByResourceWithDrawings,
     handlePrintOPWithOpsStampWithDrawings,
+    handlePrintOPWithOpsStampDrawingsByResource,
+    handlePrintOPWithOpsStampWithDescDrawings,
+    handlePrintOPWithOpsStampWithDescDrawingsByResource,
     handleExportOPByOperationExcel,
     setMenuPosition,
     handleUpdateFaturamentoDate,
@@ -135,6 +139,7 @@ const VirtualFlatList = ({
                         onSetEngineeringTarget={setEngineeringTarget}
                         onSetPcpForecastTarget={setPcpForecastTarget}
                         onSetNotesTarget={setNotesTarget}
+                        onSetPriorityTarget={setPriorityTarget}
                         onSetInvoiceModal={({ nf, item: it }) => { setSelectedInvoice(nf); setInvoiceModalItem(it); }}
                         onOpenActionMenu={setOpenActionMenu}
                         formatProtheusDate={formatProtheusDate}
@@ -144,6 +149,9 @@ const VirtualFlatList = ({
                         onPrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
                         onPrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
                         onPrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
+                        onPrintOPWithOpsStampDrawingsByResource={handlePrintOPWithOpsStampDrawingsByResource}
+                        onPrintOPWithOpsStampWithDescDrawings={handlePrintOPWithOpsStampWithDescDrawings}
+                        onPrintOPWithOpsStampWithDescDrawingsByResource={handlePrintOPWithOpsStampWithDescDrawingsByResource}
                         onExportOPByOperationExcel={handleExportOPByOperationExcel}
                         onSetMenuPosition={setMenuPosition}
                         onUpdateFaturamentoDate={handleUpdateFaturamentoDate}

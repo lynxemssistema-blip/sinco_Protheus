@@ -3,6 +3,7 @@ const router = express.Router();
 const protheusDB = require('../services/protheusDB');
 const axios = require('axios');
 const https = require('https');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
@@ -112,7 +113,12 @@ router.get('/pedido/:numero', async (req, res) => {
             return res.status(404).json({ error: 'Pedido não encontrado.' });
         }
 
-        res.json(itens);
+        const canViewFinancials = await hasFinancialAccess(req);
+        const result = canViewFinancials
+            ? itens
+            : itens.map(({ c7_preco, c7_total, ...rest }) => rest);
+
+        res.json(result);
     } catch (error) {
         console.error('Erro ao buscar pedido SC7:', error);
         res.status(500).json({ error: 'Erro ao buscar pedido.' });
@@ -307,6 +313,24 @@ router.post('/produtos/update', async (req, res) => {
         const numEspessura = parseFloat(espessura) || 0;
         const numArea = parseFloat(area) || 0; // Area = B5_VOLUME no desktop app
 
+        // 2.5 Resgatar valores originais (Fiscal/Logística) para não sobrescrever
+        let b1_posipi = "00000000";
+        let b1_locpad = "03";
+        let b1_origem = "0";
+        let b1_finalid = "1";
+
+        try {
+            const prodRes = await queryProtheus(`SELECT b1_posipi, b1_locpad, b1_origem, b1_finalid FROM public.sb1010 WHERE b1_cod = $1 AND COALESCE(d_e_l_e_t_, '') = ''`, [String(codigo).toUpperCase().trim()]);
+            if (prodRes.length > 0) {
+                b1_posipi = (prodRes[0].b1_posipi || b1_posipi).trim();
+                b1_locpad = (prodRes[0].b1_locpad || b1_locpad).trim();
+                b1_origem = (prodRes[0].b1_origem || b1_origem).trim();
+                b1_finalid = (prodRes[0].b1_finalid || b1_finalid).trim();
+            }
+        } catch (dbErr) {
+            console.error('Aviso: Erro ao resgatar valores fiscais antigos do Produto, usando fallback padrão:', dbErr.message);
+        }
+
         // 3. Montagem do Payload Exatamente igual ao Desktop
         const payload = {
             data: {
@@ -315,16 +339,16 @@ router.post('/produtos/update', async (req, res) => {
                         EMPRESA: "01",
                         CFILANT: "01",
                         NOPER: "3", // Desktop usa 3 para Create/Update
-                        B1_COD: codigo.toUpperCase().trim(),
+                        B1_COD: String(codigo).toUpperCase().trim(),
                         B1_GRUPO: grupo.split(/[\-\s]/)[0],
                         B1_DESC: tituloLimpo,
                         B1_XREVM: (revisao || '').trim(),
                         B1_TIPO: tipo.split(/[\-\s]/)[0],
                         B1_UM: um.split(/[\-\s]/)[0],
-                        B1_LOCPAD: "03",
-                        B1_POSIPI: "00000000",
-                        B1_FINALID: "1",
-                        B1_ORIGEM: "0",
+                        B1_LOCPAD: b1_locpad,
+                        B1_POSIPI: b1_posipi,
+                        B1_FINALID: b1_finalid,
+                        B1_ORIGEM: b1_origem,
                         B1_XCODDES: codDesHigienizado,
                         B1_PESO: numPeso,
                         B1_PESBRU: numPeso,
@@ -352,7 +376,12 @@ router.post('/produtos/update', async (req, res) => {
 
     } catch (error) {
         console.error('Protheus Integrador Erro [Update Produto]:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Erro ao Atualizar Produto na API.', details: error.response?.data || error.message });
+        console.error('Stack:', error.stack);
+        res.status(500).json({ 
+            error: 'Erro ao Atualizar Produto na API.', 
+            details: error.response?.data || error.message,
+            stack: error.stack
+        });
     }
 });
 
@@ -858,6 +887,36 @@ router.get('/fornecedores', async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar SA2:', error.message);
         res.status(500).json({ error: 'Falha na busca de Fornecedores do Protheus.' });
+    }
+});
+
+// =========================================================================
+// ROTA: Buscar Clientes (SA1) via DB
+// =========================================================================
+router.get('/clientes', async (req, res) => {
+    try {
+        const sql = `
+            SELECT 
+                TRIM(a1_cod) as a1_cod,
+                TRIM(a1_loja) as a1_loja,
+                a1_nome::bytea as a1_nome_bytes,
+                TRIM(a1_cgc) as a1_cgc
+            FROM public.sa1010
+            WHERE d_e_l_e_t_ = ' '
+        `;
+        const rows = await queryProtheus(sql);
+        const td = new TextDecoder('windows-1252');
+        const formatted = rows.map(r => ({
+            a1_cod: r.a1_cod?.trim() || '',
+            a1_loja: r.a1_loja?.trim() || '',
+            a1_nome: r.a1_nome_bytes ? td.decode(r.a1_nome_bytes).trim() : '',
+            a1_cgc: r.a1_cgc?.trim() || ''
+        }));
+        formatted.sort((a, b) => a.a1_nome.localeCompare(b.a1_nome, 'pt-BR'));
+        res.json(formatted);
+    } catch (error) {
+        console.error('Erro ao buscar SA1:', error.message);
+        res.status(500).json({ error: 'Falha na busca de Clientes do Protheus.' });
     }
 });
 

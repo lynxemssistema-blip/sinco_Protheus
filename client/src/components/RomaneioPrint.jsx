@@ -1,7 +1,11 @@
 import React from 'react';
 import metalfisaLogo from '../assets/metalfisa-logo.png';
+import { useAuth } from '../contexts/AuthContext';
 
 const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription }, ref) => {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
+
     if (!romaneio) return null;
 
     return (
@@ -85,8 +89,8 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                         <th className="border border-black p-1 text-right w-16">Peso Tot.</th>
                         <th className="border border-black p-1 text-right w-16">Área (m²)</th>
                         <th className="border border-black p-1 text-right w-16">Qtd.</th>
-                        <th className="border border-black p-1 text-right w-16">Vlr. Unit</th>
-                        <th className="border border-black p-1 text-right w-16">Total</th>
+                        {canViewValues && <th className="border border-black p-1 text-right w-16">Vlr. Unit</th>}
+                        {canViewValues && <th className="border border-black p-1 text-right w-16">Total</th>}
                         <th className="border border-black p-1 text-left w-24">Obs. Item</th>
                     </tr>
                 </thead>
@@ -104,12 +108,16 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                             </td>
                             <td className="border border-black p-1 text-right">{item.area_pintura_m2 ? Number(item.area_pintura_m2).toFixed(2) : '-'}</td>
                             <td className="border border-black p-1 text-right font-bold">{item.quantidade}</td>
-                            <td className="border border-black p-1 text-right">
-                                {item.valor_unitario ? Number(item.valor_unitario).toFixed(2) : '0.00'}
-                            </td>
-                            <td className="border border-black p-1 text-right font-bold">
-                                {(Number(item.valor_unitario || 0) * Number(item.quantidade || 0)).toFixed(2)}
-                            </td>
+                            {canViewValues && (
+                                <td className="border border-black p-1 text-right">
+                                    {item.valor_unitario ? Number(item.valor_unitario).toFixed(2) : '0.00'}
+                                </td>
+                            )}
+                            {canViewValues && (
+                                <td className="border border-black p-1 text-right font-bold">
+                                    {(Number(item.valor_unitario || 0) * Number(item.quantidade || 0)).toFixed(2)}
+                                </td>
+                            )}
                             <td className="border border-black p-1">{item.comentario}</td>
                         </tr>
                     ))}
@@ -128,10 +136,12 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                         <td className="border border-black p-1 text-right">
                             {items.reduce((acc, it) => acc + Number(it.quantidade || 0), 0)}
                         </td>
-                        <td className="border border-black p-1">{/* Vlr Unit */}</td>
-                        <td className="border border-black p-1 text-right">
-                            {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
-                        </td>
+                        {canViewValues && <td className="border border-black p-1">{/* Vlr Unit */}</td>}
+                        {canViewValues && (
+                            <td className="border border-black p-1 text-right">
+                                {items.reduce((acc, it) => acc + (Number(it.valor_unitario || 0) * Number(it.quantidade || 0)), 0).toFixed(2)}
+                            </td>
+                        )}
                         <td className="border border-black p-1"></td>
                     </tr>
                 </tfoot>

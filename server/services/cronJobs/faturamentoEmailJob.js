@@ -14,9 +14,10 @@ const runJob = async (isTest = false, testEmail = null) => {
         console.log(`[Agendador] Iniciando rotina de envio de faturamentos pendentes...`);
 
         // Obter configurações globais
+        let configObj = {};
         const [configRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings WHERE id = 1');
         if (configRows.length && configRows[0].general_config) {
-            const configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+            configObj = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
             if (configObj.automations?.visao_gerencial_faturamento_active === false && configObj.automations?.visao_gerencial_faturamento_email_active === false) {
                 console.log(`[Agendador] Visão Gerencial Faturamento desativada nas configurações globais (WhatsApp e E-mail). Cancelando job.`);
                 return;

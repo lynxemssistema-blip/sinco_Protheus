@@ -4,6 +4,31 @@ const fs = require('fs');
 const mysqldump = require('mysqldump');
 require('dotenv').config();
 
+// mysqldump abre a conexão de dump via mysql2.createConnection, usando sua própria
+// cópia aninhada em node_modules/mysqldump/node_modules/mysql2 (separada da top-level).
+// Hospedagens compartilhadas (ex.: Hostinger) aplicam max_statement_time por sessão,
+// o que interrompe o SELECT * em tabelas grandes (ex.: app_pcp_historico_revisao, ~2M linhas).
+// Removemos o limite nessa sessão antes de qualquer query de dump, em ambas as cópias.
+function patchMysql2CreateConnection(pkgPath) {
+    let mod;
+    try {
+        mod = require(pkgPath);
+    } catch (err) {
+        return;
+    }
+    if (mod.__maxStatementTimePatched) return;
+    const originalCreateConnection = mod.createConnection;
+    mod.createConnection = function patchedCreateConnection(...args) {
+        const connection = originalCreateConnection.apply(mod, args);
+        connection.query('SET SESSION max_statement_time=0');
+        return connection;
+    };
+    mod.__maxStatementTimePatched = true;
+}
+
+patchMysql2CreateConnection('mysql2');
+patchMysql2CreateConnection('mysqldump/node_modules/mysql2');
+
 function startBackupCron() {
     // Run everyday at 00:00 (midnight)
     cron.schedule('0 0 * * *', async () => {

@@ -1,10 +1,11 @@
+require('dotenv').config();
 require('dotenv').config({ path: __dirname + '/.env' });
 const mysql = require('mysql2/promise');
 
 async function run() {
     const pool = mysql.createPool({
         host: process.env.MYSQL_HOST || '192.168.1.77',
-        user: process.env.MYSQL_USER || 'ronaldo2',
+        user: process.env.MYSQL_USER,
         password: process.env.MYSQL_PASSWORD || 'metalfisa2022',
         database: process.env.MYSQL_DATABASE || 'metalfis_aplicativos',
         waitForConnections: true,

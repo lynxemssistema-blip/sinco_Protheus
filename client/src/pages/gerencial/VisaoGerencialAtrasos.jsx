@@ -11,7 +11,7 @@ import html2canvas from 'html2canvas';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#14b8a6', '#f97316'];
 
 const VisaoGerencialAtrasos = () => {
-    const { user, hasPermission, isAdmin } = useAuth();
+    const { user, hasPermission } = useAuth();
     
     // Core State
     const [data, setData] = useState([]);
@@ -160,7 +160,7 @@ const VisaoGerencialAtrasos = () => {
 
     const formatBRL = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
-    const canViewFinance = isAdmin || hasPermission('financeiro', 'view');
+    const canViewFinance = hasPermission('valores_financeiros', 'view');
 
     return (
         <div className="p-6 bg-slate-50 h-screen flex flex-col overflow-hidden">

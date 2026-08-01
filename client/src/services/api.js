@@ -403,6 +403,10 @@ export const getProductAssociations = (codigo) => api.get(`/produtos/${encodeURI
 export const createProductAssociation = (codigo, data) => api.post(`/produtos/${encodeURIComponent(codigo)}/associacoes`, data).then(res => res.data);
 export const deleteProductAssociation = (codigo, id) => api.delete(`/produtos/${encodeURIComponent(codigo)}/associacoes/${id}`).then(res => res.data);
 export const getProductRoute = (codigo) => api.get(`/produtos/${encodeURIComponent(codigo)}/roteiro`).then(res => res.data);
+export const setEstruturaCustoOverride = (codigoPai, componente, preco, usuario) =>
+    api.post(`/production/estrutura/${encodeURIComponent(codigoPai)}/${encodeURIComponent(componente)}/preco`, { preco, usuario }).then(res => res.data);
+export const removeEstruturaCustoOverride = (codigoPai, componente) =>
+    api.delete(`/production/estrutura/${encodeURIComponent(codigoPai)}/${encodeURIComponent(componente)}/preco`).then(res => res.data);
 export const importProductWeights = (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -501,6 +505,14 @@ export const consultarCadastroIA = (payload) => api.post('/stock/cadastro/consul
 export const salvarCorrecaoCadastro = (payload) => api.post('/stock/cadastro/correcoes', payload).then(res => res.data);
 export const getCorrecoesCadastro = (params) => api.get('/stock/cadastro/correcoes', { params }).then(res => res.data);
 export const atualizarStatusCorrecao = (grupoUuid, status) => api.patch(`/stock/cadastro/correcoes/${grupoUuid}/status`, { status }).then(res => res.data);
+// Fase 1 — Levenshtein (sem IA). Timeout curto (é rápido).
+export const analisarRedundanciasMp = (payload) => api.post('/stock/cadastro/analisar-mp', payload, { timeout: 30000 }).then(res => res.data);
+export const getGruposMp = () => api.get('/stock/cadastro/analisar-mp/grupos').then(res => res.data);
+// Fase 2 — Confirma 1 candidato com Gemini (~5-8s).
+export const confirmarGrupoIA = (candidato_id, produtos) => api.post('/stock/cadastro/confirmar-grupo-ia', { candidato_id, produtos }, { timeout: 45000 }).then(res => res.data);
+export const getOndeEUsado = (codigo) => api.get(`/stock/cadastro/onde-usado/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getUltimaCompraBatch = (codigos) => api.post('/stock/cadastro/ultima-compra/batch', { codigos }).then(res => res.data);
+
 
 export const getInternalRequests = async (params) => {
     const response = await api.get('/stock/requisicoes', { params });
@@ -702,8 +714,9 @@ export const getRncApontamentos = (rncId) => api.get(`/sgq/rncs/${rncId}/apontam
 export const createRncApontamento = (rncId, data) => api.post(`/sgq/rncs/${rncId}/apontamentos`, data).then(res => res.data);
 export const deleteRncApontamento = (id) => api.delete(`/sgq/rncs/apontamentos/${id}`).then(res => res.data);
 
-// Fornecedores Protheus
+// Fornecedores e Clientes Protheus
 export const getProtheusFornecedores = () => api.get('/protheus/fornecedores').then(res => res.data);
+export const getProtheusClientes = () => api.get('/protheus/clientes').then(res => res.data);
 
 // Checklist Apontamento Vertical
 export const getChecklist = (op, item_op, sequen_op) => api.get(`/producao/checklist/${op}/${item_op}/${sequen_op}`).then(res => res.data);

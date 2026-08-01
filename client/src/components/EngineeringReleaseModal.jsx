@@ -59,17 +59,19 @@ const EngineeringReleaseModal = ({
 
     // ── Inicialização ─────────────────────────────────────────────────────────
     useEffect(() => {
-        if (!isOpen) return;
-        setResult(null);
-        setBatchProgress(null);
-        setObservacao('');
-        if (isBatchMode) {
-            setLoteItens([...batchItems]);
-        } else {
-            setPedido(initialPedido !== undefined && initialPedido !== null ? String(initialPedido) : '');
-            setItem(initialItem !== undefined && initialItem !== null ? String(initialItem) : '');
+        if (isOpen) {
+            setResult(null);
+            setBatchProgress(null);
+            setObservacao('');
+            if (isBatchMode) {
+                setLoteItens([...batchItems]);
+            } else {
+                setPedido(initialPedido !== undefined && initialPedido !== null ? String(initialPedido) : '');
+                setItem(initialItem !== undefined && initialItem !== null ? String(initialItem) : '');
+            }
         }
-    }, [isOpen, initialPedido, initialItem, isBatchMode, batchItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     useEffect(() => {
         if (isOpen && userName) {

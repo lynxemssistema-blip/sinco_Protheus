@@ -7,6 +7,7 @@ import {
 import { api, getFileUrl } from '../../services/api';
 import * as XLSX from 'xlsx';
 import ConfirmModal from '../../components/ConfirmModal';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtNum    = (n) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -78,6 +79,9 @@ function DiffBadge({ custoOC, custoProtheus }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function VMIOcFornecedoresPage({ isTab = false }) {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
+
     // Upload
     const [file, setFile]           = useState(null);
     const [uploading, setUploading] = useState(false);
@@ -260,9 +264,11 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
             { key: 'DT_NEG',            label: 'DT_NEG',             w: 14 },
             { key: 'RESPONSAVEL',       label: 'RESPONSAVEL',        w: 22 },
             { key: 'QTDE_EM_ABERTO',   label: 'QTDE_EM_ABERTO',     w: 16 },
-            { key: 'CUSTO_UNI',         label: 'CUSTO_UNI',          w: 16 },
-            { key: 'CUSTO_UNI_PROTHEUS',label: 'CUSTO_UNI_PROTHEUS', w: 20 },
-            { key: 'CUSTO_TOTAL',       label: 'CUSTO_TOTAL',        w: 16 },
+            ...(canViewValues ? [
+                { key: 'CUSTO_UNI',         label: 'CUSTO_UNI',          w: 16 },
+                { key: 'CUSTO_UNI_PROTHEUS',label: 'CUSTO_UNI_PROTHEUS', w: 20 },
+                { key: 'CUSTO_TOTAL',       label: 'CUSTO_TOTAL',        w: 16 },
+            ] : []),
             { key: 'SITUACAO',          label: 'SITUACAO',           w: 14 },
             { key: 'ARM',               label: 'ARM',                w: 10 },
         ];
@@ -292,14 +298,16 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                     DT_NEG:             fmtDtExcel(item.dt_neg),
                     RESPONSAVEL:        item.responsavel   || '',
                     QTDE_EM_ABERTO:     Number(item.qtde_em_aberto || 0),
-                    CUSTO_UNI:          Number(item.custo_uni      || 0),
-                    // Preço Protheus: prefere valor salvo no item (banco), fallback ao grupo (on-the-fly)
-                    CUSTO_UNI_PROTHEUS: item.custo_protheus != null
-                                            ? Number(item.custo_protheus)
-                                            : (g.custo_protheus?.custo_medio != null
-                                                ? Number(g.custo_protheus.custo_medio)
-                                                : ''),
-                    CUSTO_TOTAL:        Number(item.custo_total    || 0),
+                    ...(canViewValues ? {
+                        CUSTO_UNI:          Number(item.custo_uni      || 0),
+                        // Preço Protheus: prefere valor salvo no item (banco), fallback ao grupo (on-the-fly)
+                        CUSTO_UNI_PROTHEUS: item.custo_protheus != null
+                                                ? Number(item.custo_protheus)
+                                                : (g.custo_protheus?.custo_medio != null
+                                                    ? Number(g.custo_protheus.custo_medio)
+                                                    : ''),
+                        CUSTO_TOTAL:        Number(item.custo_total    || 0),
+                    } : {}),
                     SITUACAO:           item.situacao      || '',
                     ARM:                item.arm           || '',
                 });
@@ -464,7 +472,7 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                             <th className="px-3 py-2 text-left font-semibold text-slate-500 whitespace-nowrap">B1_COD Localizado</th>
                                             <th className="px-3 py-2 text-left font-semibold text-slate-500">Descrição</th>
                                             <th className="px-3 py-2 text-right font-semibold text-slate-500 whitespace-nowrap">Qtde Aberto</th>
-                                            <th className="px-3 py-2 text-right font-semibold text-slate-500 whitespace-nowrap">Custo Total</th>
+                                            {canViewValues && <th className="px-3 py-2 text-right font-semibold text-slate-500 whitespace-nowrap">Custo Total</th>}
                                             <th className="px-3 py-2 text-left font-semibold text-slate-500">Situação</th>
                                         </tr>
                                     </thead>
@@ -478,7 +486,7 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                                     <span className="block truncate" title={item.desc_produto}>{item.desc_produto}</span>
                                                 </td>
                                                 <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-700">{fmtNum(item.qtde_em_aberto)}</td>
-                                                <td className="px-3 py-1.5 text-right font-mono text-slate-500">{fmtMoney(item.custo_total)}</td>
+                                                {canViewValues && <td className="px-3 py-1.5 text-right font-mono text-slate-500">{fmtMoney(item.custo_total)}</td>}
                                                 <td className="px-3 py-1.5"><SituacaoBadge s={item.situacao} /></td>
                                             </tr>
                                         ))}
@@ -554,8 +562,10 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                 <span><strong className="text-slate-800">{totais?.total_grupos ?? loteAtual.total_produtos}</strong> grupos</span>
                                 <span className="text-slate-300">|</span>
                                 <span><strong className="text-slate-800 tabular-nums">{totais ? fmtNum(totais.qtde_total) : fmtNum(loteAtual.qtde_total)}</strong> pçs</span>
-                                <span className="text-slate-300">|</span>
-                                <span className="font-semibold text-slate-700">{totais ? fmtMoney(totais.custo_total) : fmtMoney(loteAtual.custo_total)}</span>
+                                {canViewValues && (<>
+                                    <span className="text-slate-300">|</span>
+                                    <span className="font-semibold text-slate-700">{totais ? fmtMoney(totais.custo_total) : fmtMoney(loteAtual.custo_total)}</span>
+                                </>)}
                             </>)}
                         </div>
 
@@ -668,11 +678,19 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                             <table className="w-full text-xs border-collapse">
                                 <thead className="sticky top-0 z-10">
                                     <tr className="border-b-2 border-slate-200">
-                                        {['', 'Produto (Col C)', 'B1_COD Metalfisa', 'PDF', 'Descrição', 'Qtde em Aberto', 'Vlr. Unit. OC', 'Vlr. Padrão', 'Δ%', 'Custo Total', 'OC(s)', 'Saldo VMI', 'Cobertura'].map((h, i) => (
-                                            <th key={i} className={`px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 ${
-                                                [5,6,7,9].includes(i) ? 'text-right' : 'text-left'
-                                            } ${i === 0 ? 'w-8' : ''} ${i === 3 ? 'text-center w-10' : ''} ${i === 8 ? 'text-center' : ''} ${i === 12 ? 'text-left' : ''}`}>{h}</th>
-                                        ))}
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left w-8" />
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Produto (Col C)</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">B1_COD Metalfisa</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-center w-10">PDF</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Descrição</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-right">Qtde em Aberto</th>
+                                        {canViewValues && <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-right">Vlr. Unit. OC</th>}
+                                        {canViewValues && <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-right">Vlr. Padrão</th>}
+                                        {canViewValues && <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-center">Δ%</th>}
+                                        {canViewValues && <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-right">Custo Total</th>}
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">OC(s)</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Saldo VMI</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Cobertura</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -697,20 +715,28 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">{fmtNum(grupo.qtde_total)}</td>
                                                     {/* Vlr. Unit. OC */}
-                                                    <td className="px-3 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
-                                                        {grupo.custo_uni > 0 ? fmtMoney(grupo.custo_uni) : <span className="text-slate-300">—</span>}
-                                                    </td>
+                                                    {canViewValues && (
+                                                        <td className="px-3 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
+                                                            {grupo.custo_uni > 0 ? fmtMoney(grupo.custo_uni) : <span className="text-slate-300">—</span>}
+                                                        </td>
+                                                    )}
                                                     {/* Vlr. Padrão Protheus */}
-                                                    <td className="px-3 py-2.5 text-right font-mono text-slate-500 whitespace-nowrap">
-                                                        {grupo.custo_protheus?.custo_medio > 0
-                                                            ? fmtMoney(grupo.custo_protheus.custo_medio)
-                                                            : <span className="text-slate-300">—</span>}
-                                                    </td>
+                                                    {canViewValues && (
+                                                        <td className="px-3 py-2.5 text-right font-mono text-slate-500 whitespace-nowrap">
+                                                            {grupo.custo_protheus?.custo_medio > 0
+                                                                ? fmtMoney(grupo.custo_protheus.custo_medio)
+                                                                : <span className="text-slate-300">—</span>}
+                                                        </td>
+                                                    )}
                                                     {/* Δ% */}
-                                                    <td className="px-3 py-2.5 text-center">
-                                                        <DiffBadge custoOC={grupo.custo_uni} custoProtheus={grupo.custo_protheus?.custo_medio} />
-                                                    </td>
-                                                    <td className="px-3 py-2.5 text-right font-mono text-slate-600 whitespace-nowrap">{fmtMoney(grupo.custo_total)}</td>
+                                                    {canViewValues && (
+                                                        <td className="px-3 py-2.5 text-center">
+                                                            <DiffBadge custoOC={grupo.custo_uni} custoProtheus={grupo.custo_protheus?.custo_medio} />
+                                                        </td>
+                                                    )}
+                                                    {canViewValues && (
+                                                        <td className="px-3 py-2.5 text-right font-mono text-slate-600 whitespace-nowrap">{fmtMoney(grupo.custo_total)}</td>
+                                                    )}
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex flex-wrap gap-0.5">
                                                             {(grupo.ocs||[]).map(oc => (
@@ -750,13 +776,17 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                                         </td>
                                                         <td className="px-3 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtNum(item.qtde_em_aberto)}</td>
                                                         {/* Vlr. Unit. item OC */}
-                                                        <td className="px-3 py-1.5 text-right font-mono text-slate-600 whitespace-nowrap">
-                                                            {item.custo_uni > 0 ? fmtMoney(item.custo_uni) : <span className="text-slate-300">—</span>}
-                                                        </td>
+                                                        {canViewValues && (
+                                                            <td className="px-3 py-1.5 text-right font-mono text-slate-600 whitespace-nowrap">
+                                                                {item.custo_uni > 0 ? fmtMoney(item.custo_uni) : <span className="text-slate-300">—</span>}
+                                                            </td>
+                                                        )}
                                                         {/* Vlr. Padrão (herdado do grupo) */}
-                                                        <td className="px-3 py-1.5" />
-                                                        <td className="px-3 py-1.5" />
-                                                        <td className="px-3 py-1.5 text-right font-mono text-slate-500 whitespace-nowrap">{fmtMoney(item.custo_total)}</td>
+                                                        {canViewValues && <td className="px-3 py-1.5" />}
+                                                        {canViewValues && <td className="px-3 py-1.5" />}
+                                                        {canViewValues && (
+                                                            <td className="px-3 py-1.5 text-right font-mono text-slate-500 whitespace-nowrap">{fmtMoney(item.custo_total)}</td>
+                                                        )}
                                                         <td className="px-3 py-1.5"><SituacaoBadge s={item.situacao} /></td>
                                                         <td className="px-3 py-1.5" /><td className="px-3 py-1.5" />
                                                     </tr>
@@ -770,13 +800,25 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                 {totais && (
                                     <tfoot className="sticky bottom-0 z-10">
                                         <tr className="border-t-2 border-slate-300 bg-slate-100">
-                                            <td colSpan={4} className="px-3 py-2.5 font-bold text-slate-700 text-xs whitespace-nowrap">
-                                                TOTAL — {totais.total_grupos} grupos · {totais.total_itens} linhas
-                                            </td>
-                                            <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">{fmtNum(totais.qtde_total)}</td>
-                                            <td colSpan={3} />
-                                            <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">{fmtMoney(totais.custo_total)}</td>
-                                            <td colSpan={3} />
+                                            {canViewValues ? (
+                                                <>
+                                                    <td colSpan={4} className="px-3 py-2.5 font-bold text-slate-700 text-xs whitespace-nowrap">
+                                                        TOTAL — {totais.total_grupos} grupos · {totais.total_itens} linhas
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">{fmtNum(totais.qtde_total)}</td>
+                                                    <td colSpan={3} />
+                                                    <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">{fmtMoney(totais.custo_total)}</td>
+                                                    <td colSpan={3} />
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td colSpan={5} className="px-3 py-2.5 font-bold text-slate-700 text-xs whitespace-nowrap">
+                                                        TOTAL — {totais.total_grupos} grupos · {totais.total_itens} linhas
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">{fmtNum(totais.qtde_total)}</td>
+                                                    <td colSpan={3} />
+                                                </>
+                                            )}
                                         </tr>
                                     </tfoot>
                                 )}
@@ -786,7 +828,13 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                             <table className="w-full text-xs border-collapse">
                                 <thead className="sticky top-0 z-10">
                                     <tr className="border-b-2 border-slate-200">
-                                        {['OC','Item','Produto (Col C)','B1_COD','Descrição','Fornecedor','Qtde Aberto','Vlr. Unit. OC','Custo Total','Data Neg.','Situação'].map(h => (
+                                        {['OC','Item','Produto (Col C)','B1_COD','Descrição','Fornecedor','Qtde Aberto'].map(h => (
+                                            <th key={h} className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap bg-slate-100">{h}</th>
+                                        ))}
+                                        {canViewValues && ['Vlr. Unit. OC','Custo Total'].map(h => (
+                                            <th key={h} className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap bg-slate-100">{h}</th>
+                                        ))}
+                                        {['Data Neg.','Situação'].map(h => (
                                             <th key={h} className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap bg-slate-100">{h}</th>
                                         ))}
                                     </tr>
@@ -805,10 +853,14 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                                 <span className="block truncate">{item.nome_fornecedor}</span>
                                             </td>
                                             <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-700 whitespace-nowrap">{fmtNum(item.qtde_em_aberto)}</td>
-                                            <td className="px-3 py-1.5 text-right font-mono text-cyan-700 whitespace-nowrap">
-                                                {item.custo_uni > 0 ? fmtMoney(item.custo_uni) : <span className="text-slate-300">—</span>}
-                                            </td>
-                                            <td className="px-3 py-1.5 text-right font-mono text-slate-500 whitespace-nowrap">{fmtMoney(item.custo_total)}</td>
+                                            {canViewValues && (
+                                                <td className="px-3 py-1.5 text-right font-mono text-cyan-700 whitespace-nowrap">
+                                                    {item.custo_uni > 0 ? fmtMoney(item.custo_uni) : <span className="text-slate-300">—</span>}
+                                                </td>
+                                            )}
+                                            {canViewValues && (
+                                                <td className="px-3 py-1.5 text-right font-mono text-slate-500 whitespace-nowrap">{fmtMoney(item.custo_total)}</td>
+                                            )}
                                             <td className="px-3 py-1.5 text-slate-400 whitespace-nowrap">{fmtDate(item.dt_neg)}</td>
                                             <td className="px-3 py-1.5"><SituacaoBadge s={item.situacao} /></td>
                                         </tr>
@@ -823,9 +875,11 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                             <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">
                                                 {fmtNum(itensFlatFiltrados.reduce((s,i) => s + Number(i.qtde_em_aberto||0), 0))}
                                             </td>
-                                            <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">
-                                                {fmtMoney(itensFlatFiltrados.reduce((s,i) => s + Number(i.custo_total||0), 0))}
-                                            </td>
+                                            {canViewValues && (
+                                                <td className="px-3 py-2.5 text-right font-bold font-mono text-slate-800 whitespace-nowrap">
+                                                    {fmtMoney(itensFlatFiltrados.reduce((s,i) => s + Number(i.custo_total||0), 0))}
+                                                </td>
+                                            )}
                                             <td colSpan={2} />
                                         </tr>
                                     </tfoot>

@@ -4,8 +4,9 @@ import {
     TrendingUp, TrendingDown, DollarSign, Calendar,
     ArrowUpCircle, ArrowDownCircle, ArrowRight,
     Search, Download, AlertTriangle, LineChart as LineChartIcon,
-    LayoutList, Users, ChevronDown, ChevronUp
+    LayoutList, Users, ChevronDown, ChevronUp, Filter, Target, Building2, FileText, ChevronRight, Lock
 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     Legend, ResponsiveContainer, AreaChart, Area
@@ -13,6 +14,7 @@ import {
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, addWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import CompanyFilter from '../../components/CompanyFilter';
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────────
 const Skeleton = ({ className = '' }) => (
@@ -81,8 +83,11 @@ const exportEntityCSV = (rows) => {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const FluxoCaixa = () => {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [data, setData] = useState({ receber: [], pagar: [] });
     const [loading, setLoading] = useState(true);
+    const [selectedFiliais, setSelectedFiliais] = useState([]);
     const [dateRange, setDateRange] = useState({
         inicio: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
         fim: format(addMonths(new Date(), 6), 'yyyy-MM-dd')
@@ -106,12 +111,16 @@ const FluxoCaixa = () => {
         setDateRange(presets[preset]);
     };
 
-    useEffect(() => { fetchData(); }, [dateRange]);
+    useEffect(() => { fetchData(); }, [dateRange, selectedFiliais]);
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await getFluxoCaixa({ data_inicio: dateRange.inicio, data_fim: dateRange.fim });
+            const res = await getFluxoCaixa({ 
+                data_inicio: dateRange.inicio, 
+                data_fim: dateRange.fim,
+                filiais: selectedFiliais.join(',')
+            });
             setData(res);
         } catch {
             toast.error('Erro ao carregar dados do fluxo de caixa.');
@@ -194,6 +203,16 @@ const FluxoCaixa = () => {
         setSortEntity(prev => prev.key === key ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' });
     };
 
+    if (!canViewValues) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-8 text-center">
+                <Lock className="w-16 h-16 text-gray-400 mb-4 opacity-50" />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Acesso Restrito</h2>
+                <p className="text-sm text-gray-500 max-w-md">Você não possui a permissão <strong>valores_financeiros</strong> necessária para visualizar o Fluxo de Caixa.</p>
+            </div>
+        );
+    }
+
     // ── Skeleton ───────────────────────────────────────────────────────────────
     if (loading && !data.receber.length && !data.pagar.length) {
         return (
@@ -235,16 +254,22 @@ const FluxoCaixa = () => {
                                 }`}>{p.label}</button>
                         ))}
                     </div>
-                    <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex-wrap">
+                        <CompanyFilter 
+                            selectedFiliais={selectedFiliais} 
+                            onChange={setSelectedFiliais} 
+                            defaultAll={true} 
+                        />
+                        <div className="h-6 w-[1px] bg-slate-200 hidden md:block"></div>
                         <div className="flex items-center gap-2 px-3 border-r border-slate-100">
                             <Calendar className="w-4 h-4 text-slate-400" />
-                            <input type="date" className="text-sm border-none focus:ring-0 p-0 text-slate-600 font-bold"
+                            <input type="date" className="text-sm border-none focus:ring-0 p-0 text-slate-600 font-bold bg-transparent"
                                 value={dateRange.inicio}
                                 onChange={e => { setActivePreset(null); setDateRange({...dateRange, inicio: e.target.value}); }} />
                         </div>
                         <div className="flex items-center gap-2 px-3">
                             <ArrowRight className="w-4 h-4 text-slate-300" />
-                            <input type="date" className="text-sm border-none focus:ring-0 p-0 text-slate-600 font-bold"
+                            <input type="date" className="text-sm border-none focus:ring-0 p-0 text-slate-600 font-bold bg-transparent"
                                 value={dateRange.fim}
                                 onChange={e => { setActivePreset(null); setDateRange({...dateRange, fim: e.target.value}); }} />
                         </div>

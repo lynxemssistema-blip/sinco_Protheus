@@ -56,7 +56,7 @@ router.get('/recursos', async (req, res) => {
         //    frontend always receives resources in the sequence defined by the user in
         //    pcp-refinado/capacidade, without relying on insertion order.
         const [mysqlResult] = await mysqlPool.query(
-            'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo '
+            'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo, taxa_setup_min, taxa_padrao_min '
             + 'FROM app_recursos_capacidade '
             + 'ORDER BY COALESCE(ordem_exibicao, 9999) ASC, recurso_codigo ASC'
         );
@@ -79,7 +79,10 @@ router.get('/recursos', async (req, res) => {
                 // COALESCE: resources never configured in app_recursos_capacidade get 9999
                 // so they always sort AFTER configured ones
                 ordem_exibicao: conf.ordem_exibicao != null ? conf.ordem_exibicao : 9999,
-                grupo_paralelo: conf.grupo_paralelo || null
+                grupo_paralelo: conf.grupo_paralelo || null,
+                // Padrão R$ 1,00/min para recursos ainda não configurados
+                taxa_setup_min: conf.taxa_setup_min != null ? conf.taxa_setup_min : 1,
+                taxa_padrao_min: conf.taxa_padrao_min != null ? conf.taxa_padrao_min : 1
             };
         });
 
@@ -105,23 +108,33 @@ router.get('/recursos', async (req, res) => {
 // POST /api/pcp-refinado/recursos - Upsert capacity for a resource
 router.post('/recursos', async (req, res) => {
     try {
-        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo } = req.body;
+        const { recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo, taxa_setup_min, taxa_padrao_min } = req.body;
 
         if (!recurso_codigo) {
             return res.status(400).json({ error: 'O código do recurso é obrigatório' });
         }
 
         const query = `
-            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO app_recursos_capacidade (recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo, taxa_setup_min, taxa_padrao_min)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 tempo_padrao_minutos = VALUES(tempo_padrao_minutos),
                 capacidade_diaria_minutos = VALUES(capacidade_diaria_minutos),
                 ordem_exibicao = VALUES(ordem_exibicao),
-                grupo_paralelo = VALUES(grupo_paralelo)
+                grupo_paralelo = VALUES(grupo_paralelo),
+                taxa_setup_min = VALUES(taxa_setup_min),
+                taxa_padrao_min = VALUES(taxa_padrao_min)
         `;
 
-        await mysqlPool.query(query, [recurso_codigo, tempo_padrao_minutos || 0, capacidade_diaria_minutos || 0, ordem_exibicao || 0, grupo_paralelo || null]);
+        await mysqlPool.query(query, [
+            recurso_codigo,
+            tempo_padrao_minutos || 0,
+            capacidade_diaria_minutos || 0,
+            ordem_exibicao || 0,
+            grupo_paralelo || null,
+            taxa_setup_min != null ? taxa_setup_min : 1,
+            taxa_padrao_min != null ? taxa_padrao_min : 1
+        ]);
 
         res.json({ message: 'Capacidade atualizada com sucesso' });
     } catch (error) {

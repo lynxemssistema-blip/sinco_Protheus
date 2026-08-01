@@ -9,7 +9,8 @@ import { useAuth } from '../contexts/AuthContext';
 import useStickyState from '../hooks/useStickyState';
 
 const FaturamentoSolicitacoesHistorico = () => {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [solicitacoes, setSolicitacoes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -530,7 +531,9 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('pedido')}>Pedido {renderSortIcon('pedido')}</th>
                                                         <th className="px-4 py-3 font-semibold">Cód. Produtos</th>
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('quantidade')}>Quantidade {renderSortIcon('quantidade')}</th>
+                                                        {canViewValues && (
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('valor_total')}>Vlr Total {renderSortIcon('valor_total')}</th>
+                                                        )}
                                                         <th className="px-4 py-3 font-semibold">Status</th>
                                                     </tr>
                                                 </thead>
@@ -545,15 +548,17 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                             {f.codigo_produto}
                                                         </td>
                                                         <td className="px-4 py-2 text-right font-bold text-gray-700">{parseFloat(f.quantidade).toLocaleString('pt-BR')}</td>
+                                                        {canViewValues && (
                                                         <td className="px-4 py-2 text-right font-bold text-emerald-700">
                                                             {parseFloat(f.valor_total) > 0 ? `R$ ${parseFloat(f.valor_total).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}` : '-'}
                                                         </td>
+                                                        )}
                                                         <td className="px-4 py-2"><StatusBadge status={f.status} /></td>
                                                     </tr>
                                                 ))}
                                                     {faturamentosFlat.length === 0 && (
                                                         <tr>
-                                                            <td colSpan="8" className="p-8 text-center text-gray-400">Nenhum faturamento encontrado nesta visão.</td>
+                                                            <td colSpan={canViewValues ? 8 : 7} className="p-8 text-center text-gray-400">Nenhum faturamento encontrado nesta visão.</td>
                                                         </tr>
                                                     )}
                                                 </tbody>
@@ -568,7 +573,9 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('nfs')}>NFs {renderSortIcon('nfs')}</th>
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('codigos')}>Cód. Produtos {renderSortIcon('codigos')}</th>
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('total_itens')}>Total Itens {renderSortIcon('total_itens')}</th>
+                                                        {canViewValues && (
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('valor_total')}>Valor Total {renderSortIcon('valor_total')}</th>
+                                                        )}
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('usuario')}>Solicitante {renderSortIcon('usuario')}</th>
                                                         <th className="px-4 py-3 font-semibold">Status</th>
                                                     </tr>
@@ -582,16 +589,18 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                             <td className="px-4 py-2 font-mono font-semibold text-gray-900 truncate max-w-[150px]" title={f.nfs}>{f.nfs || '-'}</td>
                                                             <td className="px-4 py-2 font-mono text-blue-700 font-semibold truncate max-w-[200px]" title={f.codigos}>{f.codigos || '-'}</td>
                                                             <td className="px-4 py-2 text-right font-bold text-gray-700">{f.total_itens}</td>
+                                                            {canViewValues && (
                                                             <td className="px-4 py-2 text-right font-bold text-emerald-700">
                                                                 {f.valor_total > 0 ? `R$ ${f.valor_total.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}` : '-'}
                                                             </td>
+                                                            )}
                                                             <td className="px-4 py-2 text-gray-600 font-medium">{f.usuario}</td>
                                                             <td className="px-4 py-2"><StatusBadge status={f.status} /></td>
                                                         </tr>
                                                     ))}
                                                     {faturamentosSolicitacoesFlat.length === 0 && (
                                                         <tr>
-                                                            <td colSpan="8" className="p-8 text-center text-gray-400">Nenhuma solicitação encontrada nesta visão.</td>
+                                                            <td colSpan={canViewValues ? 9 : 8} className="p-8 text-center text-gray-400">Nenhuma solicitação encontrada nesta visão.</td>
                                                         </tr>
                                                     )}
                                                 </tbody>
@@ -602,7 +611,9 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                     <tr>
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('codigo_produto')}>Cód. Produto {renderSortIcon('codigo_produto')}</th>
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('quantidade')}>Qtd Total {renderSortIcon('quantidade')}</th>
+                                                        {canViewValues && (
                                                         <th className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('valor_total')}>Vlr Total {renderSortIcon('valor_total')}</th>
+                                                        )}
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('pedidos')}>Pedidos {renderSortIcon('pedidos')}</th>
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('notas')}>NFs {renderSortIcon('notas')}</th>
                                                         <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => requestSort('clientes')}>Clientes {renderSortIcon('clientes')}</th>
@@ -614,9 +625,11 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                         <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
                                                             <td className="px-4 py-2 font-mono font-bold text-blue-700">{f.codigo_produto}</td>
                                                             <td className="px-4 py-2 text-right font-bold text-gray-700">{parseFloat(f.quantidade).toLocaleString('pt-BR')}</td>
+                                                            {canViewValues && (
                                                             <td className="px-4 py-2 text-right font-bold text-emerald-700">
                                                                 {parseFloat(f.valor_total) > 0 ? `R$ ${parseFloat(f.valor_total).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}` : '-'}
                                                             </td>
+                                                            )}
                                                             <td className="px-4 py-2 font-mono text-[12px] truncate max-w-[200px]" title={f.pedidos}>{f.pedidos}</td>
                                                             <td className="px-4 py-2 font-mono text-[12px] truncate max-w-[200px]" title={f.notas}>{f.notas}</td>
                                                             <td className="px-4 py-2 text-gray-800 text-[12px] truncate max-w-[200px]" title={f.clientes}>{f.clientes}</td>
@@ -625,7 +638,7 @@ const FaturamentoSolicitacoesHistorico = () => {
                                                     ))}
                                                     {faturamentosProdutosFlat.length === 0 && (
                                                         <tr>
-                                                            <td colSpan="7" className="p-8 text-center text-gray-400">Nenhum produto encontrado nesta visão.</td>
+                                                            <td colSpan={canViewValues ? 7 : 6} className="p-8 text-center text-gray-400">Nenhum produto encontrado nesta visão.</td>
                                                         </tr>
                                                     )}
                                                 </tbody>

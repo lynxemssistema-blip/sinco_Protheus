@@ -19,11 +19,30 @@ const SMTP_CONFIG = {
 
 // Migration check skipped (MySQL 5.6 compatibility).
 
+// TEMP: Migration route — remove after running once
+router.post('/run-migration-cliente', async (req, res) => {
+    const cols = [
+        { name: 'idCliente',   def: "VARCHAR(15) DEFAULT NULL" },
+        { name: 'lojaCliente', def: "VARCHAR(5) DEFAULT NULL" },
+        { name: 'tipoExterno', def: "VARCHAR(20) DEFAULT 'fornecedor'" },
+    ];
+    const results = [];
+    for (const col of cols) {
+        try {
+            await mysqlPool.query(`ALTER TABLE usuario ADD COLUMN ${col.name} ${col.def}`);
+            results.push({ col: col.name, status: 'added' });
+        } catch (e) {
+            results.push({ col: col.name, status: e.code === 'ER_DUP_FIELDNAME' ? 'already_exists' : 'error', msg: e.message });
+        }
+    }
+    res.json({ results });
+});
+
 // LIST USERS (GET /)
 router.get('/', async (req, res) => {
     try {
         const { setor } = req.query;
-        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, pedidos_autorizados FROM usuario';
+        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados FROM usuario';
         const params = [];
         const conditions = [];
 
@@ -54,7 +73,7 @@ router.get('/', async (req, res) => {
 // CREATE USER (POST /)
 router.post('/', requirePermission('config', 'create'), async (req, res) => {
     try {
-        const { nome, login, senha, tipo, telefone, email, whatsapp, idFornecedor, lojaFornecedor, pedidos_autorizados } = req.body;
+        const { nome, login, senha, tipo, telefone, email, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados } = req.body;
 
         if (!nome || !login || !senha || !tipo) {
             return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
@@ -81,8 +100,8 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
         const hashedPwd = await bcrypt.hash(senha, 10);
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, pedidos_autorizados) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, pedidos_autorizados || null]
+            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, idCliente || null, lojaCliente || null, tipoExterno || 'fornecedor', pedidos_autorizados || null]
         );
 
         res.json({ message: 'Usuário cadastrado com sucesso!', id: result.insertId });
@@ -97,7 +116,7 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
 router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { nome, login, senha, tipo, telefone, email, whatsapp, idFornecedor, lojaFornecedor, pedidos_autorizados } = req.body;
+        const { nome, login, senha, tipo, telefone, email, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados } = req.body;
 
         if (!nome || !login || !tipo) {
             return res.status(400).json({ error: 'Nome, Login e Tipo são obrigatórios' });
@@ -145,14 +164,14 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
             // Update WITH password
             const hashedPwd = await bcrypt.hash(senha, 10);
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ?, idFornecedor = ?, lojaFornecedor = ?, pedidos_autorizados = ? WHERE idUsuario = ?',
-                [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, pedidos_autorizados || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, Senha = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ?, idFornecedor = ?, lojaFornecedor = ?, idCliente = ?, lojaCliente = ?, tipoExterno = ?, pedidos_autorizados = ? WHERE idUsuario = ?',
+                [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, idCliente || null, lojaCliente || null, tipoExterno || 'fornecedor', pedidos_autorizados || null, id]
             );
         } else {
             // Update WITHOUT password
             await mysqlPool.query(
-                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ?, idFornecedor = ?, lojaFornecedor = ?, pedidos_autorizados = ? WHERE idUsuario = ?',
-                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, pedidos_autorizados || null, id]
+                'UPDATE usuario SET NomeCompleto = ?, Login = ?, TipoUsuario = ?, Setor = ?, Funcao = ?, email = ?, aprovado = ?, Observacoes = ?, TemPC = ?, fotoUsuario = ?, telefone = ?, whatsapp = ?, idFornecedor = ?, lojaFornecedor = ?, idCliente = ?, lojaCliente = ?, tipoExterno = ?, pedidos_autorizados = ? WHERE idUsuario = ?',
+                [nome, login, tipo, req.body.setor || null, req.body.funcao || null, email || null, aprovadoVal, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, idCliente || null, lojaCliente || null, tipoExterno || 'fornecedor', pedidos_autorizados || null, id]
             );
         }
 

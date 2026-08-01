@@ -7,6 +7,7 @@ const { validate, rules } = require('../middlewares/validate');
 const archiver = require('archiver');
 const fs = require('fs');
 const nodePath = require('path');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 function decodeProtheusMemo(val) {
     if (typeof val === 'string' && val.startsWith('\\x')) {
@@ -49,7 +50,7 @@ async function getAuthorizedOrders(req) {
 
     try {
         const [userRows] = await mysqlPool.query(
-            'SELECT TipoUsuario, pedidos_autorizados FROM usuario WHERE idUsuario = ?',
+            'SELECT TipoUsuario, pedidos_autorizados, tipoExterno, idCliente, lojaCliente, idFornecedor, lojaFornecedor FROM usuario WHERE idUsuario = ?',
             [req.user.id]
         );
 
@@ -85,7 +86,15 @@ async function getAuthorizedOrders(req) {
             .map(p => p.trim())
             .filter(p => p.length > 0);
 
-        return { isExternal: true, allowedOrders };
+        return { 
+            isExternal: true, 
+            allowedOrders,
+            tipoExterno: user.tipoExterno,
+            idCliente: user.idCliente,
+            lojaCliente: user.lojaCliente,
+            idFornecedor: user.idFornecedor,
+            lojaFornecedor: user.lojaFornecedor
+        };
     } catch (err) {
         console.error('Error checking external user permissions:', err);
         return { isExternal: false, allowedOrders: [] };
@@ -97,12 +106,35 @@ async function checkOrderAccess(req, res, next) {
     const pedido = req.params.id || req.params.pedido;
     if (!pedido) return next();
 
-    const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
-    if (isExternal) {
+    const auth = await getAuthorizedOrders(req);
+    if (auth.isExternal) {
         const cleanPedido = pedido.trim();
-        if (!allowedOrders.includes(cleanPedido)) {
-            return res.status(403).json({ error: 'Acesso Negado: Você não tem permissão para visualizar este pedido.' });
+        if (auth.allowedOrders.includes(cleanPedido)) {
+            return next();
         }
+        
+        if (auth.tipoExterno === 'cliente' && auth.idCliente) {
+            const pgClient = await db.connect();
+            try {
+                const resTemp = await pgClient.query(
+                    `SELECT c5_cliente, c5_lojacli FROM public.sc5010 WHERE c5_num = $1 AND COALESCE(d_e_l_e_t_, '') = ''`,
+                    [cleanPedido.padStart(6, '0')]
+                );
+                if (resTemp.rows.length > 0) {
+                    const orderClient = resTemp.rows[0].c5_cliente.trim();
+                    const orderLoja = resTemp.rows[0].c5_lojacli.trim();
+                    if (orderClient === auth.idCliente.trim() && (!auth.lojaCliente || orderLoja === auth.lojaCliente.trim())) {
+                        return next();
+                    }
+                }
+            } catch (err) {
+                console.error('Error in checkOrderAccess client verification:', err);
+            } finally {
+                pgClient.release();
+            }
+        }
+        
+        return res.status(403).json({ error: 'Acesso Negado: Você não tem permissão para visualizar este pedido.' });
     }
     next();
 }
@@ -116,7 +148,8 @@ async function getForecastMapCached() {
         const [rows] = await mysqlPool.query(`
             SELECT TRIM(pedido) as pedido, TRIM(item) as item,
                    MAX(data_entrega_pcp) as data_entrega_pcp,
-                   MAX(data_prevista_faturamento) as data_prevista_faturamento
+                   MAX(data_prevista_faturamento) as data_prevista_faturamento,
+                   SUM(quantidade_pcp) as quantidade_pcp
             FROM app_pcp_delivery_forecasts
             WHERE pedido IS NOT NULL AND item IS NOT NULL
             GROUP BY TRIM(pedido), TRIM(item)
@@ -124,7 +157,8 @@ async function getForecastMapCached() {
         for (const row of rows) {
             map.set(`${row.pedido}|${row.item}`, {
                 data_entrega_pcp: row.data_entrega_pcp || null,
-                data_prevista_faturamento: row.data_prevista_faturamento || null
+                data_prevista_faturamento: row.data_prevista_faturamento || null,
+                quantidade_pcp: row.quantidade_pcp || null
             });
         }
     } catch (err) {
@@ -137,7 +171,7 @@ async function getForecastMapCached() {
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
@@ -173,17 +207,28 @@ router.get('/', async (req, res) => {
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + getInactiveFilter('c5.c5_num');
 
         // Restringir visibilidade de pedidos para usuários externos
-        const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
-        if (isExternal) {
-            if (allowedOrders.length === 0) {
+        const auth = await getAuthorizedOrders(req);
+        if (auth.isExternal) {
+            let externalConditions = [];
+            
+            const sanitized = auth.allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+            if (sanitized.length > 0) {
+                const numConditions = sanitized.map(o => `c5.c5_num LIKE '${o}%'`).join(' OR ');
+                externalConditions.push(`(${numConditions})`);
+            }
+            
+            if (auth.tipoExterno === 'cliente' && auth.idCliente) {
+                let clientCond = `c5.c5_cliente LIKE '${auth.idCliente.trim()}%'`;
+                if (auth.lojaCliente) {
+                    clientCond += ` AND c5.c5_lojacli LIKE '${auth.lojaCliente.trim()}%'`;
+                }
+                externalConditions.push(`(${clientCond})`);
+            }
+            
+            if (externalConditions.length === 0) {
                 whereClause += ' AND 1=0';
             } else {
-                const sanitized = allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
-                if (sanitized.length === 0) {
-                    whereClause += ' AND 1=0';
-                } else {
-                    whereClause += ` AND TRIM(c5.c5_num) IN (${sanitized.map(o => `'${o}'`).join(',')})`;
-                }
+                whereClause += ` AND (${externalConditions.join(' OR ')})`;
             }
         }
 
@@ -199,6 +244,48 @@ router.get('/', async (req, res) => {
                     AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)
                 )
             )`;
+        }
+
+        if (somente_prioridades && somente_prioridades !== 'false') {
+            try {
+                let prioQuery = 'SELECT DISTINCT op_numero FROM app_op_priorities WHERE prioridade > 0';
+                const prioMysqlParams = [];
+                if (['1', '2', '3', '4'].includes(String(somente_prioridades))) {
+                    prioQuery = 'SELECT DISTINCT op_numero FROM app_op_priorities WHERE prioridade = ?';
+                    prioMysqlParams.push(parseInt(somente_prioridades, 10));
+                }
+                const [priOpsRows] = await mysqlPool.execute(prioQuery, prioMysqlParams);
+
+                if (priOpsRows.length === 0) {
+                    return res.json({ data: [], meta: { total: 0, page: 1, pages: 1 } });
+                }
+
+                // op_numero in MySQL = TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen)
+                // Match the full key in PostgreSQL for exact OP identification
+                const opFullKeys = [...new Set(
+                    priOpsRows.map(r => String(r.op_numero).trim()).filter(Boolean)
+                )];
+
+                if (opFullKeys.length > 0) {
+                    // Use parameterized query via literal embedding with sanitization
+                    const sanitized = opFullKeys.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+                    if (sanitized.length > 0) {
+                        const opInList = sanitized.map(o => `'${o}'`).join(', ');
+                        whereClause += ` AND EXISTS (
+                            SELECT 1 FROM public.sc6010 c6_pri
+                            JOIN public.sc2010 c2_pri ON TRIM(c2_pri.c2_pedido) = TRIM(c6_pri.c6_num)
+                                AND TRIM(c2_pri.c2_itempv) = TRIM(c6_pri.c6_item)
+                                AND (TRIM(c2_pri.c2_num) || TRIM(c2_pri.c2_item) || TRIM(c2_pri.c2_sequen)) IN (${opInList})
+                                AND COALESCE(c2_pri.d_e_l_e_t_, '') = ''
+                            WHERE c6_pri.c6_num = c5.c5_num
+                            AND c6_pri.c6_filial = c5.c5_filial
+                            AND COALESCE(c6_pri.d_e_l_e_t_, '') = ''
+                        )`;
+                    }
+                }
+            } catch (prioErr) {
+                console.error('[GET /] Erro no filtro somente_prioridades:', prioErr.message);
+            }
         }
 
         if (cliente) {
@@ -472,7 +559,8 @@ router.get('/flat', async (req, res) => {
     let countParams = [];
     let errorStep = '';
     try {
-        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', tipo_item = '', classificacao_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const canViewFinancials = await hasFinancialAccess(req);
+        const { cliente, pedido, produto, pedcli, refCliente, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', tipo_item = '', classificacao_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -511,6 +599,67 @@ router.get('/flat', async (req, res) => {
             const activeItemFilter = ` AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)`;
             whereClause += activeItemFilter;
             countWhereClause += activeItemFilter;
+        }
+
+        if (somente_prioridades && somente_prioridades !== 'false') {
+            try {
+                // Build MySQL query: 'true' = any priority, '1'/'2'/'3'/'4' = specific group
+                let prioQuery = 'SELECT DISTINCT op_numero FROM app_op_priorities WHERE prioridade > 0';
+                const prioMysqlParams = [];
+                if (['1', '2', '3', '4'].includes(String(somente_prioridades))) {
+                    prioQuery = 'SELECT DISTINCT op_numero FROM app_op_priorities WHERE prioridade = ?';
+                    prioMysqlParams.push(parseInt(somente_prioridades, 10));
+                }
+                const [priOpsRows] = await mysqlPool.execute(prioQuery, prioMysqlParams);
+
+                if (priOpsRows.length === 0) {
+                    return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                }
+
+                // op_numero in MySQL = TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen)
+                // We match the full concatenated key in PostgreSQL for exact OP identification
+                const opFullKeys = [...new Set(
+                    priOpsRows.map(r => String(r.op_numero).trim()).filter(Boolean)
+                )];
+
+                if (opFullKeys.length === 0) {
+                    return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                }
+
+                // OTIMIZAÇÃO: Pré-buscar os pedidos/itens no PostgreSQL em vez de usar EXISTS na CTE principal
+                // O PostgreSQL sofre para otimizar EXISTS com ANY dentro de uma CTE complexa com ordenação.
+                const { rows: prioRows } = await db.query(`
+                    SELECT DISTINCT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item 
+                    FROM public.sc2010 
+                    WHERE (TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen)) = ANY($1::text[])
+                    AND COALESCE(d_e_l_e_t_, '') = ''
+                `, [opFullKeys]);
+
+                if (prioRows.length === 0) {
+                    return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                }
+
+                const tuplePlaceholders = [];
+                const tuplePlaceholdersCount = [];
+                
+                prioRows.forEach(r => {
+                    tuplePlaceholders.push(`($${paramCount}, $${paramCount + 1})`);
+                    params.push(r.pedido, r.item);
+                    paramCount += 2;
+
+                    tuplePlaceholdersCount.push(`($${countParamCount}, $${countParamCount + 1})`);
+                    countParams.push(r.pedido, r.item);
+                    countParamCount += 2;
+                });
+
+                const priFilter = ` AND (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${tuplePlaceholders.join(', ')}) `;
+                whereClause += priFilter;
+                
+                const priFilterCount = ` AND (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${tuplePlaceholdersCount.join(', ')}) `;
+                countWhereClause += priFilterCount;
+            } catch (prioErr) {
+                console.error('[GET /flat] Erro no filtro somente_prioridades:', prioErr.message);
+            }
         }
 
         if (cliente) {
@@ -576,6 +725,18 @@ router.get('/flat', async (req, res) => {
             paramCount++;
             countWhereClause += ` AND c6.c6_pedcli ILIKE '%' || $${countParamCount} || '%'`;
             countParams.push(pedcli);
+            countParamCount++;
+        }
+
+        if (refCliente) {
+            const refFilter = ` AND EXISTS (SELECT 1 FROM public.sz1010 z1_f WHERE z1_f.z1_cliente = c5.c5_cliente AND z1_f.z1_loja = c5.c5_lojacli AND TRIM(z1_f.z1_produto) = TRIM(c6.c6_produto) AND COALESCE(z1_f.d_e_l_e_t_, '') = '' AND z1_f.z1_codcli ILIKE '%' || $${paramCount} || '%')`;
+            whereClause += refFilter;
+            params.push(refCliente);
+            paramCount++;
+            
+            const countRefFilter = ` AND EXISTS (SELECT 1 FROM public.sz1010 z1_f WHERE z1_f.z1_cliente = c5.c5_cliente AND z1_f.z1_loja = c5.c5_lojacli AND TRIM(z1_f.z1_produto) = TRIM(c6.c6_produto) AND COALESCE(z1_f.d_e_l_e_t_, '') = '' AND z1_f.z1_codcli ILIKE '%' || $${countParamCount} || '%')`;
+            countWhereClause += countRefFilter;
+            countParams.push(refCliente);
             countParamCount++;
         }
 
@@ -926,6 +1087,14 @@ router.get('/flat', async (req, res) => {
                     COALESCE(sb1.b1_prv1, 0)::numeric(18,2) as preco_cadastro,
                     TRIM(COALESCE(pb.c6_entreg, '')) as entrega,
                     pb.c6_pedcli as ped_cliente,
+                    (
+                        SELECT STRING_AGG(DISTINCT TRIM(z1.z1_codcli), ' / ')
+                        FROM public.sz1010 z1
+                        WHERE z1.z1_cliente = pb.c5_cliente
+                          AND z1.z1_loja = pb.c5_lojacli
+                          AND TRIM(z1.z1_produto) = TRIM(pb.c6_produto)
+                          AND COALESCE(z1.d_e_l_e_t_, '') = ''
+                    ) as ref_cliente,
                     pb.c5_liberok as status_cor,
                     pb.data_entrega_pcp,
                     pb.data_prevista_faturamento
@@ -966,11 +1135,22 @@ router.get('/flat', async (req, res) => {
             pgClient?.release();
         }
 
+        // Dado sensível não sai do servidor sem a permissão "valores_financeiros" —
+        // esconder só na tela não é suficiente (fica visível na aba de rede do navegador).
+        const stripFinancials = (row) => {
+            if (canViewFinancials) return row;
+            const { valor_unitario, valor_total, preco_cadastro, ...rest } = row;
+            if (Array.isArray(row.notas_fiscais)) {
+                rest.notas_fiscais = row.notas_fiscais.map(({ valor_unit, valor_total, ...nfRest }) => nfRest);
+            }
+            return rest;
+        };
+
         if (req.query.minimal === 'true') {
             const hasNextPage = result.rows.length > limitParsed;
             const pageData = result.rows.slice(0, limitParsed);
             return res.json({
-                data: pageData.map(decodeMemosInRow),
+                data: pageData.map(decodeMemosInRow).map(stripFinancials),
                 meta: {
                     hasNextPage,
                     page: pageParsed,
@@ -979,21 +1159,182 @@ router.get('/flat', async (req, res) => {
             });
         }
 
-        if (!fcJoin) {
-            for (const row of result.rows) {
-                const fc = forecastMap.get(`${String(row.pedido).trim()}|${String(row.item).trim()}`);
-                if (fc) {
+        for (const row of result.rows) {
+            const fc = forecastMap.get(`${String(row.pedido).trim()}|${String(row.item).trim()}`);
+            if (fc) {
+                if (!fcJoin) {
                     row.data_entrega_pcp = fc.data_entrega_pcp;
                     row.data_prevista_faturamento = fc.data_prevista_faturamento;
                 }
+                row.pcp_delivery_forecast_date = fc.data_entrega_pcp;
+                row.pcp_delivery_forecast_qtd = fc.quantidade_pcp;
             }
         }
 
         if (result.rows.length > 0) {
-            // ... (rest of the enrichment remains the same)
+            // --- INÍCIO BUSCA DE NOTAS FISCAIS ---
+            const uniquePedidos = [...new Set(result.rows.map(r => String(r.pedido).trim()))].filter(Boolean);
+            if (uniquePedidos.length > 0) {
+                const { rows: d2Rows } = await db.query(`
+                    SELECT
+                        TRIM(d2.d2_pedido) as pedido,
+                        TRIM(d2.d2_itempv) as item,
+                        TRIM(d2.d2_doc)    as nota,
+                        TRIM(d2.d2_serie)  as serie,
+                        TRIM(d2.d2_cf)     as cfop,
+                        d2.d2_quant::numeric(18,2)  as qtd,
+                        d2.d2_prunit::numeric(18,2) as valor_unit,
+                        d2.d2_total::numeric(18,2)  as valor_total
+                    FROM public.sd2010 d2
+                    WHERE d2.d2_pedido = ANY($1::varchar[])
+                      AND COALESCE(d2.d_e_l_e_t_, '') = ''
+                      AND TRIM(d2.d2_doc) != ''
+                `, [uniquePedidos]);
+
+                if (d2Rows.length > 0) {
+                    const uniqueNotas = [...new Set(d2Rows.map(r => r.nota).filter(Boolean))];
+                    const emissaoMap = {};
+                    const serieMap = {};
+                    const clienteMap = {};
+                    if (uniqueNotas.length > 0) {
+                        try {
+                            const { rows: f2Rows } = await db.query(`
+                                SELECT 
+                                    TRIM(f2.f2_doc) as nota, 
+                                    TRIM(f2.f2_emissao) as emissao_raw, 
+                                    TRIM(f2.f2_serie) as serie,
+                                    TRIM(a1.a1_nome) as nome_cliente
+                                FROM public.sf2010 f2
+                                LEFT JOIN public.sa1010 a1 
+                                    ON a1.a1_cod = f2.f2_cliente 
+                                    AND a1.a1_loja = f2.f2_loja 
+                                    AND COALESCE(a1.d_e_l_e_t_, '') = ''
+                                WHERE TRIM(f2.f2_doc) = ANY($1::varchar[])
+                                  AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                            `, [uniqueNotas]);
+                            f2Rows.forEach(r => {
+                                if (!emissaoMap[r.nota]) emissaoMap[r.nota] = r.emissao_raw;
+                                if (!serieMap[r.nota]) serieMap[r.nota] = r.serie;
+                                if (!clienteMap[r.nota]) clienteMap[r.nota] = r.nome_cliente;
+                            });
+                        } catch (e) {
+                            console.warn('[FAT NF] Erro sf2010:', e.message);
+                        }
+                    }
+
+                    const fmtEmissao = (raw) => {
+                        if (!raw) return null;
+                        const s = raw.trim();
+                        if (s.length !== 8 || s === '00000000' || !/^\d{8}$/.test(s)) return null;
+                        return `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
+                    };
+                    const normItem = (s) => { const n = parseInt(String(s).trim(), 10); return isNaN(n) ? String(s).trim() : String(n); };
+
+                    const nfMap = {};
+                    d2Rows.forEach(nf => {
+                        const pedido   = nf.pedido;
+                        const itemOrig = nf.item;
+                        const itemNorm = normItem(itemOrig);
+                        const emissao  = fmtEmissao(emissaoMap[nf.nota]);
+
+                        [pedido + '-' + itemOrig, pedido + '-' + itemNorm].forEach(key => {
+                            if (!nfMap[key]) nfMap[key] = [];
+                            if (nf.nota && !nfMap[key].some(n => n.nota === nf.nota)) {
+                                nfMap[key].push({
+                                    nota:        nf.nota,
+                                    serie:       serieMap[nf.nota] || nf.serie || '',
+                                    emissao,
+                                    cfop:        nf.cfop || '',
+                                    qtd:         parseFloat(nf.qtd) || 0,
+                                    valor_unit:  parseFloat(nf.valor_unit) || 0,
+                                    valor_total: parseFloat(nf.valor_total) || 0,
+                                    nome_cliente: clienteMap[nf.nota] || ''
+                                });
+                            }
+                        });
+                    });
+
+                    result.rows.forEach(row => {
+                        const pedTrim = String(row.pedido).trim();
+                        const itemTrim = String(row.item).trim();
+                        const itemNormStr = normItem(itemTrim);
+                        const nfs = nfMap[pedTrim + '-' + itemTrim] || nfMap[pedTrim + '-' + itemNormStr] || [];
+                        row.notas_fiscais = nfs.length > 0 ? nfs : [];
+                    });
+                } else {
+                    result.rows.forEach(row => { row.notas_fiscais = []; });
+                }
+            } else {
+                result.rows.forEach(row => { row.notas_fiscais = []; });
+            }
+            // --- FIM BUSCA DE NOTAS FISCAIS ---
+
+            // --- INÍCIO BUSCA DE PRIORIDADES DE OP ---
+            try {
+                const opNumerosUnicos = [...new Set(result.rows.map(r => r.op_num_completa).filter(Boolean))];
+                const opPrefixosUnicos = [...new Set(opNumerosUnicos.map(op => op.substring(0, 8)))];
+                
+                const opsToCheck = [...new Set([...opNumerosUnicos, ...opPrefixosUnicos])];
+
+                if (opsToCheck.length > 0) {
+                    const placeholders = opsToCheck.map(() => '?').join(',');
+                    const [opPrioritiesRows] = await mysqlPool.execute(
+                        `SELECT op_numero, prioridade FROM app_op_priorities WHERE op_numero IN (${placeholders})`,
+                        opsToCheck
+                    );
+                    const priorityMap = {};
+                    opPrioritiesRows.forEach(r => { priorityMap[r.op_numero] = r.prioridade; });
+                    result.rows.forEach(r => {
+                        const op = r.op_num_completa;
+                        if (!op) {
+                            r.op_prioridade = 0;
+                            return;
+                        }
+                        const prefix = op.substring(0, 8);
+                        // A OP exata ou o prefixo de 8 digitos pode ter prioridade
+                        r.op_prioridade = priorityMap[op] || priorityMap[prefix] || 0;
+                    });
+                } else {
+                    result.rows.forEach(r => { r.op_prioridade = 0; });
+                }
+            } catch (err) {
+                console.error('[OP PRIORITY FETCH ERROR]', err);
+                result.rows.forEach(r => { r.op_prioridade = 0; });
+            }
+            // --- FIM BUSCA DE PRIORIDADES DE OP ---
+
+            // --- INÍCIO BUSCA DE CLASSIFICAÇÃO (JITS/PPAP) ---
+            try {
+                if (uniquePedidos.length > 0) {
+                    const placeholders = uniquePedidos.map(() => '?').join(',');
+                    const [classifRows] = await mysqlPool.query(
+                        `SELECT TRIM(pedido) as pedido, TRIM(item) as item, classificacao, ppap_numero FROM app_pedido_itens_classificacao WHERE TRIM(pedido) IN (${placeholders})`,
+                        uniquePedidos
+                    );
+                    const classifMap = {};
+                    classifRows.forEach(r => { classifMap[`${r.pedido}|${r.item}`] = r; });
+                    result.rows.forEach(r => {
+                        const key = `${String(r.pedido).trim()}|${String(r.item).trim()}`;
+                        const c = classifMap[key];
+                        r.classificacao = c ? c.classificacao : 'Nenhum';
+                        r.ppap_numero = c ? c.ppap_numero : null;
+                    });
+                } else {
+                    result.rows.forEach(r => { r.classificacao = 'Nenhum'; r.ppap_numero = null; });
+                }
+            } catch (err) {
+                console.error('[CLASSIFICACAO FETCH ERROR]', err);
+                result.rows.forEach(r => { r.classificacao = 'Nenhum'; r.ppap_numero = null; });
+            }
+            // --- FIM BUSCA DE CLASSIFICAÇÃO ---
+
             const finalRows = result.rows.map(decodeMemosInRow);
+
+            // Prioriza ordenação das OPs com prioridade
+            finalRows.sort((a, b) => (b.op_prioridade || 0) - (a.op_prioridade || 0));
+
             const hasNextPage = finalRows.length > limitParsed;
-            const pageData = finalRows.slice(0, limitParsed);
+            const pageData = finalRows.slice(0, limitParsed).map(stripFinancials);
             res.json({
                 data: pageData,
                 meta: {
@@ -1008,7 +1349,7 @@ router.get('/flat', async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Erro ao buscar lista plana.' });
+        res.status(500).json({ error: 'Erro ao buscar lista plana.', details: err.message });
     }
 });
 
@@ -1440,10 +1781,16 @@ router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
         const itens = pgResult.rows.map(row => {
             // Decode bytea memo fields (Protheus stores observations as raw binary)
             const decodeMemo = v =>
-                Buffer.isBuffer(v) ? v.toString('utf8').replace(/\0/g, '') :
-                typeof v === 'string' ? v.replace(/\0/g, '') : '';
+                Buffer.isBuffer(v) ? v.toString('latin1').replace(/[\0\r]/g, '') :
+                typeof v === 'string' ? v.replace(/[\0\r]/g, '') : '';
 
-            const obsRaw = [row.c5_mennota || '', decodeMemo(row.c5_zobs), decodeMemo(row.c5_zobsorc)].join(' ').trim();
+            const obsParts = [];
+            if (row.c5_mennota && row.c5_mennota.trim()) obsParts.push(`Nota: ${row.c5_mennota.trim()}`);
+            const zobs = decodeMemo(row.c5_zobs).trim();
+            if (zobs) obsParts.push(`Obs. Adic Nf:\n${zobs}`);
+            const zobsorc = decodeMemo(row.c5_zobsorc).trim();
+            if (zobsorc) obsParts.push(`Obs Orçament:\n${zobsorc}`);
+            const obsRaw = obsParts.join('\n\n').trim();
 
             // Merge SB1
             const sb1 = sb1Map[(row.codigo || '').trim()] || {};
@@ -1495,9 +1842,15 @@ router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
 
         const first = pgResult.rows[0];
         const decodeMemo = v =>
-            Buffer.isBuffer(v) ? v.toString('utf8').replace(/\0/g, '') :
-            typeof v === 'string' ? v.replace(/\0/g, '') : '';
-        const obsCapaRaw = [first.c5_mennota || '', decodeMemo(first.c5_zobs), decodeMemo(first.c5_zobsorc)].join(' ').trim();
+            Buffer.isBuffer(v) ? v.toString('latin1').replace(/[\0\r]/g, '') :
+            typeof v === 'string' ? v.replace(/[\0\r]/g, '') : '';
+        const obsParts = [];
+        if (first.c5_mennota && first.c5_mennota.trim()) obsParts.push(`Nota: ${first.c5_mennota.trim()}`);
+        const zobs = decodeMemo(first.c5_zobs).trim();
+        if (zobs) obsParts.push(`Obs. Adic Nf:\n${zobs}`);
+        const zobsorc = decodeMemo(first.c5_zobsorc).trim();
+        if (zobsorc) obsParts.push(`Obs Orçament:\n${zobsorc}`);
+        const obsCapaRaw = obsParts.join('\n\n').trim();
 
         const capa = {
             pedido:             first.pedido,
@@ -2736,33 +3089,353 @@ router.put('/import-pcp-date', async (req, res) => {
 router.get('/portal-cliente', async (req, res) => {
     try {
         const page = parseInt(req.query.page, 10) || 1;
-        const limit = parseInt(req.query.limit, 10) || 100;
+        const limit = Math.min(parseInt(req.query.limit, 10) || 10000, 20000);
         const offset = (page - 1) * limit;
-        const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
-        let orderFilter = '';
-        if (isExternal) {
-            if (allowedOrders.length === 0) return res.json({ items: [], entregas: [], meta: { hasNextPage: false } });
-            const sanitized = allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
-            if (sanitized.length === 0) return res.json({ items: [], entregas: [], meta: { hasNextPage: false } });
-            orderFilter = `AND TRIM(c5.c5_num) IN (${sanitized.map(o => `'${o}'`).join(',')})`;
+
+        const { cliente, pedido, produto, pedcli, refCliente, dataInicial, dataFinal, dateType = 'pedido', only_active = 'false', somente_prioridades = 'false' } = req.query;
+
+        const auth = await getAuthorizedOrders(req);
+        let extraFilters = '';
+
+        if (cliente) {
+            const safe = cliente.replace(/'/g, "''");
+            if (safe) extraFilters += ` AND (TRIM(sa1.a1_nome) ILIKE '%${safe}%' OR TRIM(c5.c5_cliente) ILIKE '%${safe}%')`;
         }
+
+        if (pedido) {
+            const terms = String(pedido)
+                .split(',')
+                .map(t => t.replace(/'/g, "''").trim())
+                .filter(Boolean);
+
+            if (terms.length > 0) {
+                const clauses = terms.map(term => {
+                    const clean = term.replace(/^0+/, '') || term;
+                    const padded = clean.length <= 6 ? clean.padStart(6, '0') : clean;
+                    return `(TRIM(c5.c5_num) ILIKE '%${term}%' OR TRIM(c5.c5_num) ILIKE '%${clean}%' OR TRIM(c5.c5_num) ILIKE '%${padded}%')`;
+                });
+                extraFilters += ` AND (${clauses.join(' OR ')})`;
+            }
+        }
+
+        if (produto) {
+            const safe = produto.replace(/[^a-zA-Z0-9-]/g, '');
+            if (safe) extraFilters += ` AND c6.c6_produto LIKE '${safe}%'`;
+        }
+
+        if (pedcli) {
+            const terms = String(pedcli)
+                .split(',')
+                .map(t => t.replace(/'/g, "''").trim())
+                .filter(Boolean);
+
+            if (terms.length > 0) {
+                const clauses = terms.map(term => {
+                    const clean = term.replace(/^0+/, '') || term;
+                    const padded = clean.length <= 6 ? clean.padStart(6, '0') : clean;
+                    return `(TRIM(c6.c6_pedcli) ILIKE '%${term}%' OR TRIM(c6.c6_pedcli) ILIKE '%${clean}%' OR TRIM(c6.c6_pedcli) ILIKE '%${padded}%')`;
+                });
+                extraFilters += ` AND (${clauses.join(' OR ')})`;
+            }
+        } else {
+            // Por padrão, Ordem de Compra = "PRODUÇÃO" não deve ser mostrada no canal do cliente
+            extraFilters += ` AND (TRIM(COALESCE(c6.c6_pedcli, '')) NOT ILIKE '%PRODUÇÃO%' AND TRIM(COALESCE(c6.c6_pedcli, '')) NOT ILIKE '%PRODUCAO%')`;
+        }
+
+        if (refCliente) {
+            const rawTerms = String(refCliente).split(',').map(t => t.trim()).filter(Boolean);
+            const clauses = [];
+            for (const raw of rawTerms) {
+                const clean = raw.replace(/[^a-zA-Z0-9]/g, '');
+                if (clean) {
+                    clauses.push(`REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g') ILIKE '%${clean}%'`);
+                }
+            }
+            if (clauses.length > 0) {
+                extraFilters += ` AND EXISTS (
+                    SELECT 1 FROM public.sz1010 sz1 
+                    WHERE sz1.z1_produto = c6.c6_produto 
+                      AND (${clauses.join(' OR ')})
+                      AND COALESCE(sz1.d_e_l_e_t_, '') = ''
+                )`;
+            }
+        }
+
+        if (dataInicial || dataFinal) {
+            if (dateType === 'pcp') {
+                try {
+                    let pcpSql = 'SELECT DISTINCT pedido, item FROM app_pcp_delivery_forecasts WHERE 1=1';
+                    const pcpParams = [];
+                    if (dataInicial) {
+                        pcpSql += ' AND data_entrega_pcp >= ?';
+                        pcpParams.push(dataInicial);
+                    }
+                    if (dataFinal) {
+                        pcpSql += ' AND data_entrega_pcp <= ?';
+                        pcpParams.push(dataFinal);
+                    }
+                    const [pcpRows] = await mysqlPool.execute(pcpSql, pcpParams);
+                    if (pcpRows.length > 0) {
+                        const pairs = pcpRows.map(r => `('${String(r.pedido).trim().padEnd(6, ' ')}', '${String(r.item).trim().padEnd(2, ' ')}')`).join(',');
+                        extraFilters += ` AND (c5.c5_num, c6.c6_item) IN (${pairs})`;
+                    } else {
+                        extraFilters += ` AND 1=0`;
+                    }
+                } catch (pcpErr) {
+                    console.warn('[Portal Cliente] Erro no filtro por Data PCP:', pcpErr.message);
+                }
+            } else if (dateType === 'nf') {
+                const fmt = (d) => d ? d.replace(/-/g, '') : null;
+                let nfSub = `EXISTS (
+                    SELECT 1 FROM public.sd2010 d2 
+                    JOIN public.sf2010 f2 ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                    WHERE d2.d2_pedido = c5.c5_num 
+                      AND d2.d2_itempv = c6.c6_item 
+                      AND COALESCE(d2.d_e_l_e_t_, '') = ''`;
+                if (dataInicial) nfSub += ` AND f2.f2_emissao >= '${fmt(dataInicial)}'`;
+                if (dataFinal)   nfSub += ` AND f2.f2_emissao <= '${fmt(dataFinal)}'`;
+                nfSub += `)`;
+                extraFilters += ` AND ${nfSub}`;
+            } else {
+                const colMap = { pedido: 'c5.c5_emissao', entrega: 'c6.c6_entreg' };
+                const col = colMap[dateType] || 'c5.c5_emissao';
+                const fmt = (d) => d ? d.replace(/-/g, '') : null;
+                if (dataInicial) extraFilters += ` AND ${col} >= '${fmt(dataInicial)}'`;
+                if (dataFinal)   extraFilters += ` AND ${col} <= '${fmt(dataFinal)}'`;
+            }
+        }
+
+        if (only_active === 'true') {
+            extraFilters += ` AND (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0)) > 0`;
+        }
+
+        if (somente_prioridades && somente_prioridades !== 'false') {
+            try {
+                let prioQuery = 'SELECT DISTINCT op_numero FROM app_op_priorities';
+                const prioParams = [];
+                if (['1', '2', '3', '4'].includes(somente_prioridades)) {
+                    prioQuery += ' WHERE prioridade = ?';
+                    prioParams.push(parseInt(somente_prioridades));
+                }
+                const [prioRows] = await mysqlPool.execute(prioQuery, prioParams);
+                if (prioRows.length > 0) {
+                    const opList = prioRows.map(r => `'${String(r.op_numero).trim()}'`).join(',');
+                    // Note: OP is matched to C6 using SC2010. We need to filter orders where (c5_num, c6_item) is in the subquery.
+                    extraFilters += ` AND EXISTS (
+                        SELECT 1 FROM public.sc2010 sc2
+                        WHERE sc2.c2_pedido = c5.c5_num AND sc2.c2_itempv = c6.c6_item
+                          AND TRIM(sc2.c2_num) || TRIM(sc2.c2_item) || TRIM(sc2.c2_sequen) IN (${opList})
+                          AND COALESCE(sc2.d_e_l_e_t_, '') = ''
+                    )`;
+                } else {
+                    extraFilters += ` AND 1=0`;
+                }
+            } catch (err) {
+                console.error('[Portal Cliente] Erro no filtro somente_prioridades:', err.message);
+            }
+        }
+
+        let clientFilter = '';
+        const params = [];
+
+        if (auth.isExternal && auth.tipoExterno === 'cliente' && auth.idCliente) {
+            const clienteIdPadded = auth.idCliente.trim().padEnd(6, ' ');
+            params.push(clienteIdPadded);
+            clientFilter += ` AND c5.c5_cliente = $${params.length}`;
+            if (auth.lojaCliente) {
+                const lojaPadded = auth.lojaCliente.trim().padEnd(4, ' ');
+                params.push(lojaPadded);
+                clientFilter += ` AND c5.c5_lojacli = $${params.length}`;
+            }
+        } else if (auth.isExternal && auth.allowedOrders.length > 0) {
+            const sanitized = auth.allowedOrders.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+            if (sanitized.length > 0) {
+                const inList = sanitized.map(o => `'${o.padEnd(6, ' ')}'`).join(',');
+                clientFilter += ` AND c5.c5_num IN (${inList})`;
+            }
+        }
+
         const pgClient = await db.connect();
-        let itemRows, nfRows;
+        let itemRows = [], nfRows = [];
+
         try {
-            await pgClient.query("SET statement_timeout = '30000';");
+            await pgClient.query("SET statement_timeout = '45000';");
+
+            // Query Primary Items
             const itemsResult = await pgClient.query(`
-                SELECT TRIM(c5.c5_num) AS pedido, TRIM(c6.c6_item) AS item, TRIM(c6.c6_produto) AS produto, TRIM(COALESCE(sb1.b1_desc, '')) AS desc_produto, TRIM(COALESCE(c6.c6_um, '')) AS unidade, TRIM(COALESCE(c6.c6_entreg, '')) AS entrega_raw, TRIM(COALESCE(c5.c5_emissao, '')) AS emissao_raw, TRIM(COALESCE(sa1.a1_nome, '')) AS nome_cliente, TRIM(COALESCE(c6.c6_pedcli, '')) AS ped_cliente, TRIM(COALESCE(sz1.z1_codcli, '')) AS ref_cliente, TRIM(COALESCE(c6.c6_xrevm, '')) AS rev_produto, TRIM(COALESCE(c6.c6_xrevc, '')) AS rev_cliente, COALESCE(c6.c6_prcven, 0)::numeric(18,4) AS valor_unitario, COALESCE(c6.c6_valor, 0)::numeric(18,4) AS valor_total, NULLIF(TRIM(COALESCE(c5.c5_mennota,'') || ' ' || COALESCE(c5.c5_zobs,'') || ' ' || COALESCE(c5.c5_zobsorc,'')), '') AS observacoes, TRIM(COALESCE(op_first.op_num, '')) AS op_num, COALESCE(c6.c6_qtdven, 0)::numeric(18,4) AS qtd_vendida, COALESCE(c6.c6_qtdent, 0)::numeric(18,4) AS qtd_faturada, (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0))::numeric(18,4) AS saldo_faturar, COALESCE(op_agg.total_planejado, 0)::numeric(18,4) AS op_planejado, COALESCE(op_agg.total_apontado,  0)::numeric(18,4) AS op_apontado, COALESCE(op_agg.tem_op, false) AS tem_op
-                FROM public.sc5010 c5 JOIN public.sc6010 c6 ON c6.c6_num = c5.c5_num AND c6.c6_filial = c5.c5_filial AND COALESCE(c6.d_e_l_e_t_, '') = '' LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = '' LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND COALESCE(sb1.d_e_l_e_t_, '') = '' LEFT JOIN (SELECT TRIM(c2.c2_pedido) AS pedido, TRIM(c2.c2_itempv) AS item, SUM(COALESCE(c2.c2_quant, 0)) AS total_planejado, SUM(COALESCE(c2.c2_quje, 0)) AS total_apontado, true AS tem_op FROM public.sc2010 c2 WHERE COALESCE(c2.d_e_l_e_t_, '') = '' GROUP BY TRIM(c2.c2_pedido), TRIM(c2.c2_itempv)) op_agg ON op_agg.pedido = TRIM(c5.c5_num) AND op_agg.item = TRIM(c6.c6_item) LEFT JOIN (SELECT DISTINCT ON (TRIM(c2f.c2_pedido), TRIM(c2f.c2_itempv)) TRIM(c2f.c2_pedido) AS pedido, TRIM(c2f.c2_itempv) AS item, TRIM(c2f.c2_num) AS op_num FROM public.sc2010 c2f WHERE COALESCE(c2f.d_e_l_e_t_, '') = '' ORDER BY TRIM(c2f.c2_pedido), TRIM(c2f.c2_itempv), c2f.c2_sequen ASC) op_first ON op_first.pedido = TRIM(c5.c5_num) AND op_first.item = TRIM(c6.c6_item) LEFT JOIN public.sz1010 sz1 ON sz1.z1_cliente = c5.c5_cliente AND sz1.z1_loja = c5.c5_lojacli AND TRIM(sz1.z1_produto) = TRIM(c6.c6_produto) AND COALESCE(sz1.d_e_l_e_t_, '') = '' WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' ${orderFilter} ORDER BY c5.c5_num DESC, c6.c6_item ASC LIMIT ${limit} OFFSET ${offset}
-            `);
+                SELECT TRIM(c5.c5_num) AS pedido, TRIM(c6.c6_item) AS item, TRIM(c6.c6_produto) AS produto,
+                    TRIM(COALESCE(c6.c6_um, '')) AS unidade,
+                    TRIM(COALESCE(c6.c6_entreg, '')) AS entrega_raw,
+                    TRIM(COALESCE(c5.c5_emissao, '')) AS emissao_raw,
+                    TRIM(COALESCE(c5.c5_cliente, '')) AS cliente_cod,
+                    TRIM(COALESCE(c5.c5_lojacli, '')) AS cliente_loja,
+                    TRIM(COALESCE(sa1.a1_nome, '')) AS nome_cliente,
+                    TRIM(COALESCE(c6.c6_pedcli, '')) AS ped_cliente,
+                    TRIM(COALESCE(c6.c6_xrevm, '')) AS rev_produto,
+                    TRIM(COALESCE(c6.c6_xrevc, '')) AS rev_cliente,
+                    COALESCE(c6.c6_prcven, 0)::numeric(18,4) AS valor_unitario,
+                    COALESCE(c6.c6_valor, 0)::numeric(18,4) AS valor_total,
+                    NULLIF(TRIM(COALESCE(c5.c5_mennota,'') || ' ' || COALESCE(c5.c5_zobs,'') || ' ' || COALESCE(c5.c5_zobsorc,'')), '') AS observacoes,
+                    COALESCE(c6.c6_qtdven, 0)::numeric(18,4) AS qtd_vendida,
+                    COALESCE(c6.c6_qtdent, 0)::numeric(18,4) AS qtd_faturada,
+                    (COALESCE(c6.c6_qtdven,0) - COALESCE(c6.c6_qtdent,0))::numeric(18,4) AS saldo_faturar
+                FROM public.sc5010 c5
+                JOIN public.sc6010 c6 ON c6.c6_num = c5.c5_num AND c6.c6_filial = c5.c5_filial AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' ${clientFilter} ${extraFilters}
+                ORDER BY c5.c5_num DESC, c6.c6_item ASC
+                LIMIT ${limit} OFFSET ${offset}
+            `, params);
+
             itemRows = itemsResult.rows;
-            const uniquePedidos = [...new Set(itemRows.map(r => String(r.pedido).trim()))];
-            if (uniquePedidos.length > 0) {
-                const nfResult = await pgClient.query(`SELECT TRIM(d2.d2_pedido) AS pedido, TRIM(d2.d2_itempv) AS item, TRIM(d2.d2_doc) AS nota, TRIM(d2.d2_serie) AS serie, TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao),''),'YYYYMMDD'),'DD/MM/YY') AS emissao, TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao),''),'YYYYMMDD'),'DD/MM/YYYY') AS emissao_nf, TRIM(d2.d2_cod) AS produto, TRIM(COALESCE(sb1nf.b1_desc, '')) AS desc_produto, d2.d2_quant::numeric(18,4) AS qtd_entregue, d2.d2_quant::numeric(18,4) AS qtd, TRIM(COALESCE(d2.d2_um, '')) AS unidade, TRIM(COALESCE(d2.d2_cf, '')) AS cfop, '' AS natureza, TRIM(COALESCE(f2.f2_transp, '')) AS transportadora FROM public.sd2010 d2 JOIN public.sf2010 f2 ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND COALESCE(f2.d_e_l_e_t_, '') = '' LEFT JOIN public.sb1010 sb1nf ON sb1nf.b1_cod = d2.d2_cod AND COALESCE(sb1nf.d_e_l_e_t_, '') = '' WHERE d2.d2_pedido = ANY($1::varchar[]) AND COALESCE(d2.d_e_l_e_t_, '') = '' ORDER BY f2.f2_emissao DESC, d2.d2_pedido DESC, d2.d2_itempv ASC`, [uniquePedidos]);
-                nfRows = nfResult.rows;
-            } else nfRows = [];
-        } finally { pgClient.release(); }
+
+            if (itemRows.length > 0) {
+                // Batch lookup 1: Product Descriptions (SB1010)
+                const uniqueProds = [...new Set(itemRows.map(r => String(r.produto).trim()))].map(p => `'${p.padEnd(15, ' ')}'`);
+                if (uniqueProds.length > 0) {
+                    const sb1Res = await pgClient.query(`
+                        SELECT TRIM(b1_cod) as cod, TRIM(b1_desc) as desc
+                        FROM public.sb1010
+                        WHERE b1_cod IN (${uniqueProds.join(',')}) AND COALESCE(d_e_l_e_t_, '') = ''
+                    `);
+                    const descMap = new Map();
+                    sb1Res.rows.forEach(b => descMap.set(b.cod, b.desc));
+                    itemRows.forEach(r => { r.desc_produto = descMap.get(r.produto) || ''; });
+                }
+
+                // Batch lookup 2: Ref. Cliente (SZ1010)
+                if (uniqueProds.length > 0) {
+                    let szSql = `
+                        SELECT TRIM(z1_produto) as produto, TRIM(z1_codcli) as ref_cliente
+                        FROM public.sz1010
+                        WHERE z1_produto IN (${uniqueProds.join(',')}) AND COALESCE(d_e_l_e_t_, '') = ''
+                    `;
+                    const szParams = [];
+                    if (auth.idCliente) {
+                        const cliPadded = auth.idCliente.trim().padEnd(6, ' ');
+                        szParams.push(cliPadded);
+                        szSql += ` AND z1_cliente = $1`;
+                    }
+                    const szRes = await pgClient.query(szSql, szParams);
+                    const refMap = new Map();
+                    szRes.rows.forEach(z => refMap.set(z.produto, z.ref_cliente));
+                    itemRows.forEach(r => { r.ref_cliente = refMap.get(r.produto) || ''; });
+                }
+
+                // Batch lookup 3: OPs (SC2010)
+                const pagePedidos = [...new Set(itemRows.map(r => String(r.pedido).trim()))].map(p => `'${p.padEnd(6, ' ')}'`);
+                if (pagePedidos.length > 0) {
+                    const opResult = await pgClient.query(`
+                        SELECT TRIM(c2_pedido) AS pedido, TRIM(c2_itempv) AS item,
+                            SUM(COALESCE(c2_quant, 0))::numeric(18,4) AS total_planejado,
+                            SUM(COALESCE(c2_quje, 0))::numeric(18,4) AS total_apontado,
+                            true AS tem_op,
+                            MIN(TRIM(c2_num)) AS op_num,
+                            MIN(TRIM(c2_tpop)) AS op_tipo
+                        FROM public.sc2010
+                        WHERE COALESCE(d_e_l_e_t_, '') = '' AND c2_pedido IN (${pagePedidos.join(',')})
+                        GROUP BY TRIM(c2_pedido), TRIM(c2_itempv)
+                    `);
+                    const opMap = new Map();
+                    opResult.rows.forEach(r => opMap.set(`${r.pedido}|${r.item}`, r));
+                    itemRows.forEach(r => {
+                        const op = opMap.get(`${r.pedido}|${r.item}`);
+                        r.op_num = op ? op.op_num : '';
+                        r.op_tipo = op ? op.op_tipo : '';
+                        r.op_planejado = op ? op.total_planejado : '0';
+                        r.op_apontado = op ? op.total_apontado : '0';
+                        r.tem_op = op ? true : false;
+                    });
+                }
+
+                // Batch lookup 4: NFs (SD2010 + SF2010)
+                const uniquePedidos = [...new Set(itemRows.map(r => String(r.pedido).trim()))];
+                if (uniquePedidos.length > 0) {
+                    let nfWhere = `WHERE d2.d2_pedido = ANY($1::varchar[]) AND COALESCE(d2.d_e_l_e_t_, '') = ''`;
+                    if (dateType === 'nf') {
+                        const fmt = (d) => d ? d.replace(/-/g, '') : null;
+                        if (dataInicial) nfWhere += ` AND f2.f2_emissao >= '${fmt(dataInicial)}'`;
+                        if (dataFinal)   nfWhere += ` AND f2.f2_emissao <= '${fmt(dataFinal)}'`;
+                    }
+                    const nfResult = await pgClient.query(`
+                        SELECT TRIM(d2.d2_pedido) AS pedido, TRIM(d2.d2_itempv) AS item, TRIM(d2.d2_doc) AS nota, TRIM(d2.d2_serie) AS serie,
+                            TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao),''),'YYYYMMDD'),'DD/MM/YY') AS emissao,
+                            TO_CHAR(TO_DATE(NULLIF(TRIM(f2.f2_emissao),''),'YYYYMMDD'),'DD/MM/YYYY') AS emissao_nf,
+                            TRIM(d2.d2_cod) AS produto, TRIM(COALESCE(sb1nf.b1_desc, '')) AS desc_produto,
+                            d2.d2_quant::numeric(18,4) AS qtd_entregue, d2.d2_quant::numeric(18,4) AS qtd,
+                            TRIM(COALESCE(d2.d2_um, '')) AS unidade, TRIM(COALESCE(d2.d2_cf, '')) AS cfop, '' AS natureza,
+                            TRIM(COALESCE(f2.f2_transp, '')) AS transportadora
+                        FROM public.sd2010 d2
+                        JOIN public.sf2010 f2 ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                        LEFT JOIN public.sb1010 sb1nf ON sb1nf.b1_cod = d2.d2_cod AND COALESCE(sb1nf.d_e_l_e_t_, '') = ''
+                        ${nfWhere}
+                        ORDER BY f2.f2_emissao DESC, d2.d2_pedido DESC, d2.d2_itempv ASC
+                    `, [uniquePedidos]);
+                    nfRows = nfResult.rows;
+                }
+            }
+        } finally {
+            pgClient.release();
+        }
+
+        // Batch lookup 5: Desenhos / Documentos do MySQL (produtos_docs)
+        const docMap = new Map();
+        if (itemRows.length > 0) {
+            const uniqueProdsClean = [...new Set(itemRows.map(r => String(r.produto).trim()).filter(Boolean))];
+            if (uniqueProdsClean.length > 0) {
+                try {
+                    const phs = uniqueProdsClean.map(() => '?').join(',');
+                    const [docs] = await mysqlPool.execute(
+                        `SELECT TRIM(produto_codigo) AS produto_codigo, url_arquivo, tipo FROM produtos_docs WHERE produto_codigo IN (${phs}) ORDER BY id ASC`,
+                        uniqueProdsClean
+                    );
+                    docs.forEach(d => {
+                        const code = String(d.produto_codigo).trim();
+                        if (!docMap.has(code)) {
+                            docMap.set(code, d.url_arquivo);
+                        }
+                        if (String(d.tipo || '').toLowerCase().includes('desenho')) {
+                            docMap.set(code, d.url_arquivo);
+                        }
+                    });
+                } catch (docErr) {
+                    console.warn('[Portal Cliente] Erro ao buscar desenhos de produtos:', docErr.message);
+                }
+            }
+        }
+
         const forecastMap = await getForecastMapCached();
         const parseERP = (dStr) => { if (!dStr || dStr.trim().length < 8) return null; const s = dStr.trim(); return `${s.substring(6,8)}/${s.substring(4,6)}/${s.substring(0,4)}`; };
+
+        const formatPcpDate = (d) => {
+            if (!d) return null;
+            if (d instanceof Date) {
+                if (isNaN(d.getTime())) return null;
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const year = d.getUTCFullYear();
+                return `${day}/${month}/${year}`;
+            }
+            const s = String(d).trim();
+            if (s.includes('-')) {
+                const parts = s.substring(0, 10).split('-');
+                if (parts.length === 3 && parts[0].length === 4) {
+                    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                }
+            }
+            if (s.length === 8 && /^\d{8}$/.test(s)) {
+                return `${s.substring(6, 8)}/${s.substring(4, 6)}/${s.substring(0, 4)}`;
+            }
+            const parsed = new Date(s);
+            if (!isNaN(parsed.getTime())) {
+                const day = String(parsed.getUTCDate()).padStart(2, '0');
+                const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+                const year = parsed.getUTCFullYear();
+                if (year > 2000) return `${day}/${month}/${year}`;
+            }
+            return s || null;
+        };
+
         const finalItems = itemRows.map(row => {
             const key = `${String(row.pedido).trim()}|${String(row.item).trim()}`;
             const fc = forecastMap.get(key);
@@ -2770,7 +3443,63 @@ router.get('/portal-cliente', async (req, res) => {
             const apontado = parseFloat(row.op_apontado) || 0;
             const percentual = planejado > 0 ? Math.min(100, Math.round((apontado / planejado) * 100)) : 0;
             const saldo = parseFloat(row.saldo_faturar) || 0;
+            const qtdFaturada = parseFloat(row.qtd_faturada) || 0;
+
             let status = 'AGUARDANDO';
+            if (saldo <= 0 && qtdFaturada > 0) status = 'ENTREGUE';
+            else if (row.tem_op) status = percentual >= 100 ? 'PRODUCAO_CONCLUIDA' : apontado > 0 ? 'EM_PRODUCAO' : 'OP_ABERTA';
+            else status = 'AGUARDANDO_OP';
+
+            return {
+                pedido: row.pedido,
+                item: row.item,
+                produto: row.produto,
+                desenho_url: docMap.get(String(row.produto).trim()) || null,
+                desc_produto: row.desc_produto || '',
+                unidade: row.unidade,
+                data_emissao: parseERP(row.emissao_raw),
+                entrega: parseERP(row.entrega_raw),
+                emissao_raw: row.emissao_raw,
+                entrega_raw: row.entrega_raw,
+                nome_cliente: row.nome_cliente,
+                ped_cliente: row.ped_cliente,
+                ref_cliente: row.ref_cliente || '',
+                rev_produto: row.rev_produto,
+                rev_cliente: row.rev_cliente,
+                valor_unitario: parseFloat(row.valor_unitario),
+                valor_total: parseFloat(row.valor_total),
+                observacoes: row.observacoes,
+                qtd_vendida: parseFloat(row.qtd_vendida),
+                qtd_faturada: qtdFaturada,
+                saldo_faturar: saldo,
+                tem_op: row.tem_op,
+                data_pcp: fc ? formatPcpDate(fc.data_entrega_pcp) : null,
+                qtd_pcp: fc ? (parseFloat(fc.quantidade_pcp) || 0) : 0,
+                status,
+            };
+        });
+
+        const finalEntregas = (nfRows || []).map(nf => ({
+            pedido: nf.pedido,
+            item: nf.item,
+            nota: nf.nota,
+            serie: nf.serie,
+            emissao: nf.emissao,
+            emissao_nf: nf.emissao_nf,
+            produto: nf.produto,
+            desc_produto: nf.desc_produto,
+            qtd_entregue: parseFloat(nf.qtd_entregue) || 0,
+            qtd: parseFloat(nf.qtd) || 0,
+            unidade: nf.unidade,
+            cfop: nf.cfop,
+            natureza: nf.natureza,
+            transportadora: nf.transportadora,
+        }));
+
+        res.json({
+            items: finalItems,
+            entregas: finalEntregas,
+            meta: { page, limit, hasNextPage: itemRows.length === limit },
         });
     } catch (err) {
         console.error('[Portal Cliente] Erro:', err);

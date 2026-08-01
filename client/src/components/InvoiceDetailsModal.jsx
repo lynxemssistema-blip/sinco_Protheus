@@ -1,7 +1,11 @@
 import React, { useEffect } from 'react';
 import { X, FileText, Calendar, Truck, CreditCard, Scale, Package } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function InvoiceDetailsModal({ isOpen, onClose, invoice, item }) {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
+
     // Fechar ao pressionar ESC
     useEffect(() => {
         const handleEsc = (e) => {
@@ -63,13 +67,15 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice, item }) 
                             </div>
                             <span className="text-lg font-bold text-gray-800">{invoice.qtd} <span className="text-sm text-gray-400 font-normal">{item?.unidade}</span></span>
                         </div>
-                        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 bg-green-50/30 border-green-100">
-                            <div className="flex items-center gap-2 text-green-600 mb-1">
-                                <CreditCard className="h-4 w-4" />
-                                <span className="text-[11px] font-bold uppercase tracking-wider">Valor Total</span>
+                        {canViewValues && (
+                            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 bg-green-50/30 border-green-100">
+                                <div className="flex items-center gap-2 text-green-600 mb-1">
+                                    <CreditCard className="h-4 w-4" />
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Valor Total</span>
+                                </div>
+                                <span className="text-lg font-bold text-green-700">{formatCurrency(invoice.valor_total)}</span>
                             </div>
-                            <span className="text-lg font-bold text-green-700">{formatCurrency(invoice.valor_total)}</span>
-                        </div>
+                        )}
                     </div>
 
                     {/* Section: Detalhes Financeiros */}
@@ -79,18 +85,24 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice, item }) 
                             Valores e Impostos
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl">
-                                <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">Valor Unitário</span>
-                                <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_unit)}</span>
-                            </div>
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl">
-                                <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">ICMS</span>
-                                <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_icms)}</span>
-                            </div>
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl">
-                                <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">IPI</span>
-                                <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_ipi)}</span>
-                            </div>
+                            {canViewValues && (
+                                <div className="bg-white border border-gray-200 p-4 rounded-xl">
+                                    <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">Valor Unitário</span>
+                                    <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_unit)}</span>
+                                </div>
+                            )}
+                            {canViewValues && (
+                                <div className="bg-white border border-gray-200 p-4 rounded-xl">
+                                    <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">ICMS</span>
+                                    <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_icms)}</span>
+                                </div>
+                            )}
+                            {canViewValues && (
+                                <div className="bg-white border border-gray-200 p-4 rounded-xl">
+                                    <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">IPI</span>
+                                    <span className="text-sm font-semibold text-gray-700">{formatCurrency(invoice.valor_ipi)}</span>
+                                </div>
+                            )}
                             <div className="bg-white border border-gray-200 p-4 rounded-xl">
                                 <span className="block text-[10px] uppercase font-bold text-gray-400 mb-1">CFOP</span>
                                 <span className="text-sm font-bold text-blue-600">{invoice.cfop}</span>
@@ -128,7 +140,7 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice, item }) 
                                     </div>
                                 </div>
                             </div>
-                            {invoice.valor_frete > 0 && (
+                            {canViewValues && invoice.valor_frete > 0 && (
                                 <div className="p-4 bg-slate-50/50 border-t border-gray-100 flex justify-between items-center">
                                     <span className="text-xs font-semibold text-gray-500 italic">Valor do Frete destacado nesta nota</span>
                                     <span className="text-sm font-bold text-gray-700">{formatCurrency(invoice.valor_frete)}</span>
@@ -160,5 +172,3 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice, item }) 
         </div>
     );
 }
-
-/* placeholder bypass for ux form check */

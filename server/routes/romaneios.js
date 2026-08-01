@@ -9,6 +9,7 @@ const fs = require('fs');
 const PDFExtractionService = require('../services/pdfExtraction');
 const { generateRomaneioBundle } = require('../services/pdfBundleService');
 const crypto = require('crypto');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // --- Multer disk storage for Romaneio photos ---
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'romaneios');
@@ -288,8 +289,11 @@ router.get('/portal/details/:id', async (req, res) => {
         if (romRows.length === 0) return res.status(404).json({ error: 'Romaneio não encontrado ou sem acesso.' });
 
         const [items] = await mysqlPool.query('SELECT * FROM app_romaneio_items WHERE romaneio_id = ?', [id]);
-        
-        res.json({ romaneio: romRows[0], items });
+
+        const canViewFinancials = await hasFinancialAccess(req);
+        const itemsFiltrados = canViewFinancials ? items : items.map(({ valor_unitario, ...rest }) => rest);
+
+        res.json({ romaneio: romRows[0], items: itemsFiltrados });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -814,6 +818,9 @@ router.get('/:id', async (req, res) => {
             WHERE i.romaneio_id = ?
         `, [req.params.id]);
 
+        const canViewFinancials = await hasFinancialAccess(req);
+        const itensFiltrados = canViewFinancials ? itens : itens.map(({ valor_unitario, ...rest }) => rest);
+
         // Adicionar e-mail e CNPJ do cliente (busca no Postgres)
         let clienteEmail = '';
         let clienteCnpj = '';
@@ -832,7 +839,7 @@ router.get('/:id', async (req, res) => {
             }
         }
 
-        res.json({ ...romaneio[0], cliente_email: clienteEmail, cliente_cnpj: clienteCnpj, itens });
+        res.json({ ...romaneio[0], cliente_email: clienteEmail, cliente_cnpj: clienteCnpj, itens: itensFiltrados });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1083,6 +1090,14 @@ router.get('/:id/revisions/:revId', async (req, res) => {
         const data = rows[0];
         if (typeof data.snapshot_data === 'string') {
             data.snapshot_data = JSON.parse(data.snapshot_data);
+        }
+
+        const canViewFinancials = await hasFinancialAccess(req);
+        if (!canViewFinancials && data.snapshot_data?.items) {
+            data.snapshot_data = {
+                ...data.snapshot_data,
+                items: data.snapshot_data.items.map(({ valor_unitario, ...rest }) => rest)
+            };
         }
 
         res.json(data);

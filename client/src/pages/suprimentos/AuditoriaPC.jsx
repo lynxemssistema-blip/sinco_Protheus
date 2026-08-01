@@ -5,7 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
 
 export default function AuditoriaPC() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [view, setView] = useState('list'); // list or new
     const [auditorias, setAuditorias] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -176,7 +177,7 @@ export default function AuditoriaPC() {
                 const precoPc = Number(pcItem.c7_preco);
 
                 let isQtyDiv = Math.abs(xmlItem.qCom - saldoPc) > 0.01;
-                let isValDiv = Math.abs(xmlItem.vUnCom - precoPc) > 0.05; // 5 centavos de tolerancia
+                let isValDiv = canViewValues && Math.abs(xmlItem.vUnCom - precoPc) > 0.05; // 5 centavos de tolerancia
 
                 if (isQtyDiv || isValDiv) {
                     hasDivergence = true;
@@ -413,8 +414,8 @@ export default function AuditoriaPC() {
                                                 <th className="p-2 border-r border-slate-200 w-28 text-indigo-700">Cod MetalFisa</th>
                                                 <th className="p-2 border-r border-slate-200 text-right w-20">Qtd NF</th>
                                                 <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Qtd PC</th>
-                                                <th className="p-2 border-r border-slate-200 text-right w-24">Vlr NF</th>
-                                                <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Vlr PC</th>
+                                                {canViewValues && <th className="p-2 border-r border-slate-200 text-right w-24">Vlr NF</th>}
+                                                {canViewValues && <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Vlr PC</th>}
                                                 <th className="p-2 border-r border-slate-200 w-44">Status</th>
                                                 <th className="p-2">Detalhes</th>
                                             </tr>
@@ -427,8 +428,8 @@ export default function AuditoriaPC() {
                                                     <td className="p-2 border-r border-slate-200 font-mono font-bold text-indigo-700">{it.cprod_protheus || '-'}</td>
                                                     <td className="p-2 border-r border-slate-200 text-right font-bold">{it.qtd_xml}</td>
                                                     <td className="p-2 border-r border-slate-200 text-right bg-amber-50/30">{it.qtd_protheus ?? '-'}</td>
-                                                    <td className="p-2 border-r border-slate-200 text-right">{formatMoney(it.vlr_xml)}</td>
-                                                    <td className="p-2 border-r border-slate-200 text-right bg-amber-50/30">{it.vlr_protheus ? formatMoney(it.vlr_protheus) : '-'}</td>
+                                                    {canViewValues && <td className="p-2 border-r border-slate-200 text-right">{formatMoney(it.vlr_xml)}</td>}
+                                                    {canViewValues && <td className="p-2 border-r border-slate-200 text-right bg-amber-50/30">{it.vlr_protheus ? formatMoney(it.vlr_protheus) : '-'}</td>}
                                                     <td className="p-2 border-r border-slate-200 font-bold">
                                                         <span className={it.status.includes('X') ? 'text-red-600' : 'text-green-600'}>{it.status}</span>
                                                     </td>

@@ -312,6 +312,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     const { page, limit } = pagination;
     const offset = (page - 1) * limit;
 
+    let priFilterItems = '';
     const params = [];
     const getInactiveFilter = await getInactiveOrdersFilter();
     let whereClause = `WHERE c5.c5_tipo <> 'B' AND COALESCE(c5.d_e_l_e_t_, '') = ''` + getInactiveFilter('c5.c5_num');
@@ -372,6 +373,56 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
         )`;
     }
 
+    // Priority filtering from MySQL app_op_priorities
+    const prioVal = filters.prioridade || filters.somente_prioridades;
+    if (prioVal && prioVal !== 'false') {
+        try {
+            let prioQuery = 'SELECT DISTINCT op_numero, prioridade FROM app_op_priorities WHERE prioridade > 0';
+            const prioMysqlParams = [];
+            if (['1', '2', '3', '4'].includes(String(prioVal))) {
+                prioQuery = 'SELECT DISTINCT op_numero, prioridade FROM app_op_priorities WHERE prioridade = ?';
+                prioMysqlParams.push(parseInt(prioVal, 10));
+            }
+            const [priOpsRows] = await mysqlPool.execute(prioQuery, prioMysqlParams);
+            
+            if (priOpsRows.length === 0) {
+                whereClause += ' AND 1=0 ';
+                priFilterItems = ' AND 1=0 ';
+            } else {
+                const opFullKeys = [...new Set(
+                    priOpsRows.map(r => String(r.op_numero).trim()).filter(Boolean)
+                )];
+                const sanitized = opFullKeys.filter(o => /^[a-zA-Z0-9]+$/.test(o));
+                if (sanitized.length > 0) {
+                    const opInList = sanitized.map(o => "\'" + o + "\'").join(', ');
+                    whereClause += ` AND EXISTS (
+                        SELECT 1 FROM public.sc6010 c6_pri
+                        JOIN public.sc2010 c2_pri ON TRIM(c2_pri.c2_pedido) = TRIM(c6_pri.c6_num)
+                            AND TRIM(c2_pri.c2_itempv) = TRIM(c6_pri.c6_item)
+                            AND (TRIM(c2_pri.c2_num) || TRIM(c2_pri.c2_item) || TRIM(c2_pri.c2_sequen)) IN (${opInList})
+                            AND COALESCE(c2_pri.d_e_l_e_t_, '') = ''
+                        WHERE c6_pri.c6_num = c5.c5_num
+                        AND c6_pri.c6_filial = c5.c5_filial
+                        AND COALESCE(c6_pri.d_e_l_e_t_, '') = ''
+                    )`;
+                    
+                    priFilterItems = ` AND EXISTS (
+                        SELECT 1 FROM public.sc2010 c2_pri
+                        WHERE TRIM(c2_pri.c2_pedido) = TRIM(c6.c6_num)
+                          AND TRIM(c2_pri.c2_itempv) = TRIM(c6.c6_item)
+                          AND (TRIM(c2_pri.c2_num) || TRIM(c2_pri.c2_item) || TRIM(c2_pri.c2_sequen)) IN (${opInList})
+                          AND COALESCE(c2_pri.d_e_l_e_t_, '') = ''
+                    )`;
+                } else {
+                    whereClause += ' AND 1=0 ';
+                    priFilterItems = ' AND 1=0 ';
+                }
+            }
+        } catch (prioErr) {
+            console.error('[fetchSalesPlanningData] Erro no filtro somente_prioridades:', prioErr.message);
+        }
+    }
+
     // Count Query
     const countSql = `
         SELECT COUNT(DISTINCT c5.c5_num) as total
@@ -426,13 +477,35 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             FROM sc6010 c6
             LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND sb1.d_e_l_e_t_ = ''
             LEFT JOIN sc2010 c2 ON c2.c2_pedido = c6.c6_num AND c2.c2_itempv = c6.c6_item AND c2.d_e_l_e_t_ = ''
-            WHERE c6.c6_num = ANY($1) AND c6.d_e_l_e_t_ = ''
+            WHERE c6.c6_num = ANY($1) AND c6.d_e_l_e_t_ = '' ${priFilterItems}
             ORDER BY c6.c6_item ASC
         `;
         const itemsRes = await db.query(itemsSql, [orderNumbers]);
 
+        // Fetch priorities from local MySQL app_op_priorities
+        let opPrioritiesMap = {};
+        try {
+            const opNumerosUnicos = [...new Set(itemsRes.rows.map(r => r.op ? r.op.trim() : '').filter(Boolean))];
+            const opPrefixosUnicos = [...new Set(opNumerosUnicos.map(op => op.substring(0, 8)))];
+            const opsToCheck = [...new Set([...opNumerosUnicos, ...opPrefixosUnicos])];
+            
+            if (opsToCheck.length > 0) {
+                const placeholders = opsToCheck.map(() => '?').join(',');
+                const [opPrioritiesRows] = await mysqlPool.execute(
+                    `SELECT op_numero, prioridade FROM app_op_priorities WHERE op_numero IN (${placeholders})`,
+                    opsToCheck
+                );
+                opPrioritiesRows.forEach(r => { opPrioritiesMap[r.op_numero] = r.prioridade; });
+            }
+        } catch (err) {
+            console.error('[OP PRIORITY FETCH ERROR in reports]', err);
+        }
+
         itemsRes.rows.forEach(item => {
             if (!itemsMap[item.pedido]) itemsMap[item.pedido] = [];
+            const op = item.op ? item.op.trim() : '';
+            const prefix = op.substring(0, 8);
+            const prio = opPrioritiesMap[op] || opPrioritiesMap[prefix] || 0;
             itemsMap[item.pedido].push({
                 ...item,
                 pedido:       item.pedido.trim(),
@@ -441,6 +514,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
                 op:           item.op?.trim(),
                 ped_cli:      item.ped_cli?.trim(),
                 tipo:         item.tipo_produto || '',
+                op_prioridade: prio,
                 tag_especial: 'Nenhum' // Default
             });
         });
@@ -1935,6 +2009,7 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
         const uniqueProducts = [...new Set(allItems.map(it => it.produto.trim()))];
 
         let bomMap = {};
+        let estruturasList = [];
         if (uniqueProducts.length > 0) {
             const bomRows = await db.query(
                 `WITH RECURSIVE bom AS (
@@ -1947,10 +2022,11 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                     JOIN bom ON TRIM(sg1.g1_cod) = bom.comp
                     WHERE COALESCE(sg1.d_e_l_e_t_, '') = '' AND bom.nivel < 15
                 )
-                SELECT raiz, comp, SUM(quant) AS quant_total FROM bom GROUP BY raiz, comp`,
+                SELECT bom.raiz, bom.comp, SUM(bom.quant) as quant_total, TRIM(MAX(sb1.b1_desc)) as desc, TRIM(MAX(sb1.b1_um)) as um, TRIM(MAX(sb1.b1_tipo)) as tipo FROM bom LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = bom.comp AND COALESCE(sb1.d_e_l_e_t_, '') = '' GROUP BY bom.raiz, bom.comp ORDER BY bom.raiz, bom.comp`,
                 [uniqueProducts]
             );
             bomRows.rows.forEach(r => {
+                estruturasList.push({ raiz: r.raiz, comp: r.comp, quant: parseFloat(r.quant_total) || 0, desc: r.desc || '', um: r.um || '', tipo: r.tipo || '' });
                 if (!bomMap[r.raiz]) bomMap[r.raiz] = [];
                 bomMap[r.raiz].push({ comp: r.comp, quant: parseFloat(r.quant_total) || 0 });
             });
@@ -2000,6 +2076,7 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
             pedidos: [],
             itens: [],
             carga: [],
+            estruturas: estruturasList,
             execucao_op: [],
             recursos: allRecursos,
             recursoNomeMap: recursoNomeMap
@@ -2061,7 +2138,8 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                         qtde_pcp: item.qtde_pcp,
                         entrega: item.entrega,
                         op: item.op,
-                        ped_cli: item.ped_cli
+                        ped_cli: item.ped_cli,
+                        op_prioridade: item.op_prioridade
                     });
 
                     if (qtdFaturar > 0) {

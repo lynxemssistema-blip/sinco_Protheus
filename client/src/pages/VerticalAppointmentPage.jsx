@@ -31,17 +31,42 @@ const VerticalOpRow = React.memo(({ row, opKey, isActive, onRowClick, draftDate,
     const cappedQtdApontada = Math.min(row.qtd_apontada, parseFloat(row.qtd_op) || 0);
     const percent = row.qtd_op > 0 ? Math.round((cappedQtdApontada / parseFloat(row.qtd_op)) * 100) : 0;
 
+    const getPriorityColors = (prioridade) => {
+        if (!prioridade || prioridade <= 0) return null;
+        switch (Number(prioridade)) {
+            case 1: return { bg: 'bg-red-50/80', hover: 'hover:bg-red-100/90', border: 'border-l-red-500', ring: 'ring-red-200', badgeBg: 'bg-red-100/80', badgeBorder: 'border-red-200', badgeText: 'text-red-600', icon: 'text-red-600', label: 'MÁXIMA' };
+            case 2: return { bg: 'bg-orange-50/80', hover: 'hover:bg-orange-100/90', border: 'border-l-orange-500', ring: 'ring-orange-200', badgeBg: 'bg-orange-100/80', badgeBorder: 'border-orange-200', badgeText: 'text-orange-600', icon: 'text-orange-600', label: 'ALTA' };
+            case 3: return { bg: 'bg-yellow-50/80', hover: 'hover:bg-yellow-100/90', border: 'border-l-yellow-500', ring: 'ring-yellow-200', badgeBg: 'bg-yellow-100/80', badgeBorder: 'border-yellow-200', badgeText: 'text-yellow-600', icon: 'text-yellow-600', label: 'MÉDIA' };
+            case 4: return { bg: 'bg-purple-50/80', hover: 'hover:bg-purple-100/90', border: 'border-l-purple-500', ring: 'ring-purple-200', badgeBg: 'bg-purple-100/80', badgeBorder: 'border-purple-200', badgeText: 'text-purple-600', icon: 'text-purple-600', label: 'NORMAL' };
+            default: return { bg: 'bg-red-50/80', hover: 'hover:bg-red-100/90', border: 'border-l-red-500', ring: 'ring-red-200', badgeBg: 'bg-red-100/80', badgeBorder: 'border-red-200', badgeText: 'text-red-600', icon: 'text-red-600', label: 'PRIOR.' };
+        }
+    };
+    
+    const pColors = getPriorityColors(row.op_prioridade);
+
     return (
         <tr 
             onClick={() => onRowClick(opKey)}
             className={`border-b border-slate-100 transition-colors cursor-pointer ${
-                isActive 
-                    ? 'bg-indigo-50 ring-2 ring-indigo-500/50 outline-none z-10 relative' 
-                    : (row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-slate-50')
+                pColors
+                    ? `${pColors.bg} ${pColors.hover} border-l-4 ${pColors.border} ring-1 ring-inset ${pColors.ring} z-10 relative`
+                    : isActive 
+                        ? 'bg-indigo-50 ring-2 ring-indigo-500/50 outline-none z-10 relative' 
+                        : (row.sequen_op === '001' ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-slate-50')
             }`}
         >
             <td className="p-3 sticky left-0 z-10 bg-inherit min-w-[160px]">
-                <div className="font-mono text-sm font-bold text-slate-900">{row.op} - Item {row.item_op}</div>
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 font-mono text-[13px] font-bold text-slate-800">
+                        {row.op}-{row.item_op}
+                        {pColors && (
+                            <div className={`flex items-center gap-1 text-[10px] font-bold ${pColors.badgeText} ${pColors.badgeBg} px-1 rounded shadow-sm border ${pColors.badgeBorder}`} title={`Prioridade ${pColors.label}`}>
+                                <AlertTriangle className={`h-3 w-3 ${pColors.icon}`} />
+                                <span>G{row.op_prioridade}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
                 <div className="text-xs text-slate-400">Seq: {row.sequen_op}</div>
             </td>
             <td className="p-3 sticky left-[160px] z-10 bg-inherit min-w-[100px] border-l border-slate-100/50">

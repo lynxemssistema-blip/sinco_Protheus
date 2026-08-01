@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * MetalFisa — Fase 2: Índices com nomes de colunas corrigidos via inspeção real do schema.
  */
@@ -110,10 +111,10 @@ const INDEXES = [
 
 async function main() {
     const conn = await mysql.createConnection({
-        host: 'metalfisa.mysql.uhserver.com',
-        user: 'ronaldo2',
-        password: 'jHAzhFG848@yN@U',
-        database: 'metalfisa'
+        host: process.env.MYSQL_HOST,
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASS,
+        database: process.env.MYSQL_DB
     });
 
     // Fetch all existing indexes once

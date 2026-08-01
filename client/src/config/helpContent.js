@@ -3625,6 +3625,66 @@ export const HELP_CONTENT = {
       { path: '/produtos', label: 'Catálogo de Produtos (Estruturas)' },
       { path: '/saldo-materiais', label: 'Saldo de Materiais (Almoxarifado)' }
     ]
+  },
+
+  '/portal-cliente': {
+    category: 'Comercial',
+    categoryColor: '#2563eb',
+    title: 'Canal do Cliente (Portal de Acompanhamento)',
+    icon: 'MonitorSmartphone',
+    description: 'Portal de transparência para acompanhamento em tempo real do faturamento, entregas, notas fiscais emitidas, desenhos técnicos em PDF e saldo pendente de pedidos de venda e ordens de compra.',
+    tabs: [
+      {
+        id: 'abas-visualizacao',
+        label: 'Visualização por Abas',
+        description: 'Alternância entre a visão detalhada por Nota Fiscal e a visão sumarizada de saldo pendente.',
+        steps: [
+          'Tabela Completa (NFs): Relação minuciosa de cada item de pedido com desdobramento individual das Notas Fiscais já emitidas, data de emissão da NF, número da nota e quantidade faturada.',
+          'Saldo a Faturar: Visão resumida exclusiva dos itens pendentes de entrega (Saldo > 0), com cálculo automático de % faturado, saldo a faturar em destaque Amber, barra de progresso visual de conclusão e previsão PCP.'
+        ]
+      },
+      {
+        id: 'filtros-pesquisa',
+        label: 'Filtros & Pesquisa Inteligente',
+        description: 'Como utilizar a pesquisa rápida, filtros avançados e busca sanitizada.',
+        steps: [
+          'Busca por Pedido ou Ordem de Compra: Permite pesquisar por código completo ou parcial sem zeros à esquerda (ex: "4618" encontra "004618").',
+          'Múltiplos Valores por Vírgula: Digite múltiplos pedidos ou ordens separados por vírgula (ex: "4618, 4620") para pesquisá-los simultaneamente.',
+          'Ref. Cliente Sanitizada: Caracteres especiais, pontuações e espaços (como hífens, pontos e barras) são ignorados automaticamente na busca.',
+          'Filtro de Intervalo de Datas: Selecione entre Data Emissão Pedido, Data Prev. Entrega, Data Previsão PCP ou Data Emissão NF e defina o período desejado.',
+          'Apenas Pendentes: Ative este switch para limitar a listagem apenas a itens que ainda possuem saldo em aberto.',
+          'Limpar Filtros: O botão "Limpar Filtros" está sempre disponível para resetar todos os parâmetros de busca em um único clique.'
+        ]
+      },
+      {
+        id: 'agrupamentos',
+        label: 'Agrupamento Dinâmico',
+        description: 'Organize os registros da tabela por categorias e controle a visualização em massa.',
+        steps: [
+          'Menu "Agrupar por": Selecione entre Ordem de Compra (PC), Pedido de Venda, Produto, Ref. Cliente, Cliente, Nota Fiscal (NF), Data Emissão Pedido ou Data Emissão NF.',
+          'Cabeçalho do Grupo: Exibe o nome do grupo, total de registros, soma das quantidades vendidas e faturadas, saldo pendente e barra de progresso do grupo.',
+          'Expansão e Recolhimento: Clique na linha do grupo para abrir/fechar individualmente, ou use os botões "Expandir Todos" e "Recolher Todos" na barra superior.'
+        ]
+      },
+      {
+        id: 'desenhos-pdf',
+        label: 'Desenhos Técnicos (PDF)',
+        description: 'Acesso direto às folhas de engenharia dos produtos.',
+        steps: [
+          'Ícone de PDF Vermelho: Ao lado do código de cada produto na tabela, há um ícone vermelho de PDF.',
+          'Visualização em Nova Aba: Clique no código ou ícone para abrir a folha do desenho técnico original diretamente no navegador.'
+        ]
+      }
+    ],
+    tips: [
+      'Carregamento Integral: A busca carrega os dados completos correspondentes aos seus filtros em uma única consulta.',
+      'Ordens de PRODUÇÃO: Ordens classificadas como "PRODUÇÃO" são ocultadas automaticamente por padrão no canal do cliente.',
+      'Desenho não abre? Certifique-se de que os bloqueadores de pop-up do navegador estejam desativados para o endereço do sistema.'
+    ],
+    links: [
+      { path: '/comercial/visao-geral', label: 'Visão Geral Comercial' },
+      { path: '/comercial/itens-faturar', label: 'Itens a Faturar' }
+    ]
   }
 
 };

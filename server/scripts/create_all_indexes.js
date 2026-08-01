@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * MetalFisa Antigravity — Master Index Creation Script
  * Cria/valida TODOS os índices necessários com base na análise completa das rotas.
@@ -218,10 +219,10 @@ const INDEXES = [
 
 async function main() {
     const conn = await mysql.createConnection({
-        host: 'metalfisa.mysql.uhserver.com',
-        user: 'ronaldo2',
-        password: 'jHAzhFG848@yN@U',
-        database: 'metalfisa'
+        host: process.env.MYSQL_HOST,
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASS,
+        database: process.env.MYSQL_DB
     });
 
     console.log('🔍 Fetching existing indexes...');

@@ -39,7 +39,7 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
     const [debouncedFilters, setDebouncedFilters] = useState(filters);
 
     // Text-based filter keys that should be debounced
-    const TEXT_FILTER_KEYS = ['cliente', 'produto', 'pedcli'];
+    const TEXT_FILTER_KEYS = ['cliente', 'produto', 'pedcli', 'refCliente'];
 
     useEffect(() => {
         const hasTextChange = TEXT_FILTER_KEYS.some(
@@ -66,11 +66,12 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
         abortRef.current = controller;
 
         const searchPage = overrides.page || page;
+        const isSilent = overrides.silent === true;
         
-        if (searchPage === 1) {
+        if (searchPage === 1 && !isSilent) {
             setLoading(true);
             setOrders([]); // Clear immediately to trigger skeleton loading
-        } else {
+        } else if (!isSilent) {
             setLoadingMore(true);
         }
         
@@ -85,12 +86,18 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
             pedido: overrides.pedido !== undefined ? overrides.pedido : activeFilters.pedido,
             produto: overrides.produto !== undefined ? overrides.produto : activeFilters.produto,
             pedcli: overrides.pedcli !== undefined ? overrides.pedcli : activeFilters.pedcli,
+            refCliente: overrides.refCliente !== undefined ? overrides.refCliente : activeFilters.refCliente,
             dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : activeFilters.dataInicial,
             dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : activeFilters.dataFinal,
             dateType: overrides.dateType !== undefined ? overrides.dateType : activeFilters.dateType,
             tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : activeFilters.tipo_item,
+            classificacao_item: overrides.classificacao_item !== undefined ? overrides.classificacao_item : activeFilters.classificacao_item,
             op_status: overrides.op_status !== undefined ? overrides.op_status : activeFilters.op_status,
             only_active: overrides.only_active !== undefined ? overrides.only_active : activeFilters.only_active,
+            somente_prioridades: overrides.somente_prioridades !== undefined ? overrides.somente_prioridades : activeFilters.somente_prioridades,
+            pcpDataInicial: overrides.pcpDataInicial !== undefined ? overrides.pcpDataInicial : activeFilters.pcpDataInicial,
+            pcpDataFinal: overrides.pcpDataFinal !== undefined ? overrides.pcpDataFinal : activeFilters.pcpDataFinal,
+            pcpDateFilter: overrides.pcpDateFilter !== undefined ? overrides.pcpDateFilter : activeFilters.pcpDateFilter,
             sortBy: overrides.sortBy !== undefined ? overrides.sortBy : activeFilters.sortBy,
             sortOrder: overrides.sortOrder !== undefined ? overrides.sortOrder : activeFilters.sortOrder,
         };

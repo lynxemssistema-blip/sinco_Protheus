@@ -2,10 +2,12 @@ import React from 'react';
 import api from '../../services/api';
 import {
     DollarSign, TrendingUp, AlertCircle, CheckCircle2,
-    ArrowDownRight, Clock, Box, Search, ChevronDown, ChevronRight, BarChart2, Calendar
+    ArrowDownRight, Clock, Box, Search, ChevronDown, ChevronRight, BarChart2, Calendar, Lock
 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import { format, subMonths, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import CompanyFilter from '../../components/CompanyFilter';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend, CartesianGrid
@@ -111,8 +113,11 @@ const DocRow = ({ doc, formatMoney, formatDate, renderStatus }) => {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 const DashboardFinanceiro = () => {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [data, setData] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
+    const [selectedFiliais, setSelectedFiliais] = React.useState([]);
     const [periodFilter, setPeriodFilter] = React.useState('mes_atual');
     const [customDates, setCustomDates] = React.useState({
         inicio: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
@@ -161,7 +166,8 @@ const DashboardFinanceiro = () => {
                 params: {
                     data_inicio: dateParams.inicio,
                     data_fim: dateParams.fim,
-                    date_filter_type: activeTab === 'documentos' ? 'emissao' : 'vencimento'
+                    date_filter_type: activeTab === 'documentos' ? 'emissao' : 'vencimento',
+                    filiais: selectedFiliais.join(',')
                 },
             });
             setData(response.data);
@@ -171,7 +177,7 @@ const DashboardFinanceiro = () => {
         } finally {
             setLoading(false);
         }
-    }, [periodFilter, activeTab, customDates]);
+    }, [periodFilter, activeTab, customDates, selectedFiliais]);
 
     React.useEffect(() => {
         if (periodFilter !== 'custom') {
@@ -274,6 +280,16 @@ const DashboardFinanceiro = () => {
     };
 
     // ── JSX ─────────────────────────────────────────────────────────────────
+    if (!canViewValues) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-slate-50 p-8 text-center">
+                <Lock className="w-16 h-16 text-gray-400 mb-4 opacity-50" />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Acesso Restrito</h2>
+                <p className="text-sm text-gray-500 max-w-md">Você não possui a permissão <strong>valores_financeiros</strong> necessária para visualizar o Dashboard Financeiro.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full bg-slate-50">
 
@@ -289,6 +305,11 @@ const DashboardFinanceiro = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                        <CompanyFilter 
+                            selectedFiliais={selectedFiliais} 
+                            onChange={setSelectedFiliais} 
+                            defaultAll={true} 
+                        />
                         <div className="bg-slate-100 p-1 rounded-lg inline-flex overflow-x-auto max-w-full">
                             {[
                                 { id: 'semana', label: 'Semana' },

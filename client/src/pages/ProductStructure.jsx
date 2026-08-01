@@ -1,7 +1,8 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp, PackageCheck, Loader2, X, History } from 'lucide-react';
-import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0, getProductStatus, setProductStatus, getProductStatusesBatch, setProductStatusBatch } from '../services/api';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp, PackageCheck, Loader2, X, History, RotateCcw, DollarSign, Wrench } from 'lucide-react';
+import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0, getProductStatus, setProductStatus, getProductStatusesBatch, setProductStatusBatch, setEstruturaCustoOverride, removeEstruturaCustoOverride } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
 import EngineeringReleaseModal from '../components/EngineeringReleaseModal';
@@ -9,10 +10,15 @@ import ProductStatusHistoryModal from '../components/ProductStatusHistoryModal';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
 import { generateMergedDrawingsPdf } from '../services/pdfMergerService';
 
+const CUSTO_TIPOS = ['MP', 'MC', 'EM'];
+
 const ProductStructure = () => {
     const { codigo } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
+    const [savingPreco, setSavingPreco] = useState({}); // { [itemCodigo]: true }
     const [structure, setStructure] = useState([]);
     const [balances, setBalances] = useState({});
     const [loading, setLoading] = useState(true);
@@ -47,10 +53,31 @@ const ProductStructure = () => {
             }
 
             await fetchBalances(data);
+            fetchRoutesForAllItems(data);
         } catch (err) {
             setError('Não foi possível carregar a estrutura deste produto.');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchRoutesForAllItems = async (items) => {
+        try {
+            const routesMap = {};
+            await Promise.all(items.map(async (item) => {
+                const key = item.codigo?.trim();
+                if (key) {
+                    try {
+                        const data = await getProductRoute(item.codigo);
+                        routesMap[key] = Array.isArray(data) ? data : [];
+                    } catch (e) {
+                        routesMap[key] = [];
+                    }
+                }
+            }));
+            setRoutes(prev => ({ ...prev, ...routesMap }));
+        } catch (e) {
+            console.error('Erro ao pre-carregar roteiros:', e);
         }
     };
 
@@ -145,6 +172,73 @@ const ProductStructure = () => {
             fetchStructure();
         }
     }, [codigo]);
+
+    // Custo é sempre um override ESCOPADO a este produto pai (codigo) — nunca altera
+    // o preço padrão global do material, que continua o mesmo em qualquer outra estrutura.
+    const handleUpdatePreco = async (itemCodigo, novoPreco) => {
+        const precoNum = parseFloat(novoPreco);
+        if (isNaN(precoNum) || precoNum < 0) return;
+
+        setSavingPreco(prev => ({ ...prev, [itemCodigo]: true }));
+        try {
+            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            await setEstruturaCustoOverride(codigo, itemCodigo, precoNum, user?.nome);
+            setStructure(prev => prev.map(i =>
+                i.codigo.trim() === itemCodigo.trim()
+                    ? { ...i, preco_override: precoNum, preco_efetivo: precoNum }
+                    : i
+            ));
+        } catch (err) {
+            console.error('Erro ao salvar custo do componente:', err);
+            alert('Falha ao salvar o custo do componente.');
+        } finally {
+            setSavingPreco(prev => { const next = { ...prev }; delete next[itemCodigo]; return next; });
+        }
+    };
+
+    const handleResetPreco = async (itemCodigo) => {
+        setSavingPreco(prev => ({ ...prev, [itemCodigo]: true }));
+        try {
+            await removeEstruturaCustoOverride(codigo, itemCodigo);
+            setStructure(prev => prev.map(i =>
+                i.codigo.trim() === itemCodigo.trim()
+                    ? { ...i, preco_override: null, preco_efetivo: i.preco_padrao }
+                    : i
+            ));
+        } catch (err) {
+            console.error('Erro ao remover custo do componente:', err);
+            alert('Falha ao aplicar o preço padrão.');
+        } finally {
+            setSavingPreco(prev => { const next = { ...prev }; delete next[itemCodigo]; return next; });
+        }
+    };
+
+    // Soma só as peças-folha (MP/MC/EM) para não contar o custo do intermediário
+    // (PI/PA) e dos componentes dele ao mesmo tempo.
+    const custoTotalEstrutura = structure.reduce((acc, item) => {
+        const isCustoItem = item.eh_item_custo ?? CUSTO_TIPOS.includes((item.tipo_produto || '').toUpperCase());
+        if (!isCustoItem) return acc;
+        const qtd = parseFloat(item.qtd_necessaria) || 0;
+        const preco = parseFloat(item.preco_efetivo) || 0;
+        return acc + (qtd * preco);
+    }, 0);
+
+    // Soma o custo das operações de recursos/mão de obra de todas as peças
+    const custoTotalRecursos = React.useMemo(() => {
+        let total = 0;
+        structure.forEach(item => {
+            const key = item.codigo?.trim();
+            const route = routes[key];
+            if (Array.isArray(route)) {
+                const qtdItem = parseFloat(item.qtd_necessaria || 1);
+                const itemRecursoCost = route.reduce((sum, op) => sum + (parseFloat(op.custo_total_op) || 0), 0);
+                total += (itemRecursoCost * qtdItem);
+            }
+        });
+        return total;
+    }, [structure, routes]);
+
+    const custoTotalGeral = custoTotalEstrutura + custoTotalRecursos;
 
     // Função para calcular indentação visual baseada no nível
     const getPadding = (nivel) => {
@@ -257,8 +351,8 @@ const ProductStructure = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6 md:p-10">
-            <div className="max-w-6xl mx-auto">
+        <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+            <div className="w-full">
                 <button
                     onClick={handleBack}
                     className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition-colors"
@@ -295,6 +389,22 @@ const ProductStructure = () => {
                             <p className="text-gray-500 font-mono inline-block px-2 py-1 rounded text-sm shadow-sm border border-gray-100 bg-white">
                                 {codigo}
                             </p>
+                            {canViewValues && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm" title="Custo dos materiais folha (MP / MC / EM)">
+                                        <DollarSign className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                                        <span>Custo Materiais (MP/MC/EM): <strong>{custoTotalEstrutura.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm" title="Custo de Operações / Recursos (Horas x Taxas)">
+                                        <Wrench className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                                        <span>Custo Recursos / Mão de Obra: <strong>{custoTotalRecursos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-2 bg-purple-50 border border-purple-200 text-purple-900 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm" title="Custo Total Geral da Estrutura (Materiais + Recursos)">
+                                        <DollarSign className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                                        <span>Custo Total Estrutura: <strong>{custoTotalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
@@ -431,6 +541,8 @@ const ProductStructure = () => {
                                     <th className="px-6 py-4">Descrição</th>
                                     <th className="px-6 py-4">UM</th>
                                     <th className="px-6 py-4 text-right">Qtd Nec.</th>
+                                    {canViewValues && <th className="px-6 py-4 text-right" title="Custo por unidade — editável, vale só nesta estrutura">Custo Unit. (R$)</th>}
+                                    {canViewValues && <th className="px-6 py-4 text-right" title="Qtd Nec. × Custo Unit.">Custo Total (R$)</th>}
                                     <th className="px-6 py-4">Ref. Cliente</th>
                                     <th className="px-6 py-4 text-center">Status Eng.</th>
                                     <th className="px-6 py-4 text-center">Roteiro</th>
@@ -439,7 +551,7 @@ const ProductStructure = () => {
                             <tbody className="divide-y divide-gray-50">
                                 {loading && (
                                     <tr>
-                                        <td colSpan="9" className="p-8 text-center">
+                                        <td colSpan={canViewValues ? 11 : 9} className="p-8 text-center">
                                             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                                         </td>
                                     </tr>
@@ -447,7 +559,7 @@ const ProductStructure = () => {
 
                                 {error && (
                                     <tr>
-                                        <td colSpan="9" className="p-8 text-center text-red-500 font-medium">
+                                        <td colSpan={canViewValues ? 11 : 9} className="p-8 text-center text-red-500 font-medium">
                                             {error}
                                         </td>
                                     </tr>
@@ -525,7 +637,61 @@ const ProductStructure = () => {
                                             <td className="px-6 py-3 text-right font-mono font-medium">
                                                 {(parseFloat(item.qtd_necessaria) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 })}
                                             </td>
-                                            
+
+                                            {/* Custo Unit. (editável, override escopado a este produto pai) */}
+                                            {canViewValues && (
+                                                <td className="px-6 py-3 text-right">
+                                                    {item.nivel === 0 ? (
+                                                        <span className="text-gray-300">-</span>
+                                                    ) : (
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                min="0"
+                                                                defaultValue={item.preco_efetivo}
+                                                                key={`${item.codigo}-${item.preco_efetivo}`}
+                                                                disabled={!!savingPreco[item.codigo]}
+                                                                onBlur={(e) => {
+                                                                    const val = parseFloat(e.target.value);
+                                                                    if (!isNaN(val) && val !== parseFloat(item.preco_efetivo)) {
+                                                                        handleUpdatePreco(item.codigo, val);
+                                                                    }
+                                                                }}
+                                                                className={`w-24 text-right p-1 border rounded text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none transition-colors ${
+                                                                    item.preco_override != null
+                                                                        ? 'border-amber-400 bg-amber-50 font-bold text-amber-800'
+                                                                        : 'border-gray-200 text-gray-700'
+                                                                }`}
+                                                                title={item.preco_override != null ? `Custo alterado só nesta estrutura (padrão: ${(item.preco_padrao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})` : 'Custo padrão (Protheus)'}
+                                                            />
+                                                            {item.preco_override != null && (
+                                                                <button
+                                                                    onClick={() => handleResetPreco(item.codigo)}
+                                                                    disabled={!!savingPreco[item.codigo]}
+                                                                    title="Aplicar preço padrão"
+                                                                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                                                                >
+                                                                    <RotateCcw className="h-3.5 w-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            )}
+
+                                            {/* Custo Total = Qtd Nec. × Custo Unit. (só destacado para itens de custo MP/MC/EM) */}
+                                            {canViewValues && (
+                                                <td className={`px-6 py-3 text-right font-mono ${item.eh_item_custo ? 'font-bold text-emerald-700' : 'text-gray-400'}`}>
+                                                    {item.nivel === 0 ? (
+                                                        <span className="text-gray-300">-</span>
+                                                    ) : (
+                                                        ((parseFloat(item.qtd_necessaria) || 0) * (parseFloat(item.preco_efetivo) || 0))
+                                                            .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                                    )}
+                                                </td>
+                                            )}
+
                                             {/* Ref. Cliente */}
                                             <td className="px-6 py-3 text-sm text-gray-600">
                                                 {item.referencias && item.referencias.length > 0 ? (
@@ -587,20 +753,26 @@ const ProductStructure = () => {
                                         {/* Route Details Row */}
                                         {expandedRoutes[item.codigo.trim()] && (
                                             <tr className="bg-slate-50">
-                                                <td colSpan="9" className="px-6 py-4">
+                                                <td colSpan={canViewValues ? 11 : 9} className="px-6 py-4">
                                                     <div className="pl-8">
                                                         <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Roteiro de Fabricação</div>
                                                         {!routes[item.codigo.trim()] || routes[item.codigo.trim()].length === 0 ? (
                                                             <div className="text-sm text-gray-400 italic">Sem roteiro cadastrado</div>
                                                         ) : (
-                                                            <table className="min-w-full text-xs">
+                                                                                           <table className="min-w-full text-xs">
                                                                 <thead>
                                                                     <tr className="text-gray-500">
                                                                         <th className="text-left py-2 pr-4">Op</th>
                                                                         <th className="text-left py-2 pr-4">Descrição</th>
                                                                         <th className="text-left py-2 pr-4">Recurso</th>
                                                                         <th className="text-right py-2 pr-4">Setup (min)</th>
-                                                                        <th className="text-right py-2">Tempo Padrão (min)</th>
+                                                                        <th className="text-right py-2 pr-4">Tempo Padrão (min)</th>
+                                                                        {canViewValues && (
+                                                                            <>
+                                                                                <th className="text-right py-2 pr-4">Taxa Recurso (R$/min)</th>
+                                                                                <th className="text-right py-2">Custo Op. (R$)</th>
+                                                                            </>
+                                                                        )}
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody className="text-gray-700">
@@ -610,7 +782,17 @@ const ProductStructure = () => {
                                                                             <td className="py-2 pr-4">{op.descricao?.trim() || '-'}</td>
                                                                             <td className="py-2 pr-4 font-mono">{op.recurso?.trim() || '-'}</td>
                                                                             <td className="py-2 pr-4 text-right font-mono">{op.tempo_setup || '0'}</td>
-                                                                            <td className="py-2 text-right font-mono font-medium">{op.tempo_padrao || '0'}</td>
+                                                                            <td className="py-2 pr-4 text-right font-mono font-medium">{op.tempo_padrao || '0'}</td>
+                                                                            {canViewValues && (
+                                                                                <>
+                                                                                    <td className="py-2 pr-4 text-right font-mono text-gray-500">
+                                                                                        {(parseFloat(op.taxa_padrao_min) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                                    </td>
+                                                                                    <td className="py-2 text-right font-mono font-bold text-emerald-700">
+                                                                                        {(parseFloat(op.custo_total_op) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                                    </td>
+                                                                                </>
+                                                                            )}
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
@@ -625,7 +807,7 @@ const ProductStructure = () => {
 
                                 {!loading && !error && structure.length === 0 && (
                                     <tr>
-                                        <td colSpan="9" className="p-8 text-center text-gray-500">
+                                        <td colSpan={canViewValues ? 11 : 9} className="p-8 text-center text-gray-500">
                                             Nenhum item encontrado na estrutura (BOM).
                                             <br />
                                             <span className="text-xs text-gray-400">Verifique se o produto possui cadastro na SG1.</span>

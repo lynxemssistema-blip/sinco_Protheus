@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -208,6 +208,7 @@ export const MENU_GROUPS = [
         id: 'wabtec',
         label: 'WabTec',
         items: [
+            { id: 'wabtec_ppaps', label: "PPAP's", path: '/wabtec/ppaps', icon: Award },
             { id: 'wabtec_escopo', label: 'Escopo de Fornecimento', path: '/wabtec/escopo', icon: FileText },
             { id: 'wabtec_estrutura', label: 'Estrutura (Importação)', path: '/wabtec/estrutura', icon: GitMerge },
             { id: 'wabtec_datas_solicitacao', label: 'Datas de Solicitação', path: '/wabtec/datas-solicitacao', icon: Calendar }

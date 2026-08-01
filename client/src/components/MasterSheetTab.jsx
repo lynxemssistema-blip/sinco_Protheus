@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getSalesPlanningMasterSheet } from '../services/api';
+import { exportMasterSheetExcel, exportMasterSheetPdf } from '../services/masterSheetExportGenerator';
 import api from '../services/api';
 import { Download, Info, Table, Box, List, Settings, Activity, BarChart2, X, ChevronDown, FileText, Loader2, Play } from 'lucide-react';
 
@@ -23,13 +24,13 @@ const DrawingIcon = ({ produto }) => {
         if (loading) return;
         setLoading(true);
         try {
-            const { data } = await api.get(`/docs/list/${produto}`);
+            const { data } = await api.get(`/docs/${produto}`);
             const pdfDoc = data.find(d => 
                 (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) && 
                 d.url_arquivo && d.url_arquivo.toLowerCase().endsWith('.pdf')
             );
             if (pdfDoc) {
-                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfDoc.url_arquivo)}`), '_blank');
+                window.open(`/api/docs/view?path=${encodeURIComponent(pdfDoc.url_arquivo)}`, '_blank');
             } else {
                 alert(`Nenhum desenho em PDF encontrado para o produto ${produto}.`);
             }
@@ -73,6 +74,10 @@ const MasterSheetTab = ({ filterParams }) => {
                     product: filterParams?.produto,
                     active_only: filterParams?.only_active,
                     status: filterParams?.op_status,
+                    pedcli: filterParams?.pedcli,
+                    refCliente: filterParams?.refCliente,
+                    somente_prioridades: filterParams?.somente_prioridades,
+                    prioridade: filterParams?.prioridade,
                     _simulateFCS: simulate
                 };
                 
@@ -121,6 +126,22 @@ const MasterSheetTab = ({ filterParams }) => {
         loadData(true);
     };
 
+    const handleExportExcel = () => {
+        try {
+            exportMasterSheetExcel(data, filterParams);
+        } catch (err) {
+            alert(err.message || 'Erro ao exportar Excel');
+        }
+    };
+
+    const handleExportPdf = () => {
+        try {
+            exportMasterSheetPdf(data, activeTab, filterParams);
+        } catch (err) {
+            alert(err.message || 'Erro ao exportar PDF');
+        }
+    };
+
     if (loading && !simulating) {
         return (
             <div className="flex flex-col items-center justify-center h-[600px] bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
@@ -150,6 +171,7 @@ const MasterSheetTab = ({ filterParams }) => {
         { id: 'resumo', label: 'Resumo', icon: <Box className="w-4 h-4" /> },
         { id: 'pedidos', label: 'Pedidos', icon: <Table className="w-4 h-4" /> },
         { id: 'itens', label: 'Itens Detalhados', icon: <List className="w-4 h-4" /> },
+        { id: 'estruturas', label: 'Estrutura dos Produtos', icon: <List className="w-4 h-4" /> },
         { id: 'carga', label: 'Carga por Recurso', icon: <Settings className="w-4 h-4" /> },
         { id: 'execucao', label: 'Execução OP', icon: <Activity className="w-4 h-4" /> },
         { id: 'analise', label: 'Análise de Carga', icon: <BarChart2 className="w-4 h-4" /> }
@@ -190,6 +212,27 @@ const MasterSheetTab = ({ filterParams }) => {
                         {simulating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                         Simular Prazos
                     </button>
+
+                    <div className="flex items-center gap-2 border-l border-slate-300 pl-3">
+                        <button
+                            onClick={handleExportExcel}
+                            disabled={!data || loading}
+                            className="px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            title="Exportar todas as abas da Planilha Mestra para Excel (.xlsx)"
+                        >
+                            <Download className="w-4 h-4" />
+                            Excel
+                        </button>
+                        <button
+                            onClick={handleExportPdf}
+                            disabled={!data || loading}
+                            className="px-3 py-1.5 bg-rose-700 text-white text-sm font-medium rounded hover:bg-rose-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            title="Exportar aba atual para PDF (.pdf)"
+                        >
+                            <FileText className="w-4 h-4" />
+                            PDF
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -200,6 +243,7 @@ const MasterSheetTab = ({ filterParams }) => {
                 {activeTab === 'resumo' && <ResumoTab data={data} />}
                 {activeTab === 'pedidos' && <PedidosTab data={data} />}
                 {activeTab === 'itens' && <ItensTab data={data} />}
+                {activeTab === 'estruturas' && <EstruturasTab data={data} />}
                 {activeTab === 'carga' && <CargaTab data={data} />}
                 {activeTab === 'execucao' && <ExecucaoTab data={data} />}
                 {activeTab === 'analise' && <AnaliseTab data={data} />}
@@ -420,12 +464,157 @@ const PedidosTab = ({ data }) => {
     );
 };
 
+
+const EstruturasTab = ({ data }) => {
+    const [groupBy, setGroupBy] = React.useState('produto'); // 'produto', 'pedido'
+
+    if (!data.estruturas || data.estruturas.length === 0) {
+        return (
+            <div className="p-8 text-center text-slate-500">
+                Nenhuma estrutura de produto (BOM) encontrada para os itens filtrados.
+            </div>
+        );
+    }
+
+    const estruturasPorRaiz = (data.estruturas || []).reduce((acc, curr) => {
+        if (!acc[curr.raiz]) acc[curr.raiz] = [];
+        acc[curr.raiz].push(curr);
+        return acc;
+    }, {});
+
+    const renderTable = (componentes, multiplier = null) => (
+        <div className="overflow-x-auto">
+            <table className="w-full text-[13px] text-left border-collapse">
+                <thead className="bg-slate-100 text-slate-700 border-b border-slate-300">
+                    <tr>
+                        <th className="px-3 py-2 border-r border-slate-300 w-32 font-semibold">Componente</th>
+                        <th className="px-3 py-2 border-r border-slate-300 font-semibold">Descri\u00e7\u00e3o</th>
+                        <th className="px-3 py-2 border-r border-slate-300 w-16 text-center font-semibold">UM</th>
+                        <th className="px-3 py-2 border-r border-slate-300 w-24 text-center font-semibold">Tipo</th>
+                        <th className="px-3 py-2 text-right w-32 font-semibold">Qtd Unit\u00e1ria</th>
+                        {multiplier !== null && <th className="px-3 py-2 text-right w-32 font-bold text-[#0D6EFD]">Total Necess\u00e1rio</th>}
+                    </tr>
+                </thead>
+                <tbody>
+                    {componentes.map((comp, idx) => (
+                        <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-b border-slate-200 last:border-b-0`}>
+                            <td className="px-3 py-2 border-r border-slate-200 font-bold text-[#1E3A5F]">{comp.comp}</td>
+                            <td className="px-3 py-2 border-r border-slate-200 text-slate-700">{comp.desc}</td>
+                            <td className="px-3 py-2 border-r border-slate-200 text-slate-500 text-center font-semibold">{comp.um || '-'}</td>
+                            <td className="px-3 py-2 border-r border-slate-200 text-slate-500 text-center">
+                                <span className="px-2 py-0.5 bg-slate-200 rounded text-[11px] font-bold">{comp.tipo || 'N/A'}</span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-600">{formatNum(comp.quant)}</td>
+                            {multiplier !== null && <td className="px-3 py-2 font-bold text-right text-[#0D6EFD]">{formatNum(comp.quant * multiplier)}</td>}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+
+    let content = null;
+
+    if (groupBy === 'produto') {
+        content = Object.entries(estruturasPorRaiz)
+            .filter(([raiz]) => (data.itens || []).some(it => it.produto === raiz))
+            .map(([raiz, componentes]) => {
+            const qtdTotalDemandada = (data.itens || [])
+                .filter(it => it.produto === raiz)
+                .reduce((sum, it) => sum + (parseFloat(it.qtd_faturar) || 0), 0);
+
+            return (
+                <div key={raiz} className="mb-6 bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
+                    <div className="bg-[#1E3A5F] text-white px-4 py-2 font-bold flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <Box className="w-4 h-4 text-blue-300" />
+                            <span>Produto Pai: {raiz}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <span className="text-sm font-normal text-blue-200">{componentes.length} componentes na engenharia</span>
+                            <span className="text-sm font-bold bg-blue-500 bg-opacity-30 px-2 py-1 rounded text-white border border-blue-400">
+                                Demanda do Filtro: {formatNum(qtdTotalDemandada)}
+                            </span>
+                        </div>
+                    </div>
+                    {renderTable(componentes, qtdTotalDemandada > 0 ? qtdTotalDemandada : null)}
+                </div>
+            );
+        });
+    } else if (groupBy === 'pedido') {
+        const pedidosMap = (data.itens || []).reduce((acc, it) => {
+            if (!acc[it.pedido]) acc[it.pedido] = { cliente: it.cliente, itens: [] };
+            acc[it.pedido].itens.push(it);
+            return acc;
+        }, {});
+
+        content = Object.entries(pedidosMap).map(([pedido, info]) => (
+            <div key={pedido} className="mb-8 border border-[#0D6EFD] rounded-lg shadow-sm overflow-hidden bg-white">
+                <div className="bg-[#0D6EFD] text-white px-4 py-3 font-bold flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        <Table className="w-5 h-5 text-blue-200" />
+                        <span className="text-lg">Pedido: {pedido}</span>
+                    </div>
+                    <span className="text-sm font-medium text-blue-100 truncate max-w-sm">{info.cliente}</span>
+                </div>
+                <div className="p-4 space-y-6 bg-slate-50">
+                    {info.itens.map((it, idx) => {
+                        const componentes = estruturasPorRaiz[it.produto] || [];
+                        const qtdFaturar = parseFloat(it.qtd_faturar) || 0;
+                        return (
+                            <div key={idx} className="border border-slate-300 rounded overflow-hidden shadow-sm bg-white">
+                                <div className="bg-slate-200 text-[#1E3A5F] px-3 py-2 font-semibold flex justify-between items-center border-b border-slate-300">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">Item {it.item}</span>
+                                        <span>Produto: {it.produto}</span>
+                                    </div>
+                                    <span className="text-sm">Qtd a Produzir: <strong className="text-[#0D6EFD] text-base">{formatNum(qtdFaturar)}</strong></span>
+                                </div>
+                                {componentes.length > 0 ? renderTable(componentes, qtdFaturar) : (
+                                    <div className="p-4 text-center text-sm text-slate-400">Sem estrutura de engenharia.</div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        ));
+    }
+
+    return (
+        <div className="p-6">
+            <div className="flex justify-between items-end mb-6 border-b border-slate-200 pb-4">
+                <div>
+                    <h2 className="text-xl font-black text-[#1E3A5F]">Detalhamento da Estrutura (BOM)</h2>
+                    <p className="text-sm text-slate-500 mt-1">Visualize a engenharia dos produtos e explos\u00e3o de materiais</p>
+                </div>
+                
+                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded border border-slate-200">
+                    <button 
+                        onClick={() => setGroupBy('produto')}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded transition-all ${groupBy === 'produto' ? 'bg-white shadow text-[#0D6EFD] border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                        Agrupar por Produto Pai
+                    </button>
+                    <button 
+                        onClick={() => setGroupBy('pedido')}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded transition-all ${groupBy === 'pedido' ? 'bg-white shadow text-[#0D6EFD] border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                        Explodir por Pedido
+                    </button>
+                </div>
+            </div>
+            {content}
+        </div>
+    );
+};
+
 const ItensTab = ({ data }) => (
     <div className="w-full h-full relative">
         <table className="w-full text-[13px] text-left border-collapse">
             <thead className="bg-[#1E3A5F] text-white sticky top-0 z-10 shadow">
                 <tr>
-                    {['Pedido', 'Cliente', 'Item', 'Produto', 'Descrição', 'Qtd Faturada', 'Qtd Faturar (Produzir)', 'Entrega (Prio)', 'Data PCP (Inicial)', 'Nova Data PCP (Simulada)', 'Status do Prazo'].map(h => (
+                    {['Pedido', 'Cliente', 'Item', 'Produto', 'Descri\u00e7\u00e3o', 'UM', 'Prioridade', 'Qtd do Pedido', 'Qtd Faturada', 'Qtd Faturar (Produzir)', 'Entrega', 'Data PCP', 'Nova Data PCP', 'Status do Prazo'].map(h => (
                         <th key={h} className="px-3 py-3 border-r border-[#304C71] whitespace-nowrap">{h}</th>
                     ))}
                 </tr>
@@ -435,7 +624,7 @@ const ItensTab = ({ data }) => (
                     <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                         <td className="px-3 py-2 border-b border-slate-200 border-r font-semibold">{it.pedido}</td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[150px]">{it.cliente}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r">{it.item}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-center">{it.item}</td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r">
                             <div className="flex items-center gap-2">
                                 <span>{it.produto}</span>
@@ -443,14 +632,28 @@ const ItensTab = ({ data }) => (
                             </div>
                         </td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[200px]">{it.descricao}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r text-right">{formatNum(it.qtd_entreg)}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r text-right font-bold">{formatNum(it.qtd_faturar)}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r">{formatDate(it.entrega)}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r">{formatDate(it.data_pcp)}</td>
-                        <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-slate-700">
+                          <td className="px-3 py-2 border-b border-slate-200 border-r text-center font-medium text-slate-500">{it.um || '-'}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-center">
+                            {it.op_prioridade ? (
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    it.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
+                                    it.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
+                                    it.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-blue-100 text-blue-700'
+                                }`}>
+                                    Grupo {it.op_prioridade}
+                                </span>
+                            ) : <span className="text-slate-400">-</span>}
+                        </td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-right font-medium text-slate-800">{formatNum(it.qtd)}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-right font-medium text-slate-600">{formatNum(it.qtd_entreg)}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-right font-bold text-[#0D6EFD]">{formatNum(it.qtd_faturar)}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-center">{formatDate(it.entrega)}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-center text-slate-500">{formatDate(it.data_pcp)}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-slate-700 text-center">
                             {formatDate(it.nova_data_pcp) || '-'}
                         </td>
-                        <td className="px-3 py-2 border-b border-slate-200">
+                        <td className="px-3 py-2 border-b border-slate-200 text-center">
                             {(() => {
                                 if (!it.nova_data_pcp) return <span className="text-slate-400">-</span>;
                                 const original = it.data_pcp || it.entrega;
@@ -464,9 +667,9 @@ const ItensTab = ({ data }) => (
                                 const oData = new Date(origDateStr);
                                 
                                 if (nData <= oData) {
-                                    return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap">🟢 No Prazo</span>;
+                                    return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap">OK</span>;
                                 } else {
-                                    return <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap">🔴 Atraso PCP</span>;
+                                    return <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap">ATRASO</span>;
                                 }
                             })()}
                         </td>

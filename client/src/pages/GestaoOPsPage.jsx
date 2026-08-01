@@ -746,6 +746,56 @@ const GestaoOPsPage = () => {
         }
     };
 
+    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null, itemObj = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-desc-resource-drawings-${pedido}-${itemId}` : `op-stamp-desc-resource-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, itemObj, false, true);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP PDF with Ops Stamp Drawings (with Desc):', error);
+            alert(`Erro ao gerar Espelho por Recurso com Desenhos (Roteiro/Descrição): ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null, itemObj = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-desc-drawings-${pedido}-${itemId}` : `op-stamp-desc-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, itemObj, false, true);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP PDF with Ops Stamp Drawings (with Desc):', error);
+            alert(`Erro ao gerar Espelho com Roteiro/Descrição no Carimbo: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handlePrintOPByOperation = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
@@ -1401,6 +1451,22 @@ const GestaoOPsPage = () => {
                                                                                 <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                             </button>
                                                                             <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />}
+                                                                                <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-excel-${order.pedido}`}
                                                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-40"
@@ -1599,6 +1665,22 @@ const GestaoOPsPage = () => {
                                                                                                                         >
                                                                                                                             {printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
                                                                                                                             <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
                                                                                                                         </button>
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}

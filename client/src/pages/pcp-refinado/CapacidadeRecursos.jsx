@@ -47,7 +47,9 @@ export default function CapacidadeRecursos() {
         tempo_padrao_minutos: parseFloat(recurso.tempo_padrao_minutos) || 0,
         capacidade_diaria_minutos: parseInt(recurso.capacidade_diaria_minutos) || 0,
         ordem_exibicao: Number(recurso.ordem_exibicao) || 0,
-        grupo_paralelo: (recurso.grupo_paralelo || '').trim() || null
+        grupo_paralelo: (recurso.grupo_paralelo || '').trim() || null,
+        taxa_setup_min: parseFloat(recurso.taxa_setup_min) || 0,
+        taxa_padrao_min: parseFloat(recurso.taxa_padrao_min) || 0
     });
 
     const handleSave = async (recurso) => {
@@ -243,6 +245,8 @@ export default function CapacidadeRecursos() {
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Descrição (Protheus)</th>
                                 <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Tempo consumido por peça/batida nesta operação">Tempo Padrão (Minutos/Peça)</th>
                                 <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Tempo total disponível deste recurso por dia (ex: 8h = 480min)">Capacidade Diária (Minutos)</th>
+                                <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Custo por minuto de setup desta operação">Taxa Setup (R$/min)</th>
+                                <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider" title="Custo por minuto de tempo padrão (produção) desta operação">Taxa Padrão (R$/min)</th>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider" title="Recursos com o mesmo grupo compartilham automaticamente a mesma janela de datas no Planejamento Sequencial">Grupo Paralelo</th>
                                 <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                             </tr>
@@ -250,7 +254,7 @@ export default function CapacidadeRecursos() {
                         <tbody className="bg-white divide-y divide-slate-100">
                             {loading && recursos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan="9" className="px-6 py-12 text-center text-slate-500">
                                         <div className="flex flex-col items-center justify-center gap-3">
                                             <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
                                             <p>Carregando recursos e capacidades do banco de dados...</p>
@@ -259,7 +263,7 @@ export default function CapacidadeRecursos() {
                                 </tr>
                             ) : filteredRecursos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                                    <td colSpan="9" className="px-6 py-12 text-center text-slate-500">
                                         Nenhum recurso encontrado com esse termo.
                                     </td>
                                 </tr>
@@ -372,6 +376,30 @@ export default function CapacidadeRecursos() {
                                                 <span className="text-xs text-slate-400 ml-2 w-16 inline-block text-left">
                                                     {(r.capacidade_diaria_minutos / 60).toFixed(1)}h
                                                 </span>
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-center">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    className={`w-24 text-center p-1.5 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors ${isDirty ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                                    value={r.taxa_setup_min}
+                                                    onChange={(e) => handleInputChange(r.cod_recurso, 'taxa_setup_min', e.target.value)}
+                                                    onBlur={() => handleSave(r)}
+                                                    onMouseDown={e => e.stopPropagation()}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-center">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    className={`w-24 text-center p-1.5 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors ${isDirty ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                                    value={r.taxa_padrao_min}
+                                                    onChange={(e) => handleInputChange(r.cod_recurso, 'taxa_padrao_min', e.target.value)}
+                                                    onBlur={() => handleSave(r)}
+                                                    onMouseDown={e => e.stopPropagation()}
+                                                />
                                             </td>
                                             <td className="px-6 py-3 whitespace-nowrap">
                                                 <input

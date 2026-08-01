@@ -1,7 +1,7 @@
 import React from 'react';
 import metalfisaLogo from '../assets/metalfisa-logo.png';
 
-const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, user }, ref) => {
+const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, user, canViewValues }, ref) => {
     if (!ordem) return null;
 
     const dataAbertura = ordem.data_abertura ? new Date(ordem.data_abertura).toLocaleString('pt-BR') : '---';
@@ -76,11 +76,13 @@ const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, us
                         <span className="font-bold uppercase">STATUS ATUAL: </span>
                         <span className="bg-slate-200 px-2 py-0.5 border border-slate-300 font-bold">{ordem.status?.replace('_', ' ')}</span>
                     </div>
-                    <div className="flex gap-4 font-bold">
-                        <div>Custos Materiais: R$ {custoMateriais.toFixed(2)}</div>
-                        <div>Custo Serviço: R$ {custoServico.toFixed(2)}</div>
-                        <div className="text-sm bg-yellow-200 px-2 border border-yellow-400">TOTAL O.M.: R$ {custoTotal.toFixed(2)}</div>
-                    </div>
+                    {canViewValues && (
+                        <div className="flex gap-4 font-bold">
+                            <div>Custos Materiais: R$ {custoMateriais.toFixed(2)}</div>
+                            <div>Custo Serviço: R$ {custoServico.toFixed(2)}</div>
+                            <div className="text-sm bg-yellow-200 px-2 border border-yellow-400">TOTAL O.M.: R$ {custoTotal.toFixed(2)}</div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -96,8 +98,12 @@ const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, us
                                 <th className="border border-black p-1 text-left">Descrição</th>
                                 <th className="border border-black p-1 text-center w-16">Unid.</th>
                                 <th className="border border-black p-1 text-right w-16">Qtd.</th>
-                                <th className="border border-black p-1 text-right w-20">Custo Un.</th>
-                                <th className="border border-black p-1 text-right w-20">Total</th>
+                                {canViewValues && (
+                                    <>
+                                        <th className="border border-black p-1 text-right w-20">Custo Un.</th>
+                                        <th className="border border-black p-1 text-right w-20">Total</th>
+                                    </>
+                                )}
                             </tr>
                         </thead>
                         <tbody>
@@ -111,8 +117,12 @@ const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, us
                                     </td>
                                     <td className="border border-black p-1 text-center">{m.unidade}</td>
                                     <td className="border border-black p-1 text-right">{m.quantidade}</td>
-                                    <td className="border border-black p-1 text-right">{Number(m.custo_unitario || 0).toFixed(2)}</td>
-                                    <td className="border border-black p-1 text-right font-bold">{Number(m.custo_total || 0).toFixed(2)}</td>
+                                    {canViewValues && (
+                                        <>
+                                            <td className="border border-black p-1 text-right">{Number(m.custo_unitario || 0).toFixed(2)}</td>
+                                            <td className="border border-black p-1 text-right font-bold">{Number(m.custo_total || 0).toFixed(2)}</td>
+                                        </>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>

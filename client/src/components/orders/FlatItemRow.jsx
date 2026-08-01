@@ -31,6 +31,7 @@ const FlatItemRow = ({
     onSetEngineeringTarget,
     onSetPcpForecastTarget,
     onSetNotesTarget,
+    onSetPriorityTarget,
     onSetInvoiceModal,
     onOpenActionMenu,
     formatProtheusDate,
@@ -40,6 +41,9 @@ const FlatItemRow = ({
     onPrintOPByOperationWithDrawings,
     onPrintOPByResourceWithDrawings,
     onPrintOPWithOpsStampWithDrawings,
+    onPrintOPWithOpsStampDrawingsByResource,
+    onPrintOPWithOpsStampWithDescDrawings,
+    onPrintOPWithOpsStampWithDescDrawingsByResource,
     onExportOPByOperationExcel,
     onSetMenuPosition,
     onUpdateFaturamentoDate,
@@ -82,12 +86,25 @@ const FlatItemRow = ({
         return cleanOp;
     };
 
+    const getPriorityColors = (prioridade) => {
+        if (!prioridade || prioridade <= 0) return null;
+        switch (Number(prioridade)) {
+            case 1: return { bg: 'bg-red-50/80', hover: 'hover:bg-red-100/90', border: 'border-l-red-500', ring: 'ring-red-200', textMain: 'text-red-700', badgeBg: 'bg-red-100/80', badgeBorder: 'border-red-200', badgeText: 'text-red-600', icon: 'text-red-600', label: 'MÁXIMA' };
+            case 2: return { bg: 'bg-orange-50/80', hover: 'hover:bg-orange-100/90', border: 'border-l-orange-500', ring: 'ring-orange-200', textMain: 'text-orange-700', badgeBg: 'bg-orange-100/80', badgeBorder: 'border-orange-200', badgeText: 'text-orange-600', icon: 'text-orange-600', label: 'ALTA' };
+            case 3: return { bg: 'bg-yellow-50/80', hover: 'hover:bg-yellow-100/90', border: 'border-l-yellow-500', ring: 'ring-yellow-200', textMain: 'text-yellow-700', badgeBg: 'bg-yellow-100/80', badgeBorder: 'border-yellow-200', badgeText: 'text-yellow-600', icon: 'text-yellow-600', label: 'MÉDIA' };
+            case 4: return { bg: 'bg-purple-50/80', hover: 'hover:bg-purple-100/90', border: 'border-l-purple-500', ring: 'ring-purple-200', textMain: 'text-purple-700', badgeBg: 'bg-purple-100/80', badgeBorder: 'border-purple-200', badgeText: 'text-purple-600', icon: 'text-purple-600', label: 'NORMAL' };
+            default: return { bg: 'bg-red-50/80', hover: 'hover:bg-red-100/90', border: 'border-l-red-500', ring: 'ring-red-200', textMain: 'text-red-700', badgeBg: 'bg-red-100/80', badgeBorder: 'border-red-200', badgeText: 'text-red-600', icon: 'text-red-600', label: 'PRIOR.' };
+        }
+    };
+
+    const pColors = getPriorityColors(item.op_prioridade);
+
     return (
         <tr
             onClick={() => onSetActiveRow && onSetActiveRow(isActive ? null : `${item.pedido}-${item.item}`)}
             className={`transition-colors cursor-pointer border-b border-gray-50 last:border-0 ${
-                item.is_priority
-                    ? 'bg-red-50/80 hover:bg-red-100/90 border-l-4 border-l-red-500 ring-1 ring-inset ring-red-200 shadow-sm'
+                pColors
+                    ? `${pColors.bg} ${pColors.hover} border-l-4 ${pColors.border} ring-1 ring-inset ${pColors.ring} shadow-sm`
                     : parseFloat(item.qtd_faturar) <= 0
                         ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
                         : 'bg-white hover:bg-slate-50'
@@ -103,11 +120,11 @@ const FlatItemRow = ({
                     case 'pedido': return (
                         <td key={col.key} className="px-3 py-2 whitespace-nowrap sticky left-[40px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
                             <div className="flex flex-col gap-0.5">
-                                <span className={`font-bold ${item.is_priority ? 'text-red-700' : 'text-gray-900'}`}>{item.pedido}</span>
-                                {item.is_priority && (
-                                    <div className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100/80 px-1 rounded shadow-sm border border-red-200 w-fit" title={item.priority_obs || 'Prioridade'}>
-                                        <AlertTriangle className="h-3 w-3" />
-                                        <span>PRIOR.</span>
+                                <span className={`font-bold ${pColors ? pColors.textMain : 'text-gray-900'}`}>{item.pedido}</span>
+                                {pColors && (
+                                    <div className={`flex items-center gap-1 text-[10px] font-bold ${pColors.badgeText} ${pColors.badgeBg} px-1 rounded shadow-sm border ${pColors.badgeBorder} w-fit`} title={item.priority_obs || `Prioridade ${pColors.label}`}>
+                                        <AlertTriangle className={`h-3 w-3 ${pColors.icon}`} />
+                                        <span>G{item.op_prioridade}</span>
                                     </div>
                                 )}
                             </div>
@@ -188,6 +205,15 @@ const FlatItemRow = ({
                                     </button>
                                     {isMenuOpen && (
                                         <div className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]" style={{ top: menuPosition?.top !== undefined ? `${menuPosition.top}px` : 'auto', bottom: menuPosition?.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', right: `${menuPosition?.right}px` }}>
+                                            <button onClick={(e) => { e.stopPropagation(); onSetPriorityTarget({ pedido: item.pedido, item: item.item, codigo: item.codigo, op_num_completa: item.op_num_completa || item.op_num }, 'faturamento'); onOpenActionMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors">
+                                                <AlertTriangle className="h-4 w-4 flex-shrink-0 text-red-500" />
+                                                <span>Prioridade Faturamento</span>
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); onSetPriorityTarget({ pedido: item.pedido, item: item.item, codigo: item.codigo, op_num_completa: item.op_num_completa || item.op_num }, 'op'); onOpenActionMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-rose-50 hover:text-rose-800 transition-colors">
+                                                <Factory className="h-4 w-4 flex-shrink-0 text-rose-700" />
+                                                <span>Prioridade de OP</span>
+                                            </button>
+                                            <div className="border-t border-gray-100 my-1" />
                                             <button onClick={(e) => { onPrintOPMirror(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-500" />} <span>Espelho OP</span>
                                             </button>
@@ -203,8 +229,17 @@ const FlatItemRow = ({
                                             <button onClick={(e) => { onPrintOPByResourceWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />} <span>OP + Desenhos (Por Recurso)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                                                {printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />} <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                {printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />} <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                                            </button>
+                                            <button onClick={(e) => { onPrintOPWithOpsStampDrawingsByResource(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                {printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-blue-500" />} <span>OP + Desenhos (Roteiro no Carimbo) - Por Recurso</span>
+                                            </button>
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                {printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />} <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                                            </button>
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                {printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />} <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
                                             </button>
                                             <button onClick={(e) => { onExportOPByOperationExcel(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-excel-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />} <span>Por Operações (Excel)</span>
@@ -410,6 +445,9 @@ const areEqual = (prev, next) => {
         prev.item.qtd_faturar === next.item.qtd_faturar &&
         prev.item.romaneios === next.item.romaneios &&
         prev.item.is_priority === next.item.is_priority &&
+        prev.item.op_prioridade === next.item.op_prioridade &&
+        prev.item.classificacao === next.item.classificacao &&
+        prev.item.ppap_numero === next.item.ppap_numero &&
         prev.isSelected === next.isSelected &&
         prev.isActive === next.isActive &&
         prev.openActionMenu === next.openActionMenu &&

@@ -49,9 +49,9 @@ const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue
 };
 
 const ItensAFaturar = () => {
-    const { user, hasPermission, isAdmin } = useAuth();
-    const canViewFinancials = isAdmin || hasPermission('valores_financeiros', 'view');
-    const canViewFinancialTab = isAdmin || hasPermission('aba_financeiro_faturar', 'view');
+    const { user, hasPermission } = useAuth();
+    const canViewFinancials = hasPermission('valores_financeiros', 'view');
+    const canViewFinancialTab = hasPermission('aba_financeiro_faturar', 'view');
     
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);

@@ -216,7 +216,10 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                 "Descrição",
                 "Próx. Operação",
                 "Qtd. Req.",
-                "UM"
+                "UM",
+                "Qtd. Exec.",
+                "Data",
+                "Assinatura / Operador"
             ];
 
             const tableRows = groupData.components.map(c => {
@@ -238,7 +241,10 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                     c.descricao,
                     c.proxOp,
                     Number(c.qtdTotal).toFixed(2),
-                    c.um
+                    c.um,
+                    "", // Qtd. Exec. (campo em branco para preenchimento a caneta)
+                    "", // Data (campo em branco)
+                    ""  // Assinatura / Operador (campo em branco)
                 ];
             });
 
@@ -251,25 +257,28 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                     fillColor: [240, 240, 240],
                     textColor: [50, 50, 50],
                     fontStyle: 'bold',
-                    fontSize: 8,
+                    fontSize: 7.5,
                     halign: 'center'
                 },
                 bodyStyles: {
-                    fontSize: 8,
+                    fontSize: 7.5,
                     cellPadding: 2
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 12 }, // PV
-                    1: { halign: 'center', cellWidth: 8 }, // Item
-                    2: { halign: 'center', cellWidth: 8 }, // Nível
-                    3: { cellWidth: 26 }, // Prod Pai
-                    4: { halign: 'center', cellWidth: 18 }, // OP
-                    5: { halign: 'center', cellWidth: 23, fontStyle: 'bold' }, // Seq. OP (MP)
-                    6: { cellWidth: 30 }, // Componente
-                    7: { cellWidth: 'auto' }, // Descricao
-                    8: { halign: 'center', cellWidth: 42, fontStyle: 'bold', textColor: [50, 50, 200] }, // Prox Op
-                    9: { halign: 'right', cellWidth: 12 }, // Qtd
-                    10: { halign: 'center', cellWidth: 8 }  // UM
+                    0: { halign: 'center', cellWidth: 11 }, // PV
+                    1: { halign: 'center', cellWidth: 7 },  // Item
+                    2: { halign: 'center', cellWidth: 7 },  // Nível
+                    3: { cellWidth: 22 },                   // Prod Pai
+                    4: { halign: 'center', cellWidth: 16 }, // OP
+                    5: { halign: 'center', cellWidth: 20, fontStyle: 'bold' }, // Seq. OP (MP)
+                    6: { cellWidth: 26 },                   // Componente
+                    7: { cellWidth: 'auto' },               // Descrição
+                    8: { halign: 'center', cellWidth: 35, fontStyle: 'bold', textColor: [50, 50, 200] }, // Próx. Operação
+                    9: { halign: 'right', cellWidth: 12 },   // Qtd. Req.
+                    10: { halign: 'center', cellWidth: 7 },  // UM
+                    11: { halign: 'center', cellWidth: 16 }, // Qtd. Exec.
+                    12: { halign: 'center', cellWidth: 18 }, // Data
+                    13: { halign: 'center', cellWidth: 30 }  // Assinatura / Operador
                 },
                 margin: { top: 53, bottom: 20 },
                 didDrawPage: drawPageHeader

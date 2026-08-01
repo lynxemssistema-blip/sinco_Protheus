@@ -1,19 +1,138 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Search, Loader2, Check, X, MessageCircleQuestion } from 'lucide-react';
+import { Sparkles, Search, Loader2, Check, X, MessageCircleQuestion, ChevronDown, AlertTriangle, PackageSearch, Network, ChevronRight, ShoppingCart, Bot } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
     analisarCadastroIA,
     consultarCadastroIA,
     salvarCorrecaoCadastro,
     getCorrecoesCadastro,
-    atualizarStatusCorrecao
+    atualizarStatusCorrecao,
+    analisarRedundanciasMp,
+    confirmarGrupoIA,
+    getGruposMp,
+    getOndeEUsado,
+    getUltimaCompraBatch
 } from '../services/api';
 
+// Lista simplificada de referências (usado na Fase 1 - Tabela)
+function OndeEUsadoSimples({ codigo }) {
+    const [dados, setDados] = useState(null);
+    useEffect(() => {
+        getOndeEUsado(codigo).then(setDados).catch(() => {});
+    }, [codigo]);
+
+    if (!dados) return <span className="text-slate-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /></span>;
+    if (dados.total === 0) return <span className="text-slate-500 italic">Sem uso</span>;
+
+    const lista = [];
+    Object.values(dados.por_tipo).forEach(itens => itens.forEach(i => lista.push(i.cod_pai)));
+    
+    return (
+        <span className="text-slate-400 leading-tight block">
+            {lista.slice(0, 8).join(', ')}
+            {lista.length > 8 && <span className="italic text-slate-500"> (+{lista.length - 8})</span>}
+        </span>
+    );
+}
+
+function CandidatoMpCard({ cand, onConfirmar, onIgnorar }) {
+    const [ultimasCompras, setUltimasCompras] = useState({});
+
+    useEffect(() => {
+        const codigos = (cand.produtos || []).map(p => p.codigo).filter(Boolean);
+        if (codigos.length === 0) return;
+        getUltimaCompraBatch(codigos)
+            .then(mapa => setUltimasCompras(mapa))
+            .catch(err => console.error('[UltimaCompra]', err));
+    }, [cand._candidato_id]);
+
+    return (
+        <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-2 space-y-2">
+            
+            <div className="overflow-x-auto rounded border border-slate-600/50">
+                <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="text-[10px] uppercase text-slate-400 bg-slate-800/80 border-b border-slate-600">
+                        <tr>
+                            <th className="px-2 py-1.5 font-bold whitespace-nowrap">Código</th>
+                            <th className="px-2 py-1.5 font-bold">Descrição</th>
+                            <th className="px-2 py-1.5 font-bold w-32 whitespace-nowrap"><ShoppingCart className="w-3 h-3 inline mr-1" /> Últ. Compra</th>
+                            <th className="px-2 py-1.5 font-bold w-64"><Network className="w-3 h-3 inline mr-1" /> Onde é Usado</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-600/50">
+                        {cand.produtos.map(p => (
+                            <tr key={p.codigo} className="hover:bg-slate-700/30 transition-colors">
+                                <td className="px-2 py-2 font-mono text-amber-300 font-bold whitespace-nowrap align-top">
+                                    {p.codigo}
+                                    {p.bloqueado === '1' && (
+                                        <span className="ml-2 text-[9px] bg-red-900/50 text-red-400 px-1 py-0.5 rounded border border-red-700/50" title="Produto bloqueado no Protheus">
+                                            BLOQ
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="px-2 py-2 align-top text-slate-200">{p.descricao}</td>
+                                <td className="px-2 py-2 align-top">
+                                    {ultimasCompras[p.codigo] ? (
+                                        <span className="text-emerald-400 block leading-tight">
+                                            {ultimasCompras[p.codigo].ultima_data_fmt}
+                                            <span className="block text-[10px] text-emerald-500/70 mt-0.5">{Number(ultimasCompras[p.codigo].quantidade).toLocaleString('pt-BR')} un</span>
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-500 italic">Sem registro</span>
+                                    )}
+                                </td>
+                                <td className="px-2 py-2 align-top break-words max-w-[250px]">
+                                    <OndeEUsadoSimples codigo={p.codigo} />
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {cand.status === 'erro' && (
+                <p className="text-xs text-red-400">{cand.erro_msg}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+                <button
+                    onClick={() => onConfirmar(cand)}
+                    disabled={cand.status === 'confirmando'}
+                    className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors shadow-sm"
+                >
+                    {cand.status === 'confirmando'
+                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Confirmando...</>
+                        : <><Bot className="w-3 h-3" /> Confirmar com IA</>
+                    }
+                </button>
+                <button
+                    onClick={() => onIgnorar(cand._candidato_id)}
+                    disabled={cand.status === 'confirmando'}
+                    className="text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                    Ignorar
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [tipo, setTipo] = useState(grupo.tipo === 'equivalente' ? 'equivalente' : 'duplicado');
     const [produtosAtivos, setProdutosAtivos] = useState(grupo.produtos || []);
     const [codigoCorreto, setCodigoCorreto] = useState(grupo.sugestao_codigo_correto || grupo.produtos?.[0]?.codigo);
     const [salvando, setSalvando] = useState(false);
+    const [ultimasCompras, setUltimasCompras] = useState({});  // { codigo: { ultima_data_fmt, quantidade, valor_unit } }
+
+    // Carrega última compra de todos os produtos do grupo em uma única chamada
+    useEffect(() => {
+        const codigos = (grupo.produtos || []).map(p => p.codigo).filter(Boolean);
+        if (codigos.length === 0) return;
+        getUltimaCompraBatch(codigos)
+            .then(mapa => setUltimasCompras(mapa))
+            .catch(err => console.error('[UltimaCompra]', err));
+    }, [grupo._id]);
 
     const removerItem = (codigo) => {
         setProdutosAtivos(prev => prev.filter(p => p.codigo !== codigo));
@@ -37,9 +156,7 @@ function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
         }
     };
 
-    if (produtosAtivos.length < 2) {
-        return null;
-    }
+    if (produtosAtivos.length < 2) return null;
 
     return (
         <div className="border rounded-lg p-4 bg-white shadow-sm space-y-3">
@@ -64,35 +181,57 @@ function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
             {grupo.motivo && <p className="text-sm text-slate-600">{grupo.motivo}</p>}
             <div className="space-y-2">
                 {produtosAtivos.map(p => (
-                    <div key={p.codigo} className="flex items-center gap-3 border rounded p-2">
-                        {tipo === 'duplicado' && !jaSalvo && (
-                            <input
-                                type="radio"
-                                name={`correto-${grupo._id}`}
-                                checked={codigoCorreto === p.codigo}
-                                onChange={() => setCodigoCorreto(p.codigo)}
-                            />
-                        )}
-                        <div className="flex-1 min-w-0">
-                            <div className="font-mono text-sm font-bold truncate">
-                                {p.codigo} <span className="text-xs text-slate-400 font-normal">({p.empresa})</span>
+                    <div key={p.codigo} className="flex flex-col border rounded p-2 gap-1">
+                        <div className="flex items-center gap-3">
+                            {tipo === 'duplicado' && !jaSalvo && (
+                                <input
+                                    type="radio"
+                                    name={`correto-${grupo._id}`}
+                                    checked={codigoCorreto === p.codigo}
+                                    onChange={() => setCodigoCorreto(p.codigo)}
+                                />
+                            )}
+                            <div className="flex-1 min-w-0">
+                                <div className="font-mono text-sm font-bold truncate">
+                                    {p.codigo} <span className="text-xs text-slate-400 font-normal">({p.empresa})</span>
+                                </div>
+                                <div className="text-xs text-slate-600 truncate">{p.descricao}</div>
                             </div>
-                            <div className="text-xs text-slate-600 truncate">{p.descricao}</div>
+                            {tipo === 'duplicado' && (
+                                <span className={`text-xs font-bold shrink-0 ${codigoCorreto === p.codigo ? 'text-green-600' : 'text-red-500'}`}>
+                                    {codigoCorreto === p.codigo ? 'Manter' : 'Bloquear'}
+                                </span>
+                            )}
+                            {!jaSalvo && (
+                                <button
+                                    onClick={() => removerItem(p.codigo)}
+                                    className="text-slate-300 hover:text-red-500 shrink-0"
+                                    title="Remover do grupo (falso positivo)"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
-                        {tipo === 'duplicado' && (
-                            <span className={`text-xs font-bold shrink-0 ${codigoCorreto === p.codigo ? 'text-green-600' : 'text-red-500'}`}>
-                                {codigoCorreto === p.codigo ? 'Manter' : 'Bloquear'}
-                            </span>
-                        )}
-                        {!jaSalvo && (
-                            <button
-                                onClick={() => removerItem(p.codigo)}
-                                className="text-slate-300 hover:text-red-500 shrink-0"
-                                title="Remover do grupo (falso positivo)"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
+                        {/* Última compra + Onde é Usado */}
+                        <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                            {ultimasCompras[p.codigo] ? (
+                                <span className="flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5">
+                                    <ShoppingCart className="w-3 h-3" />
+                                    Últ. compra: <strong>{ultimasCompras[p.codigo].ultima_data_fmt}</strong>
+                                    &middot;
+                                    {Number(ultimasCompras[p.codigo].quantidade).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} uh
+                                    {canViewValues && (
+                                        <>
+                                            &middot;
+                                            R$ {Number(ultimasCompras[p.codigo].valor_unit).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/un
+                                        </>
+                                    )}
+                                </span>
+                            ) : (
+                                <span className="text-xs text-slate-300 italic">sem registro de compra</span>
+                            )}
+                            <OndeEUsadoPanel codigo={p.codigo} />
+                        </div>
                     </div>
                 ))}
             </div>
@@ -111,6 +250,57 @@ function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
                         Salvar decisão
                     </button>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// Barra de progresso animada com etapas
+function ProgressSteps({ etapa }) {
+    const steps = [
+        { id: 1, label: 'Buscando MPs no Protheus' },
+        { id: 2, label: 'Calculando similaridade' },
+        { id: 3, label: 'Confirmando com IA (Gemini)' },
+    ];
+    return (
+        <div className="flex flex-col gap-2 py-4">
+            {steps.map(s => (
+                <div key={s.id} className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all ${
+                        etapa > s.id ? 'bg-green-500 text-white' :
+                        etapa === s.id ? 'bg-blue-600 text-white animate-pulse' :
+                        'bg-slate-200 text-slate-400'
+                    }`}>
+                        {etapa > s.id ? <Check className="w-3 h-3" /> : s.id}
+                    </div>
+                    <span className={`text-sm transition-all ${
+                        etapa > s.id ? 'text-green-600 font-medium' :
+                        etapa === s.id ? 'text-blue-600 font-bold' :
+                        'text-slate-400'
+                    }`}>{s.label}</span>
+                    {etapa === s.id && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// Card de estatísticas
+function StatsBar({ stats }) {
+    if (!stats) return null;
+    return (
+        <div className="grid grid-cols-3 gap-3 py-3">
+            <div className="bg-slate-50 rounded-lg p-3 text-center border">
+                <div className="text-2xl font-bold text-slate-700">{stats.total_mp ?? '-'}</div>
+                <div className="text-xs text-slate-500 mt-1">MPs analisados</div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 text-center border border-amber-100">
+                <div className="text-2xl font-bold text-amber-600">{stats.candidatos ?? '-'}</div>
+                <div className="text-xs text-slate-500 mt-1">Candidatos (pré-filtro)</div>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100">
+                <div className="text-2xl font-bold text-blue-700">{stats.grupos_ia ?? '-'}</div>
+                <div className="text-xs text-slate-500 mt-1">Grupos confirmados</div>
             </div>
         </div>
     );
@@ -135,6 +325,19 @@ export default function CadastroAnaliseTab() {
     const [erroLote, setErroLote] = useState(null);
     const [buscaLoteFeita, setBuscaLoteFeita] = useState(false);
 
+    // Análise de Redundâncias MP — estado de batching sequencial
+    const [gruposMpDisponiveis, setGruposMpDisponiveis] = useState([]);
+    const [grupoMpSelecionado, setGrupoMpSelecionado] = useState('');
+    const [loadingGruposMp, setLoadingGruposMp] = useState(false);
+    const [rodandoMp, setRodandoMp] = useState(false);
+    const [candidatosMp, setCandidatosMp] = useState([]);       // Fase 1: candidatos Levenshtein (status: pendente/confirmando/confirmado/ignorado)
+    const [gruposMpResultado, setGruposMpResultado] = useState([]); // Fase 2: grupos confirmados pela IA
+    const [progressoMp, setProgressoMp] = useState(null);
+    const [statsMpTotal, setStatsMpTotal] = useState(null);
+    const [erroMp, setErroMp] = useState(null);
+    const [concluido, setConcluido] = useState(false);
+    const cancelarRef = React.useRef(false);
+
     // Correções registradas
     const [correcoes, setCorrecoes] = useState([]);
     const [loadingCorrecoes, setLoadingCorrecoes] = useState(false);
@@ -142,6 +345,7 @@ export default function CadastroAnaliseTab() {
 
     useEffect(() => {
         carregarCorrecoes();
+        carregarGruposMp();
     }, []);
 
     const carregarCorrecoes = async () => {
@@ -153,6 +357,18 @@ export default function CadastroAnaliseTab() {
             console.error(err);
         } finally {
             setLoadingCorrecoes(false);
+        }
+    };
+
+    const carregarGruposMp = async () => {
+        setLoadingGruposMp(true);
+        try {
+            const data = await getGruposMp();
+            setGruposMpDisponiveis(data);
+        } catch (err) {
+            console.error('[GruposMp]', err);
+        } finally {
+            setLoadingGruposMp(false);
         }
     };
 
@@ -193,6 +409,95 @@ export default function CadastroAnaliseTab() {
         }
     };
 
+    // FASE 1: Levenshtein scan — rápido, sem IA, sem timeout
+    const handleAnalisarRedundanciasMp = async () => {
+        cancelarRef.current = false;
+        setErroMp(null);
+        setCandidatosMp([]);
+        setGruposMpResultado([]);
+        setStatsMpTotal(null);
+        setProgressoMp(null);
+        setConcluido(false);
+        setRodandoMp(true);
+
+        const LOTE = 150;
+        let offset = 0, totalGeral = null, totalMpProcessados = 0, totalCandidatos = 0, batchNum = 0;
+
+        try {
+            while (!cancelarRef.current) {
+                batchNum++;
+                setProgressoMp({ lote: batchNum, atual: offset, total: totalGeral, fase: 'escaneando' });
+
+                const data = await analisarRedundanciasMp({
+                    grupo: grupoMpSelecionado || undefined,
+                    lote_offset: offset,
+                    lote_size: LOTE
+                });
+
+                const pag = data.paginacao || {};
+                totalGeral = pag.total_geral ?? totalGeral;
+                totalMpProcessados += data.stats?.lote_mp || 0;
+                totalCandidatos += data.stats?.candidatos || 0;
+
+                const novos = (data.candidatos || []);
+                if (novos.length > 0) setCandidatosMp(prev => [...prev, ...novos]);
+
+                setStatsMpTotal({ total_mp: totalMpProcessados, candidatos: totalCandidatos, grupos_ia: 0 });
+                setProgressoMp({ lote: batchNum, atual: pag.proximo_offset || (offset + LOTE), total: totalGeral, fase: 'concluido_lote' });
+
+                if (!pag.tem_mais) break;
+                offset = pag.proximo_offset || (offset + LOTE);
+                await new Promise(r => setTimeout(r, 200));
+            }
+        } catch (err) {
+            console.error('[MP Fase1]', err);
+            if (!cancelarRef.current) setErroMp(err?.response?.data?.error || 'Erro ao escanear MPs.');
+        } finally {
+            setRodandoMp(false);
+            setConcluido(true);
+        }
+    };
+
+    // FASE 2: Confirma 1 candidato com Gemini (~5-8s por chamada)
+    const handleConfirmarCandidatoIA = async (candidato) => {
+        setCandidatosMp(prev => prev.map(c =>
+            c._candidato_id === candidato._candidato_id ? { ...c, status: 'confirmando' } : c
+        ));
+        try {
+            const result = await confirmarGrupoIA(candidato._candidato_id, candidato.produtos);
+            if (result.descartado) {
+                setCandidatosMp(prev => prev.map(c =>
+                    c._candidato_id === candidato._candidato_id ? { ...c, status: 'ignorado', motivo_ia: result.motivo } : c
+                ));
+            } else {
+                const grupoConfirmado = { ...result, _id: `mp-ia-${candidato._candidato_id}`, _candidato_id: candidato._candidato_id };
+                setCandidatosMp(prev => prev.map(c =>
+                    c._candidato_id === candidato._candidato_id ? { ...c, status: 'confirmado' } : c
+                ));
+                setGruposMpResultado(prev => prev.find(g => g._candidato_id === candidato._candidato_id) ? prev : [...prev, grupoConfirmado]);
+                setStatsMpTotal(prev => prev ? { ...prev, grupos_ia: (prev.grupos_ia || 0) + 1 } : { grupos_ia: 1 });
+            }
+        } catch (err) {
+            console.error('[MP Fase2]', err);
+            setCandidatosMp(prev => prev.map(c =>
+                c._candidato_id === candidato._candidato_id ? { ...c, status: 'erro', erro_msg: err?.response?.data?.error || 'Erro ao confirmar.' } : c
+            ));
+        }
+    };
+
+    const handleIgnorarCandidato = (candidatoId) => {
+        setCandidatosMp(prev => prev.map(c =>
+            c._candidato_id === candidatoId ? { ...c, status: 'ignorado' } : c
+        ));
+    };
+
+
+    const handlePararMp = () => {
+        cancelarRef.current = true;
+        setRodandoMp(false);
+        setConcluido(true);
+    };
+
     const handleSalvarGrupo = async (grupoId, payload) => {
         try {
             await salvarCorrecaoCadastro({ ...payload, criado_por: criadoPor });
@@ -216,7 +521,177 @@ export default function CadastroAnaliseTab() {
 
     return (
         <div className="space-y-8">
-            {/* Consulta pontual */}
+            {/* ================================================== */}
+            {/* ANÁLISE DE REDUNDÂNCIAS MP                          */}
+            {/* ================================================== */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-xl shadow-lg border border-slate-700 space-y-4">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500/20 rounded-lg">
+                        <PackageSearch className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                        <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                            Análise de Redundâncias MP
+                            <span className="text-xs font-normal bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Empresa 010 · Matriz</span>
+                        </h2>
+                        <p className="text-xs text-slate-400 mt-0.5">Detecta matérias-primas duplicadas ou equivalentes mesmo quando descritas de formas diferentes.</p>
+                    </div>
+                </div>
+
+                {/* Filtro de Grupo */}
+                <div className="flex flex-col sm:flex-row gap-3 items-end">
+                    <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Grupo de Material (opcional)</label>
+                        <div className="relative">
+                            <select
+                                className="w-full bg-slate-700 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                value={grupoMpSelecionado}
+                                onChange={e => {
+                                    setGrupoMpSelecionado(e.target.value);
+                                    setGruposMpResultado([]);
+                                    setStatsMpTotal(null);
+                                    setProgressoMp(null);
+                                    setConcluido(false);
+                                    setErroMp(null);
+                                }}
+                                disabled={loadingGruposMp || rodandoMp}
+                            >
+                                <option value="">Todos os grupos de MP</option>
+                                {gruposMpDisponiveis.map(g => (
+                                    <option key={g.grupo} value={g.grupo}>
+                                        {g.grupo} ({g.total_mp} MPs)
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                        </div>
+                    </div>
+
+                    {!rodandoMp ? (
+                        <button
+                            onClick={handleAnalisarRedundanciasMp}
+                            disabled={rodandoMp}
+                            className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 whitespace-nowrap transition-colors"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            {concluido ? 'Nova análise' : 'Analisar Redundâncias MP'}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handlePararMp}
+                            className="bg-red-700 hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 whitespace-nowrap transition-colors"
+                        >
+                            <X className="w-4 h-4" /> Parar análise
+                        </button>
+                    )}
+                </div>
+
+                {/* Progresso em lotes */}
+                {(rodandoMp || progressoMp) && (
+                    <div className="bg-slate-700/60 rounded-lg p-4 border border-slate-600 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-300 flex items-center gap-1">
+                                {rodandoMp && <Loader2 className="w-3 h-3 animate-spin inline" />}
+                                {rodandoMp
+                                    ? `Escaneando lote ${progressoMp?.lote || 1}...`
+                                    : `✓ Scan concluído — ${progressoMp?.lote || '?'} lote(s)`
+                                }
+                            </span>
+                            {progressoMp?.total && (
+                                <span className="text-xs text-slate-400">
+                                    {Math.min(progressoMp.atual, progressoMp.total)} / {progressoMp.total} MPs
+                                </span>
+                            )}
+                        </div>
+                            {/* Barra de progresso */}
+                            {progressoMp?.total && (
+                                <div className="w-full bg-slate-600 rounded-full h-2">
+                                    <div
+                                        className="bg-amber-500 h-2 rounded-full transition-all duration-500"
+                                        style={{ width: `${Math.min(100, Math.round((progressoMp.atual / progressoMp.total) * 100))}%` }}
+                                    />
+                                </div>
+                            )}
+                            {/* Stats em tempo real */}
+                            {statsMpTotal && (
+                                <div className="grid grid-cols-3 gap-2 pt-1">
+                                    <div className="text-center">
+                                        <div className="text-lg font-bold text-white">{statsMpTotal.total_mp}</div>
+                                        <div className="text-xs text-slate-400">MPs escaneados</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-lg font-bold text-amber-400">{statsMpTotal.candidatos}</div>
+                                        <div className="text-xs text-slate-400">Candidatos</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-lg font-bold text-blue-400">{statsMpTotal.grupos_ia}</div>
+                                        <div className="text-xs text-slate-400">Confirmados IA</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Erro */}
+                    {erroMp && (
+                        <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/40 text-red-300 rounded-lg p-3 text-sm">
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                            {erroMp}
+                        </div>
+                    )}
+
+                    {/* FASE 1: Candidatos Levenshtein aguardando confirmação IA */}
+                    {candidatosMp.filter(c => c.status !== 'ignorado').length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-xs text-amber-300 font-semibold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                {candidatosMp.filter(c => c.status === 'pendente').length} candidato(s) aguardando confirmação IA — clique em cada um para validar:
+                            </p>
+                            {candidatosMp.filter(c => c.status !== 'ignorado' && c.status !== 'confirmado').map(cand => (
+                                <CandidatoMpCard
+                                    key={cand._candidato_id}
+                                    cand={cand}
+                                    onConfirmar={handleConfirmarCandidatoIA}
+                                    onIgnorar={handleIgnorarCandidato}
+                                />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* FASE 2: Grupos confirmados pela IA */}
+                    {gruposMpResultado.length > 0 && (
+                        <div className="space-y-3">
+                            <p className="text-xs text-green-400 font-semibold flex items-center gap-2">
+                                <Check className="w-4 h-4" />
+                                {gruposMpResultado.length} grupo(s) confirmado(s) pela IA — revise e salve cada decisão:
+                            </p>
+                            {gruposMpResultado.map(grupo => (
+                                <GrupoSugeridoCard
+                                    key={grupo._id}
+                                    grupo={grupo}
+                                    jaSalvo={gruposSalvos.has(grupo._id)}
+                                    onSalvar={(payload) => handleSalvarGrupo(grupo._id, payload)}
+                                />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Conclusão sem resultados */}
+                    {concluido && !rodandoMp && candidatosMp.length === 0 && gruposMpResultado.length === 0 && !erroMp && (
+                        <div className="text-center py-6 text-slate-400">
+                            <Check className="w-8 h-8 mx-auto mb-2 text-green-400" />
+                            <p className="text-sm font-medium text-green-400">Nenhuma redundância encontrada</p>
+                            <p className="text-xs mt-1">O cadastro de MP {grupoMpSelecionado ? `do grupo "${grupoMpSelecionado}"` : 'analisado'} parece limpo.</p>
+                        </div>
+                    )}
+                </div>
+
+
+
+
+            {/* ================================================== */}
+            {/* CONSULTA PONTUAL                                    */}
+            {/* ================================================== */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
                 <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
                     <MessageCircleQuestion className="w-5 h-5 text-blue-600" />
@@ -266,7 +741,9 @@ export default function CadastroAnaliseTab() {
                 )}
             </div>
 
-            {/* Análise em lote */}
+            {/* ================================================== */}
+            {/* ANÁLISE EM LOTE (FILTRO GENÉRICO)                  */}
+            {/* ================================================== */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
                 <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-blue-600" />
@@ -354,7 +831,9 @@ export default function CadastroAnaliseTab() {
                 )}
             </div>
 
-            {/* Correções registradas */}
+            {/* ================================================== */}
+            {/* CORREÇÕES REGISTRADAS                               */}
+            {/* ================================================== */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
                 <h2 className="text-sm font-bold text-slate-700">Correções registradas</h2>
                 {loadingCorrecoes ? (

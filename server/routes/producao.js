@@ -1082,8 +1082,30 @@ router.get('/vertical/:operacao', async (req, res) => {
       } catch (e) { /* não bloqueia */ }
     }
 
+    // Busca de prioridades de OP
+    let priorityMap = {};
+    if (opsList.length > 0) {
+      try {
+        const fullOps = [...new Set(opsList.map(o => `${o.op}${o.item_op}${o.sequen_op}`))];
+        const prefixOps = [...new Set(opsList.map(o => `${o.op}${o.item_op}`))]; // 8 chars (pedido/item)
+        
+        const opsToCheck = [...new Set([...fullOps, ...prefixOps])];
+        if (opsToCheck.length > 0) {
+          const ph = opsToCheck.map(() => '?').join(',');
+          const [pRows] = await mysqlPool.query(
+            `SELECT op_numero, prioridade FROM app_op_priorities WHERE op_numero IN (${ph})`,
+            opsToCheck
+          );
+          pRows.forEach(r => { priorityMap[r.op_numero] = r.prioridade; });
+        }
+      } catch (e) {
+        console.error('[PRIORITY FETCH ERROR]', e);
+      }
+    }
+
     // Merge final
     const enrichedList = opsList.map(opRow => {
+      const fullOpNum = `${opRow.op}${opRow.item_op}${opRow.sequen_op}`;
       const p = plans.find(plan =>
         plan.op_numero === opRow.op && plan.op_item === opRow.item_op &&
         plan.op_sequencia === opRow.sequen_op && plan.operacao_codigo === opRow.operacao_codigo
@@ -1110,6 +1132,7 @@ router.get('/vertical/:operacao', async (req, res) => {
 
       return {
         ...opRow,
+        op_prioridade: priorityMap[fullOpNum] || priorityMap[`${opRow.op}${opRow.item_op}`] || 0,
         status: itemStatus,
         checklist_status,
         pedido: rawP || (rawO.match(/^\d+/)?.[0] || ''),
@@ -1191,6 +1214,11 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     // Apply Sorting
     finalList.sort((a, b) => {
+      // 1. Sempre ordena por prioridade primeiro (maior para menor)
+      if (a.op_prioridade !== b.op_prioridade) {
+        return (b.op_prioridade || 0) - (a.op_prioridade || 0);
+      }
+
       const sKey = sort_key || 'data_entrega';
       const sDir = sort_dir === 'desc' ? 'desc' : 'asc';
       

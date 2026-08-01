@@ -5,7 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
 
 const EspelhoNFViewer = () => {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [view, setView] = useState('list'); // 'list' | 'viewer'
     const [nfs, setNfs] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -302,7 +303,7 @@ const EspelhoNFViewer = () => {
                                 <th className="p-4">NF / Série</th>
                                 <th className="p-4">Emitente</th>
                                 <th className="p-4">Emissão</th>
-                                <th className="p-4 text-right">Valor</th>
+                                {canViewValues && <th className="p-4 text-right">Valor</th>}
                                 <th className="p-4 text-center">Status</th>
                                 <th className="p-4 text-center">Ações</th>
                             </tr>
@@ -313,7 +314,7 @@ const EspelhoNFViewer = () => {
                                 (nf.emitente_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                                 (nf.emitente_cnpj || '').includes(searchTerm)
                             ).length === 0 ? (
-                                <tr><td colSpan="6" className="p-6 text-center text-gray-500">Nenhuma NF encontrada.</td></tr>
+                                <tr><td colSpan={canViewValues ? 6 : 5} className="p-6 text-center text-gray-500">Nenhuma NF encontrada.</td></tr>
                             ) : nfs.filter(nf => 
                                 (nf.numero_nf || '').includes(searchTerm) ||
                                 (nf.emitente_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -326,7 +327,7 @@ const EspelhoNFViewer = () => {
                                         <div className="text-xs text-gray-500">{nf.emitente_cnpj}</div>
                                     </td>
                                     <td className="p-4">{formatDate(nf.data_emissao)}</td>
-                                    <td className="p-4 text-right font-mono text-gray-600">R$ {formatMoney(nf.valor_total)}</td>
+                                    {canViewValues && <td className="p-4 text-right font-mono text-gray-600">R$ {formatMoney(nf.valor_total)}</td>}
                                     <td className="p-4 text-center">{getStatusBadge(nf.status)}</td>
                                     <td className="p-4 text-center">
                                         <div className="flex items-center justify-center gap-2">

@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Planejamento em Cascata — Pedido 004618
  * 
@@ -25,10 +26,10 @@ function fmtData(d)    { return d.toISOString().split("T")[0]; }
 
 async function main() {
     const my = await mysql.createConnection({
-        host: process.env.MYSQL_HOST||"metalfisa.mysql.uhserver.com", port:3306,
+        host: process.env.MYSQL_HOST, port:3306,
         database: process.env.MYSQL_DB||"metalfisa",
-        user: process.env.MYSQL_USER||"ronaldo2",
-        password: process.env.MYSQL_PASSWORD||"jHAzhFG848@yN@U"
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASSWORD||process.env.MYSQL_PASS
     });
 
     console.log(`\n╔══════════════════════════════════════════════════════╗`);

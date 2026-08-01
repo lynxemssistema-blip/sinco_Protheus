@@ -69,7 +69,7 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'evolucao_op', label: 'Evolução OP', required: false, width: 100 },
 ];
 
-const OrdersTable = () => {
+const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao = null }) => {
 
     const location = useLocation();
     const { user, hasPermission } = useAuth();
@@ -126,7 +126,9 @@ const OrdersTable = () => {
     const [downloadingPDF, setDownloadingPDF] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
     const [priorityTarget, setPriorityTarget] = useState(null);
+    const [priorityMode, setPriorityMode] = useState('faturamento'); // 'faturamento' | 'op' — quais delas nao se misturam mais
     const [priorityText, setPriorityText] = useState('');
+    const [priorityGroup, setPriorityGroup] = useState(1);
     const [prioritySubmitting, setPrioritySubmitting] = useState(false);
     const [pageBlocking, setPageBlocking] = useState(null); // null = free, string = blocking message
 
@@ -266,18 +268,20 @@ const OrdersTable = () => {
         pedido: orderFilters.pedido,
         produto: orderFilters.produto,
         pedcli: orderFilters.pedcli || '',
+        refCliente: orderFilters.refCliente || '',
         dataInicial: orderFilters.dataInicial,
         dataFinal: orderFilters.dataFinal,
         dateType: orderFilters.dateType,
         tipo_item: orderFilters.tipo_item || '',
         op_status: orderFilters.op_status || '',
         only_active: orderFilters.only_active,
+        somente_prioridades: orderFilters.somente_prioridades,
         sortBy: orderFilters.sortBy,
         sortOrder: orderFilters.sortOrder
     }), [
-        orderFilters.cliente, orderFilters.pedido, orderFilters.produto, orderFilters.pedcli,
+        orderFilters.cliente, orderFilters.pedido, orderFilters.produto, orderFilters.pedcli, orderFilters.refCliente,
         orderFilters.dataInicial, orderFilters.dataFinal, orderFilters.dateType,
-        orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active,
+        orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active, orderFilters.somente_prioridades,
         orderFilters.sortBy, orderFilters.sortOrder
     ]);
 
@@ -309,6 +313,12 @@ const OrdersTable = () => {
     const limit = viewMode === 'flat' ? 50 : 20;
     const colSpanCount = viewMode === 'flat' ? 24 : 7;
 
+    // Quando fixedClassificacao é definido (ex: painel de PPAP's), a restrição precisa
+    // chegar ao BACKEND — não só filtrar visualmente depois de já ter buscado tudo.
+    const effectiveFilters = React.useMemo(() => (
+        fixedClassificacao ? { ...filters, classificacao_item: fixedClassificacao } : filters
+    ), [filters, fixedClassificacao]);
+
     const {
         orders,
         setOrders,
@@ -325,7 +335,7 @@ const OrdersTable = () => {
         updateOrderItemsForPedido,
         updateFlatOrdersFromItems,
         debouncedFilters
-    } = useOrders({ limit, viewMode, filters, page });
+    } = useOrders({ limit, viewMode, filters: effectiveFilters, page });
 
     const hasNextPage = page < totalPages;
 
@@ -584,45 +594,216 @@ const OrdersTable = () => {
         }
     };
 
+    const handleDownloadFaturamentoExcel = () => {
+        const reportFilters = {
+            client: filters.cliente,
+            order: filters.pedido,
+            product: filters.produto,
+            active_only: filters.only_active,
+            data_0: new Date().toISOString().split('T')[0]
+        };
+        
+        if (filters.dateType === 'entrega') {
+            reportFilters.delivery_start = filters.dataInicial;
+            reportFilters.delivery_end = filters.dataFinal;
+        } else if (filters.dateType === 'pcp') {
+            reportFilters.pcp_start = filters.dataInicial;
+            reportFilters.pcp_end = filters.dataFinal;
+        } else {
+            reportFilters.emission_start = filters.dataInicial;
+            reportFilters.emission_end = filters.dataFinal;
+        }
+
+        const url = getReportDownloadUrl('faturamento-excel', reportFilters, 'sales-planning');
+        window.open(url, '_blank');
+    };
+
+    const handleDownloadFaturamentoPDF = async () => {
+        setDownloadingPDF(true);
+        try {
+            const reportFilters = {
+                client: filters.cliente,
+                order: filters.pedido,
+                product: filters.produto,
+                emission_start: filters.dataInicial,
+                emission_end: filters.dataFinal,
+                active_only: filters.only_active
+            };
+            
+            const result = await api.get('/reports/sales-planning/faturamento-data', { params: { ...reportFilters, page: 1, limit: 10000 } }).then(res => res.data);
+            const data = result.data || [];
+
+            const doc = new jsPDF('l', 'mm', 'a4');
+            const pageWidth = doc.internal.pageSize.getWidth();
+
+            doc.setFontSize(18);
+            doc.setTextColor(40);
+            doc.text('Relatório de Faturamento (Espelho de Pedido)', 14, 22);
+
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            const dateStr = new Date().toLocaleString('pt-BR');
+            doc.text(`Gerado em: ${dateStr}`, 14, 30);
+
+            let filterText = "Filtros: ";
+            if (filters.cliente) filterText += `Cliente: ${filters.cliente} | `;
+            if (filters.pedido) filterText += `Pedido: ${filters.pedido} | `;
+            if (filters.produto) filterText += `Produto: ${filters.produto} | `;
+            filterText += `Status: ${filters.only_active === 'true' ? 'Apenas Pendentes' : 'Todos'}`;
+            doc.text(filterText, 14, 36);
+
+            const tableRows = [];
+            data.forEach(order => {
+                tableRows.push([
+                    { content: order.pedido, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: order.cliente, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: order.status, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: order.proxima_entrega ? new Date(order.proxima_entrega.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).toLocaleDateString('pt-BR') : '-', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: `Itens: ${order.itens_count}`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                    { content: '', styles: { fillColor: [240, 240, 240] } },
+                    { content: '', styles: { fillColor: [240, 240, 240] } }
+                ]);
+
+                if (order.itens && order.itens.length > 0) {
+                    order.itens.forEach(item => {
+                        const priorityMapping = { 1: 'Urgente', 2: 'Alta', 3: 'Média', 4: 'Normal' };
+                        const priorityStr = item.op_prioridade ? `Grupo ${item.op_prioridade} (${priorityMapping[item.op_prioridade] || ''})` : '-';
+                        const nfStr = item.notas_fiscais && item.notas_fiscais.length > 0 ? item.notas_fiscais.map(n => n.nota).join(', ') : '-';
+                        tableRows.push([
+                            '',
+                            `[${item.item}] ${item.produto}`,
+                            item.descricao || '',
+                            `Qtd: ${item.qtd}`,
+                            `Fat: ${item.qtd_entreg}`,
+                            `NF: ${nfStr} | Saldo: ${item.qtd_faturar}`,
+                            priorityStr
+                        ]);
+                    });
+                }
+            });
+
+            autoTable(doc, {
+                startY: 42,
+                head: [['Pedido', 'Cliente / Produto', 'Status / Descrição', 'Entrega / Qtd', 'Itens / Faturado', 'NF / Saldo', 'Prioridade']],
+                body: tableRows,
+                theme: 'striped',
+                headStyles: { fillColor: [51, 65, 85], textColor: 255 },
+                columnStyles: {
+                    0: { cellWidth: 20 },
+                    1: { cellWidth: 60 },
+                    2: { cellWidth: 65 },
+                    3: { cellWidth: 30 },
+                    4: { cellWidth: 35 },
+                    5: { cellWidth: 35 },
+                    6: { cellWidth: 30 }
+                },
+                styles: { fontSize: 8, overflow: 'linebreak' },
+                didDrawPage: (data) => {
+                    doc.setFontSize(8);
+                    const footerStr = `Página ${data.pageNumber}`;
+                    doc.text(footerStr, pageWidth - 25, doc.internal.pageSize.getHeight() - 10);
+                }
+            });
+
+            doc.save(`relatorio_faturamento_${new Date().getTime()}.pdf`);
+        } catch (err) {
+            console.error('Erro ao gerar PDF Faturamento:', err);
+            alert('Erro ao gerar PDF: ' + err.message);
+        } finally {
+            setDownloadingPDF(false);
+        }
+    };
+
     const handlePrioritySubmit = async () => {
         if (!priorityTarget) return;
         setPrioritySubmitting(true);
         try {
-            if (Array.isArray(priorityTarget) && priorityTarget.length > 1) {
-                const itensTarget = priorityTarget.map(target => ({
-                    pedido: target.pedido,
-                    item_pedido: target.item,
-                    op_numero: target.op_num,
-                    produto: target.codigo || target.produto
-                }));
-                
-                await api.post('/ata-viva/prioridade-lote', {
-                    itens: itensTarget,
-                    texto_livre: priorityText,
-                    usuario: user?.nome
-                });
+            const isBatch = Array.isArray(priorityTarget) && priorityTarget.length > 1;
+            const targets = isBatch ? priorityTarget : [Array.isArray(priorityTarget) ? priorityTarget[0] : priorityTarget];
+
+            if (priorityMode === 'faturamento') {
+                // Só marca o(s) item(ns) para faturamento (Hermes/TV). NÃO toca em app_op_priorities,
+                // que é compartilhada por todos os itens da mesma OP.
+                if (isBatch) {
+                    const itensTarget = targets.map(target => ({
+                        pedido: target.pedido,
+                        item_pedido: target.item,
+                        op_numero: target.op_num_completa || target.op_num,
+                        produto: target.codigo || target.produto
+                    }));
+                    await api.post('/ata-viva/prioridade-lote', {
+                        itens: itensTarget,
+                        texto_livre: priorityText,
+                        grupo: priorityGroup,
+                        usuario: user?.nome
+                    });
+                } else {
+                    const target = targets[0];
+                    await api.post('/ata-viva/prioridade', {
+                        pedido: target.pedido,
+                        item_pedido: target.item,
+                        op_numero: target.op_num_completa || target.op_num,
+                        produto: target.codigo || target.produto,
+                        texto_livre: priorityText,
+                        grupo: priorityGroup,
+                        usuario: user?.nome
+                    });
+                }
+                toast.success('Prioridade de faturamento definida. Hermes notificado.');
             } else {
-                const target = Array.isArray(priorityTarget) ? priorityTarget[0] : priorityTarget;
-                await api.post('/ata-viva/prioridade', {
-                    pedido: target.pedido,
-                    item_pedido: target.item,
-                    op_numero: target.op_num,
-                    produto: target.codigo || target.produto,
-                    texto_livre: priorityText,
-                    usuario: user?.nome
-                });
+                // mode === 'op': prioriza a OP inteira na produção. NÃO cria tarefa/alerta de faturamento.
+                const ops = [...new Set(targets.map(t => t.op_num_completa || t.op_num).filter(Boolean))];
+                for (const op of ops) {
+                    await api.post('/production/op-priority', { op_numero: op, prioridade: priorityGroup, usuario: user?.nome });
+                }
+                toast.success('Prioridade de OP atualizada.');
             }
 
-            toast.success('Prioridade definida com sucesso. Hermes notificado.');
+            // Dynamic local state update to prevent full reload
+            setOrders(prev => prev.map(o => {
+                if (viewMode === 'flat') {
+                    const isTarget = targets.some(t => t.pedido === o.pedido && t.item === o.item);
+                    if (isTarget) {
+                        return priorityMode === 'op'
+                            ? { ...o, op_prioridade: priorityGroup }
+                            : { ...o, fat_priority_group: priorityGroup, fat_priority_text: priorityText };
+                    }
+                    return o;
+                } else {
+                    const isTargetOrder = targets.some(t => t.pedido === o.pedido);
+                    if (isTargetOrder && o.itens) {
+                        const updatedItens = o.itens.map(it => {
+                            const isTargetItem = targets.some(t => t.pedido === o.pedido && t.item === it.item);
+                            if (isTargetItem) {
+                                return priorityMode === 'op'
+                                    ? { ...it, op_prioridade: priorityGroup }
+                                    : { ...it, fat_priority_group: priorityGroup, fat_priority_text: priorityText };
+                            }
+                            return it;
+                        });
+                        return { ...o, itens: updatedItens };
+                    }
+                    return o;
+                }
+            }));
+
             setPriorityTarget(null);
             setPriorityText('');
-            if (Array.isArray(priorityTarget)) setSelectedItems([]);
+            setPriorityGroup(1);
+            if (isBatch) setSelectedItems([]);
+            // Still trigger silent fetch in background to sync with server
+            fetchData({ page: page || 1, silent: true });
         } catch (err) {
             console.error(err);
             toast.error(err.response?.data?.error || 'Erro ao definir prioridade.');
         } finally {
             setPrioritySubmitting(false);
         }
+    };
+
+    const openPriorityModal = (target, mode = 'faturamento') => {
+        setPriorityTarget(target);
+        setPriorityMode(mode);
     };
 
     const handlePrintOrder = async (e, orderId) => {
@@ -750,6 +931,56 @@ const OrdersTable = () => {
         }
     };
 
+    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-desc-resource-drawings-${pedido}-${itemId}` : `op-stamp-desc-resource-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, true);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Resource PDF with Drawings (with Desc):', error);
+            alert(`Erro ao gerar Espelho por Recurso com Desenhos (Roteiro/Descrição): ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPWithOpsStampDrawingsByResource = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-resource-drawings-${pedido}-${itemId}` : `op-stamp-resource-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, false);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP by Resource PDF with Drawings (Roteiro):', error);
+            alert(`Erro ao gerar Espelho por Recurso com Desenhos (Roteiro): ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
     const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}` : `op-stamp-drawings-${pedido}`;
@@ -770,6 +1001,31 @@ const OrdersTable = () => {
             const msg = error.response?.data?.error || error.message;
             console.error('Error generating OP PDF with Ops Stamp Drawings:', error);
             alert(`Erro ao gerar Espelho com Roteiro no Carimbo: ${msg}`);
+        } finally {
+            setPrintingOrderId(null);
+        }
+    };
+
+    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null) => {
+        if (e) e.stopPropagation();
+        const loadKey = itemId ? `op-stamp-desc-drawings-${pedido}-${itemId}` : `op-stamp-desc-drawings-${pedido}`;
+        setPrintingOrderId(loadKey);
+        try {
+            const endpoint = itemId
+                ? `/pedidos/op-mirror/${pedido}?item=${itemId}`
+                : `/pedidos/op-mirror/${pedido}`;
+
+            const response = await api.get(endpoint);
+            const mirrorData = response.data;
+
+            const userName = user?.nome || 'Usuário';
+            const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, true);
+
+        } catch (error) {
+            const msg = error.response?.data?.error || error.message;
+            console.error('Error generating OP PDF with Ops Stamp Drawings (with Desc):', error);
+            alert(`Erro ao gerar Espelho com Roteiro/Descrição no Carimbo: ${msg}`);
         } finally {
             setPrintingOrderId(null);
         }
@@ -848,7 +1104,15 @@ const OrdersTable = () => {
         setIsGeneratingExcel(true);
         try {
             const response = await fetch(url);
-            if (!response.ok) throw new Error(`Erro ${response.status}`);
+            if (!response.ok) {
+                let errMsg = `Erro ${response.status}`;
+                try {
+                    const errBody = await response.json();
+                    errMsg = errBody.error || errBody.message || errMsg;
+                    if (errBody.where) errMsg += ` | Em: ${errBody.where}`;
+                } catch (_) {}
+                throw new Error(errMsg);
+            }
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -942,8 +1206,9 @@ const OrdersTable = () => {
         let result = orders;
 
         // FILTER ITEMS for Flat View if classification is selected
-        if (viewMode === 'flat' && filters.classificacao_item) {
-            const activeClassifs = filters.classificacao_item.split(',').filter(Boolean);
+        const effectiveClassifs = fixedClassificacao || filters.classificacao_item;
+        if (viewMode === 'flat' && effectiveClassifs) {
+            const activeClassifs = effectiveClassifs.split(',').filter(Boolean);
             if (activeClassifs.length > 0) {
                 result = result.filter(o => {
                     const itemClassif = o.classificacao || 'Nenhum';
@@ -963,7 +1228,7 @@ const OrdersTable = () => {
         };
         const objKey = keyMap[filters.sortBy] || filters.sortBy;
 
-        return [...orders].sort((a, b) => {
+        return [...result].sort((a, b) => {
             let valA = a[objKey];
             let valB = b[objKey];
 
@@ -983,7 +1248,7 @@ const OrdersTable = () => {
             if (valA > valB) return filters.sortOrder === 'ASC' ? 1 : -1;
             return 0;
         });
-    }, [orders, filters.sortBy, filters.sortOrder]);
+    }, [orders, filters.sortBy, filters.sortOrder, viewMode, fixedClassificacao, filters.classificacao_item]);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
@@ -1091,8 +1356,8 @@ const OrdersTable = () => {
                 <div className="p-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-800">Pedidos de Venda</h2>
-                        <p className="text-sm text-gray-500">Gerencie e visualize os pedidos do Protheus</p>
+                        <h2 className="text-xl font-bold text-gray-800">{pageTitle || "Pedidos de Venda"}</h2>
+                        <p className="text-sm text-gray-500">{pageSubtitle || "Gerencie e visualize os pedidos do Protheus"}</p>
                         {filters.only_active === 'true' && (
                             <div className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5">
                                 <AlertCircle className="h-3 w-3" />
@@ -1142,7 +1407,7 @@ const OrdersTable = () => {
                         <span className="ml-auto text-xs text-blue-400 italic">Isso pode levar alguns segundos dependendo dos filtros.</span>
                     </div>
                 )}
-                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-10 gap-y-4 gap-x-3 items-end">
+                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-y-4 gap-x-3 items-end">
                     <div className="flex flex-col gap-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
                         <div className="relative">
@@ -1182,6 +1447,21 @@ const OrdersTable = () => {
                                 name="pedcli"
                                 placeholder="PC..."
                                 value={filters.pedcli || ''}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">Ref. Cliente:</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="refCliente"
+                                placeholder="Ref..."
+                                value={filters.refCliente || ''}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                             />
@@ -1278,7 +1558,7 @@ const OrdersTable = () => {
                     </div>
 
                     {/* Filtro Tipo de Item (Multi-select Pills) */}
-                    <div className="flex flex-col gap-1 md:col-span-2">
+                    <div className="flex flex-col gap-1 md:col-span-2 lg:col-span-3">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Tipo de Item:</label>
                         <div className="flex flex-wrap gap-1">
                             {['PCP', 'Restrição', 'Revisão', 'Novo'].map(tipo => {
@@ -1307,7 +1587,8 @@ const OrdersTable = () => {
                         </div>
                     </div>
 
-                    {/* Filtro Classificacao (Multi-select Pills) */}
+                    {/* Filtro Classificacao (Multi-select Pills) — oculto quando a página tem classificação fixa (ex: PPAP's) */}
+                    {!fixedClassificacao && (
                     <div className="flex flex-col gap-1 md:col-span-2">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Classificação:</label>
                         <div className="flex flex-wrap gap-1">
@@ -1340,8 +1621,9 @@ const OrdersTable = () => {
                             })}
                         </div>
                     </div>
+                    )}
 
-                    <div className="md:col-span-2 lg:col-span-2 flex gap-2">
+                    <div className="md:col-span-4 lg:col-span-5 flex flex-wrap gap-2">
                         <button
                             type="submit"
                             disabled={loading}
@@ -1355,6 +1637,32 @@ const OrdersTable = () => {
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Buscando...</>
                                 : <><Search className="h-4 w-4" /> Filtrar</>
                             }
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleDownloadFaturamentoExcel}
+                            disabled={loading}
+                            className="bg-green-50 text-green-700 border border-green-300 hover:bg-green-100 font-medium rounded-lg text-sm px-2.5 py-2.5 text-center transition-colors flex items-center justify-center gap-1 disabled:opacity-40"
+                            title="Faturamento Excel"
+                        >
+                            <FileSpreadsheet className="h-4 w-4" />
+                            <span className="font-semibold text-xs tracking-tight">Fat.</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleDownloadFaturamentoPDF}
+                            disabled={downloadingPDF}
+                            className="bg-orange-50 text-orange-600 border border-orange-300 hover:bg-orange-100 font-medium rounded-lg text-sm px-2.5 py-2.5 text-center transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+                            title="Faturamento PDF"
+                        >
+                            {downloadingPDF ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <FileText className="h-4 w-4" />
+                            )}
+                            <span className="font-semibold text-xs tracking-tight">Fat.</span>
                         </button>
 
                         <button
@@ -1412,7 +1720,7 @@ const OrdersTable = () => {
                         )}
                     </div>
 
-                    <div className="md:col-span-10 lg:col-span-10 flex flex-col md:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start md:items-center">
+                    <div className="md:col-span-8 lg:col-span-7 flex flex-col xl:flex-row gap-4 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100 items-start xl:items-center w-full">
                         <div className="flex flex-col gap-1 flex-1">
                             <div className="flex items-center gap-2">
                                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1425,7 +1733,19 @@ const OrdersTable = () => {
                                     <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                                     <span className="ml-3 text-sm font-medium text-gray-700">Apenas Pendentes (Filtro Pesado)</span>
                                 </label>
-                                <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex">
+                                <label className="block text-[11px] font-medium text-gray-600 ml-1">Filtro Prioridade:</label>
+                                  <select
+                                      value={filters.somente_prioridades || 'false'}
+                                      onChange={(e) => setFilters(prev => ({ ...prev, somente_prioridades: e.target.value, page: 1 }))}
+                                      className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                  >
+                                      <option value="false">Todos (Com e Sem Prioridade)</option>
+                                      <option value="true">Somente Prioridades (Qualquer)</option>
+                                      <option value="1">Grupo 1 (Urgente)</option>
+                                      <option value="2">Grupo 2 (Alta)</option>
+                                      <option value="3">Grupo 3 (Média)</option>
+                                      <option value="4">Grupo 4 (Normal)</option>
+                                  </select>                              <span className="text-[10px] text-gray-400 italic flex items-center gap-1 hidden md:flex">
                                     <AlertCircle className="h-3 w-3" />
                                     Desative para uma busca muito mais rápida.
                                 </span>
@@ -1540,11 +1860,18 @@ const OrdersTable = () => {
                 {selectedItems.length > 0 && viewMode === 'flat' && (
                     <div className="px-4 flex items-center gap-2">
                         <button
-                            onClick={() => setPriorityTarget(selectedItems)}
+                            onClick={() => openPriorityModal(selectedItems, 'faturamento')}
                             className="flex items-center gap-2 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded shadow text-sm font-medium transition-colors"
                         >
                             <AlertCircle className="w-4 h-4" />
-                            Prioridade ({selectedItems.length})
+                            Faturamento ({selectedItems.length})
+                        </button>
+                        <button
+                            onClick={() => openPriorityModal(selectedItems, 'op')}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-rose-800 hover:bg-rose-900 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <Factory className="w-4 h-4" />
+                            Prioridade OP ({selectedItems.length})
                         </button>
                         <button
                             onClick={() => { setReportSelectedItems(selectedItems); setShowReportModal(true); }}
@@ -1851,6 +2178,22 @@ const OrdersTable = () => {
                                                                                 <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                                                             </button>
                                                                             <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e); setOpenActionMenu(null); }}
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}`}
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />}
+                                                                                <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e); setOpenActionMenu(null); }}
                                                                                 disabled={printingOrderId === `op-excel-${order.pedido}`}
                                                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-40"
@@ -1913,8 +2256,9 @@ const OrdersTable = () => {
                                                                                         orderItems[order.pedido]
                                                                                             .filter(item => filters.only_active === 'false' || parseFloat(item.qtd_faturar || 0) > 0)
                                                                                             .filter(item => {
-                                                                                                if (!filters.classificacao_item) return true;
-                                                                                                const activeClassifs = filters.classificacao_item.split(',').filter(Boolean);
+                                                                                                const effectiveClassifs = fixedClassificacao || filters.classificacao_item;
+                                                                                                if (!effectiveClassifs) return true;
+                                                                                                const activeClassifs = effectiveClassifs.split(',').filter(Boolean);
                                                                                                 if (activeClassifs.length === 0) return true;
                                                                                                 return activeClassifs.includes(item.classificacao || 'Nenhum');
                                                                                             })
@@ -2031,15 +2375,26 @@ const OrdersTable = () => {
                                                                                                                             <span>Controle Engenharia</span>
                                                                                                                         </button>
                                                                                                                         <button
-                                                                                                                            onClick={(e) => { 
-                                                                                                                                e.stopPropagation(); 
-                                                                                                                                setPriorityTarget({ pedido: order.pedido, item: item.item, codigo: item.codigo, op_num: item.op_num }); 
-                                                                                                                                setOpenActionMenu(null); 
+                                                                                                                            onClick={(e) => {
+                                                                                                                                e.stopPropagation();
+                                                                                                                                openPriorityModal({ pedido: order.pedido, item: item.item, codigo: item.codigo, op_num: item.op_num }, 'faturamento');
+                                                                                                                                setOpenActionMenu(null);
                                                                                                                             }}
                                                                                                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors"
                                                                                                                         >
                                                                                                                             <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
-                                                                                                                            <span>Definir Prioridade</span>
+                                                                                                                            <span>Prioridade Faturamento</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => {
+                                                                                                                                e.stopPropagation();
+                                                                                                                                openPriorityModal({ pedido: order.pedido, item: item.item, codigo: item.codigo, op_num: item.op_num }, 'op');
+                                                                                                                                setOpenActionMenu(null);
+                                                                                                                            }}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-rose-50 hover:text-rose-800 transition-colors"
+                                                                                                                        >
+                                                                                                                            <Factory className="h-4 w-4 flex-shrink-0 text-rose-700" />
+                                                                                                                            <span>Prioridade de OP</span>
                                                                                                                         </button>
                                                                                                                         <div className="border-t border-gray-100 my-1" />
                                                                                                                         <button
@@ -2085,10 +2440,34 @@ const OrdersTable = () => {
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
                                                                                                                             disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}`}
-                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-pink-50 hover:text-pink-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                                                                                         >
-                                                                                                                            {printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-pink-500" />}
+                                                                                                                            {printingOrderId === `op-stamp-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />}
                                                                                                                             <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampDrawingsByResource(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-resource-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-blue-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro no Carimbo) - Por Recurso</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e, item.item); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}`}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />}
+                                                                                                                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
                                                                                                                         </button>
                                                                                                                         <button
                                                                                                                             onClick={(e) => { handleExportOPByOperationExcel(order.pedido, e, item.item); setOpenActionMenu(null); }}
@@ -2270,6 +2649,7 @@ const OrdersTable = () => {
                                                 setEngineeringTarget={setEngineeringTarget}
                                                 setPcpForecastTarget={setPcpForecastTarget}
                                                 setNotesTarget={setNotesTarget}
+                                                setPriorityTarget={openPriorityModal}
                                                 setSelectedInvoice={setSelectedInvoice}
                                                 setInvoiceModalItem={setInvoiceModalItem}
                                                 setOpenActionMenu={setOpenActionMenu}
@@ -2280,6 +2660,9 @@ const OrdersTable = () => {
                                                 handlePrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
                                                 handlePrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
                                                 handlePrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
+                                                handlePrintOPWithOpsStampDrawingsByResource={handlePrintOPWithOpsStampDrawingsByResource}
+                                                handlePrintOPWithOpsStampWithDescDrawings={handlePrintOPWithOpsStampWithDescDrawings}
+                                                handlePrintOPWithOpsStampWithDescDrawingsByResource={handlePrintOPWithOpsStampWithDescDrawingsByResource}
                                                 handleExportOPByOperationExcel={handleExportOPByOperationExcel}
                                                 setMenuPosition={setMenuPosition}
                                                 handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
@@ -2543,11 +2926,17 @@ const OrdersTable = () => {
                     <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
                         <div className="p-4 border-b border-gray-200 bg-red-50 flex items-center gap-3">
                             <div className="p-2 bg-red-100 rounded-lg text-red-600">
-                                <AlertCircle className="w-6 h-6" />
+                                {priorityMode === 'op' ? <Factory className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
                             </div>
                             <div>
-                                <h2 className="text-lg font-bold text-slate-900 leading-tight">Definir Prioridade</h2>
-                                <p className="text-xs text-slate-500">Notificará todos via Hermes Live Feed</p>
+                                <h2 className="text-lg font-bold text-slate-900 leading-tight">
+                                    {priorityMode === 'op' ? 'Prioridade de OP' : 'Prioridade de Faturamento'}
+                                </h2>
+                                <p className="text-xs text-slate-500">
+                                    {priorityMode === 'op'
+                                        ? 'Reordena a produção da OP inteira (afeta todos os itens da mesma OP).'
+                                        : 'Notificará todos via Hermes Live Feed — não altera a fila de produção da OP.'}
+                                </p>
                             </div>
                         </div>
                         <div className="p-5 space-y-4">
@@ -2559,7 +2948,7 @@ const OrdersTable = () => {
                                             {priorityTarget.map((t, idx) => (
                                                 <div key={idx} className="bg-white p-1.5 border border-slate-200 rounded flex justify-between text-xs items-center">
                                                     <span className="font-semibold text-slate-700">{t.pedido} - {t.item}</span>
-                                                    <span className="text-slate-500 text-right">{t.op_num || '-'} ({t.codigo})</span>
+                                                    <span className="text-slate-500 text-right">{t.op_num_completa || t.op_num || '-'} ({t.codigo})</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -2572,27 +2961,47 @@ const OrdersTable = () => {
                                         </div>
                                         <div className="bg-slate-50 p-2 border border-slate-100 rounded">
                                             <span className="text-slate-400 block text-xs">OP / Produto</span>
-                                            <span className="font-semibold text-slate-700">{priorityTarget.op_num || '-'} <span className="font-normal text-xs ml-1">({priorityTarget.codigo})</span></span>
+                                            <span className="font-semibold text-slate-700">{priorityTarget.op_num_completa || priorityTarget.op_num || '-'} <span className="font-normal text-xs ml-1">({priorityTarget.codigo})</span></span>
                                         </div>
                                     </>
                                 )}
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Motivo ou Observação Livre
-                                </label>
-                                <textarea
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm resize-none"
-                                    rows="3"
-                                    placeholder="Ex: Peça para montagem imediata, liberar corte..."
-                                    value={priorityText}
-                                    onChange={(e) => setPriorityText(e.target.value)}
-                                ></textarea>
+                            <div className={priorityMode === 'op' ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-2 gap-4'}>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Grupo de Prioridade
+                                    </label>
+                                    <select
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-medium bg-white"
+                                        value={priorityGroup}
+                                        onChange={(e) => setPriorityGroup(parseInt(e.target.value))}
+                                    >
+                                        <option value={1}>Grupo 1 (Máxima)</option>
+                                        <option value={2}>Grupo 2 (Alta)</option>
+                                        <option value={3}>Grupo 3 (Média)</option>
+                                        <option value={4}>Grupo 4 (Normal)</option>
+                                        <option value={0}>0 (Remover Prioridade)</option>
+                                    </select>
+                                </div>
+                                {priorityMode !== 'op' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Motivo ou Observação Livre
+                                        </label>
+                                        <textarea
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm resize-none"
+                                            rows="3"
+                                            placeholder="Ex: Peça para montagem imediata, liberar corte..."
+                                            value={priorityText}
+                                            onChange={(e) => setPriorityText(e.target.value)}
+                                        ></textarea>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
                             <button
-                                onClick={() => { setPriorityTarget(null); setPriorityText(''); }}
+                                onClick={() => { setPriorityTarget(null); setPriorityText(''); setPriorityGroup(1); }}
                                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
                                 disabled={prioritySubmitting}
                             >
@@ -2604,7 +3013,7 @@ const OrdersTable = () => {
                                 className="px-5 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
                             >
                                 {prioritySubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                                Emitir Prioridade
+                                {priorityMode === 'op' ? 'Aplicar Prioridade de OP' : 'Emitir Prioridade de Faturamento'}
                             </button>
                         </div>
                     </div>

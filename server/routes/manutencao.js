@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // ==============================================
 // 1. MÁQUINAS E EQUIPAMENTOS
@@ -259,6 +260,16 @@ router.get('/ordens', async (req, res) => {
             ORDER BY o.data_solicitacao DESC
         `;
         const [rows] = await mysqlPool.query(query);
+
+        // Custo é dado sensível — nunca sai do servidor para quem não tem a permissão
+        // "valores_financeiros" (Acessos Sensíveis / RH-Financeiro).
+        if (!(await hasFinancialAccess(req))) {
+            rows.forEach(r => {
+                delete r.custo_materiais;
+                delete r.custo_servico;
+            });
+        }
+
         res.json(rows);
     } catch (err) {
         console.error("Erro ao listar ordens:", err);
@@ -331,6 +342,16 @@ router.get('/ordens/:id/historico', async (req, res) => {
 router.get('/ordens/:id/materiais', async (req, res) => {
     try {
         const [rows] = await mysqlPool.query('SELECT * FROM pcp_manutencao_materiais WHERE ordem_id = ? ORDER BY criado_em DESC', [req.params.id]);
+
+        // Custo é dado sensível — nunca sai do servidor para quem não tem a permissão
+        // "valores_financeiros" (Acessos Sensíveis / RH-Financeiro).
+        if (!(await hasFinancialAccess(req))) {
+            rows.forEach(r => {
+                delete r.custo_unitario;
+                delete r.custo_total;
+            });
+        }
+
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: "Erro interno" });

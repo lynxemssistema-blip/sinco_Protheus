@@ -118,6 +118,22 @@ const OrderFiltersBar = ({
                     </div>
                 </div>
 
+                {/* Ref. Cliente */}
+                <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-medium text-gray-600 ml-1">Ref. Cliente:</label>
+                    <div className="relative">
+                        <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            name="refCliente"
+                            placeholder="Ref. Cliente..."
+                            value={filters.refCliente || ''}
+                            onChange={onFilterChange}
+                            className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                    </div>
+                </div>
+
                 {/* Produto */}
                 <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-medium text-gray-600 ml-1">Produto:</label>

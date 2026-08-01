@@ -17,6 +17,7 @@ const dbConfig = {
 
 const db = require('../db'); // Import Postgres Connection
 const mysqlPool = require('../services/mysqlService'); // Import MySQL Connection
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // GET /:codigo/saldo - Retorna saldo atual do produto (Protheus SB2010/SB2990) e Fábrica
 router.get('/:codigo/saldo', async (req, res) => {
@@ -767,6 +768,296 @@ router.get('/requisicoes', async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar requisições:', error);
         res.status(500).json({ error: 'Erro ao buscar requisições', details: error.message });
+    }
+});
+
+
+
+// =============================================
+// ÚLTIMA COMPRA (SD1010 — NF de Entrada)
+// =============================================
+
+router.post('/cadastro/ultima-compra/batch', express.json(), async (req, res) => {
+    try {
+        const { codigos } = req.body;
+        if (!Array.isArray(codigos) || codigos.length === 0) return res.json({});
+        const codigosLimpos = codigos.map(c => (c || '').trim().toUpperCase()).filter(c => c);
+        if (codigosLimpos.length === 0) return res.json({});
+
+        const placeholders = codigosLimpos.map((_, i) => `$${i + 1}`).join(', ');
+        const result = await db.query(`
+            SELECT DISTINCT ON (TRIM(d1_cod))
+                TRIM(d1_cod) AS codigo, d1_emissao AS ultima_data,
+                d1_quant AS quantidade, d1_vunit AS valor_unit,
+                TRIM(d1_fornece) AS fornecedor, TRIM(d1_doc) AS doc_nf, TRIM(d1_cf) AS cfop
+            FROM sd1010
+            WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = ''
+              AND LEFT(TRIM(d1_cf), 1) IN ('1', '2')
+              AND TRIM(d1_cod) IN (${placeholders})
+            ORDER BY TRIM(d1_cod), d1_emissao DESC
+        `, codigosLimpos);
+
+        const canViewFinancials = await hasFinancialAccess(req);
+        const mapa = {};
+        result.rows.forEach(row => {
+            const raw = row.ultima_data || '';
+            const dataFmt = raw.length === 8
+                ? `${raw.slice(6, 8)}/${raw.slice(4, 6)}/${raw.slice(0, 4)}` : raw;
+            mapa[row.codigo] = {
+                ultima_data: raw, ultima_data_fmt: dataFmt,
+                quantidade: parseFloat(row.quantidade) || 0,
+                valor_unit: canViewFinancials ? (parseFloat(row.valor_unit) || 0) : undefined,
+                fornecedor: row.fornecedor, doc_nf: row.doc_nf, cfop: row.cfop
+            };
+        });
+        res.json(mapa);
+    } catch (error) {
+        console.error('[Ultima Compra] Erro:', error);
+        res.status(500).json({ error: 'Erro ao buscar ultima compra: ' + error.message });
+    }
+});
+
+// =============================================
+// ONDE É USADO (SG1010 — Estrutura de Produto)
+// =============================================
+
+router.get('/cadastro/onde-usado/:codigo', async (req, res) => {
+    try {
+        const codigo = (req.params.codigo || '').trim().toUpperCase();
+        if (!codigo) return res.status(400).json({ error: 'Codigo nao informado.' });
+
+        const result = await db.query(`
+            SELECT
+                TRIM(g1.g1_cod)   AS cod_pai,
+                TRIM(sb1.b1_desc) AS desc_pai,
+                TRIM(sb1.b1_tipo) AS tipo_pai,
+                g1.g1_quant       AS quantidade,
+                TRIM(g1.g1_niv)   AS nivel,
+                g1.g1_perda       AS perda
+            FROM sg1010 g1
+            LEFT JOIN sb1010 sb1
+                ON TRIM(sb1.b1_cod) = TRIM(g1.g1_cod)
+                AND TRIM(COALESCE(sb1.d_e_l_e_t_, '')) = ''
+            WHERE TRIM(g1.g1_comp) = $1
+              AND TRIM(COALESCE(g1.d_e_l_e_t_, '')) = ''
+            ORDER BY TRIM(sb1.b1_tipo), TRIM(g1.g1_cod)
+        `, [codigo]);
+
+        const porTipo = {};
+        result.rows.forEach(row => {
+            const tipo = (row.tipo_pai || 'N/D').trim();
+            if (!porTipo[tipo]) porTipo[tipo] = [];
+            porTipo[tipo].push({
+                cod_pai: row.cod_pai,
+                desc_pai: row.desc_pai || '(sem descricao)',
+                quantidade: parseFloat(row.quantidade) || 0,
+                nivel: row.nivel || '01',
+                perda: parseFloat(row.perda) || 0
+            });
+        });
+
+        res.json({ codigo, total: result.rows.length, por_tipo: porTipo });
+    } catch (error) {
+        console.error('[Onde e Usado] Erro:', error);
+        res.status(500).json({ error: 'Erro ao buscar onde e usado: ' + error.message });
+    }
+});
+
+// =============================================
+// ANÁLISE DE REDUNDÂNCIAS MP
+// =============================================
+
+function normalizarDescricaoMP(desc) {
+    return (desc || '')
+        .toUpperCase()
+        .replace(/\bCH\.\s*/g, 'CHAPA ')
+        .replace(/\bCHP\.\s*/g, 'CHAPA ')
+        .replace(/\bBO\.\s*/g, 'BARRA ')
+        .replace(/\bBRR\.\s*/g, 'BARRA ')
+        .replace(/\bTB\.\s*/g, 'TUBO ')
+        .replace(/\bTUB\.\s*/g, 'TUBO ')
+        .replace(/\bSAE\s*/g, '')
+        .replace(/1006\/1008|1006-1008/g, '1006')
+        .replace(/,(\d)/g, '.$1')
+        .replace(/(\d+)\.0+\b/g, '$1')
+        .replace(/(\d)\s*X\s*(\d)/g, '$1X$2')
+        .replace(/[^A-Z0-9X]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+        for (let j = 1; j <= n; j++)
+            dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    return dp[m][n];
+}
+
+function similaridadeMP(a, b) {
+    const na = normalizarDescricaoMP(a);
+    const nb = normalizarDescricaoMP(b);
+    const maxLen = Math.max(na.length, nb.length);
+    if (maxLen === 0) return 1;
+    return 1 - levenshtein(na, nb) / maxLen;
+}
+
+function agruparCandidatosMp(produtos, threshold = 0.82) {
+    const n = produtos.length;
+    const visitado = new Array(n).fill(false);
+    const grupos = [];
+    for (let i = 0; i < n; i++) {
+        if (visitado[i]) continue;
+        const grupo = [i];
+        for (let j = i + 1; j < n; j++) {
+            if (visitado[j]) continue;
+            if (grupo.some(gi => similaridadeMP(produtos[gi].descricao, produtos[j].descricao) >= threshold)) {
+                grupo.push(j);
+                visitado[j] = true;
+            }
+        }
+        visitado[i] = true;
+        if (grupo.length >= 2) grupos.push(grupo.map(idx => produtos[idx]));
+    }
+    return grupos;
+}
+
+function buildMpRedundanciaPrompt(grupos) {
+    const payload = grupos.map((g, i) => ({
+        grupo_id: i,
+        candidatos: (Array.isArray(g) ? g : [g]).map(p => ({
+            codigo: p.codigo, descricao: p.descricao, grupo: p.grupo, unidade: p.unidade
+        }))
+    }));
+    return `Voce e especialista em cadastro de materia-prima para industria metalmecanica (Protheus/MRP).
+Analise os grupos candidatos abaixo (pre-selecionados por similaridade textual).
+
+REGRAS:
+- "duplicado": MESMA especificacao, so difere por digitacao/abreviacao. Defina sugestao_codigo_correto.
+- "equivalente": Mesmo material, dimensoes diferentes. sugestao_codigo_correto=null.
+- "diferente": Nao incluir no resultado.
+
+ABREVIACOES: CH./CHP.=CHAPA | BO./BRR.=BARRA | TB./TUB.=TUBO | SAE=norma
+NUMEROS: 4,5MM=4.50MM (duplicado se resto igual) | 1200X2000 vs 1000X3000 = EQUIVALENTE no maximo
+
+GRUPOS:
+${JSON.stringify(payload, null, 2)}
+
+JSON ESTRITO (sem markdown):
+{"groups":[{"tipo":"duplicado|equivalente","motivo":"texto","confianca":"alta|media|baixa","produtos":[{"codigo":"...","descricao":"...","empresa":"010"}],"sugestao_codigo_correto":"cod ou null"}]}`;
+}
+
+// FASE 1 — Levenshtein (sem IA). Rapido, sem timeout.
+router.post('/cadastro/analisar-mp', express.json(), async (req, res) => {
+    try {
+        const { grupo, lote_offset = 0, lote_size = 150 } = req.body;
+        const LOTE   = Math.min(Math.max(parseInt(lote_size) || 150, 50), 300);
+        const offset = Math.max(parseInt(lote_offset) || 0, 0);
+
+        const countParams = [];
+        let countWhere = "WHERE TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' AND TRIM(p.b1_tipo) = 'MP'";
+        if (grupo) { countParams.push(`${grupo.toUpperCase()}%`); countWhere += ` AND TRIM(p.b1_grupo) LIKE $1`; }
+        const countResult = await db.query(`SELECT COUNT(*) AS total FROM public.sb1010 p ${countWhere}`, countParams);
+        const totalGeral = parseInt(countResult.rows[0]?.total || 0);
+
+        const params = []; let pc = 1; let whereExtra = '';
+        if (grupo) { params.push(`${grupo.toUpperCase()}%`); whereExtra = `AND TRIM(p.b1_grupo) LIKE $${pc++}`; }
+        params.push(LOTE, offset);
+
+        const result = await db.query(`
+            SELECT TRIM(p.b1_cod) AS codigo, TRIM(p.b1_desc) AS descricao,
+                   TRIM(p.b1_grupo) AS grupo, TRIM(p.b1_tipo) AS tipo, TRIM(p.b1_um) AS unidade, TRIM(p.b1_msblql) AS bloqueado
+            FROM public.sb1010 p
+            WHERE TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' AND TRIM(p.b1_tipo) = 'MP'
+              ${whereExtra}
+            ORDER BY TRIM(p.b1_grupo), TRIM(p.b1_desc)
+            LIMIT $${pc++} OFFSET $${pc++}
+        `, params);
+
+        const produtos = result.rows;
+        const proximo_offset = offset + produtos.length;
+        const tem_mais = proximo_offset < totalGeral;
+
+        if (produtos.length < 2) {
+            return res.json({
+                candidatos: [], stats: { lote_mp: produtos.length, candidatos: 0 },
+                paginacao: { offset, lote: LOTE, proximo_offset, total_geral: totalGeral, tem_mais }
+            });
+        }
+
+        const gruposCandidatos = agruparCandidatosMp(produtos, 0.82);
+        console.log(`[MP Fase1 offset=${offset}] ${produtos.length} MPs -> ${gruposCandidatos.length} candidatos Lev.`);
+
+        const candidatos = gruposCandidatos.map((g, i) => ({
+            _candidato_id: `c_${offset}_${i}_${Date.now()}`,
+            status: 'pendente',
+            produtos: g.map(p => ({ ...p, empresa: '010' }))
+        }));
+
+        res.json({
+            candidatos, stats: { lote_mp: produtos.length, candidatos: candidatos.length },
+            paginacao: { offset, lote: LOTE, proximo_offset, total_geral: totalGeral, tem_mais }
+        });
+    } catch (error) {
+        console.error('[MP Fase1] Erro:', error);
+        res.status(500).json({ error: 'Erro ao escanear MPs: ' + error.message });
+    }
+});
+
+// FASE 2 — Gemini por grupo (~3-8s por chamada). Sem timeout.
+router.post('/cadastro/confirmar-grupo-ia', express.json(), async (req, res) => {
+    try {
+        const { candidato_id, produtos } = req.body;
+        if (!Array.isArray(produtos) || produtos.length < 2)
+            return res.status(400).json({ error: 'Grupo invalido ou menos de 2 produtos.' });
+
+        const prompt = buildMpRedundanciaPrompt([produtos]);
+        let parsed;
+        try {
+            parsed = await callCadastroGemini(prompt);
+        } catch (aiError) {
+            if (aiError.isConfigError) return res.status(500).json({ error: aiError.message });
+            console.error('[MP ConfirmarIA] Erro IA:', aiError.message);
+            return res.status(500).json({ error: 'IA retornou resposta invalida. Tente novamente.' });
+        }
+
+        const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+        if (groups.length === 0)
+            return res.json({ candidato_id, descartado: true, motivo: 'IA avaliou como materialmente diferentes.' });
+
+        const g = groups[0];
+        res.json({
+            candidato_id, descartado: false,
+            tipo: g.tipo || 'duplicado', motivo: g.motivo || '',
+            confianca: g.confianca || 'media',
+            produtos: (g.produtos || produtos).map(p => ({ ...p, empresa: '010' })),
+            sugestao_codigo_correto: g.sugestao_codigo_correto || null
+        });
+    } catch (error) {
+        console.error('[MP ConfirmarIA] Erro:', error);
+        res.status(500).json({ error: 'Erro ao confirmar grupo: ' + error.message });
+    }
+});
+
+// Dropdown de grupos MP
+router.get('/cadastro/analisar-mp/grupos', async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT TRIM(b1_grupo) AS grupo, COUNT(*) AS total_mp
+            FROM public.sb1010
+            WHERE TRIM(COALESCE(d_e_l_e_t_, '')) = '' AND TRIM(b1_tipo) = 'MP'
+              AND TRIM(b1_grupo) <> ''
+            GROUP BY TRIM(b1_grupo)
+            ORDER BY total_mp DESC, TRIM(b1_grupo)
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('[MP Grupos] Erro:', error);
+        res.status(500).json({ error: 'Erro ao buscar grupos de MP: ' + error.message });
     }
 });
 

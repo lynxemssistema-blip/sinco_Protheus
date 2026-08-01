@@ -4,6 +4,7 @@ import { Activity, Clock, AlertTriangle, DollarSign, PenTool, CheckCircle2 } fro
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { format, differenceInHours, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '../../contexts/AuthContext';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#06b6d4', '#f97316'];
 const STATUS_COLORS = {
@@ -15,6 +16,8 @@ const STATUS_COLORS = {
 };
 
 export default function ManutencaoDashboard() {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [ordens, setOrdens] = useState([]);
     const [maquinas, setMaquinas] = useState([]);
     const [tecnicos, setTecnicos] = useState([]);
@@ -167,20 +170,22 @@ export default function ManutencaoDashboard() {
                     <p className="text-xs text-slate-400 mt-2">De um total de {pendentes.length} pendentes</p>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">Custo Total de O.Ms</p>
-                            <h3 className="text-2xl font-bold text-slate-800 mt-1">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custoTotal)}
-                            </h3>
+                {canViewValues && (
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-slate-500">Custo Total de O.Ms</p>
+                                <h3 className="text-2xl font-bold text-slate-800 mt-1">
+                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custoTotal)}
+                                </h3>
+                            </div>
+                            <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600">
+                                <DollarSign size={24} />
+                            </div>
                         </div>
-                        <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600">
-                            <DollarSign size={24} />
-                        </div>
+                        <p className="text-xs text-slate-400 mt-2">Soma de materiais e serviços (Global)</p>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2">Soma de materiais e serviços (Global)</p>
-                </div>
+                )}
 
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex items-center justify-between">

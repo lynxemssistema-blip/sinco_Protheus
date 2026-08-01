@@ -1,13 +1,14 @@
+require('dotenv').config();
 const mysql = require('mysql2/promise');
 const { Pool } = require('pg');
 
 async function test() {
     try {
         const mysqlPool = mysql.createPool({
-            host: 'metalfisa.mysql.uhserver.com',
-            user: 'ronaldo2',
-            password: 'jHAzhFG848@yN@U',
-            database: 'metalfisa',
+            host: process.env.MYSQL_HOST,
+            user: process.env.MYSQL_USER,
+            password: process.env.MYSQL_PASS,
+            database: process.env.MYSQL_DB,
             port: 3306
         });
         const [rows] = await mysqlPool.query('SELECT * FROM app_romaneio_items WHERE id = 213');

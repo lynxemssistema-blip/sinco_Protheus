@@ -6,7 +6,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import ExecucaoModal from './ExecucaoModal';
 
 export default function ManutencaoOrdens() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [ordens, setOrdens] = useState([]);
     const [maquinas, setMaquinas] = useState([]);
     const [tecnicos, setTecnicos] = useState([]);
@@ -274,15 +275,17 @@ export default function ManutencaoOrdens() {
                     </div>
                     <AlertTriangle className="text-red-200 w-12 h-12" />
                 </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 border-l-4 border-l-emerald-500 flex items-center justify-between">
-                    <div>
-                        <div className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Custo Total (R$)</div>
-                        <div className="text-2xl font-black text-slate-800">
-                            {custoTotalManutencao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace('R$', '').trim()}
+                {canViewValues && (
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 border-l-4 border-l-emerald-500 flex items-center justify-between">
+                        <div>
+                            <div className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Custo Total (R$)</div>
+                            <div className="text-2xl font-black text-slate-800">
+                                {custoTotalManutencao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace('R$', '').trim()}
+                            </div>
                         </div>
+                        <PenTool className="text-emerald-200 w-12 h-12" />
                     </div>
-                    <PenTool className="text-emerald-200 w-12 h-12" />
-                </div>
+                )}
             </div>
 
             {/* Listagem */}

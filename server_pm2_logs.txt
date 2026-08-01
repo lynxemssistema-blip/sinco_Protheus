@@ -1,106 +1,82 @@
 [TAILING] Tailing last 150 lines for [metalfisa_producao] process (change the value with --lines option)
-/home/sinco/.pm2/logs/metalfisa-producao-error.log last 150 lines:
-
 /home/sinco/.pm2/logs/metalfisa-producao-out.log last 150 lines:
-  - Chunk 20 size: 31260 chars (~31 KB)
-  - Wrote chunk 20 (500 rows)
-  - Chunk 21 size: 30454 chars (~30 KB)
-  - Wrote chunk 21 (500 rows)
-  - Chunk 22 size: 30399 chars (~30 KB)
-  - Wrote chunk 22 (500 rows)
-  - Chunk 23 size: 31093 chars (~30 KB)
-  - Wrote chunk 23 (500 rows)
-  - Chunk 24 size: 32118 chars (~31 KB)
-  - Wrote chunk 24 (500 rows)
-  - Chunk 25 size: 33846 chars (~33 KB)
-  - Wrote chunk 25 (500 rows)
-  - Chunk 26 size: 31998 chars (~31 KB)
-  - Wrote chunk 26 (500 rows)
-  - Chunk 27 size: 22766 chars (~22 KB)
-  - Wrote chunk 27 (352 rows)
-✅ [OCCUPANCY CACHE] Rebuilt cache successfully in 10027ms. Total rows cached: 13352
-📡 [2026-06-23T21:32:54.774Z] GET /api/ata-viva/prioridades-tv from 192.168.1.77
-[AI Suporte Error Tracker] Erro salvo no DB e notificação enviada para Edson Manoel ((31) 99557-4906) sobre a rota /api/ata-viva/prioridades-tv
-[dotenv@17.2.3] injecting env (18) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+📡 [2026-08-01T14:22:33.423Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:23:33.417Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:24:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:25:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:26:33.443Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:27:33.438Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:28:33.424Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:29:33.429Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:30:33.432Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:31:33.436Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:32:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:33:33.439Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:34:33.427Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:35:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:36:33.429Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:37:33.440Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:38:33.428Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:39:33.426Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:40:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:41:33.438Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:42:33.444Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:43:33.433Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:44:33.443Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:45:33.441Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:46:33.453Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:47:33.436Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:48:33.453Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:49:33.445Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:50:33.430Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:51:33.452Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:52:33.443Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:53:33.446Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:54:33.454Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:55:33.449Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:56:33.439Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:57:33.441Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:58:33.461Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T14:59:33.442Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+[CRON] Hoje é final de semana ou feriado. Relatório diário do Agente de IA para WhatsApp pulado.
+[CRON] Hoje é final de semana ou feriado. Rotina de Meu Canal pulada.
+[MONITORAMENTO] Coletando métricas do sistema...
+📡 [2026-08-01T15:00:33.446Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:01:33.445Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:02:33.445Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:03:33.460Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:04:33.464Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:05:33.456Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:06:33.466Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:07:33.463Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:08:33.455Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:09:33.447Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:10:33.457Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:11:33.453Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:12:33.461Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:13:33.458Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:14:33.453Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:15:33.455Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:16:33.451Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:17:33.458Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:18:33.453Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:19:33.459Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:20:33.465Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:21:33.464Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:22:33.462Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:23:33.455Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:24:33.455Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:25:33.475Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:26:33.464Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:27:33.449Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:28:33.459Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+[dotenv@17.2.3] injecting env (18) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
 [dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
 ⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
-🔄 [DEBUG] Montando rota /api/producao...
-🔄 [DEBUG] Carregando arquivo routes/producao.js
-✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
-🚀🚀🚀 STOCK.JS FILE LOADED - VERSION 2026-01-20 13:47 🚀🚀🚀
-🔄 [DEBUG] Montando rota /api/materials...
-✅ [DEBUG] Rotas de Materiais montadas.
-🔄 [DEBUG] Montando rota /api/production...
-✅ [DEBUG] Rota /api/production montada.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
-✅ [Reports] Loading Sales Planning Routes...
-🔄 [DEBUG] Loading Sinco Routes...
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
-✅ [MONITORAMENTO] Cron job de métricas do sistema iniciado (A cada 1 hora).
-[CRON] Iniciando agendador de Relatório Diário de Faturamento...
-[HermesScheduler] Inicializando agendador do Hermes...
-🤖 [Hermes Proactive] Serviço de Monitoramento Autônomo ativado.
-Servidor rodando na porta 3001
-📡 Acesso na rede: http://192.168.1.77:3001
-
-🔍 [DEBUG] Rotas Registradas (Updated):
-⚠️ Unable to print routes - router not initialized
-✅ Conectado ao MySQL Remoto com sucesso!
-✅ Tabela produtos_docs verificada/criada no MySQL remoto.
-✅ [Email Service] Tabela de Auditoria app_emails verificada/criada.
-✅ [SINCO APONTAMENTO] Tabela app_os_material_entregas verificada/criada.
-✅ [DB] Tabela app_engineering_timesheets verificada.
-[HermesScheduler] 0 tarefa(s) agendada(s) com sucesso.
-⏳ [OCCUPANCY CACHE] Rebuilding daily occupancy cache...
-Step 1: DB Connect: 44.262ms
-✅ PCP Releases table initialized
-✅ Inactive orders tables and settings initialized.
-✅ Engineering Releases table initialized
-✅ Engineering BOM tables initialized
-✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
-Step 1: Fetch OPs from PG: 327ms
-Fetched 50000 OPs from Postgres.
-✅ Tabela app_produto_ata verificada/criada.
-✅ Tabelas de avisos verificadas/atualizadas.
-[Romaneios] Estrutura do banco de dados verificada/atualizada.
-📡 [2026-06-23T21:33:08.773Z] GET /api/ata-viva/prioridades-tv from 192.168.1.152
-Step 2: Fetch routing: 501.102ms
-🟢 [Socket.io] Nova conexão estabelecida: w4xJoWZ40XJP5FDAAAAB
-✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.
-✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.
-✅ [Hermes] Tabelas verificadas/criadas com sucesso.
-✅ [Romaneios] Tabela app_romaneios_nfs verificada/criada.
-✅ [PCPMetal] Tabelas verificadas/criadas com sucesso.
-✅ [Romaneios] codigo_produto trimmed nos itens existentes.
-📡 [2026-06-23T21:34:25.123Z] GET /painel-producao from 192.168.1.152
-🔴 [Socket.io] Cliente desconectado: w4xJoWZ40XJP5FDAAAAB
-📡 [2026-06-23T21:34:25.137Z] GET /painel-producao from 192.168.1.152
-📡 [2026-06-23T21:34:25.150Z] GET /painel-producao from 192.168.1.152
-🟢 [Socket.io] Nova conexão estabelecida: EGYgho7C1LmcC2vXAAAE
-🔴 [Socket.io] Cliente desconectado: EGYgho7C1LmcC2vXAAAE
-📡 [2026-06-23T21:34:25.189Z] GET /assets/index-BEqU2QfV.js from 192.168.1.152
-📡 [2026-06-23T21:34:25.195Z] GET /assets/index-DRJJ-Y8W.css from 192.168.1.152
-📡 [2026-06-23T21:34:25.346Z] GET /assets/clock-BTRbT2Bm.js from 192.168.1.152
-📡 [2026-06-23T21:34:25.349Z] GET /assets/TVDashboard-DfU_IGzt.js from 192.168.1.152
-📡 [2026-06-23T21:34:25.354Z] GET /assets/check-BaaacttL.js from 192.168.1.152
-📡 [2026-06-23T21:34:25.360Z] GET /api/sgq/processos from 192.168.1.152
-📡 [2026-06-23T21:34:25.368Z] GET /api/users/my-permissions from 192.168.1.152
-📡 [2026-06-23T21:34:25.373Z] GET /api/company from 192.168.1.152
-📡 [2026-06-23T21:34:25.377Z] GET /assets/metalfisa-logo-CKHxsuE7.png from 192.168.1.152
-📡 [2026-06-23T21:34:25.384Z] GET /api/ata-viva/prioridades-tv from 192.168.1.152
-🟢 [Socket.io] Nova conexão estabelecida: oM7xC0xMjGSVbSxMAAAG
-[dotenv@17.2.3] injecting env (18) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
-⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
 🔄 [DEBUG] Montando rota /api/producao...
 🔄 [DEBUG] Carregando arquivo routes/producao.js
 ✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.
@@ -110,12 +86,15 @@ Step 2: Fetch routing: 501.102ms
 ✅ [DEBUG] Rotas de Materiais montadas.
 🔄 [DEBUG] Montando rota /api/production...
 ✅ [DEBUG] Rota /api/production montada.
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
 ✅ [Reports] Loading Sales Planning Routes...
 🔄 [DEBUG] Loading Sinco Routes...
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
 ✅ [MONITORAMENTO] Cron job de métricas do sistema iniciado (A cada 1 hora).
+[Agendador] SGQ Alerts Cron Job registrado para 08:30 (Diário).
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
 [CRON] Iniciando agendador de Relatório Diário de Faturamento...
+⏳ [Agendador] Rotina de Faturamento Pendente registrada para as 18:01 diariamente.
 [HermesScheduler] Inicializando agendador do Hermes...
 🤖 [Hermes Proactive] Serviço de Monitoramento Autônomo ativado.
 Servidor rodando na porta 3001
@@ -123,182 +102,203 @@ Servidor rodando na porta 3001
 
 🔍 [DEBUG] Rotas Registradas (Updated):
 ⚠️ Unable to print routes - router not initialized
-🟢 [Socket.io] Nova conexão estabelecida: HLkwZfAqPX_NP4CQAAAB
-✅ Conectado ao MySQL Remoto com sucesso!
-✅ [DB] Tabela app_engineering_timesheets verificada.
-✅ [Email Service] Tabela de Auditoria app_emails verificada/criada.
-✅ Tabela produtos_docs verificada/criada no MySQL remoto.
-✅ [SINCO APONTAMENTO] Tabela app_os_material_entregas verificada/criada.
-[HermesScheduler] 0 tarefa(s) agendada(s) com sucesso.
-⏳ [OCCUPANCY CACHE] Rebuilding daily occupancy cache...
-Step 1: DB Connect: 44.014ms
-✅ PCP Releases table initialized
-✅ Inactive orders tables and settings initialized.
-✅ Engineering Releases table initialized
-✅ Engineering BOM tables initialized
-✅ [INIT] Tabelas de Faturamento verificadas/criadas com sucesso.
-Step 1: Fetch OPs from PG: 377.121ms
-Fetched 50000 OPs from Postgres.
-✅ Tabela app_produto_ata verificada/criada.
-[Romaneios] Estrutura do banco de dados verificada/atualizada.
-✅ Tabelas de avisos verificadas/atualizadas.
-Step 2: Fetch routing: 502.854ms
-✅ [Romaneios] Tabela app_romaneio_recebimentos verificada/criada.
-✅ [Romaneios] Tabela app_romaneio_revisions verificada/criada.
-✅ [Romaneios] Tabela app_romaneios_nfs verificada/criada.
-✅ [Romaneios] codigo_produto trimmed nos itens existentes.
-✅ [Hermes] Tabelas verificadas/criadas com sucesso.
-✅ [PCPMetal] Tabelas verificadas/criadas com sucesso.
-Step 3: Fetch planning from MySQL: 3.040s
-Step 4: Fetch appointments from MySQL: 1.129s
-Step 5: Fetch configs from MySQL: 145.138ms
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[FAT Auto] Erro: Data too long for column 'nota_fiscal' at row 1
-[2026-06-23T20:08:17.073Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:08:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
-Erro ao buscar pedidos inativos: MySQL pool acquire/execute timeout
-[2026-06-23T20:11:05.178Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:11:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
-[2026-06-23T20:13:10.057Z] [PID: 234672] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:13:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[2026-06-23T20:15:01.214Z] [PID: 234798] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Jun 23 2026 20:15:00 GMT+0000 (Hora Coordenada Universal)! Possible blocking IO or high CPU user at the same process used by node-cron.
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-Error: ENOENT: no such file or directory, stat '/var/www/metalfisa/client/dist/index.html'
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+📡 [2026-08-01T15:29:33.483Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:30:33.466Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:31:33.461Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:32:33.473Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:33:33.471Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:34:33.477Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:35:33.464Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:35:48.883Z] GET / from 172.19.1.5
+📡 [2026-08-01T15:35:48.958Z] GET /assets/index-CsrvSUWT.js from 172.19.1.5
+📡 [2026-08-01T15:35:48.974Z] GET /assets/index-CURShb9g.css from 172.19.1.5
+📡 [2026-08-01T15:35:49.227Z] GET /assets/LandingPage-n7y1p6is.js from 172.19.1.5
+📡 [2026-08-01T15:35:49.230Z] GET /assets/activity-BxkrHeGL.js from 172.19.1.5
+📡 [2026-08-01T15:35:49.239Z] GET /assets/bell-D5-gQ5qy.js from 172.19.1.5
+📡 [2026-08-01T15:35:49.264Z] GET /api/sgq/processos from 172.19.1.5
+📡 [2026-08-01T15:35:49.272Z] GET /api/company from 172.19.1.5
+📡 [2026-08-01T15:35:49.279Z] GET /api/users/my-permissions from 172.19.1.5
+📡 [2026-08-01T15:35:49.287Z] GET /assets/metalfisa-logo-CKHxsuE7.png from 172.19.1.5
+📡 [2026-08-01T15:35:51.734Z] GET /assets/Login-C5wRL3BB.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.737Z] GET /assets/arrow-left-Dejm_-8n.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.740Z] GET /assets/user-plus-DFrAKDsx.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.742Z] GET /assets/user-tPd0rjXk.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.827Z] GET /assets/MeuCanal-BlRLC-WC.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.829Z] GET /assets/ErrorStateOverlay-BM9rdNVI.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.832Z] GET /assets/refresh-cw-B8bhCdla.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.839Z] GET /assets/play-circle-B1fM3EC2.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.846Z] GET /assets/message-circle-N43miEzw.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.851Z] GET /assets/clock-C_0OSPSr.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.859Z] GET /assets/x-circle-XZHwEYl9.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.860Z] GET /assets/briefcase-COfiTo4A.js from 172.19.1.5
+📡 [2026-08-01T15:35:51.934Z] GET /api/company from 172.19.1.5
+📡 [2026-08-01T15:35:51.939Z] GET /api/meucanal/kpi from 172.19.1.5
+📡 [2026-08-01T15:35:51.945Z] GET /api/avisos/nao-concluidos/37 from 172.19.1.5
+🟢 [Socket.io] Nova conexão estabelecida: vfyrWA9zE-R_B3HTAAAC
+🟢 [Socket.io] Nova conexão estabelecida: 7pabBYa6tdrwFBd5AAAD
+📡 [2026-08-01T15:35:51.976Z] GET /login from 172.19.1.5
+📡 [2026-08-01T15:35:51.977Z] GET /login from 172.19.1.5
+📡 [2026-08-01T15:35:51.985Z] GET /login from 172.19.1.5
+🟢 Usuário 37 entrou na sala do socket.
+🔴 [Socket.io] Cliente desconectado: vfyrWA9zE-R_B3HTAAAC
+🔴 [Socket.io] Cliente desconectado: 7pabBYa6tdrwFBd5AAAD
+📡 [2026-08-01T15:35:57.719Z] POST /api/auth/login from 172.19.1.5
+📡 [2026-08-01T15:36:02.252Z] POST /api/auth/login from 172.19.1.5
+📡 [2026-08-01T15:36:13.781Z] GET /assets/index-CURShb9g.css from 172.19.1.5
+📡 [2026-08-01T15:36:21.706Z] POST /api/auth/login from 172.19.1.5
+📡 [2026-08-01T15:36:30.529Z] POST /api/auth/login from 172.19.1.5
+📡 [2026-08-01T15:36:33.467Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+📡 [2026-08-01T15:37:04.468Z] POST /api/auth/login from 172.19.1.5
+📡 [2026-08-01T15:37:33.460Z] GET /api/avisos/nao-concluidos/18 from 127.0.0.1
+
+/home/sinco/.pm2/logs/metalfisa-producao-error.log last 150 lines:
+⚠️ [Avisos] Erro MySQL para usuário 18 (ENOTFOUND) — retornando vazio
+⚠️ [Avisos] Erro MySQL para usuário 18 (ENOTFOUND) — retornando vazio
+⚠️ [Avisos] Erro MySQL para usuário 18 (ENOTFOUND) — retornando vazio
+Erro no login: Error: getaddrinfo ENOTFOUND metalfisa.mysql.uhserver.com
+    at PromisePool.execute (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:54:22)
     at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+    at pool.execute (/var/www/metalfisa/server/services/mysqlService.js:83:59)
+    at /var/www/metalfisa/server/routes/auth.js:26:33
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at next (/var/www/metalfisa/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/var/www/metalfisa/server/node_modules/router/lib/route.js:117:3)
+    at handle (/var/www/metalfisa/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at /var/www/metalfisa/server/node_modules/router/index.js:295:15
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
+    at router (/var/www/metalfisa/server/node_modules/router/index.js:60:12)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
+    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at /var/www/metalfisa/server/index.js:140:5
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13) {
+  code: 'ENOTFOUND',
+  errno: -3008,
+  sql: undefined,
+  sqlState: undefined,
+  sqlMessage: undefined
 }
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+Erro no login: Error: getaddrinfo ENOTFOUND metalfisa.mysql.uhserver.com
+    at PromisePool.execute (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:54:22)
     at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+    at pool.execute (/var/www/metalfisa/server/services/mysqlService.js:83:59)
+    at /var/www/metalfisa/server/routes/auth.js:26:33
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at next (/var/www/metalfisa/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/var/www/metalfisa/server/node_modules/router/lib/route.js:117:3)
+    at handle (/var/www/metalfisa/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at /var/www/metalfisa/server/node_modules/router/index.js:295:15
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
+    at router (/var/www/metalfisa/server/node_modules/router/index.js:60:12)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
+    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at /var/www/metalfisa/server/index.js:140:5
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13) {
+  code: 'ENOTFOUND',
+  errno: -3008,
+  sql: undefined,
+  sqlState: undefined,
+  sqlMessage: undefined
 }
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+Erro no login: Error: getaddrinfo ENOTFOUND metalfisa.mysql.uhserver.com
+    at PromisePool.execute (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:54:22)
     at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+    at pool.execute (/var/www/metalfisa/server/services/mysqlService.js:83:59)
+    at /var/www/metalfisa/server/routes/auth.js:26:33
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at next (/var/www/metalfisa/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/var/www/metalfisa/server/node_modules/router/lib/route.js:117:3)
+    at handle (/var/www/metalfisa/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at /var/www/metalfisa/server/node_modules/router/index.js:295:15
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
+    at router (/var/www/metalfisa/server/node_modules/router/index.js:60:12)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
+    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at /var/www/metalfisa/server/index.js:140:5
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13) {
+  code: 'ENOTFOUND',
+  errno: -3008,
+  sql: undefined,
+  sqlState: undefined,
+  sqlMessage: undefined
 }
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+Erro no login: Error: getaddrinfo ENOTFOUND metalfisa.mysql.uhserver.com
+    at PromisePool.execute (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:54:22)
     at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+    at pool.execute (/var/www/metalfisa/server/services/mysqlService.js:83:59)
+    at /var/www/metalfisa/server/routes/auth.js:26:33
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at next (/var/www/metalfisa/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/var/www/metalfisa/server/node_modules/router/lib/route.js:117:3)
+    at handle (/var/www/metalfisa/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at /var/www/metalfisa/server/node_modules/router/index.js:295:15
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
+    at router (/var/www/metalfisa/server/node_modules/router/index.js:60:12)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
+    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at /var/www/metalfisa/server/index.js:140:5
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13) {
+  code: 'ENOTFOUND',
+  errno: -3008,
+  sql: undefined,
+  sqlState: undefined,
+  sqlMessage: undefined
 }
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
+⚠️ [Avisos] Erro MySQL para usuário 18 (ENOTFOUND) — retornando vazio
+Erro no login: Error: getaddrinfo ENOTFOUND metalfisa.mysql.uhserver.com
+    at PromisePool.execute (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:54:22)
     at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
+    at pool.execute (/var/www/metalfisa/server/services/mysqlService.js:83:59)
+    at /var/www/metalfisa/server/routes/auth.js:26:33
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at next (/var/www/metalfisa/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/var/www/metalfisa/server/node_modules/router/lib/route.js:117:3)
+    at handle (/var/www/metalfisa/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at /var/www/metalfisa/server/node_modules/router/index.js:295:15
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at Function.handle (/var/www/metalfisa/server/node_modules/router/index.js:186:3)
+    at router (/var/www/metalfisa/server/node_modules/router/index.js:60:12)
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13)
+    at /var/www/metalfisa/server/node_modules/router/index.js:297:9
+    at processParams (/var/www/metalfisa/server/node_modules/router/index.js:582:12)
+    at next (/var/www/metalfisa/server/node_modules/router/index.js:291:5)
+    at /var/www/metalfisa/server/index.js:140:5
+    at Layer.handleRequest (/var/www/metalfisa/server/node_modules/router/lib/layer.js:152:17)
+    at trimPrefix (/var/www/metalfisa/server/node_modules/router/index.js:342:13) {
+  code: 'ENOTFOUND',
+  errno: -3008,
+  sql: undefined,
+  sqlState: undefined,
+  sqlMessage: undefined
 }
-Erro na API /prioridades-tv: Error: Unknown column 'criado_em' in 'field list'
-    at PromisePool.query (/var/www/metalfisa/server/node_modules/mysql2/lib/promise/pool.js:36:22)
-    at wrappedCall (/var/www/metalfisa/server/services/mysqlService.js:71:34)
-    at pool.query (/var/www/metalfisa/server/services/mysqlService.js:82:59)
-    at /var/www/metalfisa/server/routes/ataViva.js:27:43
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ER_BAD_FIELD_ERROR',
-  errno: 1054,
-  sql: '\n' +
-    '            SELECT id, pedido, item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao, criado_em, usuario\n' +
-    '            FROM app_pcp_delivery_forecasts\n' +
-    '            WHERE (data_entrega_pcp BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY))\n' +
-    '               OR (data_entrega_pcp < CURDATE())\n' +
-    '        ',
-  sqlState: '42S22',
-  sqlMessage: "Unknown column 'criado_em' in 'field list'"
-}
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
-❌ [OCCUPANCY CACHE] Error rebuilding daily occupancy cache: Error: MySQL pool acquire/execute timeout
-    at Timeout._onTimeout (/var/www/metalfisa/server/services/mysqlService.js:59:31)
-    at listOnTimeout (node:internal/timers:581:17)
-    at process.processTimers (node:internal/timers:519:7) {
-  code: 'POOL_TIMEOUT'
-}
-[AI Suporte] Falha ao ler helpContent.js: ENOENT: no such file or directory, open '/var/www/metalfisa/client/src/config/helpContent.js'
+⚠️ [Avisos] Erro MySQL para usuário 18 (ENOTFOUND) — retornando vazio

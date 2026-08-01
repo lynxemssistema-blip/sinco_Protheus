@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // ===================================================================
 // GET /api/compras/solicitacoes - Listar Solicitações de Compra
@@ -717,7 +718,18 @@ LIMIT $${paramCount++} OFFSET $${paramCount++};
         params.push(offsetVal);
 
         const result = await db.query(sql, params);
-        res.json(result.rows);
+
+        const canViewFinancials = await hasFinancialAccess(req);
+        const rows = canViewFinancials
+            ? result.rows
+            : result.rows.map((row) => ({
+                ...row,
+                details_json: Array.isArray(row.details_json)
+                    ? row.details_json.map(({ vunit, total, ...restDetail }) => restDetail)
+                    : row.details_json
+            }));
+
+        res.json(rows);
 
     } catch (err) {
         console.error('Erro ao buscar fluxo completo de compras:', err);

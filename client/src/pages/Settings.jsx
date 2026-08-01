@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info } from 'lucide-react';
 
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getSincoProcessosList } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
 
 import api from '../services/api';
 
@@ -117,6 +117,9 @@ export default function Settings() {
         foto: null,
         idFornecedor: '',
         lojaFornecedor: '',
+        idCliente: '',
+        lojaCliente: '',
+        tipoExterno: 'fornecedor',
         pedidos_autorizados: ''
     });
     const [editingUser, setEditingUser] = useState(null);
@@ -143,6 +146,7 @@ export default function Settings() {
 
 
     const [protheusFornecedores, setProtheusFornecedores] = useState([]);
+    const [protheusClientes, setProtheusClientes] = useState([]);
     
     const [processosList, setProcessosList] = useState([]);
     const [showSgqModal, setShowSgqModal] = useState(false);
@@ -186,6 +190,15 @@ export default function Settings() {
 
     };
 
+    const loadClientes = async () => {
+        try {
+            const res = await getProtheusClientes();
+            setProtheusClientes(res || []);
+        } catch (error) {
+            console.error('Erro ao carregar clientes', error);
+        }
+    };
+
 
 
     useEffect(() => {
@@ -194,6 +207,9 @@ export default function Settings() {
         }
         if (activeTab === 'users' && protheusFornecedores.length === 0) {
             loadFornecedores();
+        }
+        if (activeTab === 'users' && protheusClientes.length === 0) {
+            loadClientes();
         }
         if (activeTab === 'automations' && processosList.length === 0) {
             getSincoProcessosList().then(setProcessosList).catch(console.error);
@@ -781,30 +797,37 @@ export default function Settings() {
 
 
     const handleUserSubmit = async (e) => {
-
         e.preventDefault();
-
         setLoading(true);
-
         try {
-
-            if (editingUser) {
-
-                await updateUser(editingUser.idUsuario, userForm);
-
-                alert('Usuário atualizado com sucesso!');
-
-                setEditingUser(null);
-
+            const isExternal = availableProfiles.find(p => p.code === userForm.tipo)?.tipoPerfil === 'externo';
+            let dataToSubmit = { ...userForm };
+            
+            if (isExternal) {
+                if (dataToSubmit.tipoExterno === 'cliente') {
+                    dataToSubmit.idFornecedor = '';
+                    dataToSubmit.lojaFornecedor = '';
+                } else if (dataToSubmit.tipoExterno === 'fornecedor') {
+                    dataToSubmit.idCliente = '';
+                    dataToSubmit.lojaCliente = '';
+                }
             } else {
-
-                await createUser(userForm);
-
-                alert('Usuário cadastrado com sucesso!');
-
+                dataToSubmit.idFornecedor = '';
+                dataToSubmit.lojaFornecedor = '';
+                dataToSubmit.idCliente = '';
+                dataToSubmit.lojaCliente = '';
+                dataToSubmit.tipoExterno = 'fornecedor';
             }
 
-            setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null });
+            if (editingUser) {
+                await updateUser(editingUser.idUsuario, dataToSubmit);
+                alert('Usuário atualizado com sucesso!');
+                setEditingUser(null);
+            } else {
+                await createUser(dataToSubmit);
+                alert('Usuário cadastrado com sucesso!');
+            }
+            setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null, idFornecedor: '', lojaFornecedor: '', idCliente: '', lojaCliente: '', tipoExterno: 'fornecedor', pedidos_autorizados: '' });
 
             loadUsers();
 
@@ -965,13 +988,12 @@ export default function Settings() {
             tem_pc: u.TemPC === 1,
 
             foto: u.fotoUsuario || null,
-
             idFornecedor: u.idFornecedor || '',
-
             lojaFornecedor: u.lojaFornecedor || '',
-
+            idCliente: u.idCliente || '',
+            lojaCliente: u.lojaCliente || '',
+            tipoExterno: u.tipoExterno || 'fornecedor',
             pedidos_autorizados: u.pedidos_autorizados || ''
-
         });
 
     };
@@ -982,7 +1004,7 @@ export default function Settings() {
 
         setEditingUser(null);
 
-        setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null, idFornecedor: '', lojaFornecedor: '', pedidos_autorizados: '' });
+        setUserForm({ nome: '', telefone: '', whatsapp: '', login: '', senha: '', tipo: 'U', setor: '', funcao: '', email: '', observacoes: '', tem_pc: false, foto: null, idFornecedor: '', lojaFornecedor: '', idCliente: '', lojaCliente: '', tipoExterno: 'fornecedor', pedidos_autorizados: '' });
 
     };
 
@@ -1918,6 +1940,27 @@ export default function Settings() {
                                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.visao_gerencial_faturamento_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
                                     >
                                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.visao_gerencial_faturamento_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                
+                                {/* Suporte Lynx - Detecção Automática */}
+                                <div className="p-4 bg-white rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800">Suporte Lynx - Detecção Automática</h4>
+                                        <p className="text-xs text-slate-500 mt-1">Avisa automaticamente o usuário no WhatsApp ao detectar erros no sistema.</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const current = companyForm.general_config?.automations?.suporte_lynx_active !== false;
+                                            setCompanyForm(prev => ({
+                                                ...prev,
+                                                general_config: { ...prev.general_config, automations: { ...prev.general_config?.automations, suporte_lynx_active: !current } }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.automations?.suporte_lynx_active !== false ? 'bg-green-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.automations?.suporte_lynx_active !== false ? 'translate-x-6' : 'translate-x-1'}`} />
                                     </button>
                                 </div>
                                 
@@ -4274,77 +4317,91 @@ export default function Settings() {
 
 
                                             {isExternal && (
-
                                                 <>
-
                                                     <div className="mt-4">
-
-                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Fornecedor Associado (Protheus)</label>
-
-                                                        <select
-
-                                                            className="w-full p-2 border rounded-lg bg-white"
-
-                                                            value={`${userForm.idFornecedor}|${userForm.lojaFornecedor}`}
-
-                                                            onChange={e => {
-
-                                                                const [id, loja] = e.target.value.split('|');
-
-                                                                setUserForm({ ...userForm, idFornecedor: id || '', lojaFornecedor: loja || '' });
-
-                                                            }}
-
-                                                            required={isExternal}
-
-                                                        >
-
-                                                            <option value="|">Selecione o Fornecedor...</option>
-
-                                                            {protheusFornecedores.map(f => (
-
-                                                                <option key={`${f.a2_cod}|${f.a2_loja}`} value={`${f.a2_cod}|${f.a2_loja}`}>
-
-                                                                    {f.a2_cod} - {f.a2_nome} (Loja {f.a2_loja})
-
-                                                                </option>
-
-                                                            ))}
-
-                                                        </select>
-
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de Vínculo Externo</label>
+                                                        <div className="flex gap-4">
+                                                            <label className="flex items-center gap-2">
+                                                                <input
+                                                                    type="radio"
+                                                                    name="tipoExterno"
+                                                                    value="fornecedor"
+                                                                    checked={userForm.tipoExterno === 'fornecedor'}
+                                                                    onChange={e => setUserForm({ ...userForm, tipoExterno: e.target.value })}
+                                                                />
+                                                                Fornecedor
+                                                            </label>
+                                                            <label className="flex items-center gap-2">
+                                                                <input
+                                                                    type="radio"
+                                                                    name="tipoExterno"
+                                                                    value="cliente"
+                                                                    checked={userForm.tipoExterno === 'cliente'}
+                                                                    onChange={e => setUserForm({ ...userForm, tipoExterno: e.target.value })}
+                                                                />
+                                                                Cliente
+                                                            </label>
+                                                        </div>
                                                     </div>
 
+                                                    {userForm.tipoExterno === 'fornecedor' ? (
+                                                        <div className="mt-4">
+                                                            <label className="block text-sm font-medium text-slate-700 mb-1">Fornecedor Associado (Protheus)</label>
+                                                            <select
+                                                                className="w-full p-2 border rounded-lg bg-white"
+                                                                value={`${userForm.idFornecedor}|${userForm.lojaFornecedor}`}
+                                                                onChange={e => {
+                                                                    const [id, loja] = e.target.value.split('|');
+                                                                    setUserForm({ ...userForm, idFornecedor: id || '', lojaFornecedor: loja || '' });
+                                                                }}
+                                                                required={isExternal && userForm.tipoExterno === 'fornecedor'}
+                                                            >
+                                                                <option value="|">Selecione o Fornecedor...</option>
+                                                                {protheusFornecedores.map(f => (
+                                                                    <option key={`${f.a2_cod}|${f.a2_loja}`} value={`${f.a2_cod}|${f.a2_loja}`}>
+                                                                        {f.a2_cod} - {f.a2_nome} (Loja {f.a2_loja})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="mt-4">
+                                                            <label className="block text-sm font-medium text-slate-700 mb-1">Cliente Associado (Protheus)</label>
+                                                            <select
+                                                                className="w-full p-2 border rounded-lg bg-white"
+                                                                value={`${userForm.idCliente}|${userForm.lojaCliente}`}
+                                                                onChange={e => {
+                                                                    const [id, loja] = e.target.value.split('|');
+                                                                    setUserForm({ ...userForm, idCliente: id || '', lojaCliente: loja || '' });
+                                                                }}
+                                                                required={isExternal && userForm.tipoExterno === 'cliente'}
+                                                            >
+                                                                <option value="|">Selecione o Cliente...</option>
+                                                                {protheusClientes.map(c => (
+                                                                    <option key={`${c.a1_cod}|${c.a1_loja}`} value={`${c.a1_cod}|${c.a1_loja}`}>
+                                                                        {c.a1_cod} - {c.a1_nome} (Loja {c.a1_loja})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    )}
+
 
 
                                                     <div className="mt-4">
-
                                                         <label className="block text-sm font-medium text-slate-700 mb-1">
-
                                                             Pedidos MetalFisa Autorizados (Separados por vírgula)
-
                                                         </label>
-
                                                         <input
-
                                                             type="text"
-
                                                             className="w-full p-2 border rounded-lg bg-white"
-
                                                             placeholder="Ex: 004618, 004619, 004620"
-
                                                             value={userForm.pedidos_autorizados || ''}
-
                                                             onChange={e => setUserForm({ ...userForm, pedidos_autorizados: e.target.value })}
-
                                                         />
-
                                                         <p className="text-[11px] text-slate-500 mt-1">
-
-                                                            Esse usuário externo só terá acesso a visualizar os dados dos pedidos listados aqui. Cada usuário externo pode ter acesso a diversos pedidos MetalFisa ao mesmo tempo.
-
+                                                            Pedidos extras para acesso manual. Caso "Tipo de Vínculo" seja "Cliente", o usuário já terá acesso padrão a todos os pedidos daquele respectivo cliente no Protheus.
                                                         </p>
-
                                                     </div>
 
                                                 </>
@@ -5499,7 +5556,7 @@ export default function Settings() {
 
                                     <p className="text-slate-400 font-medium">Selecione um usuário acima para gerenciar suas permissões.</p>
 
-                                    <p className="text-xs text-slate-400 mt-1">Administradores (Admin) possuem acesso total automaticamente caso não tenham permissões específicas definidas.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Administradores (Admin) possuem acesso total automaticamente caso não tenham permissões específicas definidas. Exceção: os itens de "Acessos Sensíveis (RH/Financeiro)" precisam ser marcados manualmente mesmo para Admin.</p>
 
                                 </div>
 

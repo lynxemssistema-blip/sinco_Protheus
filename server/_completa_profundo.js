@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Complementação profunda — busca pedido_venda inclusive em registros históricos
  * e tenta resolver recurso_codigo por produto quando não há correspondência exata de operação
@@ -10,7 +11,7 @@ const pg = new Pool({ host:process.env.PGHOST, port:process.env.PGPORT||5432, da
 
 async function main() {
     const my = await mysql.createConnection({
-        host:"metalfisa.mysql.uhserver.com",port:3306,database:"metalfisa",user:"ronaldo2",password:"jHAzhFG848@yN@U"
+        host:process.env.MYSQL_HOST,port:3306,database: process.env.MYSQL_DB,user:process.env.MYSQL_USER,password:process.env.MYSQL_PASS
     });
 
     // ── 1. pedido_venda — busca INCLUSIVE históricos (d_e_l_e_t_='*') ────────

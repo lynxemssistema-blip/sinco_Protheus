@@ -130,9 +130,9 @@ const ReportStructureModal = ({ isOpen, onClose, codigo }) => {
                 if (!isMounted) return;
                 setStructure(est);
 
-                // Fetch Statuses
+                // Fetch Statuses — inclui o produto raiz + todos os filhos
                 if (est && est.length > 0) {
-                    const codes = est.map(i => i.codigo);
+                    const codes = [codigo, ...est.map(i => i.codigo)];
                     const st = await getProductStatusesBatch(codes);
                     if (isMounted) setStatuses(st);
                 }

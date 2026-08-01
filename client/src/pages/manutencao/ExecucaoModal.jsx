@@ -7,7 +7,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useHelp } from '../../contexts/HelpContext';
 
 export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave }) {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const { openHelp } = useHelp();
     const [activeTab, setActiveTab] = useState('execucao'); // 'execucao', 'materiais', 'historico'
     const [loading, setLoading] = useState(false);
@@ -308,12 +309,13 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
 
                 {/* Print Component (Hidden) */}
                 <div style={{ display: 'none' }}>
-                    <OrdemManutencaoPrint 
-                        ref={printRef} 
-                        ordem={ordem} 
-                        materiais={materiais} 
-                        historico={historico} 
-                        user={user} 
+                    <OrdemManutencaoPrint
+                        ref={printRef}
+                        ordem={ordem}
+                        materiais={materiais}
+                        historico={historico}
+                        user={user}
+                        canViewValues={canViewValues}
                     />
                 </div>
 
@@ -528,10 +530,12 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
                                                 <label className="text-xs font-bold text-amber-800">Qtd *</label>
                                                 <input type="number" className="w-full p-2 border border-amber-200 rounded text-sm bg-white" value={newItem.quantidade} onChange={e => setNewItem({...newItem, quantidade: e.target.value})} />
                                             </div>
-                                            <div className="flex-[2]">
-                                                <label className="text-xs font-bold text-amber-800">Custo Un. (R$)</label>
-                                                <input type="number" step="0.01" className="w-full p-2 border border-amber-200 rounded text-sm bg-white" value={newItem.custo_unitario} onChange={e => setNewItem({...newItem, custo_unitario: e.target.value})} />
-                                            </div>
+                                            {canViewValues && (
+                                                <div className="flex-[2]">
+                                                    <label className="text-xs font-bold text-amber-800">Custo Un. (R$)</label>
+                                                    <input type="number" step="0.01" className="w-full p-2 border border-amber-200 rounded text-sm bg-white" value={newItem.custo_unitario} onChange={e => setNewItem({...newItem, custo_unitario: e.target.value})} />
+                                                </div>
+                                            )}
                                             <div className="w-24">
                                                 <label className="text-xs font-bold text-amber-800">Unidade</label>
                                                 <select className="w-full p-2 border border-amber-200 rounded text-sm bg-white" value={newItem.unidade} onChange={e => setNewItem({...newItem, unidade: e.target.value})}>
@@ -599,10 +603,12 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
                                                         <label className="text-xs font-bold text-indigo-800">Quantidade *</label>
                                                         <input type="number" autoFocus className="w-full p-2 border border-indigo-200 rounded text-sm bg-white" value={newItem.quantidade} onChange={e => setNewItem({...newItem, quantidade: e.target.value})} placeholder="Ex: 2" />
                                                     </div>
-                                                    <div className="flex-[2]">
-                                                        <label className="text-xs font-bold text-indigo-800">Custo Un. (R$)</label>
-                                                        <input type="number" step="0.01" className="w-full p-2 border border-indigo-200 rounded text-sm bg-white" value={newItem.custo_unitario} onChange={e => setNewItem({...newItem, custo_unitario: e.target.value})} />
-                                                    </div>
+                                                    {canViewValues && (
+                                                        <div className="flex-[2]">
+                                                            <label className="text-xs font-bold text-indigo-800">Custo Un. (R$)</label>
+                                                            <input type="number" step="0.01" className="w-full p-2 border border-indigo-200 rounded text-sm bg-white" value={newItem.custo_unitario} onChange={e => setNewItem({...newItem, custo_unitario: e.target.value})} />
+                                                        </div>
+                                                    )}
                                                     <div className="w-24">
                                                         <label className="text-xs font-bold text-indigo-800">Unidade</label>
                                                         <input type="text" disabled className="w-full p-2 border border-indigo-200 rounded text-sm bg-slate-100 text-slate-500 font-bold" value={newItem.unidade} />
@@ -639,15 +645,19 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
                                                 <th className="p-3">Código</th>
                                                 <th className="p-3">Descrição</th>
                                                 <th className="p-3">Qtd</th>
-                                                <th className="p-3">Custo Un.</th>
-                                                <th className="p-3">Custo Total</th>
+                                                {canViewValues && (
+                                                    <>
+                                                        <th className="p-3">Custo Un.</th>
+                                                        <th className="p-3">Custo Total</th>
+                                                    </>
+                                                )}
                                                 <th className="p-3">Foto</th>
                                                 <th className="p-3 text-right">Ação</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {materiais.length === 0 ? (
-                                                <tr><td colSpan="5" className="p-6 text-center text-slate-400">Nenhum material solicitado.</td></tr>
+                                                <tr><td colSpan={canViewValues ? 7 : 5} className="p-6 text-center text-slate-400">Nenhum material solicitado.</td></tr>
                                             ) : materiais.map(m => (
                                                 <tr key={m.id} className="hover:bg-slate-50">
                                                     <td className="p-3">
@@ -658,8 +668,12 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
                                                         {m.observacao && <div className="text-[10px] text-slate-500 mt-1">Obs: {m.observacao}</div>}
                                                     </td>
                                                     <td className="p-3 font-medium">{Number(m.quantidade)} {m.unidade}</td>
-                                                    <td className="p-3 text-slate-600">R$ {Number(m.custo_unitario || 0).toFixed(2)}</td>
-                                                    <td className="p-3 font-bold text-slate-800">R$ {Number(m.custo_total || 0).toFixed(2)}</td>
+                                                    {canViewValues && (
+                                                        <>
+                                                            <td className="p-3 text-slate-600">R$ {Number(m.custo_unitario || 0).toFixed(2)}</td>
+                                                            <td className="p-3 font-bold text-slate-800">R$ {Number(m.custo_total || 0).toFixed(2)}</td>
+                                                        </>
+                                                    )}
                                                     <td className="p-3">
                                                         {m.foto ? (
                                                             <a href={m.foto} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline flex items-center gap-1">

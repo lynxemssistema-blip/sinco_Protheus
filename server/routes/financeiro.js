@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../db');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // Decode a base64-encoded PostgreSQL bytea field to a proper UTF-8 string.
 //
@@ -22,10 +23,30 @@ const decField = (b64) => {
     return Buffer.from(b64, 'base64').toString('utf8').trim();
 };
 
+// GET /api/financeiro/empresas
+router.get('/empresas', async (req, res) => {
+    try {
+        const { rows } = await query(`
+            SELECT TRIM(m0_codfil) as id, TRIM(m0_filial) as nome, TRIM(m0_nomecom) as razao_social
+            FROM sys_company 
+            WHERE d_e_l_e_t_ = ' ' AND m0_codigo = '01'
+            ORDER BY m0_codfil
+        `);
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro na rota financeiro/empresas:', error);
+        res.status(500).json({ error: 'Erro interno ao consultar empresas.' });
+    }
+});
+
 // GET /api/financeiro/dashboard
 router.get('/dashboard', async (req, res) => {
     try {
-        const { data_inicio, data_fim, filial = '010', date_filter_type = 'vencimento' } = req.query;
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
+        }
+
+        const { data_inicio, data_fim, filial = '010', date_filter_type = 'vencimento', filiais } = req.query;
 
         let baseQuery = `
             SELECT
@@ -71,6 +92,17 @@ router.get('/dashboard', async (req, res) => {
             baseQuery += ` AND ${filterColumn} >= TO_CHAR(CURRENT_DATE - INTERVAL '3 months', 'YYYYMMDD') `;
         }
 
+        if (filiais !== undefined) {
+            const filiaisArr = filiais.split(',').filter(Boolean);
+            if (filiaisArr.length > 0) {
+                const placeholders = filiaisArr.map((_, i) => `$${params.length + i + 1}`).join(',');
+                baseQuery += ` AND TRIM(SE2.E2_FILIAL) IN (${placeholders}) `;
+                params.push(...filiaisArr);
+            } else {
+                baseQuery += ` AND 1 = 0 `;
+            }
+        }
+
         const orderByColumn = date_filter_type === 'emissao' ? 'SE2.E2_EMISSAO' : 'SE2.E2_VENCTO';
         baseQuery += ` ORDER BY ${orderByColumn} ASC LIMIT 3000`;
 
@@ -105,7 +137,11 @@ router.get('/dashboard', async (req, res) => {
 // GET /api/financeiro/fluxo-caixa (Consolidado SE1 - Receber e SE2 - Pagar)
 router.get('/fluxo-caixa', async (req, res) => {
     try {
-        const { data_inicio, data_fim, filial = '010' } = req.query;
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
+        }
+
+        const { data_inicio, data_fim, filial = '010', filiais } = req.query;
 
         // Query para Contas a Receber (SE1)
         let querySE1 = `
@@ -164,6 +200,19 @@ router.get('/fluxo-caixa', async (req, res) => {
             // Default: últimos 3 meses e todo futuro
             querySE1 += ` AND SE1.E1_VENCTO >= TO_CHAR(CURRENT_DATE - INTERVAL '3 months', 'YYYYMMDD') `;
             querySE2 += ` AND SE2.E2_VENCTO >= TO_CHAR(CURRENT_DATE - INTERVAL '3 months', 'YYYYMMDD') `;
+        }
+
+        if (filiais !== undefined) {
+            const filiaisArr = filiais.split(',').filter(Boolean);
+            if (filiaisArr.length > 0) {
+                const placeholders = filiaisArr.map((_, i) => `$${params.length + i + 1}`).join(',');
+                querySE1 += ` AND TRIM(SE1.E1_FILIAL) IN (${placeholders}) `;
+                querySE2 += ` AND TRIM(SE2.E2_FILIAL) IN (${placeholders}) `;
+                params.push(...filiaisArr);
+            } else {
+                querySE1 += ` AND 1 = 0 `;
+                querySE2 += ` AND 1 = 0 `;
+            }
         }
 
         // Executa ambas em paralelo
@@ -238,7 +287,11 @@ router.get('/plano-contas', async (req, res) => {
 // GET /api/financeiro/balancete
 router.get('/balancete', async (req, res) => {
     try {
-        const { data_inicio, data_fim, filial = '010' } = req.query;
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
+        }
+
+        const { data_inicio, data_fim, filial = '010', filiais } = req.query;
 
         let ct2JoinCond = `(CT2.CT2_DEBITO = CT1.CT1_CONTA OR CT2.CT2_CREDIT = CT1.CT1_CONTA) AND CT2.D_E_L_E_T_ = ' '`;
         const params = [];
@@ -251,6 +304,17 @@ router.get('/balancete', async (req, res) => {
         } else {
             // Fallback default: Start of year to today
             ct2JoinCond += ` AND CT2.CT2_DATA BETWEEN TO_CHAR(DATE_TRUNC('year', CURRENT_DATE), 'YYYYMMDD') AND TO_CHAR(CURRENT_DATE, 'YYYYMMDD')`;
+        }
+
+        if (filiais !== undefined) {
+            const filiaisArr = filiais.split(',').filter(Boolean);
+            if (filiaisArr.length > 0) {
+                const placeholders = filiaisArr.map((_, i) => `$${params.length + i + 1}`).join(',');
+                ct2JoinCond += ` AND TRIM(CT2.CT2_FILIAL) IN (${placeholders}) `;
+                params.push(...filiaisArr);
+            } else {
+                ct2JoinCond += ` AND 1 = 0 `;
+            }
         }
 
         const baseQuery = `
@@ -299,7 +363,11 @@ router.get('/balancete', async (req, res) => {
 // GET /api/financeiro/razonete
 router.get('/razonete', async (req, res) => {
     try {
-        const { conta, data_inicio, data_fim, filial = '010' } = req.query;
+        if (!(await hasFinancialAccess(req))) {
+            return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
+        }
+
+        const { conta, data_inicio, data_fim, filial = '010', filiais } = req.query;
 
         if (!conta) {
             return res.status(400).json({ error: 'Conta é obrigatória.' });
@@ -327,6 +395,17 @@ router.get('/razonete', async (req, res) => {
             const endStr = data_fim.replace(/-/g, '');
             baseQuery += ` AND CT2.CT2_DATA BETWEEN $2 AND $3 `;
             params.push(startStr, endStr);
+        }
+
+        if (filiais !== undefined) {
+            const filiaisArr = filiais.split(',').filter(Boolean);
+            if (filiaisArr.length > 0) {
+                const placeholders = filiaisArr.map((_, i) => `$${params.length + i + 1}`).join(',');
+                baseQuery += ` AND TRIM(CT2.CT2_FILIAL) IN (${placeholders}) `;
+                params.push(...filiaisArr);
+            } else {
+                baseQuery += ` AND 1 = 0 `;
+            }
         }
 
         baseQuery += ` ORDER BY CT2.CT2_DATA ASC, CT2.CT2_DOC ASC LIMIT 1500 `;

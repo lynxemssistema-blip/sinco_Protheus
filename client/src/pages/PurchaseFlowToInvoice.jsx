@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import useStickyState from '../hooks/useStickyState';
 import { Search, Loader2, FileText, Filter, X, ArrowRightCircle, Download } from 'lucide-react';
 import { getPurchaseFlowToInvoice, getCompanySettings } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
 
 export default function PurchaseFlowToInvoice() {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState([]);
     const [hasSearched, setHasSearched] = useState(false);
@@ -38,7 +41,7 @@ export default function PurchaseFlowToInvoice() {
         getCompanySettings().then(settings => {
             if (settings?.general_config) {
                 const config = typeof settings.general_config === 'string' ? JSON.parse(settings.general_config) : settings.general_config;
-                setShowValues(!!config.show_purchase_values);
+                setShowValues(!!config.show_purchase_values && canViewValues);
             }
         }).catch(err => console.error("Falha ao carregar configurações:", err));
     }, []);

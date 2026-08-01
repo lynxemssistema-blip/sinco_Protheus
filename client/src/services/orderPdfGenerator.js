@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+// Force Vite HMR reload - 2026-07-28
 
 export const generateOrderPDF = async (orderData, returnBuffer = false, batchContext = null) => {
     try {
@@ -210,7 +211,27 @@ export const generateOrderPDF = async (orderData, returnBuffer = false, batchCon
         // ── 4. RODAPÉ (Transportadora / Cond. Pgto / Observações) ─────────────
         let finalY = doc.lastAutoTable.finalY + 2;
 
-        const footerH = 25; // Rodapé compactado
+        // Observações gerais e de itens (compactado)
+        const obsGerais = String(orderData.capa?.observacoes_gerais || orderData.capa?.obs_nf || orderData.capa?.msg_nota || '').trim();
+        const itemObsRaw = (orderData.itens || [])
+            .filter(i => i.pcp_notes && i.pcp_notes.trim())
+            .map(i => `Item ${Number(i.item) || i.item}: ${i.pcp_notes}`)
+            .join('  |  ');
+        
+        const combinedObs = `PI ${orderData.capa?.pedido || ''}${itemObsRaw ? '  ' + itemObsRaw : ''}`;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6);
+        
+        const obsLines = obsGerais ? doc.splitTextToSize(obsGerais, usableW - 20) : [];
+        const itemObsLines = combinedObs.trim() ? doc.splitTextToSize(combinedObs.trim(), usableW - 22) : [];
+        
+        // Calculate needed footer height
+        let neededFooterH = 10; // Base space for Transportadora etc
+        if (obsLines.length > 0) neededFooterH += (obsLines.length * 3) + 2;
+        if (itemObsLines.length > 0) neededFooterH += (itemObsLines.length * 3) + 2;
+        
+        const footerH = Math.max(25, neededFooterH); 
         if (finalY + footerH > pageHeight - 8) {
             doc.addPage();
             finalY = 12;
@@ -247,36 +268,23 @@ export const generateOrderPDF = async (orderData, returnBuffer = false, batchCon
         doc.text(truncate(orderData.capa?.nome_transportadora || 'PRÓPRIO CLIENTE', 55), ML + 2, finalY + 6);
         doc.text(truncate(orderData.capa?.condicao_pagamento || '-', 55), fc1 + 2, finalY + 6);
 
-        // Observações gerais e de itens (compactado)
-        const obsGerais = String(orderData.capa?.observacoes_gerais || orderData.capa?.obs_nf || orderData.capa?.msg_nota || '').trim();
-        const itemObsRaw = (orderData.itens || [])
-            .filter(i => i.pcp_notes && i.pcp_notes.trim())
-            .map(i => `Item ${Number(i.item) || i.item}: ${i.pcp_notes}`)
-            .join('  |  ');
-        
-        const combinedObs = `PI ${orderData.capa?.pedido || ''}${itemObsRaw ? '  ' + itemObsRaw : ''}`;
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6);
-        
         // Renderiza Obs Gerais primeiro (se tiver), senão pula pra Obs Itens
         let curObsY = finalY + 11;
         if (obsGerais) {
             doc.setFont('helvetica', 'bold');
             doc.text('Obs. Gerais:', ML + 2, curObsY);
             doc.setFont('helvetica', 'normal');
-            const obsLines = doc.splitTextToSize(obsGerais, usableW - 20);
-            doc.text(obsLines.slice(0, 2), ML + 20, curObsY);
-            curObsY += (Math.min(obsLines.length, 2) * 3) + 2;
+            doc.text(obsLines, ML + 20, curObsY);
+            curObsY += (obsLines.length * 3) + 2;
         }
 
         if (combinedObs.trim()) {
             doc.setFont('helvetica', 'bold');
             doc.text('Observações:', ML + 2, curObsY);
             doc.setFont('helvetica', 'normal');
-            const itemObsLines = doc.splitTextToSize(combinedObs.trim(), usableW - 22);
-            doc.text(itemObsLines.slice(0, 2), ML + 22, curObsY);
+            doc.text(itemObsLines, ML + 22, curObsY);
         }
+
 
         // ── 5. ATA DE REUNIÃO ─────────────────────────────────────────────────
         if (orderData.notes && orderData.notes.length > 0) {

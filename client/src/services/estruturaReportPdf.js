@@ -393,6 +393,9 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
     let seq = 1;
     const matRows = nivel1Items.map((item) => {
       const restCount = item.is_restricted ? 1 : 0;
+      const refs = item.referencias && item.referencias.length > 0 ? item.referencias : [];
+      const codCli = refs.map((r) => r.desenho).filter(Boolean).join(' / ');
+      const rvCli = refs.map((r) => r.rev_cliente || r.revisao).filter(Boolean).join(' / ') || item.rev_cliente || '';
       return {
         nivel: item.nivel,
         isRestricted: item.is_restricted,
@@ -404,10 +407,10 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           fmtQtd(item.qtd_necessaria),
           item.unidade || '—',
           item.rev_metalfisa || '',
-          item.cod_prod_cliente || '',
-          item.rev_cliente || '',
+          codCli,
+          rvCli,
           item.is_restricted ? 'R' : '',
-          productStatuses[item.codigo] || 'NORMAL'
+          productStatuses[(item.codigo || '').trim()] || 'NORMAL'
         ],
       };
     });
@@ -572,6 +575,9 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const nivelStr = String(nivel).padStart(2, '0');
       const indent = '  '.repeat(nivel);
       const restCount = item.is_restricted ? 1 : 0;
+      const refs = item.referencias && item.referencias.length > 0 ? item.referencias : [];
+      const codCli = refs.map((r) => r.desenho).filter(Boolean).join(' / ');
+      const rvCli = refs.map((r) => r.rev_cliente || r.revisao).filter(Boolean).join(' / ') || item.rev_cliente || '';
       allRows.push({
         type: 'component',
         nivel,
@@ -584,10 +590,10 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           fmtQtd(item.qtd_necessaria),
           item.unidade || '—',
           item.rev_metalfisa || '',
-          item.cod_prod_cliente || '',
-          item.rev_cliente || '',
+          codCli,
+          rvCli,
           item.is_restricted ? 'R' : '',
-          productStatuses[item.codigo] || 'NORMAL'
+          productStatuses[(item.codigo || '').trim()] || 'NORMAL'
         ],
       });
       const k = (item.codigo || '').trim();

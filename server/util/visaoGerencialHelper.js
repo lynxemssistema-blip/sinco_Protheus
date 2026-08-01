@@ -3,9 +3,11 @@ const router = express.Router();
 const db = require('../db');
 const mysqlPool = require('../services/mysqlService');
 const { getInactiveOrdersFilter } = require('./pedidoFilterHelper');
+const { hasFinancialAccess } = require('./permissionHelper');
 
 async function getVisaoGerencial(req, res, isAtrasos) {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const getInactiveFilter = await getInactiveOrdersFilter();
         const { startDate, endDate } = req.query;
 
@@ -150,8 +152,10 @@ async function getVisaoGerencial(req, res, isAtrasos) {
                 quantidade: parseFloat(row.quantidade || 0),
                 qtd_entreg: parseFloat(row.qtd_entreg || 0),
                 qtd_faturar: parseFloat(row.qtd_faturar || 0),
-                valor_unitario: parseFloat(row.valor_unitario || 0),
-                valor_saldo: parseFloat(row.valor_saldo || 0),
+                // Esconder só na tela não é suficiente — o valor não deve sair do servidor
+                // se o usuário não tiver a permissão "valores_financeiros".
+                valor_unitario: canViewFinancials ? parseFloat(row.valor_unitario || 0) : null,
+                valor_saldo: canViewFinancials ? parseFloat(row.valor_saldo || 0) : null,
                 data_entrega_pcp: forecast ? forecast.data_entrega_pcp : null,
                 quantidade_pcp: forecast ? parseFloat(forecast.quantidade_pcp) : null
             };

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const nodemailer = require('nodemailer');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // ─── Helper: busca NFs do Protheus para uma lista de pedidos ─────────────────
 // Usa 2 queries separadas: sd2010 (sem JOIN) + sf2010 (enriquecimento de data).
@@ -478,6 +479,7 @@ router.post('/solicitacoes', async (req, res) => {
 // GET /api/faturamento/solicitacoes - Lista solicitações (com busca e paginação)
 router.get('/solicitacoes', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const { limit = 50, page = 1, status = '' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
@@ -562,6 +564,18 @@ router.get('/solicitacoes', async (req, res) => {
             finalRows = rows.filter(r => requestedStatuses.includes(r.status));
         }
 
+        if (!canViewFinancials) {
+            finalRows = finalRows.map(row => ({
+                ...row,
+                itens: Array.isArray(row.itens) ? row.itens.map(({ valor_unitario, valor_total, notas_fiscais_protheus, ...rest }) => ({
+                    ...rest,
+                    notas_fiscais_protheus: Array.isArray(notas_fiscais_protheus)
+                        ? notas_fiscais_protheus.map(({ valor_unit, valor_total, ...nfRest }) => nfRest)
+                        : notas_fiscais_protheus
+                })) : row.itens
+            }));
+        }
+
         res.json({
             data: finalRows,
             meta: {
@@ -580,6 +594,7 @@ router.get('/solicitacoes', async (req, res) => {
 // GET /api/faturamento/solicitacoes/:id
 router.get('/solicitacoes/:id', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const { id } = req.params;
         const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacoes WHERE id = ?", [id]);
         
@@ -603,6 +618,15 @@ router.get('/solicitacoes/:id', async (req, res) => {
         }
 
         solicitacao.itens = itensRows;
+
+        if (!canViewFinancials) {
+            solicitacao.itens = solicitacao.itens.map(({ valor_unitario, valor_total, notas_fiscais_protheus, ...rest }) => ({
+                ...rest,
+                notas_fiscais_protheus: Array.isArray(notas_fiscais_protheus)
+                    ? notas_fiscais_protheus.map(({ valor_unit, valor_total, ...nfRest }) => nfRest)
+                    : notas_fiscais_protheus
+            }));
+        }
 
         if (solicitacao.status === 'Pendente' && solicitacao.itens.length > 0) {
             const allHaveNf = solicitacao.itens.every(it => Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0);
@@ -982,6 +1006,7 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
 // GET /api/faturamento/dashboard - Dashboard gerencial de faturamento
 router.get('/dashboard', async (req, res) => {
     try {
+        const canViewFinancials = await hasFinancialAccess(req);
         const { dataInicial, dataFinal, status, groupBy = 'cliente', cliente, produto } = req.query;
 
         const params = [];
@@ -1176,7 +1201,33 @@ router.get('/dashboard', async (req, res) => {
             ORDER BY dia, s.status
         `);
 
-        res.json({ kpis, kpiFaturadoNF, tendenciaMensal, agrupamento, topProdutos, evolucaoDiaria, groupLabel });
+        let responseKpis = kpis;
+        let responseKpiFaturadoNF = kpiFaturadoNF;
+        let responseTendenciaMensal = tendenciaMensal;
+        let responseAgrupamento = agrupamento;
+        let responseTopProdutos = topProdutos;
+        let responseEvolucaoDiaria = evolucaoDiaria;
+
+        if (!canViewFinancials) {
+            const stripValorTotal = (arrRows) => arrRows.map(({ valor_total, ...rest }) => rest);
+            responseKpis = stripValorTotal(kpis);
+            const { valor_total, ...kpiFaturadoNFRest } = kpiFaturadoNF;
+            responseKpiFaturadoNF = kpiFaturadoNFRest;
+            responseTendenciaMensal = stripValorTotal(tendenciaMensal);
+            responseAgrupamento = agrupamento.map(({ valor_total, valor_faturado_nf, ...rest }) => rest);
+            responseTopProdutos = stripValorTotal(topProdutos);
+            responseEvolucaoDiaria = stripValorTotal(evolucaoDiaria);
+        }
+
+        res.json({
+            kpis: responseKpis,
+            kpiFaturadoNF: responseKpiFaturadoNF,
+            tendenciaMensal: responseTendenciaMensal,
+            agrupamento: responseAgrupamento,
+            topProdutos: responseTopProdutos,
+            evolucaoDiaria: responseEvolucaoDiaria,
+            groupLabel
+        });
     } catch (err) {
         console.error('Erro GET /faturamento/dashboard:', err);
         res.status(500).json({ error: 'Erro ao gerar dashboard de faturamento.' });
