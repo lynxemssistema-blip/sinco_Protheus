@@ -287,6 +287,22 @@ router.post('/solicitacoes', async (req, res) => {
             try {
                 const axios = require('axios');
                 const https = require('https');
+                const agent = new https.Agent({ rejectUnauthorized: false });
+
+                // 1. Obter token Protheus
+                let accessToken = '';
+                try {
+                    const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+                    const tokenRes = await axios.get(tokenUrl, { httpsAgent: agent, timeout: 10000 });
+                    accessToken = tokenRes.data.access_token;
+                } catch (authError) {
+                    console.error('[PROTHEUS APONTAMENTO] Falha na obtenção do token Protheus:', authError.message);
+                    throw new Error('Falha de autenticação Protheus (OAuth2): ' + authError.message);
+                }
+
+                if (!accessToken) {
+                    throw new Error('Token Protheus retornado em branco.');
+                }
                 
                 const payload = {
                     data: {
@@ -309,12 +325,14 @@ router.post('/solicitacoes', async (req, res) => {
 
                 console.log(`[PROTHEUS APONTAMENTO] Enviando payload síncrono para ${solicitacaoId}:`, JSON.stringify(payload));
 
-                const agent = new https.Agent({ rejectUnauthorized: false });
                 const response = await axios.post(
                     'https://192.168.1.60:47500/ordem-producao/apontamento-simples',
                     payload,
                     { 
                         httpsAgent: agent,
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        },
                         timeout: 15000
                     }
                 );

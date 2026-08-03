@@ -1,6 +1,6 @@
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
 import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
 
@@ -245,6 +245,23 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                         const { width, height } = page.getSize();
                         const minSide = Math.min(width, height);
                         const scale = Math.max(1, minSide / 595);
+
+                        // Draw Watermark in the middle
+                        const clientFirstName = String(mirrorData.pedido?.nome_cliente || '').trim().split(' ')[0].toUpperCase();
+                        const watermarkText = `PEDIDO: ${mirrorData.pedido?.pedido || ''} - ${clientFirstName}`;
+                        const watermarkFontSize = 26 * scale;
+                        const textWidth = helveticaFont.widthOfTextAtSize(watermarkText, watermarkFontSize);
+                        const textHeight = helveticaFont.heightAtSize(watermarkFontSize);
+                        page.drawText(watermarkText, {
+                            x: (width - textWidth) / 2,
+                            y: (height - textHeight) / 2,
+                            size: watermarkFontSize,
+                            font: helveticaFont,
+                            color: rgb(0.9, 0.9, 0.9),
+                            opacity: 0.12,
+                            rotate: degrees(30)
+                        });
+
                         const fontSize = 8 * scale;
                         const lineHeight = 13 * scale;
                         const padding = 5 * scale;

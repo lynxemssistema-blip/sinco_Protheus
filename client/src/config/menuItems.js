@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -13,7 +13,8 @@ export const MENU_GROUPS = [
         id: 'cliente',
         label: 'Acesso Cliente',
         items: [
-            { id: 'canal_cliente', label: 'Meus Projetos (Portal)', path: '/portal-cliente', icon: Monitor }
+            { id: 'canal_cliente', label: 'Meus Projetos (Portal)', path: '/portal-cliente', icon: Monitor },
+            { id: 'canal_cliente_tablet', label: 'Solicitação Rápida (Tablet)', path: '/portal-cliente/tablet', icon: Smartphone }
         ]
     },
     {

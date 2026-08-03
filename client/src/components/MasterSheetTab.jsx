@@ -69,28 +69,20 @@ const MasterSheetTab = ({ filterParams }) => {
         setError(null);
             try {
                 const cleanParams = {
-                    client: filterParams?.cliente,
-                    order: filterParams?.pedido,
-                    product: filterParams?.produto,
-                    active_only: filterParams?.only_active,
-                    status: filterParams?.op_status,
-                    pedcli: filterParams?.pedcli,
-                    refCliente: filterParams?.refCliente,
+                    cliente:             filterParams?.cliente,
+                    pedido:              filterParams?.pedido,
+                    produto:             filterParams?.produto,
+                    pedcli:              filterParams?.pedcli,
+                    refCliente:          filterParams?.refCliente,
+                    dataInicial:         filterParams?.dataInicial,
+                    dataFinal:           filterParams?.dataFinal,
+                    dateType:            filterParams?.dateType,
+                    tipo_item:           filterParams?.tipo_item,
+                    op_status:           filterParams?.op_status,
+                    only_active:         filterParams?.only_active,
                     somente_prioridades: filterParams?.somente_prioridades,
-                    prioridade: filterParams?.prioridade,
-                    _simulateFCS: simulate
+                    _simulateFCS:        simulate
                 };
-                
-                if (filterParams?.dateType === 'entrega') {
-                    cleanParams.delivery_start = filterParams?.dataInicial;
-                    cleanParams.delivery_end = filterParams?.dataFinal;
-                } else if (filterParams?.dateType === 'pcp') {
-                    cleanParams.pcp_start = filterParams?.dataInicial;
-                    cleanParams.pcp_end = filterParams?.dataFinal;
-                } else {
-                    cleanParams.emission_start = filterParams?.dataInicial;
-                    cleanParams.emission_end = filterParams?.dataFinal;
-                }
 
                 // Only send data_0 if explicitly requested via simulation trigger
                 if (cleanParams._simulateFCS && data0) {
@@ -172,7 +164,9 @@ const MasterSheetTab = ({ filterParams }) => {
         { id: 'pedidos', label: 'Pedidos', icon: <Table className="w-4 h-4" /> },
         { id: 'itens', label: 'Itens Detalhados', icon: <List className="w-4 h-4" /> },
         { id: 'estruturas', label: 'Estrutura dos Produtos', icon: <List className="w-4 h-4" /> },
+        { id: 'materiais_necessarios', label: 'Materiais Necessários', icon: <Box className="w-4 h-4" /> },
         { id: 'carga', label: 'Carga por Recurso', icon: <Settings className="w-4 h-4" /> },
+        { id: 'capacidade_periodo', label: 'Capacidade do Período', icon: <BarChart2 className="w-4 h-4" /> },
         { id: 'execucao', label: 'Execução OP', icon: <Activity className="w-4 h-4" /> },
         { id: 'analise', label: 'Análise de Carga', icon: <BarChart2 className="w-4 h-4" /> }
     ];
@@ -244,7 +238,9 @@ const MasterSheetTab = ({ filterParams }) => {
                 {activeTab === 'pedidos' && <PedidosTab data={data} />}
                 {activeTab === 'itens' && <ItensTab data={data} />}
                 {activeTab === 'estruturas' && <EstruturasTab data={data} />}
+                {activeTab === 'materiais_necessarios' && <MateriaisNecessariosTab data={data} />}
                 {activeTab === 'carga' && <CargaTab data={data} />}
+                {activeTab === 'capacidade_periodo' && <CapacidadePeriodoTab data={data} filterParams={filterParams} />}
                 {activeTab === 'execucao' && <ExecucaoTab data={data} />}
                 {activeTab === 'analise' && <AnaliseTab data={data} />}
             </div>
@@ -609,6 +605,189 @@ const EstruturasTab = ({ data }) => {
     );
 };
 
+const MateriaisNecessariosTab = ({ data }) => {
+    const itens = data.itens || [];
+    const estruturas = data.estruturas || [];
+
+    // State to toggle between Consolidated and Detailed views
+    const [viewMode, setViewMode] = useState('consolidado'); // 'consolidado' | 'detalhado'
+    const [filtroMaterial, setFiltroMaterial] = useState('');
+
+    // Calculate detailed materials list
+    const detailedDemands = useMemo(() => {
+        const list = [];
+        itens.forEach(item => {
+            const parentProd = (item.produto || '').trim();
+            const parentQtd = Number(item.qtd_faturar || 0);
+
+            // Find BOM components for this parent product
+            const comps = estruturas.filter(e => e.raiz === parentProd);
+
+            comps.forEach(c => {
+                const totalQtd = parentQtd * c.quant;
+                list.push({
+                    pedido: item.pedido,
+                    cliente: item.cliente,
+                    produtoFinal: parentProd,
+                    descFinal: item.descricao || '-',
+                    qtdFaturar: parentQtd,
+                    materialCod: c.comp,
+                    materialDesc: c.desc || '-',
+                    um: c.um || '-',
+                    tipo: c.tipo || '-',
+                    qtdUnit: c.quant,
+                    qtdTotal: totalQtd
+                });
+            });
+        });
+        return list;
+    }, [itens, estruturas]);
+
+    // Calculate consolidated list
+    const consolidatedDemands = useMemo(() => {
+        const map = {};
+        detailedDemands.forEach(d => {
+            const key = d.materialCod;
+            if (!map[key]) {
+                map[key] = {
+                    materialCod: d.materialCod,
+                    materialDesc: d.materialDesc,
+                    um: d.um,
+                    tipo: d.tipo,
+                    qtdTotal: 0
+                };
+            }
+            map[key].qtdTotal += d.qtdTotal;
+        });
+        return Object.values(map).sort((a, b) => a.materialCod.localeCompare(b.materialCod));
+    }, [detailedDemands]);
+
+    // Filtered lists based on search input
+    const filteredConsolidated = useMemo(() => {
+        return consolidatedDemands.filter(d => 
+            d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+            d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase())
+        );
+    }, [consolidatedDemands, filtroMaterial]);
+
+    const filteredDetailed = useMemo(() => {
+        return detailedDemands.filter(d => 
+            d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+            d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+            d.pedido.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+            d.produtoFinal.toLowerCase().includes(filtroMaterial.toLowerCase())
+        );
+    }, [detailedDemands, filtroMaterial]);
+
+    return (
+        <div className="p-6 max-w-7xl mx-auto">
+            <div className="mb-6 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                    <h2 className="text-xl font-black text-[#1E3A5F]">Necessidade de Materiais / Componentes</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                        Detalhamento de insumos e matérias-primas calculados com base na estrutura de produto (BOM) e quantidades a faturar.
+                    </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    {/* View mode toggle */}
+                    <div className="flex bg-slate-100 p-1 rounded border border-slate-200">
+                        <button
+                            onClick={() => setViewMode('consolidado')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${viewMode === 'consolidado' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            Visão Consolidada
+                        </button>
+                        <button
+                            onClick={() => setViewMode('detalhado')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded transition-colors ${viewMode === 'detalhado' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            Visão Detalhada (Por Pedido)
+                        </button>
+                    </div>
+
+                    {/* Filter input */}
+                    <input
+                        type="text"
+                        placeholder="Filtrar material/pedido..."
+                        value={filtroMaterial}
+                        onChange={e => setFiltroMaterial(e.target.value)}
+                        className="px-3 py-1.5 border border-slate-300 rounded text-sm text-slate-700 bg-white w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                </div>
+            </div>
+
+            {viewMode === 'consolidado' ? (
+                <div className="border border-slate-300 rounded overflow-hidden shadow-sm bg-white">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-[#1E3A5F] text-white">
+                            <tr>
+                                <th className="px-4 py-3 border-b border-slate-300">Código do Material</th>
+                                <th className="px-4 py-3 border-b border-slate-300">Descrição do Material</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-center w-24">UM</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-center w-24">Tipo</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-48">Qtd Total Necessária</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredConsolidated.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="px-4 py-8 text-center text-slate-400">Nenhum material encontrado.</td>
+                                </tr>
+                            ) : filteredConsolidated.map((row, idx) => (
+                                <tr key={row.materialCod} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
+                                    <td className="px-4 py-3 font-mono font-bold text-[#1E3A5F]">{row.materialCod}</td>
+                                    <td className="px-4 py-3 text-slate-800">{row.materialDesc}</td>
+                                    <td className="px-4 py-3 text-center font-bold text-slate-600">{row.um}</td>
+                                    <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-600">{row.tipo}</span></td>
+                                    <td className="px-4 py-3 text-right font-black text-blue-700 bg-blue-50 bg-opacity-30">{formatNum(row.qtdTotal)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="border border-slate-300 rounded overflow-hidden shadow-sm bg-white overflow-x-auto">
+                    <table className="w-full text-sm text-left whitespace-nowrap">
+                        <thead className="bg-[#1E3A5F] text-white">
+                            <tr>
+                                <th className="px-4 py-3 border-b border-slate-300">Pedido</th>
+                                <th className="px-4 py-3 border-b border-slate-300">Cliente</th>
+                                <th className="px-4 py-3 border-b border-slate-300">Prod. Final</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Faturar</th>
+                                <th className="px-4 py-3 border-b border-slate-300">Cód. Material</th>
+                                <th className="px-4 py-3 border-b border-slate-300">Descrição do Material</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-center w-16">UM</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Unit. (BOM)</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-32 bg-[#0D6EFD] bg-opacity-10 text-blue-200">Qtd Necessária</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredDetailed.length === 0 ? (
+                                <tr>
+                                    <td colSpan="9" className="px-4 py-8 text-center text-slate-400">Nenhum material detalhado encontrado.</td>
+                                </tr>
+                            ) : filteredDetailed.map((row, idx) => (
+                                <tr key={`${row.pedido}_${row.materialCod}_${idx}`} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
+                                    <td className="px-4 py-3 font-semibold text-slate-700">{row.pedido}</td>
+                                    <td className="px-4 py-3 text-slate-600 truncate max-w-xs">{row.cliente}</td>
+                                    <td className="px-4 py-3 font-mono text-slate-600" title={row.descFinal}>{row.produtoFinal}</td>
+                                    <td className="px-4 py-3 text-right">{formatNum(row.qtdFaturar)}</td>
+                                    <td className="px-4 py-3 font-mono font-bold text-[#1E3A5F]">{row.materialCod}</td>
+                                    <td className="px-4 py-3 text-slate-800 truncate max-w-xs">{row.materialDesc}</td>
+                                    <td className="px-4 py-3 text-center font-bold text-slate-600">{row.um}</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{formatNum(row.qtdUnit)}</td>
+                                    <td className="px-4 py-3 text-right font-bold text-blue-700 bg-[#0D6EFD] bg-opacity-5">{formatNum(row.qtdTotal)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const ItensTab = ({ data }) => (
     <div className="w-full h-full relative">
         <table className="w-full text-[13px] text-left border-collapse">
@@ -686,7 +865,7 @@ const CargaTab = ({ data }) => {
             <table className="w-full text-[13px] text-left border-collapse">
                 <thead className="sticky top-0 z-10 shadow">
                     <tr>
-                        {['Pedido', 'Cliente', 'Item', 'Produto', 'Saldo a Faturar', 'Data PCP'].map(h => (
+                        {['Pedido', 'Cliente', 'Item', 'Produto', 'Saldo a Faturar', 'Data PCP', 'Prioridade'].map(h => (
                             <th key={h} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-[#304C71] whitespace-nowrap">{h}</th>
                         ))}
                         {/* Dynamic Resource Columns (Azul Claro) */}
@@ -711,6 +890,18 @@ const CargaTab = ({ data }) => {
                             </td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r text-right font-bold">{formatNum(c.qtd_faturar)}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r">{formatDate(c.data_pcp)}</td>
+                            <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-center">
+                                {c.op_prioridade ? (
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                        c.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
+                                        c.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
+                                        c.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        Grupo {c.op_prioridade}
+                                    </span>
+                                ) : <span className="text-slate-400">-</span>}
+                            </td>
                             {data.recursos.map(r => {
                                 const val = c[`rec_${r}`];
                                 return (
@@ -723,6 +914,164 @@ const CargaTab = ({ data }) => {
                     ))}
                 </tbody>
             </table>
+        </div>
+    );
+};
+
+const CapacidadePeriodoTab = ({ data, filterParams }) => {
+    const recursos = data.recursos || [];
+    const nomeMap = data.recursoNomeMap || {};
+    const carga = data.carga || [];
+    const capacidades = data.capacidades || {};
+
+    // ── Calculate days in period ──
+    const days = useMemo(() => {
+        let dIni = filterParams?.dataInicial ? new Date(filterParams.dataInicial) : null;
+        let dFim = filterParams?.dataFinal ? new Date(filterParams.dataFinal) : null;
+
+        // If no explicit filter dates, try to find range from items data_pcp
+        if (!dIni || !dFim) {
+            const pcpDates = carga.map(c => {
+                const dateVal = c.data_pcp || c.entrega;
+                if (!dateVal) return null;
+                const str = String(dateVal).trim();
+                let d;
+                if (str.length === 8 && !str.includes('-')) {
+                    d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8));
+                } else {
+                    d = new Date(str);
+                }
+                return isNaN(d.getTime()) ? null : d;
+            }).filter(Boolean);
+
+            if (pcpDates.length > 0) {
+                if (!dIni) dIni = new Date(Math.min(...pcpDates));
+                if (!dFim) dFim = new Date(Math.max(...pcpDates));
+            }
+        }
+
+        if (!dIni || !dFim) return 1;
+
+        // Count working days (Mon-Fri)
+        let count = 0;
+        let cur = new Date(dIni.getTime());
+        cur.setHours(0,0,0,0);
+        const end = new Date(dFim.getTime());
+        end.setHours(23,59,59,999);
+
+        while (cur <= end) {
+            const day = cur.getDay();
+            if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+                count++;
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+        return count || 1;
+    }, [filterParams, carga]);
+
+    // ── Calculate load and totals per resource ──
+    const reportData = useMemo(() => {
+        const MIN_POR_HORA = 55;
+        return recursos.map(r => {
+            const cod = r.trim().toUpperCase();
+            const capDiaria = capacidades[cod] || 0;
+            const capTotal = capDiaria * days;
+
+            // Sum load for this resource across all items in data.carga
+            const cargaPrevista = carga.reduce((sum, item) => {
+                // If filter date range is specified, strictly filter items to that range
+                if (filterParams?.dataInicial && filterParams?.dataFinal) {
+                    const itemDateVal = item.data_pcp || item.entrega;
+                    if (itemDateVal) {
+                        const str = String(itemDateVal).trim();
+                        let d;
+                        if (str.length === 8 && !str.includes('-')) {
+                            d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8) + 'T00:00:00');
+                        } else {
+                            d = new Date(str);
+                        }
+                        if (!isNaN(d.getTime())) {
+                            const dIniLimit = new Date(filterParams.dataInicial);
+                            const dFimLimit = new Date(filterParams.dataFinal);
+                            if (d < dIniLimit || d > dFimLimit) {
+                                return sum; // Ignore residual/backlog load
+                            }
+                        }
+                    }
+                }
+                return sum + (Number(item['rec_' + r]) || 0);
+            }, 0);
+
+            const saldo = capTotal - cargaPrevista;
+            const ocupacao = capTotal > 0 ? (cargaPrevista / capTotal) * 100 : 0;
+
+            return {
+                recurso: r,
+                nome: nomeMap[r] || r,
+                capDiariaHrs: capDiaria / MIN_POR_HORA,
+                capTotalHrs: capTotal / MIN_POR_HORA,
+                cargaPrevistaHrs: cargaPrevista / MIN_POR_HORA,
+                saldoHrs: saldo / MIN_POR_HORA,
+                ocupacao
+            };
+        });
+    }, [recursos, capacidades, days, carga, nomeMap, filterParams]);
+
+    return (
+        <div className="p-6 max-w-6xl mx-auto">
+            <div className="mb-6 border-b border-slate-200 pb-4 flex justify-between items-end">
+                <div>
+                    <h2 className="text-xl font-black text-[#1E3A5F]">Capacidade do Período Filtrado</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                        Carga prevista (soma total de horas) comparada à capacidade total das máquinas no período selecionado. (1 hora = 55 minutos)
+                    </p>
+                </div>
+                <div className="bg-slate-100 px-4 py-2 rounded border border-slate-200 text-right">
+                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">Dias Úteis no Período (Seg-Sex)</span>
+                    <span className="text-lg font-black text-[#1E3A5F]">{days} {days === 1 ? 'Dia Útil' : 'Dias Úteis'}</span>
+                </div>
+            </div>
+
+            <div className="border border-slate-300 rounded overflow-hidden shadow-sm bg-white">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-[#1E3A5F] text-white">
+                        <tr>
+                            <th className="px-4 py-3 border-b border-slate-300">Recurso / Máquina</th>
+                            <th className="px-4 py-3 border-b border-slate-300 text-right">Capacidade Diária (h)</th>
+                            <th className="px-4 py-3 border-b border-slate-300 text-right">Capacidade Total (h)</th>
+                            <th className="px-4 py-3 border-b border-slate-300 text-right bg-[#0D6EFD] bg-opacity-10 text-blue-200">Carga Prevista (h)</th>
+                            <th className="px-4 py-3 border-b border-slate-300 text-right">Saldo Capacidade (h)</th>
+                            <th className="px-4 py-3 border-b border-slate-300 text-center w-32">% Ocupação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {reportData.map((row, idx) => (
+                            <tr key={row.recurso} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
+                                <td className="px-4 py-3 font-semibold text-[#1E3A5F]">{row.nome}</td>
+                                <td className="px-4 py-3 text-right">{formatNum(row.capDiariaHrs)}</td>
+                                <td className="px-4 py-3 text-right">{formatNum(row.capTotalHrs)}</td>
+                                <td className="px-4 py-3 text-right font-bold text-[#0D6EFD] bg-[#0D6EFD] bg-opacity-5">{formatNum(row.cargaPrevistaHrs)}</td>
+                                <td className={`px-4 py-3 text-right font-semibold ${row.saldoHrs < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                                    {formatNum(row.saldoHrs)}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                        <div className="w-16 bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                                            <div 
+                                                className={`h-2.5 rounded-full ${row.ocupacao > 100 ? 'bg-red-500' : row.ocupacao > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                                style={{ width: `${Math.min(row.ocupacao, 100)}%` }}
+                                            ></div>
+                                        </div>
+                                        <span className={`text-xs font-bold ${row.ocupacao > 100 ? 'text-red-600' : 'text-slate-700'}`}>
+                                            {formatNum(row.ocupacao)}%
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };

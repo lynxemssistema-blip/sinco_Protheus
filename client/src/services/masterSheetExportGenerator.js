@@ -200,17 +200,152 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
 
     // 5. Aba: Carga por Recurso
     if (data.carga && data.carga.length > 0 && data.recursos) {
-        const cargaHeader = ['Pedido', 'Cliente', 'Item', 'Produto', 'Qtd Faturar', ...data.recursos.map(r => `Rec ${r} (min)`)];
+        const cargaHeader = ['Pedido', 'Cliente', 'Item', 'Produto', 'Qtd Faturar', 'Prioridade', ...data.recursos.map(r => `Rec ${r} (min)`)];
         const cargaRows = data.carga.map(c => [
             c.pedido,
             c.cliente,
             c.item,
             c.produto,
             Number(c.qtd_faturar || 0),
+            c.op_prioridade ? `Grupo ${c.op_prioridade}` : '-',
             ...data.recursos.map(r => Number(c['rec_' + r] || 0))
         ]);
         const wsCarga = createMetalFisaSheet('Carga por Recurso de Máquina', cargaHeader, cargaRows);
         XLSX.utils.book_append_sheet(wb, wsCarga, 'Carga por Recurso');
+    }
+
+    // 6. Aba: Capacidade do Período
+    if (data.carga && data.carga.length > 0 && data.recursos && data.capacidades) {
+        let dIni = filterParams.dataInicial ? new Date(filterParams.dataInicial) : null;
+        let dFim = filterParams.dataFinal ? new Date(filterParams.dataFinal) : null;
+
+        if (!dIni || !dFim) {
+            const pcpDates = data.carga.map(c => {
+                const dateVal = c.data_pcp || c.entrega;
+                if (!dateVal) return null;
+                const str = String(dateVal).trim();
+                let d;
+                if (str.length === 8 && !str.includes('-')) {
+                    d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8));
+                } else {
+                    d = new Date(str);
+                }
+                return isNaN(d.getTime()) ? null : d;
+            }).filter(Boolean);
+
+            if (pcpDates.length > 0) {
+                if (!dIni) dIni = new Date(Math.min(...pcpDates));
+                if (!dFim) dFim = new Date(Math.max(...pcpDates));
+            }
+        }
+
+        let days = 1;
+        if (dIni && dFim) {
+            let count = 0;
+            let cur = new Date(dIni.getTime());
+            cur.setHours(0,0,0,0);
+            const end = new Date(dFim.getTime());
+            end.setHours(23,59,59,999);
+
+            while (cur <= end) {
+                const day = cur.getDay();
+                if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+                    count++;
+                }
+                cur.setDate(cur.getDate() + 1);
+            }
+            days = count || 1;
+        }
+
+        const capHeader = ['Recurso / Máquina', 'Capacidade Diária (h)', 'Capacidade Total (h)', 'Carga Prevista (h)', 'Saldo Capacidade (h)', '% Ocupação'];
+        
+        const capRows = data.recursos.map(r => {
+            const cod = r.trim().toUpperCase();
+            const capDiaria = data.capacidades[cod] || 0;
+            const capTotal = capDiaria * days;
+
+            const cargaPrevista = data.carga.reduce((sum, item) => {
+                if (dIni && dFim) {
+                    const itemDateVal = item.data_pcp || item.entrega;
+                    if (itemDateVal) {
+                        const str = String(itemDateVal).trim();
+                        let d;
+                        if (str.length === 8 && !str.includes('-')) {
+                            d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8) + 'T00:00:00');
+                        } else {
+                            d = new Date(str);
+                        }
+                        if (!isNaN(d.getTime())) {
+                            if (d < dIni || d > dFim) return sum;
+                        }
+                    }
+                }
+                return sum + (Number(item['rec_' + r]) || 0);
+            }, 0);
+
+            const MIN_POR_HORA = 55;
+            const capDiariaHrs = Number((capDiaria / MIN_POR_HORA).toFixed(2));
+            const capTotalHrs = Number((capTotal / MIN_POR_HORA).toFixed(2));
+            const cargaPrevistaHrs = Number((cargaPrevista / MIN_POR_HORA).toFixed(2));
+            const saldoHrs = Number(((capTotal - cargaPrevista) / MIN_POR_HORA).toFixed(2));
+            const ocupacao = capTotal > 0 ? (cargaPrevista / capTotal) * 100 : 0;
+
+            return [
+                data.recursoNomeMap[r] || r,
+                capDiariaHrs,
+                capTotalHrs,
+                cargaPrevistaHrs,
+                saldoHrs,
+                Number(ocupacao.toFixed(2))
+            ];
+        });
+
+        const wsCapacidade = createMetalFisaSheet(`Capacidade do Período (${days} dias)`, capHeader, capRows);
+        XLSX.utils.book_append_sheet(wb, wsCapacidade, 'Capacidade do Período');
+    }
+
+    // 7. Aba: Necessidade de Materiais
+    if (data.itens && data.itens.length > 0 && data.estruturas && data.estruturas.length > 0) {
+        const detailedDemands = [];
+        data.itens.forEach(item => {
+            const parentProd = (item.produto || '').trim();
+            const parentQtd = Number(item.qtd_faturar || 0);
+
+            // Find BOM components for this parent product
+            const comps = data.estruturas.filter(e => e.raiz === parentProd);
+
+            comps.forEach(c => {
+                const totalQtd = parentQtd * c.quant;
+                detailedDemands.push([
+                    item.pedido,
+                    item.cliente,
+                    parentProd,
+                    item.descricao || '-',
+                    parentQtd,
+                    c.comp,
+                    c.desc || '-',
+                    c.um || '-',
+                    c.quant,
+                    totalQtd
+                ]);
+            });
+        });
+
+        const matHeader = [
+            'Pedido',
+            'Cliente',
+            'Produto Final',
+            'Descrição Produto Final',
+            'Qtd Faturar',
+            'Código do Material',
+            'Descrição do Material',
+            'UM',
+            'Qtd Unitária (BOM)',
+            'Qtd Total Necessária'
+        ];
+
+        const wsMateriais = createMetalFisaSheet('Necessidade de Materiais / Componentes', matHeader, detailedDemands);
+        XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materiais');
     }
 
     const fileName = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;
@@ -241,10 +376,119 @@ export const exportMasterSheetPdf = (data, activeTab = 'itens', filterParams = {
         tabLabel = 'Lista de Pedidos de Venda';
         headers = [['Pedido', 'Emissão', 'Cliente', 'Qtde Itens', 'Qtd Total Pedido', 'Início PCP', 'Fim PCP']];
         rows = data.pedidos.map(p => [p.pedido, formatDate(p.emissao), p.cliente, p.item_count, formatNum(p.soma_qtd), formatDate(p.pcp_inicio), formatDate(p.pcp_fim)]);
+    } else if (activeTab === 'capacidade_periodo' && data.recursos && data.capacidades) {
+        tabLabel = 'Capacidade do Período Filtrado';
+        
+        let dIni = filterParams.dataInicial ? new Date(filterParams.dataInicial) : null;
+        let dFim = filterParams.dataFinal ? new Date(filterParams.dataFinal) : null;
+
+        if (!dIni || !dFim) {
+            const pcpDates = data.carga.map(c => {
+                const dateVal = c.data_pcp || c.entrega;
+                if (!dateVal) return null;
+                const str = String(dateVal).trim();
+                let d;
+                if (str.length === 8 && !str.includes('-')) {
+                    d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8));
+                } else {
+                    d = new Date(str);
+                }
+                return isNaN(d.getTime()) ? null : d;
+            }).filter(Boolean);
+
+            if (pcpDates.length > 0) {
+                if (!dIni) dIni = new Date(Math.min(...pcpDates));
+                if (!dFim) dFim = new Date(Math.max(...pcpDates));
+            }
+        }
+
+        let days = 1;
+        if (dIni && dFim) {
+            let count = 0;
+            let cur = new Date(dIni.getTime());
+            cur.setHours(0,0,0,0);
+            const end = new Date(dFim.getTime());
+            end.setHours(23,59,59,999);
+
+            while (cur <= end) {
+                const day = cur.getDay();
+                if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+                    count++;
+                }
+                cur.setDate(cur.getDate() + 1);
+            }
+            days = count || 1;
+        }
+
+        headers = [['Recurso / Máquina', 'Capacidade Diária (h)', 'Capacidade Total (h)', 'Carga Prevista (h)', 'Saldo Capacidade (h)', '% Ocupação']];
+        
+        rows = data.recursos.map(r => {
+            const cod = r.trim().toUpperCase();
+            const capDiaria = data.capacidades[cod] || 0;
+            const capTotal = capDiaria * days;
+
+            const cargaPrevista = data.carga.reduce((sum, item) => {
+                if (dIni && dFim) {
+                    const itemDateVal = item.data_pcp || item.entrega;
+                    if (itemDateVal) {
+                        const str = String(itemDateVal).trim();
+                        let d;
+                        if (str.length === 8 && !str.includes('-')) {
+                            d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8) + 'T00:00:00');
+                        } else {
+                            d = new Date(str);
+                        }
+                        if (!isNaN(d.getTime())) {
+                            if (d < dIni || d > dFim) return sum;
+                        }
+                    }
+                }
+                return sum + (Number(item['rec_' + r]) || 0);
+            }, 0);
+
+            const MIN_POR_HORA = 55;
+            const capDiariaHrs = capDiaria / MIN_POR_HORA;
+            const capTotalHrs = capTotal / MIN_POR_HORA;
+            const cargaPrevistaHrs = cargaPrevista / MIN_POR_HORA;
+            const saldoHrs = (capTotal - cargaPrevista) / MIN_POR_HORA;
+            const ocupacao = capTotal > 0 ? (cargaPrevista / capTotal) * 100 : 0;
+
+            return [
+                data.recursoNomeMap[r] || r,
+                formatNum(capDiariaHrs),
+                formatNum(capTotalHrs),
+                formatNum(cargaPrevistaHrs),
+                formatNum(saldoHrs),
+                `${formatNum(ocupacao)}%`
+            ];
+        });
     } else if (activeTab === 'estruturas' && data.estruturas) {
         tabLabel = 'Estrutura dos Produtos (Engenharia BOM)';
         headers = [['Produto Pai (Raiz)', 'Componente', 'Descrição Componente', 'UM', 'Tipo', 'Qtd Unitária']];
         rows = data.estruturas.map(b => [b.raiz, b.comp, b.desc || '-', b.um || '-', b.tipo || '-', formatNum(b.quant)]);
+    } else if (activeTab === 'materiais_necessarios' && data.itens && data.estruturas) {
+        tabLabel = 'Necessidade Detalhada de Materiais';
+        headers = [['Pedido', 'Cliente', 'Prod. Final', 'Qtd Faturar', 'Cód. Material', 'Descrição do Material', 'UM', 'Qtd Unit.', 'Qtd Necessária']];
+        rows = [];
+        data.itens.forEach(item => {
+            const parentProd = (item.produto || '').trim();
+            const parentQtd = Number(item.qtd_faturar || 0);
+            const comps = data.estruturas.filter(e => e.raiz === parentProd);
+
+            comps.forEach(c => {
+                rows.push([
+                    item.pedido,
+                    item.cliente,
+                    parentProd,
+                    formatNum(parentQtd),
+                    c.comp,
+                    c.desc || '-',
+                    c.um || '-',
+                    formatNum(c.quant),
+                    formatNum(parentQtd * c.quant)
+                ]);
+            });
+        });
     } else {
         // Default: Itens Detalhados com Prioridades
         tabLabel = 'Itens Detalhados com Grupos de Prioridades';

@@ -2,6 +2,46 @@ import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 
+const formatDatePCP = (dateStr) => {
+    if (!dateStr) return '-';
+    const str = String(dateStr).trim();
+    if (str.includes('/')) return str;
+    if (str.includes('-')) {
+        const parts = str.split('T')[0].split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+    }
+    if (str.length === 8 && /^\d+$/.test(str)) {
+        return `${str.substring(6, 8)}/${str.substring(4, 6)}/${str.substring(0, 4)}`;
+    }
+    return str;
+};
+
+const drawWatermark = (doc, pedidoNum, clientName) => {
+    const clientFirstName = String(clientName || '').trim().split(' ')[0].toUpperCase();
+    const watermarkText = `PEDIDO: ${pedidoNum || ''} - ${clientFirstName}`;
+    if (typeof doc.saveGraphicsState === 'function') {
+        try {
+            doc.saveGraphicsState();
+            if (typeof doc.GState === 'function') {
+                doc.setGState(new doc.GState({ opacity: 0.1 }));
+            }
+        } catch (e) {}
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(28);
+    doc.setTextColor(242, 242, 242);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.text(watermarkText, pageWidth / 2, pageHeight / 2, { align: 'center', angle: 30 });
+    if (typeof doc.restoreGraphicsState === 'function') {
+        try {
+            doc.restoreGraphicsState();
+        } catch (e) {}
+    }
+};
+
 /**
  * Generates an "Espelho da Ordem de Produção" grouped strictly by Operation Code (Recurso).
  * Prioritizes traceability including PV, Item, and Parent Product for every line.
@@ -68,7 +108,8 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                             qtdTotal: rawQtd,
                             um: component.unidade || component.um || 'UN',
                             nivel: isLevel0 ? 'PAI' : component.nivel,
-                            op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-')
+                            op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-'),
+                            data_pcp: itemGroup.data_pcp || null
                         });
                     });
                 } else {
@@ -92,7 +133,8 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                         qtdTotal: rawQtd,
                         um: component.unidade || component.um || 'UN',
                         nivel: isLevel0 ? 'PAI' : component.nivel,
-                        op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-')
+                        op_num: (batchContext && batchContext.visual_op) ? batchContext.visual_op : (component.op_num || itemGroup.produto_principal?.op_num || '-'),
+                        data_pcp: itemGroup.data_pcp || null
                     });
                 }
 
@@ -163,6 +205,9 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
 
             // Define the header drawing function for didDrawPage
             const drawPageHeader = (data) => {
+                // Draw watermark first so it sits behind table text
+                drawWatermark(doc, mirrorData.pedido?.pedido, mirrorData.pedido?.nome_cliente);
+
                 // Base Header
                 doc.setFillColor(30, 58, 95);
                 doc.rect(10, 5, 40, 15, 'F');
@@ -177,9 +222,16 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
 
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
-                doc.text(`EMISSÃO: ${mirrorData.pedido?.emissao || ''}`, pageWidth - 45, 10);
+                doc.text(`EMISSÃO: ${mirrorData.pedido?.emissao || ''}`, pageWidth - 10, 8, { align: 'right' });
                 doc.setFont('helvetica', 'bold');
-                doc.text(`PEDIDO PV: ${mirrorData.pedido?.pedido || ''}`, pageWidth - 45, 15);
+                doc.text(`PEDIDO PV: ${mirrorData.pedido?.pedido || ''}`, pageWidth - 10, 13, { align: 'right' });
+
+                const uniqueDates = [...new Set(groupData.components.map(c => c.data_pcp).filter(Boolean))];
+                const dataPcpFormatted = uniqueDates.length > 0 
+                    ? uniqueDates.map(formatDatePCP).join(', ') 
+                    : (mirrorData.pedido?.data_pcp ? formatDatePCP(mirrorData.pedido.data_pcp) : '-');
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Data de Entrega Prevista: ${dataPcpFormatted}`, pageWidth - 10, 18, { align: 'right' });
 
                 const yOffset = 25;
 
@@ -430,6 +482,7 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                     4: { halign: 'right', cellWidth: 32, fontStyle: 'bold', textColor: [0, 100, 0] } // Qtde
                 },
                 didDrawPage: (data) => {
+                    drawWatermark(doc, mirrorData.pedido?.pedido, mirrorData.pedido?.nome_cliente);
                     doc.setFontSize(8);
                     const curr = doc.internal.getNumberOfPages();
                     doc.text(`Página Anexo: ${curr} de ${sumPageCount}`, pageWidth - 40, pageHeight - 10);

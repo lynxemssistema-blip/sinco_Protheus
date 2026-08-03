@@ -9,8 +9,10 @@ import {
     Calendar, Layers, Package, Inbox, CheckCircle, Clock,
     Factory, Filter, X, SlidersHorizontal, Hash, Loader2, ExternalLink,
     HelpCircle, BookOpen, Info, FileDown, Globe, ShieldCheck, Sparkles, Zap,
-    Smartphone, Laptop, Grid, List
+    Smartphone, Laptop, Grid, List, MessageSquare
 } from 'lucide-react';
+import PortalClienteSolicitacoes from '../components/PortalClienteSolicitacoes';
+import PortalClienteTabletView from '../components/PortalClienteTabletView';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const fmtQtd = (n) =>
@@ -387,7 +389,7 @@ const handleOpenDrawing = async (desenhoUrl, produto) => {
     }
 };
 
-const PortalCliente = () => {
+const PortalCliente = ({ defaultTab }) => {
     const { user } = useAuth();
     const { openHelp } = useHelp();
     const [items, setItems]       = useState([]);
@@ -396,7 +398,13 @@ const PortalCliente = () => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError]       = useState(null);
     const [search, setSearch]     = useState('');
-    const [tab, setTab]           = useState('detalhado'); // 'detalhado' | 'saldo'
+    const [tab, setTab]           = useState(defaultTab || 'detalhado'); // 'detalhado' | 'saldo' | 'solicitacoes' | 'solicitacao_tablet'
+
+    useEffect(() => {
+        if (defaultTab) {
+            setTab(defaultTab);
+        }
+    }, [defaultTab]);
     const [groupBy, setGroupBy]   = useState('none'); // 'none' | 'pedcli' | 'pedido' | 'produto' | 'ref_cliente' | 'cliente'
     const [collapsedGroups, setCollapsedGroups] = useState({});
     const [statusFilter, setStatusFilter] = useState('');
@@ -868,224 +876,226 @@ const PortalCliente = () => {
                 {/* Main table card */}
                 <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
                     {/* Filter Bar */}
-                    <form className="p-4 border-b border-slate-100 bg-white flex-shrink-0" onSubmit={e => { e.preventDefault(); fetchData(1); }}>
-                        {/* Linha 1: 5 Inputs de Filtro Primários */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-y-3 gap-x-2.5 items-end mb-3">
+                    {tab !== 'solicitacao_tablet' && (
+                        <form className="p-4 border-b border-slate-100 bg-white flex-shrink-0" onSubmit={e => { e.preventDefault(); fetchData(1); }}>
+                            {/* Linha 1: 5 Inputs de Filtro Primários */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-y-3 gap-x-2.5 items-end mb-3">
 
-                            {/* 1. Cliente */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Cliente:</label>
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                {/* 1. Cliente */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Cliente:</label>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Cliente..."
+                                            value={filters.cliente}
+                                            onChange={e => setFilters(f => ({ ...f, cliente: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 2. Pedido */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Pedido:</label>
+                                    <div className="relative">
+                                        <Filter className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: 4618, 4620..."
+                                            value={filters.pedido}
+                                            onChange={e => setFilters(f => ({ ...f, pedido: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 3. Ordem Compra */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Ordem Compra:</label>
+                                    <div className="relative">
+                                        <Filter className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: 4618, 4620..."
+                                            value={filters.pedcli}
+                                            onChange={e => setFilters(f => ({ ...f, pedcli: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 4. Produto */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Produto:</label>
+                                    <div className="relative">
+                                        <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Cód. Produto..."
+                                            value={filters.produto}
+                                            onChange={e => setFilters(f => ({ ...f, produto: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 5. Ref. Cliente */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Ref. Cliente:</label>
+                                    <div className="relative">
+                                        <Hash className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="# Ref..."
+                                            value={filters.refCliente}
+                                            onChange={e => setFilters(f => ({ ...f, refCliente: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Linha 2: Intervalo de Datas */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-2.5 items-end mb-3 pt-2 border-t border-slate-100">
+                                {/* Tipo de Data */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Filtrar Data Por:</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                        <select
+                                            value={filters.dateType}
+                                            onChange={e => setFilters(f => ({ ...f, dateType: e.target.value }))}
+                                            className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700 cursor-pointer"
+                                        >
+                                            <option value="pedido">Data Emissão Pedido</option>
+                                            <option value="entrega">Data Prev. Entrega</option>
+                                            <option value="pcp">Data Previsão PCP</option>
+                                            <option value="nf">Data Emissão NF</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Data Inicial */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Data Inicial:</label>
                                     <input
-                                        type="text"
-                                        placeholder="Cliente..."
-                                        value={filters.cliente}
-                                        onChange={e => setFilters(f => ({ ...f, cliente: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
+                                        type="date"
+                                        value={filters.dataInicial}
+                                        onChange={e => setFilters(f => ({ ...f, dataInicial: e.target.value }))}
+                                        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700"
+                                    />
+                                </div>
+
+                                {/* Data Final */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[11px] font-medium text-slate-600 ml-0.5">Data Final:</label>
+                                    <input
+                                        type="date"
+                                        value={filters.dataFinal}
+                                        onChange={e => setFilters(f => ({ ...f, dataFinal: e.target.value }))}
+                                        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700"
                                     />
                                 </div>
                             </div>
 
-                            {/* 2. Pedido */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Pedido:</label>
-                                <div className="relative">
-                                    <Filter className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Ex: 4618, 4620..."
-                                        value={filters.pedido}
-                                        onChange={e => setFilters(f => ({ ...f, pedido: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* 3. Ordem Compra */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Ordem Compra:</label>
-                                <div className="relative">
-                                    <Filter className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Ex: 4618, 4620..."
-                                        value={filters.pedcli}
-                                        onChange={e => setFilters(f => ({ ...f, pedcli: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* 4. Produto */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Produto:</label>
-                                <div className="relative">
-                                    <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Cód. Produto..."
-                                        value={filters.produto}
-                                        onChange={e => setFilters(f => ({ ...f, produto: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* 5. Ref. Cliente */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Ref. Cliente:</label>
-                                <div className="relative">
-                                    <Hash className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="# Ref..."
-                                        value={filters.refCliente}
-                                        onChange={e => setFilters(f => ({ ...f, refCliente: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Linha 2: Intervalo de Datas */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-2.5 items-end mb-3 pt-2 border-t border-slate-100">
-                            {/* Tipo de Data */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Filtrar Data Por:</label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                    <select
-                                        value={filters.dateType}
-                                        onChange={e => setFilters(f => ({ ...f, dateType: e.target.value }))}
-                                        className="pl-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700 cursor-pointer"
+                            {/* Linha 3: Botão Filtrar + Botão Limpar + Toggle Pesado */}
+                            <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
                                     >
-                                        <option value="pedido">Data Emissão Pedido</option>
-                                        <option value="entrega">Data Prev. Entrega</option>
-                                        <option value="pcp">Data Previsão PCP</option>
-                                        <option value="nf">Data Emissão NF</option>
-                                    </select>
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                        Filtrar
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const clean = { cliente: '', pedido: '', pedcli: '', produto: '', refCliente: '', dataInicial: '', dataFinal: '', dateType: 'pedido', tipo_item: '', only_active: 'true' };
+                                            setFilters(clean);
+                                            setSearch('');
+                                            setGroupBy('none');
+                                            fetchData(1, false, clean);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-all cursor-pointer"
+                                        title="Limpar todos os filtros e buscar tudo"
+                                    >
+                                        <X className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>Limpar Filtros</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => openHelp('/portal-cliente')}
+                                        className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-semibold border border-blue-200 transition-all shadow-2xs cursor-pointer ml-1"
+                                        title="Abrir Ajuda de Contexto no Painel Lateral (HelpDrawer)"
+                                    >
+                                        <HelpCircle className="w-4 h-4 text-blue-600" />
+                                        <span>Ajuda de Contexto</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleExportExcel}
+                                        disabled={loading || (tab === 'detalhado' ? searchedFlatRows.length === 0 : itemsComSaldo.length === 0)}
+                                        className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold border border-emerald-200 transition-all shadow-2xs cursor-pointer disabled:opacity-50 ml-1"
+                                        title="Exportar todos os registros filtrados para Excel (.xlsx)"
+                                    >
+                                        <FileDown className="w-4 h-4 text-emerald-600" />
+                                        <span>Exportar Excel</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowLandingModal(true)}
+                                        className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-xl text-xs font-semibold border border-purple-200 transition-all shadow-2xs cursor-pointer ml-1"
+                                        title="Conheça a MetalFisa e visite o site oficial"
+                                    >
+                                        <Globe className="w-4 h-4 text-purple-600" />
+                                        <span>Sobre a MetalFisa</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode(v => v === 'cards' ? 'table' : 'cards')}
+                                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all shadow-2xs cursor-pointer ml-1 ${viewMode === 'cards' ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}`}
+                                        title="Alternar entre Visão de Cards Rápidos (Celular/Smartphone) e Tabela Completa (Desktop)"
+                                    >
+                                        {viewMode === 'cards' ? (
+                                            <>
+                                                <Smartphone className="w-4 h-4 text-amber-600 animate-pulse" />
+                                                <span>Cards Rápidos (Mobile)</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Laptop className="w-4 h-4 text-slate-600" />
+                                                <span>Tabela Completa (Desktop)</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Switch Apenas Pendentes */}
+                                <div className="flex items-center gap-3">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={filters.only_active === 'true'}
+                                            onChange={e => setFilters(f => ({ ...f, only_active: e.target.checked ? 'true' : 'false' }))}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                        <span className="ml-2 text-xs font-medium text-slate-700">Apenas Pendentes</span>
+                                    </label>
+                                    <span className="text-[10px] text-slate-400 hidden sm:inline">(Filtro Pesado — Desative para busca completa)</span>
                                 </div>
                             </div>
-
-                            {/* Data Inicial */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Data Inicial:</label>
-                                <input
-                                    type="date"
-                                    value={filters.dataInicial}
-                                    onChange={e => setFilters(f => ({ ...f, dataInicial: e.target.value }))}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700"
-                                />
-                            </div>
-
-                            {/* Data Final */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-medium text-slate-600 ml-0.5">Data Final:</label>
-                                <input
-                                    type="date"
-                                    value={filters.dataFinal}
-                                    onChange={e => setFilters(f => ({ ...f, dataFinal: e.target.value }))}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs outline-none focus:border-blue-500 focus:bg-white transition-all font-medium text-slate-700"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Linha 3: Botão Filtrar + Botão Limpar + Toggle Pesado */}
-                        <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
-                                >
-                                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                                    Filtrar
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const clean = { cliente: '', pedido: '', pedcli: '', produto: '', refCliente: '', dataInicial: '', dataFinal: '', dateType: 'pedido', tipo_item: '', only_active: 'true' };
-                                        setFilters(clean);
-                                        setSearch('');
-                                        setGroupBy('none');
-                                        fetchData(1, false, clean);
-                                    }}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-all cursor-pointer"
-                                    title="Limpar todos os filtros e buscar tudo"
-                                >
-                                    <X className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Limpar Filtros</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => openHelp('/portal-cliente')}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-semibold border border-blue-200 transition-all shadow-2xs cursor-pointer ml-1"
-                                    title="Abrir Ajuda de Contexto no Painel Lateral (HelpDrawer)"
-                                >
-                                    <HelpCircle className="w-4 h-4 text-blue-600" />
-                                    <span>Ajuda de Contexto</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={handleExportExcel}
-                                    disabled={loading || (tab === 'detalhado' ? searchedFlatRows.length === 0 : itemsComSaldo.length === 0)}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold border border-emerald-200 transition-all shadow-2xs cursor-pointer disabled:opacity-50 ml-1"
-                                    title="Exportar todos os registros filtrados para Excel (.xlsx)"
-                                >
-                                    <FileDown className="w-4 h-4 text-emerald-600" />
-                                    <span>Exportar Excel</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setShowLandingModal(true)}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-xl text-xs font-semibold border border-purple-200 transition-all shadow-2xs cursor-pointer ml-1"
-                                    title="Conheça a MetalFisa e visite o site oficial"
-                                >
-                                    <Globe className="w-4 h-4 text-purple-600" />
-                                    <span>Sobre a MetalFisa</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setViewMode(v => v === 'cards' ? 'table' : 'cards')}
-                                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all shadow-2xs cursor-pointer ml-1 ${viewMode === 'cards' ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}`}
-                                    title="Alternar entre Visão de Cards Rápidos (Celular/Smartphone) e Tabela Completa (Desktop)"
-                                >
-                                    {viewMode === 'cards' ? (
-                                        <>
-                                            <Smartphone className="w-4 h-4 text-amber-600 animate-pulse" />
-                                            <span>Cards Rápidos (Mobile)</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Laptop className="w-4 h-4 text-slate-600" />
-                                            <span>Tabela Completa (Desktop)</span>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-
-                            {/* Switch Apenas Pendentes */}
-                            <div className="flex items-center gap-3">
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={filters.only_active === 'true'}
-                                        onChange={e => setFilters(f => ({ ...f, only_active: e.target.checked ? 'true' : 'false' }))}
-                                        className="sr-only peer"
-                                    />
-                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                                    <span className="ml-2 text-xs font-medium text-slate-700">Apenas Pendentes</span>
-                                </label>
-                                <span className="text-[10px] text-slate-400 hidden sm:inline">(Filtro Pesado — Desative para busca completa)</span>
-                            </div>
-                        </div>
-                    </form>
+                        </form>
+                    )}
 
                     {/* Table Toolbar & Tab Selector */}
                     <div className="px-4 py-2 bg-slate-100/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs flex-shrink-0">
@@ -1125,64 +1135,96 @@ const PortalCliente = () => {
                                         </span>
                                     )}
                                 </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setTab('solicitacoes')}
+                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                        tab === 'solicitacoes'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                                    }`}
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+                                    <span>Minhas Solicitações</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setTab('solicitacao_tablet')}
+                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                        tab === 'solicitacao_tablet'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                                    }`}
+                                >
+                                    <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>Solicitação Rápida (Tablet)</span>
+                                </button>
                             </div>
 
                             {/* Dropdown Agrupar por */}
-                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                                <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
-                                <span className="text-xs font-semibold text-slate-600">Agrupar por:</span>
-                                <select
-                                    value={groupBy}
-                                    onChange={e => setGroupBy(e.target.value)}
-                                    className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
-                                >
-                                    <option value="none">Sem Agrupamento</option>
-                                    <option value="pedcli">Ordem de Compra (PC)</option>
-                                    <option value="pedido">Pedido de Venda</option>
-                                    <option value="produto">Produto</option>
-                                    <option value="ref_cliente">Ref. Cliente</option>
-                                    <option value="cliente">Cliente</option>
-                                    <option value="nf">Nota Fiscal (NF)</option>
-                                    <option value="emissao_ped">Data Emissão Pedido</option>
-                                    <option value="nf_emissao">Data Emissão NF</option>
-                                </select>
-                            </div>
+                            {tab !== 'solicitacoes' && tab !== 'solicitacao_tablet' && (
+                                <>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                        <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                                        <span className="text-xs font-semibold text-slate-600">Agrupar por:</span>
+                                        <select
+                                            value={groupBy}
+                                            onChange={e => setGroupBy(e.target.value)}
+                                            className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                                        >
+                                            <option value="none">Sem Agrupamento</option>
+                                            <option value="pedcli">Ordem de Compra (PC)</option>
+                                            <option value="pedido">Pedido de Venda</option>
+                                            <option value="produto">Produto</option>
+                                            <option value="ref_cliente">Ref. Cliente</option>
+                                            <option value="cliente">Cliente</option>
+                                            <option value="nf">Nota Fiscal (NF)</option>
+                                            <option value="emissao_ped">Data Emissão Pedido</option>
+                                            <option value="nf_emissao">Data Emissão NF</option>
+                                        </select>
+                                    </div>
 
-                            {groupBy !== 'none' && groupedData && (
-                                <div className="flex items-center gap-1.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleAllGroups(false)}
-                                        className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-[11px] font-medium transition-all"
-                                    >
-                                        Expandir Todos
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleAllGroups(true)}
-                                        className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-[11px] font-medium transition-all"
-                                    >
-                                        Recolher Todos
-                                    </button>
-                                </div>
+                                    {groupBy !== 'none' && groupedData && (
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleAllGroups(false)}
+                                                className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-[11px] font-medium transition-all"
+                                            >
+                                                Expandir Todos
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleAllGroups(true)}
+                                                className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-[11px] font-medium transition-all"
+                                            >
+                                                Recolher Todos
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
 
                         {/* Batch Info */}
-                        <div className="flex items-center gap-2 text-slate-500 font-medium">
-                            {groupBy !== 'none' && groupedData ? (
-                                <span><strong>{groupedData.length}</strong> grupos ({tab === 'detalhado' ? searchedFlatRows.length : itemsComSaldo.length} itens)</span>
-                            ) : tab === 'detalhado' ? (
-                                <span>Exibindo <strong>{searchedFlatRows.length}</strong> registros / NFs</span>
-                            ) : (
-                                <span>Exibindo <strong>{itemsComSaldo.length}</strong> itens com saldo pendente</span>
-                            )}
-                            {items.length > 0 && (
-                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-mono text-[10px] font-semibold border border-blue-100">
-                                    Total: {items.length} itens
-                                </span>
-                            )}
-                        </div>
+                        {tab !== 'solicitacoes' && tab !== 'solicitacao_tablet' && (
+                            <div className="flex items-center gap-2 text-slate-500 font-medium">
+                                {groupBy !== 'none' && groupedData ? (
+                                    <span><strong>{groupedData.length}</strong> grupos ({tab === 'detalhado' ? searchedFlatRows.length : itemsComSaldo.length} itens)</span>
+                                ) : tab === 'detalhado' ? (
+                                    <span>Exibindo <strong>{searchedFlatRows.length}</strong> registros / NFs</span>
+                                ) : (
+                                    <span>Exibindo <strong>{itemsComSaldo.length}</strong> itens com saldo pendente</span>
+                                )}
+                                {items.length > 0 && (
+                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-mono text-[10px] font-semibold border border-blue-100">
+                                        Total: {items.length} itens
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Table area — Tabela Única Achatada / Saldo a Faturar / Agrupamentos com Carregamento Dinâmico em Lotes */}
@@ -1201,6 +1243,10 @@ const PortalCliente = () => {
                                     Tentar novamente
                                 </button>
                             </div>
+                        ) : tab === 'solicitacoes' ? (
+                            <PortalClienteSolicitacoes user={user} allOrderItems={items} filters={filters} onOpenDrawing={handleOpenDrawing} />
+                        ) : tab === 'solicitacao_tablet' ? (
+                            <PortalClienteTabletView user={user} allOrderItems={items} onOpenDrawing={handleOpenDrawing} />
                         ) : viewMode === 'cards' ? (
                             <div className="p-3 sm:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                                 {(tab === 'detalhado' ? searchedFlatRows : itemsComSaldo).length === 0 ? (

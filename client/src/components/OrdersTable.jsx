@@ -502,12 +502,18 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         setDownloadingPDF(true);
         try {
             const reportFilters = {
-                client: filters.cliente,
-                order: filters.pedido,
-                product: filters.produto,
-                emission_start: filters.dataInicial,
-                emission_end: filters.dataFinal,
-                active_only: filters.only_active
+                cliente:             filters.cliente,
+                pedido:              filters.pedido,
+                produto:             filters.produto,
+                pedcli:              filters.pedcli,
+                refCliente:          filters.refCliente,
+                dataInicial:         filters.dataInicial,
+                dataFinal:           filters.dataFinal,
+                dateType:            filters.dateType,
+                tipo_item:           filters.tipo_item,
+                op_status:           filters.op_status,
+                only_active:         filters.only_active,
+                somente_prioridades: filters.somente_prioridades
             };
 
             // Fetch full dataset for report (large limit)
@@ -596,23 +602,20 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
     const handleDownloadFaturamentoExcel = () => {
         const reportFilters = {
-            client: filters.cliente,
-            order: filters.pedido,
-            product: filters.produto,
-            active_only: filters.only_active,
-            data_0: new Date().toISOString().split('T')[0]
+            cliente:             filters.cliente,
+            pedido:              filters.pedido,
+            produto:             filters.produto,
+            pedcli:              filters.pedcli,
+            refCliente:          filters.refCliente,
+            dataInicial:         filters.dataInicial,
+            dataFinal:           filters.dataFinal,
+            dateType:            filters.dateType,
+            tipo_item:           filters.tipo_item,
+            op_status:           filters.op_status,
+            only_active:         filters.only_active,
+            somente_prioridades: filters.somente_prioridades,
+            data_0:              new Date().toISOString().split('T')[0]
         };
-        
-        if (filters.dateType === 'entrega') {
-            reportFilters.delivery_start = filters.dataInicial;
-            reportFilters.delivery_end = filters.dataFinal;
-        } else if (filters.dateType === 'pcp') {
-            reportFilters.pcp_start = filters.dataInicial;
-            reportFilters.pcp_end = filters.dataFinal;
-        } else {
-            reportFilters.emission_start = filters.dataInicial;
-            reportFilters.emission_end = filters.dataFinal;
-        }
 
         const url = getReportDownloadUrl('faturamento-excel', reportFilters, 'sales-planning');
         window.open(url, '_blank');
@@ -622,12 +625,18 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         setDownloadingPDF(true);
         try {
             const reportFilters = {
-                client: filters.cliente,
-                order: filters.pedido,
-                product: filters.produto,
-                emission_start: filters.dataInicial,
-                emission_end: filters.dataFinal,
-                active_only: filters.only_active
+                cliente:             filters.cliente,
+                pedido:              filters.pedido,
+                produto:             filters.produto,
+                pedcli:              filters.pedcli,
+                refCliente:          filters.refCliente,
+                dataInicial:         filters.dataInicial,
+                dataFinal:           filters.dataFinal,
+                dateType:            filters.dateType,
+                tipo_item:           filters.tipo_item,
+                op_status:           filters.op_status,
+                only_active:         filters.only_active,
+                somente_prioridades: filters.somente_prioridades
             };
             
             const result = await api.get('/reports/sales-planning/faturamento-data', { params: { ...reportFilters, page: 1, limit: 10000 } }).then(res => res.data);
@@ -1081,23 +1090,20 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
     const handleDownloadExcel = async () => {
         const reportFilters = {
-            client:         filters.cliente,
-            order:          filters.pedido,
-            product:        filters.produto,
-            active_only:    filters.only_active,
-            data_0:         new Date().toISOString().split('T')[0] // Always run simulation on Excel
+            cliente:             filters.cliente,
+            pedido:              filters.pedido,
+            produto:             filters.produto,
+            pedcli:              filters.pedcli,
+            refCliente:          filters.refCliente,
+            dataInicial:         filters.dataInicial,
+            dataFinal:           filters.dataFinal,
+            dateType:            filters.dateType,
+            tipo_item:           filters.tipo_item,
+            op_status:           filters.op_status,
+            only_active:         filters.only_active,
+            somente_prioridades: filters.somente_prioridades,
+            data_0:              new Date().toISOString().split('T')[0]
         };
-        
-        if (filters.dateType === 'entrega') {
-            reportFilters.delivery_start = filters.dataInicial;
-            reportFilters.delivery_end = filters.dataFinal;
-        } else if (filters.dateType === 'pcp') {
-            reportFilters.pcp_start = filters.dataInicial;
-            reportFilters.pcp_end = filters.dataFinal;
-        } else {
-            reportFilters.emission_start = filters.dataInicial;
-            reportFilters.emission_end = filters.dataFinal;
-        }
 
         const url = getReportDownloadUrl('xlsx', reportFilters, 'sales-planning');
 

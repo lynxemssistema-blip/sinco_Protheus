@@ -187,9 +187,15 @@ router.get('/', async (req, res) => {
                 WHERE pedido IS NOT NULL AND item IS NOT NULL
             `);
             if (forecastRows.length > 0) {
+                const formatDateForPg = (d) => {
+                    if (!d) return 'NULL';
+                    const dateObj = new Date(d);
+                    if (isNaN(dateObj.getTime())) return 'NULL';
+                    return `'${dateObj.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                };
                 valuesList = forecastRows.map(row => {
-                    const entregaPcpStr = row.data_entrega_pcp ? `'${row.data_entrega_pcp}'` : 'NULL';
-                    const prevFatStr = row.data_prevista_faturamento ? `'${row.data_prevista_faturamento}'` : 'NULL';
+                    const entregaPcpStr = formatDateForPg(row.data_entrega_pcp);
+                    const prevFatStr = formatDateForPg(row.data_prevista_faturamento);
                     return `(CAST('${row.pedido}' AS varchar), CAST('${row.item}' AS varchar), CAST(${entregaPcpStr} AS varchar), CAST(${prevFatStr} AS varchar))`;
                 }).join(', ');
             }
@@ -422,6 +428,17 @@ router.get('/', async (req, res) => {
                 }
                 entregaFilter += `)`;
                 whereClause += ` AND ${entregaFilter}`;
+            } else if (dateType === 'entrega_pcp') {
+                if (dataInicial) {
+                    whereClause += ` AND fc_agg.min_entrega_pcp IS NOT NULL AND CAST(fc_agg.min_entrega_pcp AS timestamp) >= $${paramCount}::timestamp`;
+                    params.push(new Date(dataInicial));
+                    paramCount++;
+                }
+                if (dataFinal) {
+                    whereClause += ` AND fc_agg.min_entrega_pcp IS NOT NULL AND CAST(fc_agg.min_entrega_pcp AS timestamp) <= $${paramCount}::timestamp`;
+                    params.push(new Date(dataFinal + 'T23:59:59'));
+                    paramCount++;
+                }
             } else {
                 if (dataInicial) {
                     whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
@@ -907,6 +924,8 @@ router.get('/flat', async (req, res) => {
                     countParams.push(val);
                     countParamCount++;
                 }
+            } else if (dateType === 'entrega_pcp') {
+                // Do nothing here, it is handled below when fc is joined
             } else {
                 if (dataInicial) {
                     const val = dataInicial.replace(/-/g, '');
@@ -2943,12 +2962,36 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
             SELECT e.*, COALESCE(ra.operacoes, '[]'::json) AS operacoes FROM estrutura e LEFT JOIN roteiro_agregado ra ON ra.g2_produto_limpo = e.componente ORDER BY e.item_pedido ASC, e.nivel ASC, e.produto_pai ASC, e.componente ASC;
         `;
 
+        const forecastMap = await getForecastMapCached();
         const explosionResult = await client.query(explosionQuery, explosionParams);
         const itemsMap = new Map();
         explosionResult.rows.forEach(row => {
-            if (!itemsMap.has(row.item_pedido)) itemsMap.set(row.item_pedido, { item_pedido: row.item_pedido, produto_principal: null, estrutura_linear: [] });
+            if (!itemsMap.has(row.item_pedido)) {
+                const fcKey = `${String(id).trim()}|${String(row.item_pedido).trim()}`;
+                const fc = forecastMap.get(fcKey);
+                const dataPcp = fc && fc.data_entrega_pcp ? fc.data_entrega_pcp : null;
+                itemsMap.set(row.item_pedido, {
+                    item_pedido: row.item_pedido,
+                    data_pcp: dataPcp,
+                    produto_principal: null,
+                    estrutura_linear: []
+                });
+            }
             const itemGroup = itemsMap.get(row.item_pedido);
-            if (row.nivel === 0) itemGroup.produto_principal = { codigo: row.componente, descricao: row.descricao, tipo: row.tipo, revisao: row.revisao, unidade: row.unidade, quantidade_venda: parseFloat(row.qtd_necessaria), op_num: row.op_relacionada, op_tipo: row.op_tipo_relacionada, operacoes: row.operacoes };
+            if (row.nivel === 0) {
+                itemGroup.produto_principal = {
+                    codigo: row.componente,
+                    descricao: row.descricao,
+                    tipo: row.tipo,
+                    revisao: row.revisao,
+                    unidade: row.unidade,
+                    quantidade_venda: parseFloat(row.qtd_necessaria),
+                    op_num: row.op_relacionada,
+                    op_tipo: row.op_tipo_relacionada,
+                    operacoes: row.operacoes,
+                    data_pcp: itemGroup.data_pcp
+                };
+            }
             else itemGroup.estrutura_linear.push({ nivel: parseInt(row.nivel), pai: row.produto_pai, codigo: row.componente, descricao: row.descricao, tipo: row.tipo, unidade: row.unidade, quantidade_calculada: parseFloat(row.qtd_necessaria), op_num: row.op_relacionada, op_tipo: row.op_tipo_relacionada, operacoes: row.operacoes });
         });
         res.json({ pedido: orderData, itens: Array.from(itemsMap.values()) });
@@ -3096,6 +3139,14 @@ router.get('/portal-cliente', async (req, res) => {
 
         const auth = await getAuthorizedOrders(req);
         let extraFilters = '';
+
+        // Filtrar pedidos inativos (app_pedidos_inativos)
+        try {
+            const getInactiveFilter = await getInactiveOrdersFilter();
+            extraFilters += getInactiveFilter('c5.c5_num');
+        } catch (inactiveErr) {
+            console.error('[Portal Cliente] Erro ao obter filtro de inativos:', inactiveErr.message);
+        }
 
         if (cliente) {
             const safe = cliente.replace(/'/g, "''");
@@ -3378,6 +3429,22 @@ router.get('/portal-cliente', async (req, res) => {
             pgClient.release();
         }
 
+        // Buscar solicitações de faturamento em aberto no MySQL
+        const openBillingSet = new Set();
+        try {
+            const [openSols] = await mysqlPool.query(`
+                SELECT DISTINCT TRIM(i.pedido) AS pedido, TRIM(i.item) AS item 
+                FROM app_faturamento_solicitacao_itens i
+                JOIN app_faturamento_solicitacoes s ON i.solicitacao_id = s.id
+                WHERE s.status NOT IN ('Atendido', 'Cancelado')
+            `);
+            openSols.forEach(os => {
+                openBillingSet.add(`${os.pedido}|${os.item}`);
+            });
+        } catch (mySqlErr) {
+            console.error('[Portal Cliente] Erro ao buscar solicitacoes de faturamento em aberto:', mySqlErr);
+        }
+
         // Batch lookup 5: Desenhos / Documentos do MySQL (produtos_docs)
         const docMap = new Map();
         if (itemRows.length > 0) {
@@ -3444,9 +3511,11 @@ router.get('/portal-cliente', async (req, res) => {
             const percentual = planejado > 0 ? Math.min(100, Math.round((apontado / planejado) * 100)) : 0;
             const saldo = parseFloat(row.saldo_faturar) || 0;
             const qtdFaturada = parseFloat(row.qtd_faturada) || 0;
+            const hasOpenBilling = openBillingSet.has(key);
 
             let status = 'AGUARDANDO';
             if (saldo <= 0 && qtdFaturada > 0) status = 'ENTREGUE';
+            else if (hasOpenBilling) status = 'FATURAMENTO_SOLICITADO';
             else if (row.tem_op) status = percentual >= 100 ? 'PRODUCAO_CONCLUIDA' : apontado > 0 ? 'EM_PRODUCAO' : 'OP_ABERTA';
             else status = 'AGUARDANDO_OP';
 

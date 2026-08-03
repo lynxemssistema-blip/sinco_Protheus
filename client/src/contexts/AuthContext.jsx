@@ -119,6 +119,11 @@ export const AuthProvider = ({ children }) => {
 
             // Perfil customizado com isAdmin também tem acesso total
             if (customProfiles.find(p => p.code === userTipo)?.isAdmin === true) return true;
+            
+            // Clientes sempre têm acesso à própria página do portal
+            if ((userTipo === 'E' || user?.tipoExterno === 'cliente' || !!user?.idCliente) && pageId === 'canal_cliente') {
+                return true;
+            }
         }
 
         const perm = permissions[pageId];

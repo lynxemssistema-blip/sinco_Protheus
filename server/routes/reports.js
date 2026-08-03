@@ -302,15 +302,69 @@ console.log('✅ [Reports] Loading Sales Planning Routes...');
  * Returns structured data for Orders List (hierarchical) or Flattened Items (for Planning View logic)
  */
 async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 100 }) {
-    const {
-        client, order, product,
-        delivery_start, delivery_end,
-        emission_start, emission_end,
-        status, active_only
-    } = filters;
-
     const { page, limit } = pagination;
     const offset = (page - 1) * limit;
+
+    const clienteVal = filters.cliente || filters.client || '';
+    const pedidoVal = filters.pedido || filters.order || '';
+    const produtoVal = filters.produto || filters.product || '';
+    const pedcliVal = filters.pedcli || '';
+    const refClienteVal = filters.refCliente || '';
+    const onlyActiveVal = filters.only_active || filters.active_only || 'false';
+    const somentePrioridadesVal = filters.somente_prioridades || filters.prioridade || 'false';
+    const tipoItemVal = filters.tipo_item || '';
+    const opStatusVal = filters.op_status || '';
+
+    // Date logic
+    const dateTypeVal = filters.dateType || (filters.delivery_start || filters.delivery_end ? 'entrega' : 'pedido');
+    const dataInicialVal = filters.dataInicial || filters.delivery_start || filters.emission_start || filters.pcp_start || '';
+    const dataFinalVal = filters.dataFinal || filters.delivery_end || filters.emission_end || filters.pcp_end || '';
+
+    // Fetch forecasts from MySQL if filtering by PCP date
+    let valuesList = "(CAST('DUMMY' AS varchar), CAST('DUMMY' AS varchar), CAST(NULL AS varchar), CAST(NULL AS varchar))";
+    if (dateTypeVal === 'entrega_pcp') {
+        try {
+            let mysqlQuery = `
+                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
+                FROM app_pcp_delivery_forecasts
+                WHERE pedido IS NOT NULL AND item IS NOT NULL
+            `;
+            const mysqlParams = [];
+
+            if (dataInicialVal) {
+                mysqlQuery += ` AND data_entrega_pcp >= ?`;
+                mysqlParams.push(dataInicialVal);
+            }
+            if (dataFinalVal) {
+                mysqlQuery += ` AND data_entrega_pcp <= ?`;
+                mysqlParams.push(dataFinalVal);
+            }
+            if (pedidoVal) {
+                mysqlQuery += ` AND pedido LIKE ?`;
+                mysqlParams.push(`%${pedidoVal}%`);
+            }
+
+            mysqlQuery += ` LIMIT 15000`;
+
+            const [forecastRows] = await mysqlPool.query(mysqlQuery, mysqlParams);
+
+            if (forecastRows.length > 0) {
+                const formatDateForPg = (d) => {
+                    if (!d) return 'NULL';
+                    const dateObj = new Date(d);
+                    if (isNaN(dateObj.getTime())) return 'NULL';
+                    return `'${dateObj.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                };
+                valuesList = forecastRows.map(row => {
+                    const entregaPcpStr = formatDateForPg(row.data_entrega_pcp);
+                    const prevFatStr = formatDateForPg(row.data_prevista_faturamento);
+                    return `(CAST('${row.pedido}' AS varchar), CAST('${row.item}' AS varchar), CAST(${entregaPcpStr} AS varchar), CAST(${prevFatStr} AS varchar))`;
+                }).join(', ');
+            }
+        } catch (err) {
+            console.error('Error fetching forecasts in fetchSalesPlanningData:', err);
+        }
+    }
 
     let priFilterItems = '';
     const params = [];
@@ -318,7 +372,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     let whereClause = `WHERE c5.c5_tipo <> 'B' AND COALESCE(c5.d_e_l_e_t_, '') = ''` + getInactiveFilter('c5.c5_num');
 
     // Active Toggle (Exclude Billed/Deleted) - Updated to consider remaining balance
-    if (active_only === 'true') {
+    if (onlyActiveVal === 'true') {
         whereClause += ` AND (
             COALESCE(c5.c5_nota, '') = '' 
             OR EXISTS (
@@ -331,27 +385,18 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
         )`;
     }
 
-    if (client) {
+    if (clienteVal) {
         whereClause += ` AND (UPPER(a1.a1_nome) LIKE UPPER($${params.length + 1}) OR UPPER(a1.a1_nreduz) LIKE UPPER($${params.length + 1}))`;
-        params.push(`%${client}%`);
+        params.push(`%${clienteVal}%`);
     }
 
-    if (order) {
+    if (pedidoVal) {
         whereClause += ` AND c5.c5_num LIKE $${params.length + 1}`;
-        params.push(`%${order}%`);
-    }
-
-    if (emission_start) {
-        whereClause += ` AND c5.c5_emissao >= $${params.length + 1}`;
-        params.push(emission_start.replace(/-/g, ''));
-    }
-    if (emission_end) {
-        whereClause += ` AND c5.c5_emissao <= $${params.length + 1}`;
-        params.push(emission_end.replace(/-/g, ''));
+        params.push(`%${pedidoVal}%`);
     }
 
     // Product Filter (Exists logic)
-    if (product) {
+    if (produtoVal) {
         whereClause += ` AND EXISTS (
             SELECT 1 FROM sc6010 sub_c6 
             LEFT JOIN sb1010 sub_b1 ON sub_b1.b1_cod = sub_c6.c6_produto
@@ -359,18 +404,205 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             AND sub_c6.c6_filial = c5.c5_filial
             AND (UPPER(sub_c6.c6_produto) LIKE UPPER($${params.length + 1}) OR UPPER(sub_b1.b1_desc) LIKE UPPER($${params.length + 1}))
         )`;
-        params.push(`%${product}%`);
+        params.push(`%${produtoVal}%`);
     }
 
-    // Delivery Date Filter (Exists logic on Items)
-    if (delivery_start || delivery_end) {
+    // Pedcli (Customer Order Number) filter
+    if (pedcliVal) {
         whereClause += ` AND EXISTS (
-            SELECT 1 FROM sc6010 sub_c6 
-            WHERE sub_c6.c6_num = c5.c5_num 
-            AND sub_c6.c6_filial = c5.c5_filial
-            ${delivery_start ? `AND sub_c6.c6_entreg >= '${delivery_start.replace(/-/g, '')}'` : ''}
-            ${delivery_end ? `AND sub_c6.c6_entreg <= '${delivery_end.replace(/-/g, '')}'` : ''}
+            SELECT 1 FROM public.sc6010 sub_c6_pc
+            WHERE sub_c6_pc.c6_num = c5.c5_num
+            AND sub_c6_pc.c6_filial = c5.c5_filial
+            AND UPPER(sub_c6_pc.c6_pedcli) LIKE UPPER($${params.length + 1})
+            AND COALESCE(sub_c6_pc.d_e_l_e_t_, '') = ''
         )`;
+        params.push(`%${pedcliVal}%`);
+    }
+
+    // RefCliente (Customer Reference) filter
+    if (refClienteVal) {
+        whereClause += ` AND EXISTS (
+            SELECT 1 FROM public.sz1010 z1_filter
+            WHERE z1_filter.z1_cliente = c5.c5_cliente
+              AND z1_filter.z1_loja = c5.c5_lojacli
+              AND COALESCE(z1_filter.d_e_l_e_t_, '') = ''
+              AND UPPER(z1_filter.z1_codcli) LIKE UPPER($${params.length + 1})
+        )`;
+        params.push(`%${refClienteVal}%`);
+    }
+
+    // Tipo de Item filter
+    if (tipoItemVal) {
+        const tipos = tipoItemVal.split(',').filter(Boolean);
+        if (tipos.length > 0) {
+            const tipoConditions = [];
+            if (tipos.includes('Restrição')) {
+                tipoConditions.push(`(
+                    EXISTS (
+                        SELECT 1 FROM public.sb1010 filter_sb
+                        WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                        AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                        AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                    ) OR EXISTS (
+                        SELECT 1 FROM public.sz0010 filter_sz
+                        WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                        AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                        AND filter_sz.z0_status = 'P'
+                    )
+                )`);
+            }
+            if (tipos.includes('Revisão')) {
+                tipoConditions.push(`(COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, ''))`);
+            }
+            if (tipos.includes('Novo')) {
+                tipoConditions.push(`(NOT EXISTS (
+                    SELECT 1 FROM public.sg1010 sg1
+                    WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                    AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM public.sg2010 sg2
+                    WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                    AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                ))`);
+            }
+            if (tipos.includes('PCP')) {
+                tipoConditions.push(`(NOT (
+                    EXISTS (
+                        SELECT 1 FROM public.sb1010 filter_sb
+                        WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                        AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                        AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                    ) OR EXISTS (
+                        SELECT 1 FROM public.sz0010 filter_sz
+                        WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                        AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                        AND filter_sz.z0_status = 'P'
+                    )
+                ) AND COALESCE(c6.c6_xrevm, '') = COALESCE(c6.c6_xrevc, '') 
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM public.sg1010 sg1
+                        WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                    ) OR EXISTS (
+                        SELECT 1 FROM public.sg2010 sg2
+                        WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                    )
+                ))`);
+            }
+            if (tipoConditions.length > 0) {
+                whereClause += ` AND EXISTS (
+                    SELECT 1 FROM public.sc6010 c6 
+                    WHERE c6.c6_num = c5.c5_num 
+                    AND c6.c6_filial = c5.c5_filial 
+                    AND COALESCE(c6.d_e_l_e_t_, '') = ''
+                    AND (${tipoConditions.join(' OR ')})
+                )`;
+            }
+        }
+    }
+
+    // Op Status filter
+    if (opStatusVal === 'com_op') {
+        whereClause += ` AND EXISTS (
+            SELECT 1 FROM public.sc6010 c6_op
+            WHERE c6_op.c6_num = c5.c5_num
+            AND c6_op.c6_filial = c5.c5_filial
+            AND COALESCE(c6_op.d_e_l_e_t_, '') = ''
+            AND EXISTS (
+                SELECT 1 FROM public.sc2010 c2_status 
+                WHERE c2_status.c2_pedido = c6_op.c6_num 
+                AND c2_status.c2_itempv = c6_op.c6_item 
+                AND COALESCE(c2_status.d_e_l_e_t_, '') = ''
+            )
+        )`;
+    } else if (opStatusVal === 'sem_op') {
+        whereClause += ` AND EXISTS (
+            SELECT 1 FROM public.sc6010 c6_op
+            WHERE c6_op.c6_num = c5.c5_num
+            AND c6_op.c6_filial = c5.c5_filial
+            AND COALESCE(c6_op.d_e_l_e_t_, '') = ''
+            AND NOT EXISTS (
+                SELECT 1 FROM public.sc2010 c2_status 
+                WHERE c2_status.c2_pedido = c6_op.c6_num 
+                AND c2_status.c2_itempv = c6_op.c6_item 
+                AND COALESCE(c2_status.d_e_l_e_t_, '') = ''
+            )
+        )`;
+    }
+
+    // Date Filters
+    if (dataInicialVal || dataFinalVal) {
+        if (dateTypeVal === 'nf') {
+            let nfFilter = `EXISTS (
+                SELECT 1 FROM public.sd2010 d2_ex
+                JOIN public.sf2010 f2_ex 
+                    ON f2_ex.f2_doc = d2_ex.d2_doc 
+                    AND f2_ex.f2_serie = d2_ex.d2_serie 
+                    AND COALESCE(f2_ex.d_e_l_e_t_, '') = ''
+                WHERE d2_ex.d2_pedido = c5.c5_num 
+                  AND COALESCE(d2_ex.d_e_l_e_t_, '') = ''
+            `;
+            if (dataInicialVal) {
+                nfFilter += ` AND f2_ex.f2_emissao >= $${params.length + 1}`;
+                params.push(dataInicialVal.replace(/-/g, ''));
+            }
+            if (dataFinalVal) {
+                nfFilter += ` AND f2_ex.f2_emissao <= $${params.length + 1}`;
+                params.push(dataFinalVal.replace(/-/g, ''));
+            }
+            nfFilter += `)`;
+            whereClause += ` AND ${nfFilter}`;
+        } else if (dateTypeVal === 'entrega') {
+            let entregaFilter = `EXISTS (
+                SELECT 1 FROM public.sc6010 sub_c6 
+                WHERE sub_c6.c6_num = c5.c5_num 
+                AND sub_c6.c6_filial = c5.c5_filial
+                AND COALESCE(sub_c6.d_e_l_e_t_, '') = ''
+            `;
+            if (dataInicialVal) {
+                entregaFilter += ` AND sub_c6.c6_entreg >= $${params.length + 1}`;
+                params.push(dataInicialVal.replace(/-/g, ''));
+            }
+            if (dataFinalVal) {
+                entregaFilter += ` AND sub_c6.c6_entreg <= $${params.length + 1}`;
+                params.push(dataFinalVal.replace(/-/g, ''));
+            }
+            entregaFilter += `)`;
+            whereClause += ` AND ${entregaFilter}`;
+        } else if (dateTypeVal === 'entrega_pcp') {
+            let pcpFilter = `EXISTS (
+                SELECT 1 FROM public.sc6010 c6_pcp
+                JOIN (
+                    VALUES ${valuesList}
+                ) AS fc(pedido, item, data_entrega_pcp, data_prevista_faturamento)
+                    ON fc.pedido = TRIM(c6_pcp.c6_num) AND fc.item = TRIM(c6_pcp.c6_item)
+                WHERE c6_pcp.c6_num = c5.c5_num 
+                  AND c6_pcp.c6_filial = c5.c5_filial 
+                  AND COALESCE(c6_pcp.d_e_l_e_t_, '') = ''
+                  AND fc.data_entrega_pcp IS NOT NULL
+            `;
+            if (dataInicialVal) {
+                pcpFilter += ` AND CAST(fc.data_entrega_pcp AS timestamp) >= $${params.length + 1}::timestamp`;
+                params.push(new Date(dataInicialVal));
+            }
+            if (dataFinalVal) {
+                pcpFilter += ` AND CAST(fc.data_entrega_pcp AS timestamp) <= $${params.length + 1}::timestamp`;
+                params.push(new Date(dataFinalVal + 'T23:59:59'));
+            }
+            pcpFilter += `)`;
+            whereClause += ` AND ${pcpFilter}`;
+        } else {
+            if (dataInicialVal) {
+                whereClause += ` AND c5.c5_emissao >= $${params.length + 1}`;
+                params.push(dataInicialVal.replace(/-/g, ''));
+            }
+            if (dataFinalVal) {
+                whereClause += ` AND c5.c5_emissao <= $${params.length + 1}`;
+                params.push(dataFinalVal.replace(/-/g, ''));
+            }
+        }
     }
 
     // Priority filtering from MySQL app_op_priorities
@@ -459,7 +691,144 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     const orderNumbers = results.rows.map(r => r.pedido);
     let itemsMap = {};
     if (orderNumbers.length > 0) {
-        // Fetch full item details including description
+        let itemWhereClause = "WHERE c6.c6_num = ANY($1) AND c6.d_e_l_e_t_ = ''";
+        const itemParams = [orderNumbers];
+
+        if (onlyActiveVal === 'true') {
+            itemWhereClause += ` AND ((c6.c6_qtdven - c6.c6_qtdent) > 0 OR c6.c6_qtdlib > 0)`;
+        }
+
+        if (produtoVal) {
+            itemWhereClause += ` AND (UPPER(c6.c6_produto) LIKE UPPER($2) OR UPPER(sb1.b1_desc) LIKE UPPER($2))`;
+            itemParams.push(`%${produtoVal}%`);
+        }
+
+        if (pedcliVal) {
+            itemWhereClause += ` AND UPPER(c6.c6_pedcli) LIKE UPPER($${itemParams.length + 1})`;
+            itemParams.push(`%${pedcliVal}%`);
+        }
+
+        if (dataInicialVal || dataFinalVal) {
+            if (dateTypeVal === 'nf') {
+                let nfFilter = `EXISTS (
+                    SELECT 1 FROM public.sd2010 d2_ex
+                    JOIN public.sf2010 f2_ex 
+                        ON f2_ex.f2_doc = d2_ex.d2_doc 
+                        AND f2_ex.f2_serie = d2_ex.d2_serie 
+                        AND COALESCE(f2_ex.d_e_l_e_t_, '') = ''
+                    WHERE d2_ex.d2_pedido = c6.c6_num 
+                      AND d2_ex.d2_itempv = c6.c6_item
+                      AND COALESCE(d2_ex.d_e_l_e_t_, '') = ''
+                `;
+                if (dataInicialVal) {
+                    nfFilter += ` AND f2_ex.f2_emissao >= $${itemParams.length + 1}`;
+                    itemParams.push(dataInicialVal.replace(/-/g, ''));
+                }
+                if (dataFinalVal) {
+                    nfFilter += ` AND f2_ex.f2_emissao <= $${itemParams.length + 1}`;
+                    itemParams.push(dataFinalVal.replace(/-/g, ''));
+                }
+                nfFilter += `)`;
+                itemWhereClause += ` AND ${nfFilter}`;
+            } else if (dateTypeVal === 'entrega') {
+                if (dataInicialVal) {
+                    itemWhereClause += ` AND c6.c6_entreg >= $${itemParams.length + 1}`;
+                    itemParams.push(dataInicialVal.replace(/-/g, ''));
+                }
+                if (dataFinalVal) {
+                    itemWhereClause += ` AND c6.c6_entreg <= $${itemParams.length + 1}`;
+                    itemParams.push(dataFinalVal.replace(/-/g, ''));
+                }
+            } else if (dateTypeVal === 'entrega_pcp') {
+                let pcpFilter = `EXISTS (
+                    SELECT 1 FROM (
+                        VALUES ${valuesList}
+                    ) AS fc(pedido, item, data_entrega_pcp, data_prevista_faturamento)
+                    WHERE fc.pedido = TRIM(c6.c6_num) AND fc.item = TRIM(c6.c6_item)
+                      AND fc.data_entrega_pcp IS NOT NULL
+                `;
+                if (dataInicialVal) {
+                    pcpFilter += ` AND CAST(fc.data_entrega_pcp AS timestamp) >= $${itemParams.length + 1}::timestamp`;
+                    itemParams.push(new Date(dataInicialVal));
+                }
+                if (dataFinalVal) {
+                    pcpFilter += ` AND CAST(fc.data_entrega_pcp AS timestamp) <= $${itemParams.length + 1}::timestamp`;
+                    itemParams.push(new Date(dataFinalVal + 'T23:59:59'));
+                }
+                pcpFilter += `)`;
+                itemWhereClause += ` AND ${pcpFilter}`;
+            }
+        }
+
+        if (priFilterItems) {
+            itemWhereClause += priFilterItems;
+        }
+
+        if (tipoItemVal) {
+            const tipos = tipoItemVal.split(',').filter(Boolean);
+            if (tipos.length > 0) {
+                const tipoConditions = [];
+                if (tipos.includes('Restrição')) {
+                    tipoConditions.push(`(
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    )`);
+                }
+                if (tipos.includes('Revisão')) {
+                    tipoConditions.push(`(COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, ''))`);
+                }
+                if (tipos.includes('Novo')) {
+                    tipoConditions.push(`(NOT EXISTS (
+                        SELECT 1 FROM public.sg1010 sg1
+                        WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM public.sg2010 sg2
+                        WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                        AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                    ))`);
+                }
+                if (tipos.includes('PCP')) {
+                    tipoConditions.push(`(NOT (
+                        EXISTS (
+                            SELECT 1 FROM public.sb1010 filter_sb
+                            WHERE TRIM(filter_sb.b1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sb.d_e_l_e_t_, '') <> '*'
+                            AND filter_sb.b1_msblql IN ('1','S','T','Y')
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sz0010 filter_sz
+                            WHERE TRIM(filter_sz.z0_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(filter_sz.d_e_l_e_t_, '') <> '*'
+                            AND filter_sz.z0_status = 'P'
+                        )
+                    ) AND COALESCE(c6.c6_xrevm, '') = COALESCE(c6.c6_xrevc, '') 
+                      AND (
+                        EXISTS (
+                            SELECT 1 FROM public.sg1010 sg1
+                            WHERE TRIM(sg1.g1_cod) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg1.d_e_l_e_t_, '') <> '*'
+                        ) OR EXISTS (
+                            SELECT 1 FROM public.sg2010 sg2
+                            WHERE TRIM(sg2.g2_produto) = TRIM(c6.c6_produto)
+                            AND COALESCE(sg2.d_e_l_e_t_, '') <> '*'
+                        )
+                    ))`);
+                }
+                if (tipoConditions.length > 0) {
+                    itemWhereClause += ` AND (${tipoConditions.join(' OR ')})`;
+                }
+            }
+        }
+
         const itemsSql = `
             SELECT 
                 c6.c6_num as pedido,
@@ -477,10 +846,10 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             FROM sc6010 c6
             LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND sb1.d_e_l_e_t_ = ''
             LEFT JOIN sc2010 c2 ON c2.c2_pedido = c6.c6_num AND c2.c2_itempv = c6.c6_item AND c2.d_e_l_e_t_ = ''
-            WHERE c6.c6_num = ANY($1) AND c6.d_e_l_e_t_ = '' ${priFilterItems}
+            ${itemWhereClause}
             ORDER BY c6.c6_item ASC
         `;
-        const itemsRes = await db.query(itemsSql, [orderNumbers]);
+        const itemsRes = await db.query(itemsSql, itemParams);
 
         // Fetch priorities from local MySQL app_op_priorities
         let opPrioritiesMap = {};
@@ -593,7 +962,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             proxima_entrega: r.proxima_entrega,
             itens: itemsMap[r.pedido] || []
         };
-    });
+    }).filter(r => r.itens.length > 0);
 
     // KPI Calculation (Global or Page? For massive data global is expensive. Let's do a lightweight filtered aggregate)
     // We'll stick to basic totals for now from pagination.
@@ -612,8 +981,8 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     };
 }
 
-// GET /api/reports/sales-planning/data
-router.get('/sales-planning/data', async (req, res) => {
+// GET /api/reports/sales-planning/data OR faturamento-data
+router.get(['/sales-planning/data', '/sales-planning/faturamento-data'], async (req, res) => {
     try {
         const data = await fetchSalesPlanningData(req.query, {
             page: req.query.page || 1,
@@ -654,20 +1023,23 @@ router.get('/sales-planning/pdf', async (req, res) => {
     res.status(503).json({ error: 'PDF generation temporarily unavailable - Excel export is available' });
 });
 
-// GET /api/reports/sales-planning/excel OR xlsx
-router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) => {
+// GET /api/reports/sales-planning/excel OR xlsx OR faturamento-excel
+router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/faturamento-excel', '/sales-planning/faturamento-xlsx'], async (req, res) => {
     try {
         const { rows } = await fetchSalesPlanningData(req.query, { page: 1, limit: 5000 });
+        const priorityMapping = { 1: 'Urgente', 2: 'Alta', 3: 'Média', 4: 'Normal' };
 
         // ── Step 0: Tabelas de apoio ────────────────────────────────────────────
         // 0a) Tempo padrão por recurso (fallback quando SG2 tempad=0)
         let capacidadeMap = {}; // recurso_codigo -> tempo_padrao_minutos
+        let capacidadeDiariaMap = {}; // recurso_codigo -> capacidade_diaria_minutos
         try {
             const [capRows] = await mysqlPool.query(
-                'SELECT recurso_codigo, tempo_padrao_minutos FROM app_recursos_capacidade'
+                'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos FROM app_recursos_capacidade'
             );
             capRows.forEach(r => {
                 capacidadeMap[r.recurso_codigo] = parseFloat(r.tempo_padrao_minutos) || 0;
+                capacidadeDiariaMap[r.recurso_codigo] = parseFloat(r.capacidade_diaria_minutos) || 0;
             });
         } catch (e) {
             console.warn('[Excel] Could not load app_recursos_capacidade:', e.message);
@@ -825,6 +1197,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
         const sheetOrders = workbook.addWorksheet('Pedidos');
         const sheetItems  = workbook.addWorksheet('Itens Detalhados');
         const sheetCarga  = workbook.addWorksheet('Carga por Recurso');
+        const sheetCapacidade = workbook.addWorksheet('Capacidade do Período');
         const sheetExecucao = workbook.addWorksheet('Execução OP');
         const sheetEntregas = workbook.addWorksheet('Prog. Entregas');
 
@@ -1156,7 +1529,8 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
             { header: 'Qtde PCP',         key: 'qtde_pcp',     width: 10 },
             { header: 'Entrega',          key: 'entrega',      width: 12 },
             { header: 'OP',               key: 'op',           width: 12 },
-            { header: 'Ped. Cliente',     key: 'ped_cli',      width: 15 }
+            { header: 'Ped. Cliente',     key: 'ped_cli',      width: 15 },
+            { header: 'Prioridade',       key: 'prioridade',   width: 20 }
         ];
 
         // Sheet 3: Carga por Recurso — PIVOT (fixed cols + one col per resource)
@@ -1172,6 +1546,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
             { header: 'Data PCP',        key: 'data_pcp',     width: 12 },
             { header: 'Nova Data PCP',   key: 'nova_data_pcp',width: 15 },
             { header: 'Qtde PCP',        key: 'qtde_pcp',     width: 12 },
+            { header: 'Prioridade',      key: 'prioridade',   width: 20 },
         ];
         const recursoCols = allRecursos.map(r => ({
             header: recursoNomeMap[r] || r,   // "MO0001 - GUILHOTINA" ou só o código
@@ -1179,6 +1554,16 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
             width:  22
         }));
         sheetCarga.columns = [...fixedCols, ...recursoCols];
+
+        // Sheet 3b: Capacidade do Período
+        sheetCapacidade.columns = [
+            { header: 'Recurso / Máquina',     key: 'recurso',      width: 40 },
+            { header: 'Capacidade Diária (h)', key: 'cap_diaria',   width: 22 },
+            { header: 'Capacidade Total (h)',  key: 'cap_total',    width: 22 },
+            { header: 'Carga Prevista (h)',    key: 'carga_prev',   width: 22 },
+            { header: 'Saldo Capacidade (h)',  key: 'saldo',        width: 22 },
+            { header: '% Ocupação',            key: 'ocupacao',     width: 15 }
+        ];
 
         // Sheet 4: Execução OP
         const execFixedCols = [
@@ -1317,7 +1702,8 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
                         qtde_pcp:    item.qtde_pcp != null ? parseFloat(item.qtde_pcp) : null,
                         entrega:     parseDate(item.entrega),
                         op:          item.op,
-                        ped_cli:     item.ped_cli
+                        ped_cli:     item.ped_cli,
+                        prioridade:  item.op_prioridade ? `Grupo ${item.op_prioridade} (${priorityMapping[item.op_prioridade] || ''})` : '-'
                     });
 
                     // Sheet 3: PIVOT — carga por recurso (todos os níveis via calcCargaRecurso)
@@ -1341,6 +1727,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
                         data_pcp:    item.data_pcp ? parseDate(item.data_pcp) : null,
                         nova_data_pcp: item.nova_data_pcp ? parseDate(item.nova_data_pcp) : null,
                         qtde_pcp:    item.qtde_pcp != null ? parseFloat(item.qtde_pcp) : null,
+                        prioridade:  item.op_prioridade ? `Grupo ${item.op_prioridade} (${priorityMapping[item.op_prioridade] || ''})` : '-'
                     };
                     allRecursos.forEach(r => { pivotRow[`rec_${r}`] = minByRecurso[`rec_${r}`] || 0; });
                     sheetCarga.addRow(pivotRow);
@@ -1448,6 +1835,115 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
             sheetResumo.addRow(row);
         });
 
+        console.log('[Excel] Montando aba Capacidade do Período...');
+        const dataInicialVal = req.query.dataInicial || req.query.delivery_start || req.query.emission_start || req.query.pcp_start || '';
+        const dataFinalVal = req.query.dataFinal || req.query.delivery_end || req.query.emission_end || req.query.pcp_end || '';
+        let dIni = dataInicialVal ? new Date(dataInicialVal) : null;
+        let dFim = dataFinalVal ? new Date(dataFinalVal) : null;
+
+        if (!dIni || !dFim) {
+            const pcpDates = [];
+            rows.forEach(o => {
+                if (o.itens) {
+                    o.itens.forEach(item => {
+                        const dateVal = item.data_pcp || item.entrega;
+                        if (dateVal) {
+                            const str = String(dateVal).trim();
+                            let d;
+                            if (str.length === 8 && !str.includes('-')) {
+                                d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8));
+                            } else {
+                                d = new Date(str);
+                            }
+                            if (!isNaN(d.getTime())) pcpDates.push(d);
+                        }
+                    });
+                }
+            });
+
+            if (pcpDates.length > 0) {
+                if (!dIni) dIni = new Date(Math.min(...pcpDates));
+                if (!dFim) dFim = new Date(Math.max(...pcpDates));
+            }
+        }
+
+        let daysPeriodo = 1;
+        if (dIni && dFim) {
+            let count = 0;
+            let cur = new Date(dIni.getTime());
+            cur.setHours(0,0,0,0);
+            const end = new Date(dFim.getTime());
+            end.setHours(23,59,59,999);
+
+            while (cur <= end) {
+                const day = cur.getDay();
+                if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+                    count++;
+                }
+                cur.setDate(cur.getDate() + 1);
+            }
+            daysPeriodo = count || 1;
+        }
+
+        const totalLoadByRecurso = {};
+        allRecursos.forEach(r => { totalLoadByRecurso[r] = 0; });
+
+        rows.forEach(o => {
+            if (o.itens) {
+                o.itens.forEach(item => {
+                    const dateVal = item.data_pcp || item.entrega;
+                    if (dIni && dFim && dateVal) {
+                        const str = String(dateVal).trim();
+                        let d;
+                        if (str.length === 8 && !str.includes('-')) {
+                            d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8) + 'T00:00:00');
+                        } else {
+                            d = new Date(str);
+                        }
+                        if (!isNaN(d.getTime())) {
+                            if (d < dIni || d > dFim) return; // Ignore residual/backlog load
+                        }
+                    }
+
+                    const qtdFaturar = parseFloat(item.qtd_faturar) || 0;
+                    const minByRecurso = calcCargaRecurso(
+                        item.produto.trim(),
+                        qtdFaturar,
+                        routingMap,
+                        bomMap,
+                        capacidadeMap
+                    );
+
+                    allRecursos.forEach(r => {
+                        totalLoadByRecurso[r] += minByRecurso[`rec_${r}`] || 0;
+                    });
+                });
+            }
+        });
+
+        allRecursos.forEach(r => {
+            const cod = r.trim().toUpperCase();
+            const capDiaria = capacidadeDiariaMap[cod] || 0;
+            const capTotal = capDiaria * daysPeriodo;
+            const cargaPrevista = totalLoadByRecurso[r] || 0;
+
+            const MIN_POR_HORA = 55;
+            const capDiariaHrs = Number((capDiaria / MIN_POR_HORA).toFixed(2));
+            const capTotalHrs = Number((capTotal / MIN_POR_HORA).toFixed(2));
+            const cargaPrevistaHrs = Number((cargaPrevista / MIN_POR_HORA).toFixed(2));
+            const saldoHrs = Number(((capTotal - cargaPrevista) / MIN_POR_HORA).toFixed(2));
+            const ocupacao = capTotal > 0 ? (cargaPrevista / capTotal) * 100 : 0;
+
+            sheetCapacidade.addRow({
+                recurso:   recursoNomeMap[r] || r,
+                cap_diaria: capDiariaHrs,
+                cap_total:  capTotalHrs,
+                carga_prev: cargaPrevistaHrs,
+                saldo:      saldoHrs,
+                ocupacao:   Number(ocupacao.toFixed(2))
+            });
+        });
+
         console.log('[Excel] Aplicando formatação...');
 
         // Number formats: recursos em #,##0.00
@@ -1459,6 +1955,13 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
             sheetResumo.getColumn(`rec_${r}`).numFmt = '#,##0.00';
         });
         sheetResumo.getColumn('qtd_total').numFmt = '#,##0.00';
+
+        // Format sheetCapacidade columns
+        sheetCapacidade.getColumn('cap_diaria').numFmt = '#,##0.00';
+        sheetCapacidade.getColumn('cap_total').numFmt  = '#,##0.00';
+        sheetCapacidade.getColumn('carga_prev').numFmt = '#,##0.00';
+        sheetCapacidade.getColumn('saldo').numFmt      = '#,##0.00';
+        sheetCapacidade.getColumn('ocupacao').numFmt   = '0.00';
 
         // Date formats
         sheetOrders.getColumn('emissao').numFmt         = 'dd/mm/yyyy';
@@ -1642,6 +2145,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx'], async (req, res) =
         await applyMetalFisaSheet(sheetResumo, 1);
         await applyMetalFisaSheet(sheetItems);
         await applyMetalFisaSheet(sheetCarga, fixedCols.length);
+        await applyMetalFisaSheet(sheetCapacidade, 1);
         await applyMetalFisaSheet(sheetExecucao, execFixedCols.length);
         await applyMetalFisaSheet(sheetEntregas, 7);
 
@@ -1991,8 +2495,8 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
 
         let capacidadeMap = {};
         try {
-            const [capRows] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos FROM app_recursos_capacidade');
-            capRows.forEach(r => { capacidadeMap[r.recurso_codigo] = parseFloat(r.tempo_padrao_minutos) || 0; });
+            const [capRows] = await mysqlPool.query('SELECT recurso_codigo, capacidade_diaria_minutos FROM app_recursos_capacidade');
+            capRows.forEach(r => { capacidadeMap[r.recurso_codigo] = parseFloat(r.capacidade_diaria_minutos) || 0; });
         } catch (e) {
             console.warn('[MasterSheet] Could not load app_recursos_capacidade:', e.message);
         }
@@ -2079,7 +2583,8 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
             estruturas: estruturasList,
             execucao_op: [],
             recursos: allRecursos,
-            recursoNomeMap: recursoNomeMap
+            recursoNomeMap: recursoNomeMap,
+            capacidades: capacidadeMap
         };
 
         const resumoMap = new Map();
@@ -2154,7 +2659,8 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                             qtd_faturar: qtdFaturar,
                             entrega: item.entrega,
                             data_pcp: item.data_pcp,
-                            qtde_pcp: item.qtde_pcp
+                            qtde_pcp: item.qtde_pcp,
+                            op_prioridade: item.op_prioridade
                         };
                         allRecursos.forEach(r => {
                             cargaRow['rec_' + r] = minByRec['rec_' + r] || 0;

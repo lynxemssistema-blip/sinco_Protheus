@@ -152,6 +152,12 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
             if (visibleItems[itemId] === false) return false;
         }
 
+        const userTipo = (user?.tipo || '').trim();
+        // Clients can always see the client portal
+        if (userTipo === 'E' || user?.tipoExterno === 'cliente') {
+            return itemId === 'canal_cliente';
+        }
+
         // User-level permissions: Admin sees all, others need can_view
         if (isAdmin) return true;
         return hasPermission(itemId, 'view');

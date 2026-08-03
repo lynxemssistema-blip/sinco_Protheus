@@ -139,6 +139,7 @@ MENU_GROUPS.forEach(group => {
 // Private Route Component with permission guard
 const EspelhoNFViewer = React.lazy(() => import('./pages/suprimentos/EspelhoNFViewer'));
 const AuditoriaPC = React.lazy(() => import('./pages/suprimentos/AuditoriaPC'));
+import MetalfisaPresentation from './components/MetalfisaPresentation';
 
 const PrivateRoute = () => {
     const { signed, loading, user, hasPermission, isAdmin } = useAuth();
@@ -155,18 +156,24 @@ const PrivateRoute = () => {
 
     // If there's a mapped page and user is NOT admin,    // Check permissions
     if (pageId && pageId !== 'ajuda' && !isAdmin && !hasPermission(pageId, 'view')) {
+        const isClient = user?.tipo === 'E' || user?.tipoExterno === 'cliente' || !!user?.idCliente;
+
         // allow basic access fallback if no specific page found?     
         return (
             <Layout>
-                <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                        <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v.01M12 9v2m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                        </svg>
+                {isClient ? (
+                    <MetalfisaPresentation />
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v.01M12 9v2m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-800">Acesso Negado</h2>
+                        <p className="text-slate-500 mt-2 max-w-md">Você não tem permissão para acessar esta página. Solicite ao administrador que libere o acesso.</p>
                     </div>
-                    <h2 className="text-2xl font-bold text-slate-800">Acesso Negado</h2>
-                    <p className="text-slate-500 mt-2 max-w-md">Você não tem permissão para acessar esta página. Solicite ao administrador que libere o acesso.</p>
-                </div>
+                )}
             </Layout>
         );
     }
@@ -308,6 +315,11 @@ function App() {
                                         <Route path="/portal-cliente" element={
                                             <Layout fullWidth={true}>
                                                 <PortalCliente />
+                                            </Layout>
+                                        } />
+                                        <Route path="/portal-cliente/tablet" element={
+                                            <Layout fullWidth={true}>
+                                                <PortalCliente defaultTab="solicitacao_tablet" />
                                             </Layout>
                                         } />
                                         <Route path="/comercial/gestao-ops" element={

@@ -577,41 +577,6 @@ WITH sc AS (
   FROM sc1010 c1
   WHERE (c1.d_e_l_e_t_ = '' OR c1.d_e_l_e_t_ = ' ')
     ${scWhereClause}
-),
-pc AS (
-  SELECT
-    c7.c7_filial, c7.c7_num, c7.c7_item, c7.c7_produto, c7.c7_quant, c7.c7_preco, c7.c7_fornece, c7.c7_loja, c7.c7_emissao, c7.c7_datprf, c7.c7_obs, c7.c7_numsc, c7.c7_itemsc, c7.c7_user
-  FROM sc7010 c7
-  WHERE (c7.d_e_l_e_t_ = '' OR c7.d_e_l_e_t_ = ' ')
-),
-nf AS (
-  SELECT
-    d1.d1_filial,
-    d1.d1_pedido,
-    d1.d1_itempc,
-    string_agg(DISTINCT (d1.d1_doc || '/' || d1.d1_serie), ', ') AS nfs,
-    max(NULLIF(f1.f1_recbmto, '')) AS f1_recbmto,
-    max(NULLIF(f1.f1_dtdigit, '')) AS f1_dtdigit,
-    COALESCE(json_agg(json_build_object(
-        'doc', d1.d1_doc,
-        'serie', d1.d1_serie,
-        'recbmto', CASE WHEN f1.f1_recbmto <> '' AND f1.f1_recbmto ~ '^[0-9]{8}$' THEN TO_CHAR(TO_DATE(f1.f1_recbmto, 'YYYYMMDD'), 'YYYY-MM-DD') ELSE NULL END,
-        'qtd', d1.d1_quant,
-        'vunit', d1.d1_vunit,
-        'total', d1.d1_total
-    )), '[]'::json) AS details_json
-  FROM sd1010 d1
-  JOIN sf1010 f1
-    ON (f1.d_e_l_e_t_ = '' OR f1.d_e_l_e_t_ = ' ')
-   AND f1.f1_filial  = d1.d1_filial
-   AND f1.f1_doc     = d1.d1_doc
-   AND f1.f1_serie   = d1.d1_serie
-   AND f1.f1_fornece = d1.d1_fornece
-   AND f1.f1_loja    = d1.d1_loja
-  WHERE (d1.d_e_l_e_t_ = '' OR d1.d_e_l_e_t_ = ' ')
-    AND NULLIF(d1.d1_pedido, '') IS NOT NULL
-    AND NULLIF(d1.d1_itempc, '') IS NOT NULL
-  GROUP BY d1.d1_filial, d1.d1_pedido, d1.d1_itempc
 )
 SELECT
   sc.c1_filial AS filial,
@@ -667,18 +632,41 @@ SELECT
     ELSE 'SEM_PC'
   END AS status_fluxo
 FROM sc
-LEFT JOIN pc
+LEFT JOIN sc7010 pc
   ON pc.c7_filial = sc.c1_filial
  AND pc.c7_numsc  = sc.c1_num
  AND pc.c7_itemsc = sc.c1_item
+ AND (pc.d_e_l_e_t_ = '' OR pc.d_e_l_e_t_ = ' ')
 LEFT JOIN sa2010 sa2
   ON (sa2.d_e_l_e_t_ = '' OR sa2.d_e_l_e_t_ = ' ')
-  AND sa2.a2_cod     = pc.c7_fornece
-  AND sa2.a2_loja    = pc.c7_loja
-LEFT JOIN nf
-  ON nf.d1_filial = pc.c7_filial
- AND nf.d1_pedido = pc.c7_num
- AND nf.d1_itempc = pc.c7_item
+ AND sa2.a2_cod     = pc.c7_fornece
+ AND sa2.a2_loja    = pc.c7_loja
+LEFT JOIN LATERAL (
+  SELECT
+    string_agg(DISTINCT (d1.d1_doc || '/' || d1.d1_serie), ', ') AS nfs,
+    max(NULLIF(f1.f1_recbmto, '')) AS f1_recbmto,
+    max(NULLIF(f1.f1_dtdigit, '')) AS f1_dtdigit,
+    COALESCE(json_agg(json_build_object(
+        'doc', d1.d1_doc,
+        'serie', d1.d1_serie,
+        'recbmto', CASE WHEN f1.f1_recbmto <> '' AND f1.f1_recbmto ~ '^[0-9]{8}$' THEN TO_CHAR(TO_DATE(f1.f1_recbmto, 'YYYYMMDD'), 'YYYY-MM-DD') ELSE NULL END,
+        'qtd', d1.d1_quant,
+        'vunit', d1.d1_vunit,
+        'total', d1.d1_total
+    )), '[]'::json) AS details_json
+  FROM sd1010 d1
+  JOIN sf1010 f1
+    ON f1.f1_filial  = d1.d1_filial
+   AND f1.f1_doc     = d1.d1_doc
+   AND f1.f1_serie   = d1.d1_serie
+   AND f1.f1_fornece = d1.d1_fornece
+   AND f1.f1_loja    = d1.d1_loja
+   AND (f1.d_e_l_e_t_ = '' OR f1.d_e_l_e_t_ = ' ')
+  WHERE (d1.d_e_l_e_t_ = '' OR d1.d_e_l_e_t_ = ' ')
+    AND d1.d1_filial = pc.c7_filial
+    AND d1.d1_pedido = pc.c7_num
+    AND d1.d1_itempc = pc.c7_item
+) nf ON pc.c7_num IS NOT NULL AND pc.c7_num <> ''
 LEFT JOIN sc2010 c2
   ON c2.c2_filial = sc.c1_filial
  AND c2.c2_num = SUBSTRING(TRIM(sc.sc_op_origem_raw), 1, 6)

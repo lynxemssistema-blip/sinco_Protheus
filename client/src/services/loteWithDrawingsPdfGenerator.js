@@ -1,9 +1,49 @@
 import jsPDFLib from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
 
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
+
+const formatDatePCP = (dateStr) => {
+    if (!dateStr) return '-';
+    const str = String(dateStr).trim();
+    if (str.includes('/')) return str;
+    if (str.includes('-')) {
+        const parts = str.split('T')[0].split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+    }
+    if (str.length === 8 && /^\d+$/.test(str)) {
+        return `${str.substring(6, 8)}/${str.substring(4, 6)}/${str.substring(0, 4)}`;
+    }
+    return str;
+};
+
+const drawWatermark = (doc, pedidoNum, clientName) => {
+    const clientFirstName = String(clientName || '').trim().split(' ')[0].toUpperCase();
+    const watermarkText = `PEDIDO: ${pedidoNum || ''} - ${clientFirstName}`;
+    if (typeof doc.saveGraphicsState === 'function') {
+        try {
+            doc.saveGraphicsState();
+            if (typeof doc.GState === 'function') {
+                doc.setGState(new doc.GState({ opacity: 0.1 }));
+            }
+        } catch (e) {}
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(28);
+    doc.setTextColor(242, 242, 242);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.text(watermarkText, pageWidth / 2, pageHeight / 2, { align: 'center', angle: 30 });
+    if (typeof doc.restoreGraphicsState === 'function') {
+        try {
+            doc.restoreGraphicsState();
+        } catch (e) {}
+    }
+};
 
 export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Usuário', codigoLiberacao = null) => {
     try {
@@ -27,6 +67,8 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
         
         // Header Base function
         const drawMainHeader = (title) => {
+            drawWatermark(doc, loteInfo, "LOTE AGLUTINADO");
+
             doc.setFillColor(30, 58, 95);
             doc.rect(10, 5, 40, 15, 'F');
             doc.setTextColor(255, 255, 255);
@@ -37,6 +79,8 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
             doc.text(title, pageWidth / 2, 12, { align: 'center' });
+
+            const formattedLoteDate = dataPcp ? formatDatePCP(dataPcp) : '-';
 
             // Top-right: liberation code badge + user
             if (codigoLiberacao) {
@@ -51,12 +95,17 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 doc.setFontSize(7.5);
                 doc.setFont('helvetica', 'normal');
                 doc.text(`Liberado por: ${userName}`, pageWidth - 12, 17, { align: 'right' });
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 12, 22, { align: 'right' });
             } else {
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
-                doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 45, 10);
+                doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 10, 8, { align: 'right' });
                 doc.setFont('helvetica', 'bold');
-                doc.text(`LOTE: ${loteInfo}`, pageWidth - 45, 15);
+                doc.text(`LOTE: ${loteInfo}`, pageWidth - 10, 13, { align: 'right' });
+                doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 10, 18, { align: 'right' });
             }
         };
 
@@ -232,6 +281,9 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             doc.addPage();
 
             const drawOpHeader = (data) => {
+                // Draw watermark first
+                drawWatermark(doc, loteInfo, "LOTE AGLUTINADO");
+
                 // Base Header
                 doc.setFillColor(30, 58, 95);
                 doc.rect(10, 5, 40, 15, 'F');
@@ -245,11 +297,14 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 doc.text("ESPELHO LOTE AGLUTINADO - POR OPERAÇÃO", pageWidth / 2, 12, { align: 'center' });
 
                 const dataGeracaoStr = new Date().toLocaleString('pt-BR');
+                const formattedLoteDate = dataPcp ? formatDatePCP(dataPcp) : '-';
+
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
-                doc.text(`EMISSÃO: ${dataGeracaoStr}`, pageWidth - 45, 10);
+                doc.text(`EMISSÃO: ${dataGeracaoStr}`, pageWidth - 10, 8, { align: 'right' });
                 doc.setFont('helvetica', 'bold');
-                doc.text(`LOTE ÚNICO: ${loteInfo}`, pageWidth - 45, 15);
+                doc.text(`LOTE ÚNICO: ${loteInfo}`, pageWidth - 10, 13, { align: 'right' });
+                doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 10, 18, { align: 'right' });
 
                 const locYOffset = 25;
 
@@ -262,7 +317,7 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 doc.setFont('helvetica', 'bold');
                 doc.text(`Contexto do Lote:`, 12, locYOffset + 6.5);
                 doc.setFont('helvetica', 'normal');
-                doc.text(`${fractionOrders.length} OP(s) Aglutinadas | Entrega PCP Geral: ${dataPcp}`, 45, locYOffset + 6.5);
+                doc.text(`${fractionOrders.length} OP(s) Aglutinadas | Entrega PCP Geral: ${formattedLoteDate}`, 45, locYOffset + 6.5);
 
                 // Operation Title Bar
                 doc.setFillColor(60, 141, 188);
@@ -332,6 +387,9 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             doc.addPage();
 
             const drawGreenHeader = () => {
+                // Draw watermark first
+                drawWatermark(doc, loteInfo, "LOTE AGLUTINADO");
+
                 // Barra verde de fundo
                 doc.setFillColor(40, 167, 69);
                 doc.rect(10, 5, pageWidth - 20, 15, 'F');
@@ -345,6 +403,9 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 // Título centralizado
                 doc.setFontSize(13);
                 doc.text('LOTE AGLUTINADO - RESUMO DE MATERIAIS / INSUMOS', pageWidth / 2, 12, { align: 'center' });
+                
+                const formattedLoteDate = dataPcp ? formatDatePCP(dataPcp) : '-';
+
                 // Código de liberação à direita
                 if (codigoLiberacao) {
                     doc.setFillColor(30, 58, 95);
@@ -357,12 +418,18 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                     doc.setFontSize(7.5);
                     doc.setFont('helvetica', 'normal');
                     doc.text(`Liberado por: ${userName}`, pageWidth - 12, 17, { align: 'right' });
+                    
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8.5);
+                    doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 12, 22, { align: 'right' });
                 } else {
                     doc.setFontSize(8);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 12, 9, { align: 'right' });
+                    doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 12, 8, { align: 'right' });
                     doc.setFont('helvetica', 'bold');
-                    doc.text(`LOTE: ${loteInfo}`, pageWidth - 12, 16, { align: 'right' });
+                    doc.text(`LOTE: ${loteInfo}`, pageWidth - 12, 13, { align: 'right' });
+                    doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 12, 18, { align: 'right' });
                 }
                 doc.setTextColor(0, 0, 0);
             };
@@ -396,6 +463,9 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             doc.addPage();
 
             const drawGreenFullHeader = () => {
+                // Draw watermark first
+                drawWatermark(doc, loteInfo, "LOTE AGLUTINADO");
+
                 // Barra verde de fundo
                 doc.setFillColor(40, 167, 69);
                 doc.rect(10, 5, pageWidth - 20, 15, 'F');
@@ -409,6 +479,9 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 // Título centralizado
                 doc.setFontSize(13);
                 doc.text('RESUMO GERAL DE PEÇAS E MATERIAIS (AGLUTINADO)', pageWidth / 2, 12, { align: 'center' });
+                
+                const formattedLoteDate = dataPcp ? formatDatePCP(dataPcp) : '-';
+
                 // Código de liberação à direita
                 if (codigoLiberacao) {
                     doc.setFillColor(30, 58, 95);
@@ -421,12 +494,18 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                     doc.setFontSize(7.5);
                     doc.setFont('helvetica', 'normal');
                     doc.text(`Liberado por: ${userName}`, pageWidth - 12, 17, { align: 'right' });
+                    
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8.5);
+                    doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 12, 22, { align: 'right' });
                 } else {
                     doc.setFontSize(8);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 12, 9, { align: 'right' });
+                    doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 12, 8, { align: 'right' });
                     doc.setFont('helvetica', 'bold');
-                    doc.text(`LOTE: ${loteInfo}`, pageWidth - 12, 16, { align: 'right' });
+                    doc.text(`LOTE: ${loteInfo}`, pageWidth - 12, 13, { align: 'right' });
+                    doc.text(`Data de Entrega Prevista: ${formattedLoteDate}`, pageWidth - 12, 18, { align: 'right' });
                 }
                 doc.setTextColor(0, 0, 0);
             };
@@ -508,6 +587,14 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
         }));
 
         // Step 2: Fetch each drawing via api proxy (supports auth/network share), stamp and append
+        const clientNameMap = new Map();
+        fractionOrders.forEach(o => {
+            if (o.pedido && o.nome_cliente) {
+                const fName = String(o.nome_cliente).trim().split(' ')[0].toUpperCase();
+                clientNameMap.set(String(o.pedido).trim(), fName);
+            }
+        });
+
         const dataGeracao = new Date().toLocaleString('pt-BR');
         const partsWithDrawings = partsSummaryArray.filter(p => p.hasPdf && p.pdfUrl);
 
@@ -522,6 +609,12 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 const finalQtdStr = roundedQtd % 1 === 0 ? roundedQtd.toString() : roundedQtd.toFixed(2);
 
                 const uniquePedidos = part.pedidos ? Array.from(part.pedidos).join(', ') : '-';
+                const watermarkClients = part.pedidos 
+                    ? Array.from(part.pedidos).map(p => clientNameMap.get(String(p).trim())).filter(Boolean)
+                    : [];
+                const uniqueClients = [...new Set(watermarkClients)].join(', ');
+                const watermarkText = `PEDIDO: ${uniquePedidos} - ${uniqueClients}`;
+
                 const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${uniquePedidos}`;
                 const textLine2 = `CÓD: ${part.codigo} | LOTE: ${loteInfo} | DATA PCP: ${dataPcp} | QTD AGLUTINADA: ${finalQtdStr} ${part.um}`;
 
@@ -530,6 +623,21 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                     const { width, height } = page.getSize();
                     const minSide = Math.min(width, height);
                     const scale = Math.max(1, minSide / 595);
+
+                    // Draw Watermark in the middle
+                    const watermarkFontSize = 26 * scale;
+                    const textWidth = fontStamp.widthOfTextAtSize(watermarkText, watermarkFontSize);
+                    const textHeight = fontStamp.heightAtSize(watermarkFontSize);
+                    page.drawText(watermarkText, {
+                        x: (width - textWidth) / 2,
+                        y: (height - textHeight) / 2,
+                        size: watermarkFontSize,
+                        font: fontStamp,
+                        color: rgb(0.9, 0.9, 0.9),
+                        opacity: 0.12,
+                        rotate: degrees(30)
+                    });
+
                     const rectWidth = 470 * scale;
                     const rectHeight = 35 * scale;
                     const fontSize = 8 * scale;
