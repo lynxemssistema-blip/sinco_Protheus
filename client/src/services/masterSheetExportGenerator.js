@@ -309,6 +309,7 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
     if (data.itens && data.itens.length > 0 && data.estruturas && data.estruturas.length > 0) {
         const detailedDemands = [];
         const exibirCustos = !!options.exibirCustos;
+        const filtroTipo = options.filtroTipo || 'MP';
 
         data.itens.forEach(item => {
             const parentProd = (item.produto || '').trim();
@@ -321,6 +322,10 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
             const comps = data.estruturas.filter(e => e.raiz === parentProd);
 
             comps.forEach(c => {
+                // Apply the Tipo filter to the exported items
+                const matchesTipo = filtroTipo === 'Todos' || c.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
+                if (!matchesTipo) return;
+
                 const totalQtd = parentQtd * c.quant;
                 const rowData = [
                     item.pedido,

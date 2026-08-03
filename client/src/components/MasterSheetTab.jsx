@@ -60,6 +60,7 @@ const MasterSheetTab = ({ filterParams }) => {
 
     const [baseCalculo, setBaseCalculo] = useState('saldo'); // 'saldo' | 'pedido'
     const [exibirCustos, setExibirCustos] = useState(false);
+    const [filtroTipo, setFiltroTipo] = useState('MP'); // 'MP' por padrão
 
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState(null);
@@ -130,7 +131,8 @@ const MasterSheetTab = ({ filterParams }) => {
             exportMasterSheetExcel(data, {
                 ...filterParams,
                 baseCalculo,
-                exibirCustos: canViewValues && exibirCustos
+                exibirCustos: canViewValues && exibirCustos,
+                filtroTipo
             });
         } catch (err) {
             alert(err.message || 'Erro ao exportar Excel');
@@ -261,6 +263,8 @@ const MasterSheetTab = ({ filterParams }) => {
                         exibirCustos={exibirCustos}
                         setExibirCustos={setExibirCustos}
                         canViewValues={canViewValues}
+                        filtroTipo={filtroTipo}
+                        setFiltroTipo={setFiltroTipo}
                     />
                 )}
                 {activeTab === 'carga' && <CargaTab data={data} />}
@@ -635,7 +639,9 @@ const MateriaisNecessariosTab = ({
     setBaseCalculo, 
     exibirCustos, 
     setExibirCustos, 
-    canViewValues 
+    canViewValues,
+    filtroTipo,
+    setFiltroTipo
 }) => {
     const itens = data.itens || [];
     const estruturas = data.estruturas || [];
@@ -643,7 +649,6 @@ const MateriaisNecessariosTab = ({
     // State to toggle between Consolidated and Detailed views
     const [viewMode, setViewMode] = useState('consolidado'); // 'consolidado' | 'detalhado'
     const [filtroMaterial, setFiltroMaterial] = useState('');
-    const [filtroTipo, setFiltroTipo] = useState('MP'); // MP por padrão
 
     // Calculate detailed materials list
     const detailedDemands = useMemo(() => {
