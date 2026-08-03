@@ -643,6 +643,7 @@ const MateriaisNecessariosTab = ({
     // State to toggle between Consolidated and Detailed views
     const [viewMode, setViewMode] = useState('consolidado'); // 'consolidado' | 'detalhado'
     const [filtroMaterial, setFiltroMaterial] = useState('');
+    const [filtroTipo, setFiltroTipo] = useState('MP'); // MP por padrão
 
     // Calculate detailed materials list
     const detailedDemands = useMemo(() => {
@@ -704,25 +705,29 @@ const MateriaisNecessariosTab = ({
         return Object.values(map).sort((a, b) => a.materialCod.localeCompare(b.materialCod));
     }, [detailedDemands]);
 
-    // Filtered lists based on search input
+    // Filtered lists based on search input and type filter (defaults to 'MP')
     const filteredConsolidated = useMemo(() => {
-        return consolidatedDemands.filter(d => 
-            d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-            d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase())
-        );
-    }, [consolidatedDemands, filtroMaterial]);
+        return consolidatedDemands.filter(d => {
+            const matchesSearch = d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                                  d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase());
+            const matchesTipo = filtroTipo === 'Todos' || d.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
+            return matchesSearch && matchesTipo;
+        });
+    }, [consolidatedDemands, filtroMaterial, filtroTipo]);
 
     const filteredDetailed = useMemo(() => {
-        return detailedDemands.filter(d => 
-            d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-            d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-            d.pedido.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-            d.produtoFinal.toLowerCase().includes(filtroMaterial.toLowerCase())
-        );
-    }, [detailedDemands, filtroMaterial]);
+        return detailedDemands.filter(d => {
+            const matchesSearch = d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                                  d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                                  d.pedido.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                                  d.produtoFinal.toLowerCase().includes(filtroMaterial.toLowerCase());
+            const matchesTipo = filtroTipo === 'Todos' || d.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
+            return matchesSearch && matchesTipo;
+        });
+    }, [detailedDemands, filtroMaterial, filtroTipo]);
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-6 w-full">
             <div className="mb-6 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                     <h2 className="text-xl font-black text-[#1E3A5F]">Necessidade de Materiais / Componentes</h2>
@@ -732,6 +737,21 @@ const MateriaisNecessariosTab = ({
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    {/* Tipo Item selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded border border-slate-200">
+                        <span className="text-xs font-bold text-slate-600">Tipo:</span>
+                        <select
+                            value={filtroTipo}
+                            onChange={e => setFiltroTipo(e.target.value)}
+                            className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                        >
+                            <option value="Todos">Todos</option>
+                            <option value="MP">MP (Matéria-Prima)</option>
+                            <option value="PI">PI (Prod. Intermediário)</option>
+                            <option value="PA">PA (Prod. Acabado)</option>
+                        </select>
+                    </div>
+
                     {/* Calculation base toggle */}
                     <div className="flex bg-slate-100 p-1 rounded border border-slate-200" title="Defina se o cálculo de matéria-prima usará o saldo restante a faturar ou a quantidade original do pedido.">
                         <button
@@ -1113,7 +1133,7 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
     }, [recursos, capacidades, days, carga, nomeMap, filterParams]);
 
     return (
-        <div className="p-6 max-w-6xl mx-auto">
+        <div className="p-6 w-full">
             <div className="mb-6 border-b border-slate-200 pb-4 flex justify-between items-end">
                 <div>
                     <h2 className="text-xl font-black text-[#1E3A5F]">Capacidade do Período Filtrado</h2>
