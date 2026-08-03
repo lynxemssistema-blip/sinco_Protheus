@@ -368,7 +368,7 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
         }
 
         const wsMateriais = createMetalFisaSheet('Necessidade de Materiais / Componentes', matHeader, detailedDemands);
-        XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materials');
+        XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materiais');
     }
 
     const fileName = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;
