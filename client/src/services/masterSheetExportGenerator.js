@@ -96,6 +96,7 @@ const buildFilterLabel = (filterParams = {}) => {
 export const exportMasterSheetExcel = (data, filterParams = {}) => {
     if (!data) throw new Error('Nenhum dado disponível para exportar.');
 
+    const options = filterParams;
     const wb = XLSX.utils.book_new();
     const filterLabel = buildFilterLabel(filterParams);
     const dateStr = new Date().toLocaleString('pt-BR');
@@ -307,16 +308,21 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
     // 7. Aba: Necessidade de Materiais
     if (data.itens && data.itens.length > 0 && data.estruturas && data.estruturas.length > 0) {
         const detailedDemands = [];
+        const exibirCustos = !!options.exibirCustos;
+
         data.itens.forEach(item => {
             const parentProd = (item.produto || '').trim();
-            const parentQtd = Number(item.qtd_faturar || 0);
+            // Define a quantidade base de acordo com a opção selecionada
+            const parentQtd = options.baseCalculo === 'pedido'
+                ? Number(item.qtd || 0)
+                : Number(item.qtd_faturar || 0);
 
             // Find BOM components for this parent product
             const comps = data.estruturas.filter(e => e.raiz === parentProd);
 
             comps.forEach(c => {
                 const totalQtd = parentQtd * c.quant;
-                detailedDemands.push([
+                const rowData = [
                     item.pedido,
                     item.cliente,
                     parentProd,
@@ -327,7 +333,15 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
                     c.um || '-',
                     c.quant,
                     totalQtd
-                ]);
+                ];
+
+                if (exibirCustos) {
+                    const custoUnit = c.custo_unitario || 0;
+                    const custoTotal = totalQtd * custoUnit;
+                    rowData.push(custoUnit, custoTotal);
+                }
+
+                detailedDemands.push(rowData);
             });
         });
 
@@ -336,7 +350,7 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
             'Cliente',
             'Produto Final',
             'Descrição Produto Final',
-            'Qtd Faturar',
+            options.baseCalculo === 'pedido' ? 'Qtd Pedido' : 'Qtd Faturar',
             'Código do Material',
             'Descrição do Material',
             'UM',
@@ -344,8 +358,12 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
             'Qtd Total Necessária'
         ];
 
+        if (exibirCustos) {
+            matHeader.push('Custo Unitário', 'Custo Total');
+        }
+
         const wsMateriais = createMetalFisaSheet('Necessidade de Materiais / Componentes', matHeader, detailedDemands);
-        XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materiais');
+        XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materials');
     }
 
     const fileName = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;

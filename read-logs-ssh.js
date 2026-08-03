@@ -13,8 +13,8 @@ async function readLogs() {
             },
             algorithms: { serverHostKey: [ 'ssh-rsa', 'ssh-dss', 'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521' ] }
         });
-        const result = await ssh.execCommand('cd /var/www/metalfisa/server && node -e "const pool = require(\'./services/mysqlService\'); pool.query(\'SELECT COUNT(*) as count FROM app_pcp_delivery_forecasts\').then(([r]) => console.log(r)).catch(console.error)"');
-        console.log('Result:', result.stdout || result.stderr);
+        const result = await ssh.execCommand('grep -i "Protheus" /home/sinco/.pm2/logs/metalfisa-producao-error.log | tail -n 20');
+        console.log(result.stdout || result.stderr);
         ssh.dispose();
     } catch(e) {
         console.error(e);

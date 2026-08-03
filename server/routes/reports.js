@@ -4,6 +4,7 @@ const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 const { calcCargaRecurso } = require('../utils/calcCargaRecurso');
+const { hasFinancialAccess } = require('../util/permissionHelper');
 // PdfPrinter desativado temporariamente devido a problemas com módulo
 // const PdfPrinter = require('pdfmake/src/printer'); 
 const ExcelJS = require('exceljs');
@@ -2526,14 +2527,36 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                     JOIN bom ON TRIM(sg1.g1_cod) = bom.comp
                     WHERE COALESCE(sg1.d_e_l_e_t_, '') = '' AND bom.nivel < 15
                 )
-                SELECT bom.raiz, bom.comp, SUM(bom.quant) as quant_total, TRIM(MAX(sb1.b1_desc)) as desc, TRIM(MAX(sb1.b1_um)) as um, TRIM(MAX(sb1.b1_tipo)) as tipo FROM bom LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = bom.comp AND COALESCE(sb1.d_e_l_e_t_, '') = '' GROUP BY bom.raiz, bom.comp ORDER BY bom.raiz, bom.comp`,
+                SELECT bom.raiz, bom.comp, SUM(bom.quant) as quant_total, 
+                       TRIM(MAX(sb1.b1_desc)) as desc, TRIM(MAX(sb1.b1_um)) as um, TRIM(MAX(sb1.b1_tipo)) as tipo,
+                       COALESCE(MAX(sb1.b1_custd), 0)::numeric as custo_unitario
+                FROM bom 
+                LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = bom.comp AND COALESCE(sb1.d_e_l_e_t_, '') = '' 
+                GROUP BY bom.raiz, bom.comp 
+                ORDER BY bom.raiz, bom.comp`,
                 [uniqueProducts]
             );
             bomRows.rows.forEach(r => {
-                estruturasList.push({ raiz: r.raiz, comp: r.comp, quant: parseFloat(r.quant_total) || 0, desc: r.desc || '', um: r.um || '', tipo: r.tipo || '' });
+                estruturasList.push({ 
+                    raiz: r.raiz, 
+                    comp: r.comp, 
+                    quant: parseFloat(r.quant_total) || 0, 
+                    desc: r.desc || '', 
+                    um: r.um || '', 
+                    tipo: r.tipo || '',
+                    custo_unitario: parseFloat(r.custo_unitario) || 0
+                });
                 if (!bomMap[r.raiz]) bomMap[r.raiz] = [];
                 bomMap[r.raiz].push({ comp: r.comp, quant: parseFloat(r.quant_total) || 0 });
             });
+
+            // Controle de permissão para valores financeiros
+            const canSeeFinancials = await hasFinancialAccess(req);
+            if (!canSeeFinancials) {
+                estruturasList.forEach(e => {
+                    delete e.custo_unitario;
+                });
+            }
         }
 
         const allCodesSet = new Set(uniqueProducts);

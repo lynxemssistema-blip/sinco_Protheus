@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { getSalesPlanningMasterSheet } from '../services/api';
 import { exportMasterSheetExcel, exportMasterSheetPdf } from '../services/masterSheetExportGenerator';
 import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { Download, Info, Table, Box, List, Settings, Activity, BarChart2, X, ChevronDown, FileText, Loader2, Play } from 'lucide-react';
 
 const getFileUrl = (path) => {
@@ -54,6 +55,12 @@ const DrawingIcon = ({ produto }) => {
 };
 
 const MasterSheetTab = ({ filterParams }) => {
+    const { hasPermission } = useAuth();
+    const canViewValues = hasPermission('valores_financeiros', 'view');
+
+    const [baseCalculo, setBaseCalculo] = useState('saldo'); // 'saldo' | 'pedido'
+    const [exibirCustos, setExibirCustos] = useState(false);
+
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -120,7 +127,11 @@ const MasterSheetTab = ({ filterParams }) => {
 
     const handleExportExcel = () => {
         try {
-            exportMasterSheetExcel(data, filterParams);
+            exportMasterSheetExcel(data, {
+                ...filterParams,
+                baseCalculo,
+                exibirCustos: canViewValues && exibirCustos
+            });
         } catch (err) {
             alert(err.message || 'Erro ao exportar Excel');
         }
@@ -128,7 +139,11 @@ const MasterSheetTab = ({ filterParams }) => {
 
     const handleExportPdf = () => {
         try {
-            exportMasterSheetPdf(data, activeTab, filterParams);
+            exportMasterSheetPdf(data, activeTab, {
+                ...filterParams,
+                baseCalculo,
+                exibirCustos: canViewValues && exibirCustos
+            });
         } catch (err) {
             alert(err.message || 'Erro ao exportar PDF');
         }
@@ -238,7 +253,16 @@ const MasterSheetTab = ({ filterParams }) => {
                 {activeTab === 'pedidos' && <PedidosTab data={data} />}
                 {activeTab === 'itens' && <ItensTab data={data} />}
                 {activeTab === 'estruturas' && <EstruturasTab data={data} />}
-                {activeTab === 'materiais_necessarios' && <MateriaisNecessariosTab data={data} />}
+                {activeTab === 'materiais_necessarios' && (
+                    <MateriaisNecessariosTab 
+                        data={data} 
+                        baseCalculo={baseCalculo}
+                        setBaseCalculo={setBaseCalculo}
+                        exibirCustos={exibirCustos}
+                        setExibirCustos={setExibirCustos}
+                        canViewValues={canViewValues}
+                    />
+                )}
                 {activeTab === 'carga' && <CargaTab data={data} />}
                 {activeTab === 'capacidade_periodo' && <CapacidadePeriodoTab data={data} filterParams={filterParams} />}
                 {activeTab === 'execucao' && <ExecucaoTab data={data} />}
@@ -605,7 +629,14 @@ const EstruturasTab = ({ data }) => {
     );
 };
 
-const MateriaisNecessariosTab = ({ data }) => {
+const MateriaisNecessariosTab = ({ 
+    data, 
+    baseCalculo, 
+    setBaseCalculo, 
+    exibirCustos, 
+    setExibirCustos, 
+    canViewValues 
+}) => {
     const itens = data.itens || [];
     const estruturas = data.estruturas || [];
 
@@ -618,13 +649,19 @@ const MateriaisNecessariosTab = ({ data }) => {
         const list = [];
         itens.forEach(item => {
             const parentProd = (item.produto || '').trim();
-            const parentQtd = Number(item.qtd_faturar || 0);
+            // Calcula a quantidade final com base no seletor do usuário (Saldo a faturar vs Qtd do pedido)
+            const parentQtd = baseCalculo === 'pedido'
+                ? Number(item.qtd || 0)
+                : Number(item.qtd_faturar || 0);
 
             // Find BOM components for this parent product
             const comps = estruturas.filter(e => e.raiz === parentProd);
 
             comps.forEach(c => {
                 const totalQtd = parentQtd * c.quant;
+                const custoUnit = c.custo_unitario || 0;
+                const custoTotal = totalQtd * custoUnit;
+
                 list.push({
                     pedido: item.pedido,
                     cliente: item.cliente,
@@ -636,12 +673,14 @@ const MateriaisNecessariosTab = ({ data }) => {
                     um: c.um || '-',
                     tipo: c.tipo || '-',
                     qtdUnit: c.quant,
-                    qtdTotal: totalQtd
+                    qtdTotal: totalQtd,
+                    custoUnit: custoUnit,
+                    custoTotal: custoTotal
                 });
             });
         });
         return list;
-    }, [itens, estruturas]);
+    }, [itens, estruturas, baseCalculo]);
 
     // Calculate consolidated list
     const consolidatedDemands = useMemo(() => {
@@ -654,10 +693,13 @@ const MateriaisNecessariosTab = ({ data }) => {
                     materialDesc: d.materialDesc,
                     um: d.um,
                     tipo: d.tipo,
-                    qtdTotal: 0
+                    qtdTotal: 0,
+                    custoUnit: d.custoUnit,
+                    custoTotal: 0
                 };
             }
             map[key].qtdTotal += d.qtdTotal;
+            map[key].custoTotal += d.custoTotal;
         });
         return Object.values(map).sort((a, b) => a.materialCod.localeCompare(b.materialCod));
     }, [detailedDemands]);
@@ -685,11 +727,40 @@ const MateriaisNecessariosTab = ({ data }) => {
                 <div>
                     <h2 className="text-xl font-black text-[#1E3A5F]">Necessidade de Materiais / Componentes</h2>
                     <p className="text-sm text-slate-500 mt-1">
-                        Detalhamento de insumos e matérias-primas calculados com base na estrutura de produto (BOM) e quantidades a faturar.
+                        Detalhamento de insumos e matérias-primas calculados com base na estrutura de produto (BOM) e na base de cálculo escolhida.
                     </p>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    {/* Calculation base toggle */}
+                    <div className="flex bg-slate-100 p-1 rounded border border-slate-200" title="Defina se o cálculo de matéria-prima usará o saldo restante a faturar ou a quantidade original do pedido.">
+                        <button
+                            onClick={() => setBaseCalculo('saldo')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${baseCalculo === 'saldo' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            Saldo a Faturar
+                        </button>
+                        <button
+                            onClick={() => setBaseCalculo('pedido')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${baseCalculo === 'pedido' ? 'bg-[#1E3A5F] text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            Qtd do Pedido
+                        </button>
+                    </div>
+
+                    {/* Cost values toggle */}
+                    {canViewValues && (
+                        <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded border border-slate-200 cursor-pointer select-none text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors">
+                            <input
+                                type="checkbox"
+                                checked={exibirCustos}
+                                onChange={e => setExibirCustos(e.target.checked)}
+                                className="rounded text-[#1E3A5F] focus:ring-blue-500 h-4 w-4 cursor-pointer"
+                            />
+                            Exibir Custos
+                        </label>
+                    )}
+
                     {/* View mode toggle */}
                     <div className="flex bg-slate-100 p-1 rounded border border-slate-200">
                         <button
@@ -727,12 +798,18 @@ const MateriaisNecessariosTab = ({ data }) => {
                                 <th className="px-4 py-3 border-b border-slate-300 text-center w-24">UM</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-center w-24">Tipo</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-right w-48">Qtd Total Necessária</th>
+                                {exibirCustos && (
+                                    <>
+                                        <th className="px-4 py-3 border-b border-slate-300 text-right w-36 bg-amber-50 text-amber-900 border-l border-slate-300">Custo Unitário</th>
+                                        <th className="px-4 py-3 border-b border-slate-300 text-right w-44 bg-amber-600 text-white">Custo Total</th>
+                                    </>
+                                )}
                             </tr>
                         </thead>
                         <tbody>
                             {filteredConsolidated.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-4 py-8 text-center text-slate-400">Nenhum material encontrado.</td>
+                                    <td colSpan={exibirCustos ? 7 : 5} className="px-4 py-8 text-center text-slate-400">Nenhum material encontrado.</td>
                                 </tr>
                             ) : filteredConsolidated.map((row, idx) => (
                                 <tr key={row.materialCod} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
@@ -741,6 +818,12 @@ const MateriaisNecessariosTab = ({ data }) => {
                                     <td className="px-4 py-3 text-center font-bold text-slate-600">{row.um}</td>
                                     <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-600">{row.tipo}</span></td>
                                     <td className="px-4 py-3 text-right font-black text-blue-700 bg-blue-50 bg-opacity-30">{formatNum(row.qtdTotal)}</td>
+                                    {exibirCustos && (
+                                        <>
+                                            <td className="px-4 py-3 text-right text-slate-800 bg-amber-50 bg-opacity-40 border-l border-slate-200">{row.custoUnit > 0 ? `R$ ${formatNum(row.custoUnit)}` : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-amber-700 bg-amber-50">{row.custoTotal > 0 ? `R$ ${formatNum(row.custoTotal)}` : '-'}</td>
+                                        </>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -754,18 +837,24 @@ const MateriaisNecessariosTab = ({ data }) => {
                                 <th className="px-4 py-3 border-b border-slate-300">Pedido</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Cliente</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Prod. Final</th>
-                                <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Faturar</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Base</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Cód. Material</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Descrição do Material</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-center w-16">UM</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Unit. (BOM)</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-right w-32 bg-[#0D6EFD] bg-opacity-10 text-blue-200">Qtd Necessária</th>
+                                {exibirCustos && (
+                                    <>
+                                        <th className="px-4 py-3 border-b border-slate-300 text-right w-36 bg-amber-50 text-amber-900 border-l border-slate-300">Custo Unitário</th>
+                                        <th className="px-4 py-3 border-b border-slate-300 text-right w-44 bg-amber-600 text-white">Custo Total</th>
+                                    </>
+                                )}
                             </tr>
                         </thead>
                         <tbody>
                             {filteredDetailed.length === 0 ? (
                                 <tr>
-                                    <td colSpan="9" className="px-4 py-8 text-center text-slate-400">Nenhum material detalhado encontrado.</td>
+                                    <td colSpan={exibirCustos ? 11 : 9} className="px-4 py-8 text-center text-slate-400">Nenhum material detalhado encontrado.</td>
                                 </tr>
                             ) : filteredDetailed.map((row, idx) => (
                                 <tr key={`${row.pedido}_${row.materialCod}_${idx}`} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
@@ -778,6 +867,12 @@ const MateriaisNecessariosTab = ({ data }) => {
                                     <td className="px-4 py-3 text-center font-bold text-slate-600">{row.um}</td>
                                     <td className="px-4 py-3 text-right text-slate-600">{formatNum(row.qtdUnit)}</td>
                                     <td className="px-4 py-3 text-right font-bold text-blue-700 bg-[#0D6EFD] bg-opacity-5">{formatNum(row.qtdTotal)}</td>
+                                    {exibirCustos && (
+                                        <>
+                                            <td className="px-4 py-3 text-right text-slate-800 bg-amber-50 bg-opacity-40 border-l border-slate-200">{row.custoUnit > 0 ? `R$ ${formatNum(row.custoUnit)}` : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-amber-700 bg-amber-50">{row.custoTotal > 0 ? `R$ ${formatNum(row.custoTotal)}` : '-'}</td>
+                                        </>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
