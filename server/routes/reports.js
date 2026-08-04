@@ -874,7 +874,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             console.error('[OP PRIORITY FETCH ERROR in reports]', err);
         }
 
-        const productCodes = [...new Set(itemsRes.rows.map(i => i.produto).filter(Boolean))];
+        const productCodes = [...new Set(itemsRes.rows.map(i => (i.produto || '').trim()).filter(Boolean))];
         const sg1Set = new Set();
         const sg2Set = new Set();
         const sz0Set = new Set();
