@@ -843,6 +843,9 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
                 (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) as qtd_faturar,
                 c6.c6_entreg as entrega,
                 c6.c6_pedcli as ped_cli,
+                c6.c6_xrevm as rev_codigo,
+                c6.c6_xrevc as c6_rev_cliente,
+                sb1.b1_msblql as b1_msblql,
                 COALESCE(TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen), TRIM(c6.c6_numop)) AS op
             FROM sc6010 c6
             LEFT JOIN sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND sb1.d_e_l_e_t_ = ''
@@ -871,11 +874,77 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
             console.error('[OP PRIORITY FETCH ERROR in reports]', err);
         }
 
+        const productCodes = [...new Set(itemsRes.rows.map(i => i.produto).filter(Boolean))];
+        const sg1Set = new Set();
+        const sg2Set = new Set();
+        const sz0Set = new Set();
+        let globalReleaseSet = new Set();
+
+        if (productCodes.length > 0) {
+            try {
+                const pgStatusResult = await db.query(`
+                    SELECT 'sg1' AS type, TRIM(g1_cod) AS cod
+                      FROM public.sg1010
+                     WHERE TRIM(g1_cod) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sg2' AS type, TRIM(g2_produto) AS cod
+                      FROM public.sg2010
+                     WHERE TRIM(g2_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    UNION ALL
+                    SELECT 'sz0' AS type, TRIM(z0_produto) AS cod
+                      FROM public.sz0010
+                     WHERE TRIM(z0_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                `, [productCodes]);
+
+                pgStatusResult.rows.forEach(r => {
+                    if (r.type === 'sg1') sg1Set.add(r.cod);
+                    if (r.type === 'sg2') sg2Set.add(r.cod);
+                    if (r.type === 'sz0') sz0Set.add(r.cod);
+                });
+
+                const qPlaceholders = productCodes.map(() => '?').join(',');
+                const [releasesRows] = await mysqlPool.query(
+                    `SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases WHERE codigo_produto IN (${qPlaceholders})`,
+                    productCodes
+                );
+                globalReleaseSet = new Set(releasesRows.map(r => r.cod));
+            } catch (err) {
+                console.error('[STATUS/RELEASES FETCH ERROR in reports]', err);
+            }
+        }
+
         itemsRes.rows.forEach(item => {
             if (!itemsMap[item.pedido]) itemsMap[item.pedido] = [];
             const op = item.op ? item.op.trim() : '';
             const prefix = op.substring(0, 8);
             const prio = opPrioritiesMap[op] || opPrioritiesMap[prefix] || 0;
+
+            const cod = String(item.produto || '').trim();
+            const isBlocked     = ['1', 'S', 'T', 'Y'].includes(item.b1_msblql?.trim());
+            const hasRestriction = sz0Set.has(cod);
+            const revDiff       = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
+            const isNew         = !sg1Set.has(cod) && !sg2Set.has(cod);
+            const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
+
+            let status_tipo_item, status_tipo_detalhe;
+
+            if (hasGlobalRelease) {
+                status_tipo_item   = 'PCP';
+                status_tipo_detalhe = 'Produto liberado manualmente pela Engenharia.';
+            } else if (isBlocked || hasRestriction) {
+                status_tipo_item   = 'Restrição';
+                status_tipo_detalhe = 'Produto possui bloqueio no Protheus ou Restrição ativa.';
+            } else if (revDiff) {
+                status_tipo_item   = 'Revisão';
+                status_tipo_detalhe = 'Revisão do Pedido difere da Revisão da Engenharia.';
+            } else if (isNew) {
+                status_tipo_item   = 'Novo';
+                status_tipo_detalhe = 'Produto sem Engenharia cadastrada (SG1/SG2).';
+            } else {
+                status_tipo_item   = 'PCP';
+                status_tipo_detalhe = 'Liberado para PCP.';
+            }
+
             itemsMap[item.pedido].push({
                 ...item,
                 pedido:       item.pedido.trim(),
@@ -885,7 +954,9 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
                 ped_cli:      item.ped_cli?.trim(),
                 tipo:         item.tipo_produto || '',
                 op_prioridade: prio,
-                tag_especial: 'Nenhum' // Default
+                tag_especial: 'Nenhum', // Default
+                status_tipo_item,
+                status_tipo_detalhe
             });
         });
 
