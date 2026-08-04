@@ -42,14 +42,34 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                     const key = `${row.pedido}-${row.item}`;
                     if (!seen.has(key)) {
                         seen.add(key);
+                        row.is_priority = row.op_prioridade && parseInt(row.op_prioridade) > 0;
                         uniqueItems.push(row);
                     }
                 });
                 
-                // Prioritize items with is_priority === true, then by higher saldo
+                // Prioritize items with is_priority === true, then by priority level, date, and higher saldo
                 uniqueItems.sort((a, b) => {
+                    // 1. Priority items first
                     if (a.is_priority && !b.is_priority) return -1;
                     if (!a.is_priority && b.is_priority) return 1;
+                    
+                    // 2. Sort by priority level (1 = Maximum, 4 = Normal)
+                    if (a.is_priority && b.is_priority) {
+                        const prioA = parseInt(a.op_prioridade) || 999;
+                        const prioB = parseInt(b.op_prioridade) || 999;
+                        if (prioA !== prioB) return prioA - prioB;
+                    }
+
+                    // 3. Sort by PCP delivery date (earliest first, empty dates at the bottom)
+                    const dateA = a.data_entrega_pcp || '';
+                    const dateB = b.data_entrega_pcp || '';
+                    if (dateA && !dateB) return -1;
+                    if (!dateA && dateB) return 1;
+                    if (dateA && dateB && dateA !== dateB) {
+                        return dateA.localeCompare(dateB);
+                    }
+
+                    // 4. Sort by higher remaining balance
                     return (parseFloat(b.qtd_faturar) || 0) - (parseFloat(a.qtd_faturar) || 0);
                 });
                 
@@ -325,14 +345,24 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                                         isSelected 
                                             ? 'border-emerald-500 shadow-emerald-500/20 shadow-lg' 
                                             : row.is_priority 
-                                                ? 'border-red-400 shadow-red-500/20 shadow-lg' 
+                                                ? row.op_prioridade === 1 
+                                                    ? 'border-red-500 bg-red-50/10 shadow-red-500/20 shadow-lg'
+                                                    : row.op_prioridade === 2
+                                                        ? 'border-orange-400 bg-orange-50/10 shadow-orange-500/20 shadow-lg'
+                                                        : 'border-yellow-400 bg-yellow-50/10 shadow-yellow-500/20 shadow-lg'
                                                 : 'border-slate-200 shadow-md hover:border-indigo-300'
                                     }`}
                                 >
                                     {row.is_priority && (
                                         <div className="flex items-center gap-1.5 bg-red-100 text-red-700 p-2 sm:p-3 rounded-xl mb-4 border border-red-200">
                                             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                                            <span className="font-bold text-sm sm:text-base">PEDIDO PRIORITÁRIO</span>
+                                            <span className="font-bold text-sm sm:text-base">
+                                                PRIORIDADE: {
+                                                    row.op_prioridade === 1 ? 'MÁXIMA' :
+                                                    row.op_prioridade === 2 ? 'ALTA' :
+                                                    row.op_prioridade === 3 ? 'MÉDIA' : 'NORMAL'
+                                                }
+                                            </span>
                                             {row.priority_obs && <span className="text-sm hidden sm:inline ml-1">- {row.priority_obs}</span>}
                                         </div>
                                     )}
