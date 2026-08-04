@@ -147,19 +147,51 @@ async function getForecastMapCached() {
     try {
         const [rows] = await mysqlPool.query(`
             SELECT TRIM(pedido) as pedido, TRIM(item) as item,
-                   MAX(data_entrega_pcp) as data_entrega_pcp,
-                   MAX(data_prevista_faturamento) as data_prevista_faturamento,
-                   SUM(quantidade_pcp) as quantidade_pcp
+                   data_entrega_pcp,
+                   data_prevista_faturamento,
+                   quantidade_pcp,
+                   TRIM(op_protheus) as op_protheus
             FROM app_pcp_delivery_forecasts
             WHERE pedido IS NOT NULL AND item IS NOT NULL
-            GROUP BY TRIM(pedido), TRIM(item)
         `);
         for (const row of rows) {
-            map.set(`${row.pedido}|${row.item}`, {
-                data_entrega_pcp: row.data_entrega_pcp || null,
-                data_prevista_faturamento: row.data_prevista_faturamento || null,
-                quantidade_pcp: row.quantidade_pcp || null
-            });
+            const baseKey = `${row.pedido}|${row.item}`;
+            
+            // 1. Mapeamento específico por OP se houver
+            if (row.op_protheus && row.op_protheus !== '-') {
+                const opPrefix = String(row.op_protheus).trim().substring(0, 6);
+                if (opPrefix) {
+                    const opKey = `${baseKey}|${opPrefix}`;
+                    map.set(opKey, {
+                        data_entrega_pcp: row.data_entrega_pcp || null,
+                        data_prevista_faturamento: row.data_prevista_faturamento || null,
+                        quantidade_pcp: row.quantidade_pcp || null,
+                        op_protheus: row.op_protheus
+                    });
+                }
+            }
+            
+            // 2. Mapeamento geral/fallback por Pedido|Item (compatibilidade com telas que não usam OPs)
+            if (!map.has(baseKey)) {
+                map.set(baseKey, {
+                    data_entrega_pcp: row.data_entrega_pcp || null,
+                    data_prevista_faturamento: row.data_prevista_faturamento || null,
+                    quantidade_pcp: row.quantidade_pcp || null
+                });
+            } else {
+                const current = map.get(baseKey);
+                const currentVal = current.data_entrega_pcp ? new Date(current.data_entrega_pcp) : null;
+                const rowVal = row.data_entrega_pcp ? new Date(row.data_entrega_pcp) : null;
+                if (rowVal && (!currentVal || rowVal > currentVal)) {
+                    current.data_entrega_pcp = row.data_entrega_pcp;
+                }
+                const currentPrev = current.data_prevista_faturamento ? new Date(current.data_prevista_faturamento) : null;
+                const rowPrev = row.data_prevista_faturamento ? new Date(row.data_prevista_faturamento) : null;
+                if (rowPrev && (!currentPrev || rowPrev > currentPrev)) {
+                    current.data_prevista_faturamento = row.data_prevista_faturamento;
+                }
+                current.quantidade_pcp = (parseFloat(current.quantidade_pcp) || 0) + (parseFloat(row.quantidade_pcp) || 0);
+            }
         }
     } catch (err) {
         console.error('getForecastMapCached error:', err.message);
@@ -1179,7 +1211,11 @@ router.get('/flat', async (req, res) => {
         }
 
         for (const row of result.rows) {
-            const fc = forecastMap.get(`${String(row.pedido).trim()}|${String(row.item).trim()}`);
+            const baseKey = `${String(row.pedido).trim()}|${String(row.item).trim()}`;
+            const opPrefix = row.op_num ? String(row.op_num).trim().substring(0, 6) : '';
+            const opKey = opPrefix ? `${baseKey}|${opPrefix}` : '';
+            
+            const fc = (opKey && forecastMap.get(opKey)) || forecastMap.get(baseKey);
             if (fc) {
                 if (!fcJoin) {
                     row.data_entrega_pcp = fc.data_entrega_pcp;
@@ -2675,6 +2711,23 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
 
                 if (!pedido || !item || quantidade_pcp === undefined) continue;
                 
+                if (it.op_protheus) {
+                    const opClean = String(it.op_protheus).trim();
+                    if (opClean && opClean !== '-' && opClean !== '') {
+                        const [opCheck] = await connection.query(
+                            "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
+                            [opClean]
+                        );
+                        if (opCheck.length > 0) {
+                            const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
+                            const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
+                            if (existingDate !== newDate) {
+                                throw new Error(`A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.`);
+                            }
+                        }
+                    }
+                }
+
                 let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
                 let paramsDup = [String(pedido).trim(), String(item).trim(), data_entrega_pcp];
                 const [dupCheck] = await connection.query(queryDup, paramsDup);
@@ -2726,6 +2779,22 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
 
         if (!pedido || !item || !data_entrega_pcp || quantidade_pcp === undefined || !usuario) {
             return res.status(400).json({ error: 'Dados incompletos para o planejamento PCP.' });
+        }
+        if (req.body.op_protheus) {
+            const opClean = String(req.body.op_protheus).trim();
+            if (opClean && opClean !== '-' && opClean !== '') {
+                const [opCheck] = await mysqlPool.query(
+                    "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
+                    [opClean]
+                );
+                if (opCheck.length > 0) {
+                    const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
+                    const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
+                    if (existingDate !== newDate) {
+                        return res.status(400).json({ error: `A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.` });
+                    }
+                }
+            }
         }
 
         let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
@@ -2795,6 +2864,16 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
             }
         }
 
+        const [current] = await mysqlPool.query("SELECT op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?", [id]);
+        const opClean = current[0]?.op_protheus ? String(current[0].op_protheus).trim() : null;
+        if (opClean && opClean !== '-' && opClean !== '') {
+            // Sincroniza a data de entrega de todos os registros da mesma OP no PCP
+            await mysqlPool.query(
+                "UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ? WHERE TRIM(op_protheus) = ?",
+                [data_entrega_pcp, opClean]
+            );
+        }
+
         await mysqlPool.query(
             'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, lote = ?, numero_lote = ?, data_prevista_faturamento = ? WHERE id = ?',
             [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
@@ -2841,10 +2920,25 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
     try {
         const { id } = req.params;
         const { op_protheus } = req.body;
+        const opClean = op_protheus ? String(op_protheus).trim() : null;
+        if (opClean && opClean !== '-' && opClean !== '') {
+            const [opCheck] = await mysqlPool.query(
+                "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? AND id != ? LIMIT 1",
+                [opClean, id]
+            );
+            if (opCheck.length > 0) {
+                const [curr] = await mysqlPool.query("SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE id = ?", [id]);
+                const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
+                const currentDate = new Date(curr[0].data_entrega_pcp).toISOString().split('T')[0];
+                if (existingDate !== currentDate) {
+                    return res.status(400).json({ error: `A OP ${opClean} já possui a data de entrega ${existingDate.split('-').reverse().join('/')}. Altere a data desta programação para coincidir antes de vincular.` });
+                }
+            }
+        }
         
         await mysqlPool.query(
             'UPDATE app_pcp_delivery_forecasts SET op_protheus = ? WHERE id = ?',
-            [op_protheus, id]
+            [opClean, id]
         );
         res.json({ success: true });
     } catch (err) {

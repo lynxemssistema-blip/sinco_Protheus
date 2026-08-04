@@ -342,7 +342,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                                         const savedItem = savedItems.find(s => s.pedido === String(op.pedido).trim() && s.item === String(op.item).trim());
                                         if (savedItem && savedItem.id) {
                                             try {
-                                                await api.put(`/pedidos/pcp-forecasts/${savedItem.id}`, { op_protheus: op.op_num });
+                                                await api.patch(`/pedidos/pcp-forecasts/${savedItem.id}/op`, { op_protheus: op.op_num });
                                             } catch (updateErr) {
                                                 console.error(`Falha ao vincular OP ${op.op_num} no banco para o ID: ${savedItem.id}`, updateErr);
                                             }
@@ -522,7 +522,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                     const resp = await api.post('/protheus/ordem-producao/incluir', protheusPayload);
                     if (resp.data?.generated_ops && resp.data.generated_ops.length > 0) {
                         const newOpNum = resp.data.generated_ops[0].op_num;
-                        await api.put(`/pedidos/pcp-forecasts/${prog.id}`, { op_protheus: newOpNum });
+                        await api.patch(`/pedidos/pcp-forecasts/${prog.id}/op`, { op_protheus: newOpNum });
                         toast.success('Ordem de Produção gerada no Protheus e vinculada!');
                     }
                 } catch (err) {
