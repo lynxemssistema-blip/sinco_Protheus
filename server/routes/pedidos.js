@@ -1322,6 +1322,73 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE PRIORIDADES DE OP ---
 
+            // --- INÍCIO BUSCA DE TIPO DE STATUS (PCP/RESTRIÇÃO/REVISÃO/NOVO) ---
+            try {
+                const productCodes = [...new Set(result.rows.map(r => (r.codigo || '').trim()).filter(Boolean))];
+                const sg1Set = new Set();
+                const sg2Set = new Set();
+                const sz0Set = new Set();
+                let globalReleaseSet = new Set();
+
+                if (productCodes.length > 0) {
+                    const pgStatusResult = await db.query(`
+                        SELECT 'sg1' AS type, TRIM(g1_cod) AS cod
+                          FROM public.sg1010
+                         WHERE TRIM(g1_cod) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                        UNION ALL
+                        SELECT 'sg2' AS type, TRIM(g2_produto) AS cod
+                          FROM public.sg2010
+                         WHERE TRIM(g2_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                        UNION ALL
+                        SELECT 'sz0' AS type, TRIM(z0_produto) AS cod
+                          FROM public.sz0010
+                         WHERE TRIM(z0_produto) = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
+                    `, [productCodes]);
+
+                    pgStatusResult.rows.forEach(r => {
+                        if (r.type === 'sg1') sg1Set.add(r.cod);
+                        if (r.type === 'sg2') sg2Set.add(r.cod);
+                        if (r.type === 'sz0') sz0Set.add(r.cod);
+                    });
+
+                    const qPlaceholders = productCodes.map(() => '?').join(',');
+                    const [releasesRows] = await mysqlPool.query(
+                        `SELECT DISTINCT UPPER(TRIM(codigo_produto)) AS cod FROM app_engineering_releases WHERE codigo_produto IN (${qPlaceholders})`,
+                        productCodes
+                    );
+                    globalReleaseSet = new Set(releasesRows.map(r => r.cod));
+                }
+
+                result.rows.forEach(row => {
+                    const cod = String(row.codigo || '').trim();
+                    const isBlocked     = ['1', 'S', 'T', 'Y'].includes(row.b1_msblql?.trim());
+                    const hasRestriction = sz0Set.has(cod);
+                    const revDiff       = (row.rev_codigo || '') !== (row.c6_rev_cliente || '');
+                    const isNew         = !sg1Set.has(cod) && !sg2Set.has(cod);
+                    const hasGlobalRelease = globalReleaseSet.has(cod.toUpperCase());
+
+                    if (hasGlobalRelease) {
+                        row.status_tipo_item   = 'PCP';
+                        row.status_tipo_detalhe = 'Produto liberado manualmente pela Engenharia.';
+                    } else if (isBlocked || hasRestriction) {
+                        row.status_tipo_item   = 'Restrição';
+                        row.status_tipo_detalhe = 'Produto possui bloqueio no Protheus ou Restrição ativa.';
+                    } else if (revDiff) {
+                        row.status_tipo_item   = 'Revisão';
+                        row.status_tipo_detalhe = 'Revisão do Pedido difere da Revisão da Engenharia.';
+                    } else if (isNew) {
+                        row.status_tipo_item   = 'Novo';
+                        row.status_tipo_detalhe = 'Produto sem Engenharia cadastrada (SG1/SG2).';
+                    } else {
+                        row.status_tipo_item   = 'PCP';
+                        row.status_tipo_detalhe = 'Liberado para PCP.';
+                    }
+                });
+            } catch (err) {
+                console.error('[STATUS/RELEASES FETCH ERROR in flat]', err);
+            }
+            // --- FIM BUSCA DE TIPO DE STATUS ---
+
             // --- INÍCIO BUSCA DE CLASSIFICAÇÃO (JITS/PPAP) ---
             try {
                 if (uniquePedidos.length > 0) {
