@@ -1067,43 +1067,52 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         const allItems      = rows.flatMap(o => (o.itens || []).map(it => ({ ...it, order: o })));
         const uniqueProducts = [...new Set(allItems.map(it => it.produto.trim()))];
 
-        // ── Step 1: BOM recursivo (todos os níveis via CTE) ──────────────────
-        // Expande TODA a estrutura com quant acumulada (nível 1 × nível 2 × ...)
-        // Componentes em múltiplos caminhos são somados (GROUP BY + SUM)
-        // Nível 0 (produto acabado) é somado direto em calcCarga via addTime(produto, qtd)
         let bomMap = {}; // produto -> [{ comp, quant }]  (filhos de todos os níveis)
+        let estruturasList = [];
         if (uniqueProducts.length > 0) {
-            const bomRows = await db.query(
-                `WITH RECURSIVE bom AS (
-                    -- Nível 1: filhos diretos dos produtos acabados
-                    SELECT
-                        TRIM(g1_cod)  AS raiz,
-                        TRIM(g1_comp) AS comp,
-                        g1_quant::numeric AS quant,
-                        1 AS nivel
-                    FROM sg1010
-                    WHERE TRIM(g1_cod) = ANY($1::text[])
-                      AND COALESCE(d_e_l_e_t_, '') = ''
+            const client = await db.connect();
+            let bomRows;
+            try {
+                await client.query("SET client_encoding TO 'WIN1252'");
+                bomRows = await client.query(
+                    `WITH RECURSIVE bom AS (
+                        SELECT TRIM(g1_cod) AS raiz, TRIM(g1_comp) AS comp, g1_quant::numeric AS quant, 1 AS nivel
+                        FROM sg1010
+                        WHERE TRIM(g1_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') = ''
+                        UNION ALL
+                        SELECT bom.raiz, TRIM(sg1.g1_comp), bom.quant * sg1.g1_quant::numeric, bom.nivel + 1
+                        FROM sg1010 sg1
+                        JOIN bom ON TRIM(sg1.g1_cod) = bom.comp
+                        WHERE COALESCE(sg1.d_e_l_e_t_, '') = '' AND bom.nivel < 15
+                    )
+                    SELECT bom.raiz, bom.comp, SUM(bom.quant) as quant_total, 
+                           TRIM(MAX(sb1.b1_desc)) as desc, TRIM(MAX(sb1.b1_um)) as um, TRIM(MAX(sb1.b1_tipo)) as tipo,
+                           COALESCE(MAX(NULLIF(sb1.b1_uprc, 0)), MAX(sb1.b1_custd), 0)::numeric as custo_unitario
+                    FROM bom 
+                    LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = bom.comp AND COALESCE(sb1.d_e_l_e_t_, '') = '' 
+                    GROUP BY bom.raiz, bom.comp 
+                    ORDER BY bom.raiz, bom.comp`,
+                    [uniqueProducts]
+                );
+                await client.query("SET client_encoding TO 'UTF8'");
+            } finally {
+                client.release();
+            }
+            
+            // Controle de permissão para valores financeiros
+            const canSeeFinancials = await hasFinancialAccess(req);
 
-                    UNION ALL
-
-                    -- Níveis 2+: filhos dos filhos (recursivo)
-                    SELECT
-                        bom.raiz,
-                        TRIM(sg1.g1_comp),
-                        bom.quant * sg1.g1_quant::numeric,
-                        bom.nivel + 1
-                    FROM sg1010 sg1
-                    JOIN bom ON TRIM(sg1.g1_cod) = bom.comp
-                    WHERE COALESCE(sg1.d_e_l_e_t_, '') = ''
-                      AND bom.nivel < 15   -- limite de segurança (evita loop infinito)
-                )
-                SELECT raiz, comp, SUM(quant) AS quant_total
-                FROM bom
-                GROUP BY raiz, comp`,
-                [uniqueProducts]
-            );
             bomRows.rows.forEach(r => {
+                const custoUnit = canSeeFinancials ? (parseFloat(r.custo_unitario) || 0) : 0;
+                estruturasList.push({ 
+                    raiz: r.raiz, 
+                    comp: r.comp, 
+                    quant: parseFloat(r.quant_total) || 0, 
+                    desc: r.desc || '', 
+                    um: r.um || '', 
+                    tipo: r.tipo || '',
+                    custo_unitario: custoUnit
+                });
                 if (!bomMap[r.raiz]) bomMap[r.raiz] = [];
                 bomMap[r.raiz].push({ comp: r.comp, quant: parseFloat(r.quant_total) || 0 });
             });
@@ -1197,6 +1206,8 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         const sheetResumo = workbook.addWorksheet('Resumo');
         const sheetOrders = workbook.addWorksheet('Pedidos');
         const sheetItems  = workbook.addWorksheet('Itens Detalhados');
+        const sheetBom    = workbook.addWorksheet('Estrutura BOM');
+        const sheetMateriais = workbook.addWorksheet('Necessidade de Materiais');
         const sheetCarga  = workbook.addWorksheet('Carga por Recurso');
         const sheetCapacidade = workbook.addWorksheet('Capacidade do Período');
         const sheetExecucao = workbook.addWorksheet('Execução OP');
@@ -2073,6 +2084,93 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
             sheetEntregas.addRow(rowData);
         });
 
+        // ── POPULATE sheetBom ──
+        sheetBom.columns = [
+            { header: 'Produto Pai (Raiz)', key: 'raiz', width: 20 },
+            { header: 'Componente', key: 'comp', width: 20 },
+            { header: 'Descrição Componente', key: 'desc', width: 35 },
+            { header: 'UM', key: 'um', width: 10 },
+            { header: 'Tipo', key: 'tipo', width: 10 },
+            { header: 'Qtd Unitária', key: 'quant', width: 15 }
+        ];
+        estruturasList.forEach(b => {
+            sheetBom.addRow({
+                raiz: b.raiz,
+                comp: b.comp,
+                desc: b.desc,
+                um: b.um,
+                tipo: b.tipo,
+                quant: b.quant
+            });
+        });
+        sheetBom.getColumn('quant').numFmt = '#,##0.00';
+
+        // ── POPULATE sheetMateriais ──
+        const canSeeFinancials = await hasFinancialAccess(req);
+        const exibirCustos = (req.query.exibirCustos === 'true' || req.query.exibirCustos === true) && canSeeFinancials;
+        const baseCalculo = req.query.baseCalculo || 'saldo';
+        const filtroTipo = req.query.filtroTipo || 'MP';
+
+        const matCols = [
+            { header: 'Pedido', key: 'pedido', width: 15 },
+            { header: 'Cliente', key: 'cliente', width: 30 },
+            { header: 'Produto Final', key: 'produtoFinal', width: 20 },
+            { header: 'Descrição Produto Final', key: 'descFinal', width: 35 },
+            { header: baseCalculo === 'pedido' ? 'Qtd Pedido' : 'Qtd Faturar', key: 'qtdFaturar', width: 15 },
+            { header: 'Código do Material', key: 'materialCod', width: 20 },
+            { header: 'Descrição do Material', key: 'materialDesc', width: 35 },
+            { header: 'UM', key: 'um', width: 10 },
+            { header: 'Qtd Unitária (BOM)', key: 'qtdUnit', width: 18 },
+            { header: 'Qtd Total Necessária', key: 'qtdTotal', width: 20 }
+        ];
+        if (exibirCustos) {
+            matCols.push(
+                { header: 'Custo Unitário', key: 'custoUnit', width: 15 },
+                { header: 'Custo Total', key: 'custoTotal', width: 18 }
+            );
+        }
+        sheetMateriais.columns = matCols;
+
+        allItems.forEach(it => {
+            const parentProd = (it.produto || '').trim();
+            const parentQtd = baseCalculo === 'pedido'
+                ? Number(it.qtd || 0)
+                : Number(it.qtd_faturar || 0);
+
+            const comps = estruturasList.filter(e => e.raiz === parentProd);
+            comps.forEach(c => {
+                const matchesTipo = filtroTipo === 'Todos' || c.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
+                if (!matchesTipo) return;
+
+                const totalQtd = parentQtd * c.quant;
+                const rowData = {
+                    pedido: it.order.pedido,
+                    cliente: it.order.cliente,
+                    produtoFinal: parentProd,
+                    descFinal: it.descricao || '-',
+                    qtdFaturar: parentQtd,
+                    materialCod: c.comp,
+                    materialDesc: c.desc || '-',
+                    um: c.um || '-',
+                    qtdUnit: c.quant,
+                    qtdTotal: totalQtd
+                };
+                if (exibirCustos) {
+                    rowData.custoUnit = c.custo_unitario || 0;
+                    rowData.custoTotal = totalQtd * (c.custo_unitario || 0);
+                }
+                sheetMateriais.addRow(rowData);
+            });
+        });
+
+        sheetMateriais.getColumn('qtdFaturar').numFmt = '#,##0.00';
+        sheetMateriais.getColumn('qtdUnit').numFmt = '#,##0.00';
+        sheetMateriais.getColumn('qtdTotal').numFmt = '#,##0.00';
+        if (exibirCustos) {
+            sheetMateriais.getColumn('custoUnit').numFmt = 'R$ #,##0.00';
+            sheetMateriais.getColumn('custoTotal').numFmt = 'R$ #,##0.00';
+        }
+
         // ── Aplicar estilo MetalFisa em todas as abas de dados ─────────────────
         /**
          * applyMetalFisaSheet — formatação padrão para abas de dados.
@@ -2145,10 +2243,12 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         await applyMetalFisaSheet(sheetOrders, ordersFixedCols.length);
         await applyMetalFisaSheet(sheetResumo, 1);
         await applyMetalFisaSheet(sheetItems);
+        await applyMetalFisaSheet(sheetBom, 1);
         await applyMetalFisaSheet(sheetCarga, fixedCols.length);
         await applyMetalFisaSheet(sheetCapacidade, 1);
         await applyMetalFisaSheet(sheetExecucao, execFixedCols.length);
         await applyMetalFisaSheet(sheetEntregas, 7);
+        await applyMetalFisaSheet(sheetMateriais);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename=planejamento_vendas.xlsx');
