@@ -426,6 +426,25 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                         <div className="space-y-6 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <InputGroup history={history.engineering_start_date} label="Início engenharia" name="engineering_start_date" type="date" value={formData.engineering_start_date} onChange={handleChange} />
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs font-semibold text-gray-600">Tipo de Projeto</label>
+                                    <div className="py-2">
+                                        {(() => {
+                                            const tipoConfig = {
+                                                Novo: { label: 'NOVO', bg: 'bg-blue-100 text-blue-700 border-blue-200' },
+                                                'Revisão': { label: 'REVISÃO', bg: 'bg-orange-100 text-orange-700 border-orange-200' },
+                                                'Restrição': { label: 'RESTRIÇÃO', bg: 'bg-red-100 text-red-700 border-red-200' },
+                                                PCP: { label: 'PCP', bg: 'bg-gray-100 text-gray-700 border-gray-200' }
+                                            };
+                                            const tipoCfg = tipoConfig[formData.project_type] || { label: '-', bg: 'text-gray-400' };
+                                            return (
+                                                <span className={`px-2.5 py-1.5 rounded text-xs font-bold border inline-block ${tipoCfg.bg}`}>
+                                                    {tipoCfg.label}
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
                             </div>
                             {canEdit && (
                                 <div className="flex justify-end pt-4 border-t border-gray-100">

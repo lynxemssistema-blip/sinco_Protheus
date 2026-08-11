@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Search, Calendar, User, FileText, ArrowLeft, Download, RefreshCcw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import { Package, Search, Calendar, User, FileText, ArrowLeft, Download, RefreshCcw, Layers } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import api, { getFileUrl } from '../services/api';
 import * as XLSX from 'xlsx';
 
 const EngineeringControlReport = () => {
@@ -10,42 +10,77 @@ const EngineeringControlReport = () => {
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
         pedido: '',
-        projetista: ''
+        projetista: '',
+        cliente: '',
+        project_type: '',
+        dateType: 'engineering_start_date',
+        startDate: '',
+        endDate: '',
+        release_status: 'unreleased'
     });
 
     const [pagination, setPagination] = useState({
         page: 1,
-        limit: 50,
+        limit: 100,
         total: 0
     });
 
-    const fetchControls = async (page = 1) => {
-        setLoading(true);
+    const [appliedFilters, setAppliedFilters] = useState(filters);
+    const [loadingMore, setLoadingMore] = useState(false);
+
+    const fetchControls = async (page = 1, currentFilters = appliedFilters, append = false) => {
+        if (page === 1 && !append) {
+            setLoading(true);
+            setLoadingMore(false);
+            setData([]);
+        } else {
+            setLoadingMore(true);
+        }
+        
         try {
             const params = new URLSearchParams({
                 page,
-                limit: pagination.limit,
-                pedido: filters.pedido,
-                projetista: filters.projetista
+                limit: 100, // Load in batches of 100
+                pedido: currentFilters.pedido || '',
+                projetista: currentFilters.projetista || '',
+                cliente: currentFilters.cliente || '',
+                project_type: currentFilters.project_type || '',
+                dateType: currentFilters.dateType || 'engineering_start_date',
+                startDate: currentFilters.startDate || '',
+                endDate: currentFilters.endDate || '',
+                release_status: currentFilters.release_status || 'unreleased'
             });
 
             const res = await api.get(`/engineering-controls?${params.toString()}`);
-            setData(res.data.data);
-            setPagination(prev => ({
-                ...prev,
-                page: res.data.meta.page,
-                total: res.data.meta.total
-            }));
+            const newItems = res.data.data;
+            const meta = res.data.meta;
+
+            setData(prev => append ? [...prev, ...newItems] : newItems);
+            
+            setPagination({
+                page: meta.page,
+                limit: meta.limit,
+                total: meta.total
+            });
+
+            const totalLoadedSoFar = (page - 1) * 100 + newItems.length;
+            if (totalLoadedSoFar < meta.total && newItems.length > 0) {
+                // Load next page
+                fetchControls(page + 1, currentFilters, true);
+            } else {
+                setLoading(false);
+                setLoadingMore(false);
+            }
         } catch (error) {
             console.error('Erro ao carregar controles:', error);
             alert('Falha ao carregar os dados. Verifique a conexão com o banco.');
-        } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
     };
 
     useEffect(() => {
-        fetchControls(1);
+        fetchControls(1, filters);
     }, []);
 
     const handleFilterChange = (e) => {
@@ -53,10 +88,98 @@ const EngineeringControlReport = () => {
         setFilters(prev => ({ ...prev, [name]: value }));
     };
 
+    const handleApplyFilters = () => {
+        setAppliedFilters(filters);
+        fetchControls(1, filters);
+    };
+
+    const handleClearFilters = () => {
+        const cleared = {
+            pedido: '',
+            projetista: '',
+            cliente: '',
+            project_type: '',
+            dateType: 'engineering_start_date',
+            startDate: '',
+            endDate: '',
+            release_status: 'unreleased'
+        };
+        setFilters(cleared);
+        setAppliedFilters(cleared);
+        fetchControls(1, cleared);
+    };
+
     const handleSearch = (e) => {
         if (e.key === 'Enter') {
-            fetchControls(1);
+            handleApplyFilters();
         }
+    };
+
+    const [sortConfig, setSortConfig] = useState(null);
+
+    const sortedData = React.useMemo(() => {
+        let sortableItems = [...data];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aVal = a[sortConfig.key];
+                let bVal = b[sortConfig.key];
+                
+                if (aVal === null || aVal === undefined) aVal = '';
+                if (bVal === null || bVal === undefined) bVal = '';
+
+                if (sortConfig.key === 'total_seconds') {
+                    const numA = Number(aVal) || 0;
+                    const numB = Number(bVal) || 0;
+                    return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+                }
+                
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (aVal < bVal) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aVal > bVal) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [data, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig && sortConfig.key === key) {
+            if (sortConfig.direction === 'asc') {
+                direction = 'desc';
+            } else {
+                setSortConfig(null);
+                return;
+            }
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const renderSortableHeader = (label, key, extraClasses = '') => {
+        const isSorted = sortConfig && sortConfig.key === key;
+        const direction = isSorted ? sortConfig.direction : null;
+        
+        return (
+            <th 
+                className={`px-4 py-3 border-b cursor-pointer hover:brightness-95 select-none transition-all ${extraClasses}`}
+                onClick={() => requestSort(key)}
+            >
+                <div className="flex items-center justify-between gap-1">
+                    <span>{label}</span>
+                    <span className="text-[10px] opacity-60">
+                        {direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '⇅'}
+                    </span>
+                </div>
+            </th>
+        );
     };
 
     const formatDate = (dateString) => {
@@ -75,6 +198,7 @@ const EngineeringControlReport = () => {
             'Produto': item.codigo_produto,
             'Descrição': item.descricao_produto,
             'Cliente': item.nome_cliente,
+            'Ref. Cliente': item.ref_cliente,
             
             // Engenharia
             'Tipo Projeto': item.project_type,
@@ -131,7 +255,7 @@ const EngineeringControlReport = () => {
                         <Download className="w-4 h-4" /> EXCEL
                     </button>
                     <button
-                        onClick={() => fetchControls(1)}
+                        onClick={handleApplyFilters}
                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-bold transition-colors"
                     >
                         <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -142,7 +266,7 @@ const EngineeringControlReport = () => {
 
             {/* Filters */}
             <div className="bg-white px-6 py-3 border-b border-gray-200 flex flex-wrap gap-4 items-end shrink-0 shadow-sm z-10">
-                <div className="flex flex-col gap-1.5 min-w-[200px]">
+                <div className="flex flex-col gap-1.5 min-w-[150px]">
                     <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Pedido</label>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -160,7 +284,7 @@ const EngineeringControlReport = () => {
                     </div>
                 </div>
                 
-                <div className="flex flex-col gap-1.5 min-w-[250px]">
+                <div className="flex flex-col gap-1.5 min-w-[180px]">
                     <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Projetista</label>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -172,14 +296,123 @@ const EngineeringControlReport = () => {
                             value={filters.projetista}
                             onChange={handleFilterChange}
                             onKeyDown={handleSearch}
-                            placeholder="Nome do Projetista..."
+                            placeholder="Projetista..."
                             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
                     </div>
                 </div>
 
+                <div className="flex flex-col gap-1.5 min-w-[180px]">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Cliente</label>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-4 w-4 text-gray-400" />
+                        </div>
+                        <input
+                            type="text"
+                            name="cliente"
+                            value={filters.cliente}
+                            onChange={handleFilterChange}
+                            onKeyDown={handleSearch}
+                            placeholder="Buscar Cliente..."
+                            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5 min-w-[120px]">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Tipo Projeto</label>
+                    <select
+                        name="project_type"
+                        value={filters.project_type}
+                        onChange={handleFilterChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium text-gray-700"
+                    >
+                        <option value="">Todos</option>
+                        <option value="PCP">PCP</option>
+                        <option value="Novo">Novo</option>
+                        <option value="Revisão">Revisão</option>
+                        <option value="Restrição">Restrição</option>
+                    </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5 min-w-[140px]">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Liberação</label>
+                    <select
+                        name="release_status"
+                        value={filters.release_status}
+                        onChange={handleFilterChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium text-gray-700"
+                    >
+                        <option value="unreleased">Não Liberados</option>
+                        <option value="released">Liberados</option>
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5 min-w-[150px]">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Filtrar Data Por</label>
+                    <select
+                        name="dateType"
+                        value={filters.dateType}
+                        onChange={handleFilterChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium text-gray-700"
+                    >
+                        <option value="engineering_start_date">Início Engenharia</option>
+                        <option value="designer_production_release_date">Liberação Produção</option>
+                        <option value="designer_start_forecast">Previsão Início</option>
+                        <option value="designer_end_forecast">Previsão Fim</option>
+                        <option value="designer_start_real">Início Real</option>
+                        <option value="designer_end_real">Fim Real</option>
+                    </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">De</label>
+                    <input
+                        type="date"
+                        name="startDate"
+                        value={filters.startDate}
+                        onChange={handleFilterChange}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700"
+                    />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Até</label>
+                    <input
+                        type="date"
+                        name="endDate"
+                        value={filters.endDate}
+                        onChange={handleFilterChange}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700"
+                    />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                    <button
+                        type="button"
+                        onClick={handleApplyFilters}
+                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        title="Filtrar"
+                    >
+                        Filtrar
+                    </button>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                    <button
+                        type="button"
+                        onClick={handleClearFilters}
+                        className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        title="Limpar todos os filtros"
+                    >
+                        Limpar
+                    </button>
+                </div>
+
                 <div className="ml-auto flex items-center gap-2 text-sm text-gray-500">
-                    <span className="font-bold text-gray-700">{pagination.total}</span> registros encontrados
+                    <span className="font-bold text-gray-700">{pagination.total}</span> registros
                 </div>
             </div>
 
@@ -212,7 +445,7 @@ const EngineeringControlReport = () => {
                         <thead className="sticky top-0 z-10 font-bold uppercase text-[10px] tracking-wider text-gray-600 bg-white">
                             {/* Primeira Linha (Categorias) */}
                             <tr>
-                                <th colSpan="5" className="px-4 py-2 border-b border-r border-gray-200 shrink-0 shadow-[0_1px_0_rgba(0,0,0,0.1)] text-center text-gray-700">
+                                <th colSpan="6" className="px-4 py-2 border-b border-r border-gray-200 shrink-0 shadow-[0_1px_0_rgba(0,0,0,0.1)] text-center text-gray-700">
                                     INFORMAÇÕES GERAIS
                                 </th>
                                 <th colSpan="9" className="px-4 py-2 border-b border-r border-blue-200 bg-blue-50/80 shadow-[0_1px_0_rgba(0,0,0,0.1)] text-center text-blue-800">
@@ -225,55 +458,102 @@ const EngineeringControlReport = () => {
                             {/* Segunda Linha (Colunas Reais) */}
                             <tr>
                                 {/* Geral */}
-                                <th className="px-4 py-3 border-b border-gray-200 bg-white">Pedido</th>
-                                <th className="px-4 py-3 border-b border-gray-200 bg-white">Item</th>
-                                <th className="px-4 py-3 border-b border-gray-200 bg-white">Produto</th>
-                                <th className="px-4 py-3 border-b border-gray-200 bg-white">Descrição</th>
-                                <th className="px-4 py-3 border-b border-r border-gray-200 bg-white min-w-[200px]">Cliente</th>
+                                {renderSortableHeader('Pedido', 'pedido', 'border-gray-200 bg-white')}
+                                {renderSortableHeader('Item', 'item', 'border-gray-200 bg-white')}
+                                {renderSortableHeader('Produto', 'codigo_produto', 'border-gray-200 bg-white')}
+                                {renderSortableHeader('Descrição', 'descricao_produto', 'border-gray-200 bg-white')}
+                                {renderSortableHeader('Cliente', 'nome_cliente', 'border-gray-200 bg-white min-w-[200px]')}
+                                {renderSortableHeader('Ref. Cliente', 'ref_cliente', 'border-r border-gray-200 bg-white min-w-[120px]')}
                                 
                                 {/* Engenharia */}
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900 border-l">Tipo Projeto</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900 min-w-[150px]">Projetista</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900">Início Eng.</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900 border-l border-blue-50">Prev. Início</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900">Prev. Fim</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900 border-l border-blue-50">Início Real</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-blue-900">Fim Real</th>
-                                <th className="px-4 py-3 border-b border-blue-100 bg-blue-50/30 text-indigo-900 font-bold">Horas</th>
-                                <th className="px-4 py-3 border-b border-r border-blue-200 bg-blue-100/50 text-blue-900 font-black">Liberação Prod.</th>
+                                {renderSortableHeader('Tipo Projeto', 'project_type', 'border-blue-100 bg-blue-50/30 text-blue-900 border-l')}
+                                {renderSortableHeader('Projetista', 'designer_name', 'border-blue-100 bg-blue-50/30 text-blue-900 min-w-[150px]')}
+                                {renderSortableHeader('Início Eng.', 'engineering_start_date', 'border-blue-100 bg-blue-50/30 text-blue-900')}
+                                {renderSortableHeader('Prev. Início', 'designer_start_forecast', 'border-blue-100 bg-blue-50/30 text-blue-900 border-l border-blue-50')}
+                                {renderSortableHeader('Prev. Fim', 'designer_end_forecast', 'border-blue-100 bg-blue-50/30 text-blue-900')}
+                                {renderSortableHeader('Início Real', 'designer_start_real', 'border-blue-100 bg-blue-50/30 text-blue-900 border-l border-blue-50')}
+                                {renderSortableHeader('Fim Real', 'designer_end_real', 'border-blue-100 bg-blue-50/30 text-blue-900')}
+                                {renderSortableHeader('Horas', 'total_seconds', 'border-blue-100 bg-blue-50/30 text-indigo-900 font-bold')}
+                                {renderSortableHeader('Liberação Prod.', 'designer_production_release_date', 'border-r border-blue-200 bg-blue-100/50 text-blue-900 font-black')}
                                 
                                 {/* PCP */}
-                                <th className="px-4 py-3 border-b border-orange-100 bg-orange-50/30 text-orange-900">Req. Material</th>
-                                <th className="px-4 py-3 border-b border-orange-100 bg-orange-50/30 text-orange-900">Início Mecânica</th>
-                                <th className="px-4 py-3 border-b border-orange-100 bg-orange-50/30 text-orange-900">Liberação Corte</th>
+                                {renderSortableHeader('Req. Material', 'pcp_mat_req_date', 'border-orange-100 bg-orange-50/30 text-orange-900')}
+                                {renderSortableHeader('Início Mecânica', 'pcp_mech_start_date', 'border-orange-100 bg-orange-50/30 text-orange-900')}
+                                {renderSortableHeader('Liberação Corte', 'pcp_cut_rel_date', 'border-orange-100 bg-orange-50/30 text-orange-900')}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
-                            {data.map((item, index) => (
+                            {sortedData.map((item, index) => (
                                 <tr key={`${item.pedido}-${item.item}-${index}`} className="hover:bg-gray-50/80 transition-colors">
                                     {/* Geral */}
                                     <td className="px-4 py-3 font-mono font-bold text-gray-700">{item.pedido}</td>
                                     <td className="px-4 py-3 font-mono text-gray-500">{item.item}</td>
-                                    <td className="px-4 py-3">
-                                        <span className="font-mono text-xs text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">
-                                            {item.codigo_produto || '-'}
-                                        </span>
-                                    </td>
+                                     <td className="px-4 py-3">
+                                         <div className="flex items-center gap-2">
+                                             {item.codigo_produto ? (
+                                                 <Link 
+                                                     to={`/estrutura/${encodeURIComponent(item.codigo_produto)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
+                                                     className="font-mono text-xs text-indigo-600 hover:text-indigo-800 hover:underline font-bold bg-indigo-50 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer"
+                                                     title="Ver Estrutura do Produto"
+                                                 >
+                                                     {item.codigo_produto}
+                                                     <Layers className="w-3 h-3 text-indigo-400" />
+                                                 </Link>
+                                             ) : '-'}
+
+                                             {item.has_docs && (
+                                                 <button
+                                                     onClick={() => {
+                                                         if (item.has_drawing && item.drawing_url) {
+                                                             window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank');
+                                                         } else if (item.docs_count === 1 && item.first_doc) {
+                                                             window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank');
+                                                         }
+                                                     }}
+                                                     className={`p-1 rounded transition-all cursor-pointer ${
+                                                         item.has_drawing 
+                                                             ? 'text-red-600 hover:bg-red-50 hover:scale-105' 
+                                                             : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+                                                     }`}
+                                                     title={
+                                                         item.has_drawing 
+                                                             ? 'Abrir Desenho Técnico (PDF)' 
+                                                             : 'Abrir Documento'
+                                                     }
+                                                 >
+                                                     <FileText className="w-3.5 h-3.5" />
+                                                 </button>
+                                             )}
+                                         </div>
+                                     </td>
                                     <td className="px-4 py-3 truncate max-w-[200px]" title={item.descricao_produto}>
                                         {item.descricao_produto || '-'}
                                     </td>
-                                    <td className="px-4 py-3 border-r border-gray-100 truncate max-w-[200px]" title={item.nome_cliente}>
+                                    <td className="px-4 py-3 truncate max-w-[200px]" title={item.nome_cliente}>
                                         {item.nome_cliente || '-'}
+                                    </td>
+                                    <td className="px-4 py-3 border-r border-gray-100 font-mono text-xs text-gray-600 truncate max-w-[150px]" title={item.ref_cliente}>
+                                        {item.ref_cliente || '-'}
                                     </td>
 
                                     {/* Engenharia */}
-                                    <td className="px-4 py-3 bg-blue-50/10 border-l border-blue-50">
-                                        {item.project_type ? (
-                                            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                                                {item.project_type}
-                                            </span>
-                                        ) : '-'}
-                                    </td>
+                                     <td className="px-4 py-3 bg-blue-50/10 border-l border-blue-50 text-center">
+                                         {(() => {
+                                             const tipoConfig = {
+                                                 Novo: { label: 'NOVO', bg: 'bg-blue-100 text-blue-700 border-blue-200' },
+                                                 'Revisão': { label: 'REVISÃO', bg: 'bg-orange-100 text-orange-700 border-orange-200' },
+                                                 'Restrição': { label: 'RESTRIÇÃO', bg: 'bg-red-100 text-red-700 border-red-200' },
+                                                 PCP: { label: 'PCP', bg: 'bg-gray-100 text-gray-700 border-gray-200' }
+                                             };
+                                             const tipoCfg = tipoConfig[item.project_type] || { label: '-', bg: 'text-gray-400' };
+                                             if (tipoCfg.label === '-') return '-';
+                                             return (
+                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold border inline-block ${tipoCfg.bg}`}>
+                                                     {tipoCfg.label}
+                                                 </span>
+                                             );
+                                         })()}
+                                     </td>
                                     <td className="px-4 py-3 bg-blue-50/10 font-medium text-gray-800">
                                         {item.designer_name || '-'}
                                     </td>
@@ -322,27 +602,18 @@ const EngineeringControlReport = () => {
                 )}
             </div>
 
-            {/* Footer / Pagination */}
-            <div className="bg-white border-t border-gray-200 px-6 py-3 flex justify-between items-center shrink-0 z-10">
-                <span className="text-sm text-gray-500">
-                    Mostrando página <span className="font-bold">{pagination.page}</span> (Total de {pagination.total} controles)
+            {/* Footer / Status */}
+            <div className="bg-white border-t border-gray-200 px-6 py-4 flex justify-between items-center shrink-0 z-10">
+                <span className="text-sm text-gray-500 flex items-center gap-2">
+                    {loadingMore ? (
+                        <>
+                            <RefreshCcw className="w-4 h-4 text-indigo-600 animate-spin" />
+                            <span>Carregando dados... {data.length} de {pagination.total}</span>
+                        </>
+                    ) : (
+                        <span>Exibindo todos os <span className="font-bold text-gray-700">{data.length}</span> registros</span>
+                    )}
                 </span>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => fetchControls(pagination.page - 1)}
-                        disabled={pagination.page === 1}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                    >
-                        Anterior
-                    </button>
-                    <button
-                        onClick={() => fetchControls(pagination.page + 1)}
-                        disabled={data.length < pagination.limit}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                    >
-                        Próxima
-                    </button>
-                </div>
             </div>
         </div>
     );

@@ -304,14 +304,14 @@ export default function CorteReleaseTab() {
                                 </span>
                                 <button
                                     onClick={actions.handleExportEspelho}
-                                    className="flex items-center gap-2 px-4 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-700 border border-gray-600 rounded-md text-[10px] font-bold uppercase tracking-widest shadow-sm transition-all"
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-md text-[10px] font-bold uppercase tracking-widest shadow-sm transition-all"
                                 >
                                     <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                                     IMPRIMIR ESPELHO
                                 </button>
                                 <button
                                     onClick={() => actions.handleExportRelatorio(filteredLotes)}
-                                    className="flex items-center gap-2 px-4 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-700 border border-gray-600 rounded-md text-[10px] font-bold uppercase tracking-widest shadow-sm transition-all"
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-md text-[10px] font-bold uppercase tracking-widest shadow-sm transition-all"
                                 >
                                     <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
                                     RELATÓRIO RESUMIDO
@@ -432,7 +432,7 @@ export default function CorteReleaseTab() {
                                             <td className="px-6 py-3.5 text-right">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); actions.handleReexportExcel(lote.id, lote.numero_lote); }}
-                                                    className="p-2 bg-[#1f2937] hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded border border-slate-200 hover:border-indigo-200 transition-all inline-flex items-center"
+                                                    className="p-2 bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-600 rounded border border-slate-200 hover:border-emerald-200 transition-all inline-flex items-center"
                                                     title="BAIXAR PLANILHA"
                                                 >
                                                     <FileSpreadsheet className="w-4 h-4" />
@@ -540,7 +540,7 @@ export default function CorteReleaseTab() {
 
                                         <button
                                             onClick={(e) => { e.stopPropagation(); actions.handleReexportExcel(lote.id, lote.numero_lote); }}
-                                            className="p-3 bg-[#1f2937] hover:bg-indigo-50 hover:text-indigo-600 text-slate-500 rounded-md text-[10px] uppercase tracking-widest font-bold transition-all flex items-center gap-2 border border-slate-200 hover:border-indigo-200"
+                                            className="p-3 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 text-slate-600 rounded-md text-[10px] uppercase tracking-widest font-bold transition-all flex items-center gap-2 border border-slate-200 hover:border-emerald-200"
                                             title="EXPORTAR PLANILHA DESTE LOTE"
                                         >
                                             <FileSpreadsheet className="w-4 h-4" />

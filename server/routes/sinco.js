@@ -523,7 +523,6 @@ router.post('/materiais-apoio', async (req, res) => {
         
         await initMateriaisApoioDB();
         
-        // Usar INSERT IGNORE ou ON DUPLICATE KEY UPDATE para evitar erros se já existir
         await pool.query(`
             INSERT INTO sinco_materiais_densidade (nome, densidade) 
             VALUES (?, ?) 
@@ -534,6 +533,52 @@ router.post('/materiais-apoio', async (req, res) => {
     } catch (error) {
         console.error('❌ Erro ao adicionar material:', error);
         res.status(500).json({ error: 'Erro interno ao adicionar material' });
+    }
+});
+
+// PUT /api/sinco/materiais-apoio
+router.put('/materiais-apoio', async (req, res) => {
+    try {
+        const { nomeOriginal, nome, densidade } = req.body;
+        if (!nomeOriginal || !nome || !densidade) {
+            return res.status(400).json({ error: 'nomeOriginal, nome e densidade são obrigatórios' });
+        }
+        
+        await initMateriaisApoioDB();
+        
+        if (nomeOriginal !== nome) {
+            await pool.query('DELETE FROM sinco_materiais_densidade WHERE nome = ?', [nomeOriginal]);
+            await pool.query(`
+                INSERT INTO sinco_materiais_densidade (nome, densidade) 
+                VALUES (?, ?) 
+                ON DUPLICATE KEY UPDATE densidade = VALUES(densidade)
+            `, [nome, parseFloat(densidade)]);
+        } else {
+            await pool.query('UPDATE sinco_materiais_densidade SET densidade = ? WHERE nome = ?', [parseFloat(densidade), nome]);
+        }
+        
+        res.json({ success: true, message: 'Material atualizado com sucesso' });
+    } catch (error) {
+        console.error('❌ Erro ao atualizar material:', error);
+        res.status(500).json({ error: 'Erro interno ao atualizar material' });
+    }
+});
+
+// DELETE /api/sinco/materiais-apoio
+router.delete('/materiais-apoio', async (req, res) => {
+    try {
+        const { nome } = req.body;
+        if (!nome) {
+            return res.status(400).json({ error: 'Nome é obrigatório' });
+        }
+        
+        await initMateriaisApoioDB();
+        await pool.query('DELETE FROM sinco_materiais_densidade WHERE nome = ?', [nome]);
+        
+        res.json({ success: true, message: 'Material excluído com sucesso' });
+    } catch (error) {
+        console.error('❌ Erro ao excluir material:', error);
+        res.status(500).json({ error: 'Erro interno ao excluir material' });
     }
 });
 

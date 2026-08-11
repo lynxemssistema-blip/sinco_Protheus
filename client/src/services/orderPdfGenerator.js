@@ -204,6 +204,12 @@ export const generateOrderPDF = async (orderData, returnBuffer = false, batchCon
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(120, 120, 120);
                 doc.text(pgStr, pageWidth - MR, pageHeight - 5, { align: 'right' });
+                
+                // Data de alteração e usuário no rodapé (esquerda)
+                if (orderData.capa?.data_alteracao) {
+                    const dtStr = `Última Alteração: ${orderData.capa.data_alteracao}${orderData.capa.usuario_alteracao ? ' por ' + orderData.capa.usuario_alteracao : ''}`;
+                    doc.text(dtStr, ML, pageHeight - 5);
+                }
                 doc.setTextColor(0, 0, 0);
             },
         });
@@ -226,11 +232,28 @@ export const generateOrderPDF = async (orderData, returnBuffer = false, batchCon
         const obsLines = obsGerais ? doc.splitTextToSize(obsGerais, usableW - 20) : [];
         const itemObsLines = combinedObs.trim() ? doc.splitTextToSize(combinedObs.trim(), usableW - 22) : [];
         
-        // Calculate needed footer height
-        let neededFooterH = 10; // Base space for Transportadora etc
-        if (obsLines.length > 0) neededFooterH += (obsLines.length * 3) + 2;
-        if (itemObsLines.length > 0) neededFooterH += (itemObsLines.length * 3) + 2;
+        // Calculate needed footer height dynamically
+        const obsLineHeight = 3.0; // 3 mm per line
+        let neededFooterH = 8; // Base height of the Transportadora box (7 mm + 1 mm padding)
         
+        let obsHeight = 0;
+        if (obsLines.length > 0) {
+            obsHeight += (obsLines.length * obsLineHeight) + 3; // text height + padding
+        }
+        if (itemObsLines.length > 0) {
+            obsHeight += (itemObsLines.length * obsLineHeight) + 3; // text height + padding
+        }
+        if (obsLines.length > 0 && itemObsLines.length > 0) {
+            obsHeight += 2; // gap between sections
+        }
+        
+        // Add the observation section height to neededFooterH
+        if (obsHeight > 0) {
+            neededFooterH += obsHeight + 2; // plus bottom margin inside box
+        } else {
+            neededFooterH = 15; // default fallback if no observations
+        }
+
         const footerH = Math.max(25, neededFooterH); 
         if (finalY + footerH > pageHeight - 8) {
             doc.addPage();
@@ -270,6 +293,7 @@ export const generateOrderPDF = async (orderData, returnBuffer = false, batchCon
 
         // Renderiza Obs Gerais primeiro (se tiver), senão pula pra Obs Itens
         let curObsY = finalY + 11;
+        doc.setFontSize(6); // Ensure font size is 6 (which matches the splitTextToSize calculation!)
         if (obsGerais) {
             doc.setFont('helvetica', 'bold');
             doc.text('Obs. Gerais:', ML + 2, curObsY);

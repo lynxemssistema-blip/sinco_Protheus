@@ -231,9 +231,8 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
 
             // Dispara salvar para cada operacao escolhida sequencialmente no background
             for (const opRow of opsToSave) {
-                const isCurrent = Number(opRow.operacao_codigo) === Number(op.operacao);
                 const userName = user?.nome || user?.login || 'Desconhecido';
-                const finalUserName = isCurrent ? userName : `${userName} (Baixa Auto)`;
+                const finalUserName = userName;
 
                 const payload = {
                     op_numero: op.op,
@@ -244,7 +243,8 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
                     quantidade: quantities[opRow.operacao_codigo],
                     data_inicio: start,
                     data_fim: end,
-                    observacao: formData.observacao
+                    observacao: formData.observacao,
+                    skip_cascade: true
                 };
                 
                 await saveAppointment(payload);

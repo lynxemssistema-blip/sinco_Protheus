@@ -371,6 +371,30 @@ export const exportMasterSheetExcel = (data, filterParams = {}) => {
         XLSX.utils.book_append_sheet(wb, wsMateriais, 'Necessidade de Materiais');
     }
 
+    // 8. Aba: Execução OP
+    if (data.execucao_op && data.execucao_op.length > 0 && data.recursos) {
+        const execHeader = [
+            'Pedido', 'Cliente', 'OP', 'Produto', 'Qtd Planejada', 'Data PCP', 'Qtde PCP',
+            ...data.recursos.flatMap(r => [`${r} Prev (min)`, `${r} Apon (min)`, `${r} Qtd Apon (un)`])
+        ];
+        const execRows = data.execucao_op.map(e => [
+            e.pedido,
+            e.cliente,
+            e.op,
+            e.produto,
+            Number(e.qtd_planejada || 0),
+            formatDate(e.data_pcp),
+            e.qtde_pcp != null ? Number(e.qtde_pcp) : '',
+            ...data.recursos.flatMap(r => [
+                Number(e['previsto_' + r] || 0),
+                Number(e['apontado_' + r] || 0),
+                Number(e['qtd_apontada_' + r] || 0)
+            ])
+        ]);
+        const wsExec = createMetalFisaSheet('Execução e Apontamentos de OP', execHeader, execRows);
+        XLSX.utils.book_append_sheet(wb, wsExec, 'Execução OP');
+    }
+
     const fileName = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;
     XLSX.writeFile(wb, fileName);
 };

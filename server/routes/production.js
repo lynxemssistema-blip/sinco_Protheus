@@ -2720,7 +2720,7 @@ const uploadConferencia = multer({
 router.post('/appoint', async (req, res) => {
     let connection;
     try {
-        const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados } = req.body;
+        const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, skip_cascade } = req.body;
 
         const qtyNum = Number(quantidade) || 0;
         if (qtyNum <= 0) {
@@ -2835,7 +2835,9 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
 
         // CASCATA (Baixa Automática) - Recursive BOM Explosion and Appointment
-        await processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_codigo, qtyNum, usuario, data_inicio, data_fim, initialStatus);
+        if (!skip_cascade) {
+            await processarBaixaCascata(connection, op_numero, op_item, op_sequencia, operacao_codigo, qtyNum, usuario, data_inicio, data_fim, initialStatus);
+        }
 
         // Atualizar status do Lote de Corte se a OP fizer parte de algum lote de corte (Engenharia/PCP)
         const concatenatedOp = String(op_numero).trim() + String(op_item).trim() + String(op_sequencia).trim();
@@ -4952,7 +4954,7 @@ async function processarBaixaCascata(connection, op_numero, op_item, op_sequenci
             if (qtdEfetivaPai > 0) {
                 cascataItems.push({ componente: produtoPai, operacao: popRow.operacao, faltante: qtdEfetivaPai });
 
-                const fantasmaUser = "SISTEMA SINCO - BAIXA AUTOMÁTICA";
+                const fantasmaUser = usuario_original || "SISTEMA SINCO - BAIXA AUTOMÁTICA";
                 const obsFantasma = `Apontamento automático (Mesmo Produto). Ref: Operação Pendente`;
 
                 await connection.execute(`

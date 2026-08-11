@@ -1098,7 +1098,7 @@ router.get('/sales-planning/pdf', async (req, res) => {
 // GET /api/reports/sales-planning/excel OR xlsx OR faturamento-excel
 router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/faturamento-excel', '/sales-planning/faturamento-xlsx'], async (req, res) => {
     try {
-        const { rows } = await fetchSalesPlanningData(req.query, { page: 1, limit: 5000 });
+        const { rows } = await fetchSalesPlanningData(req.query, { page: 1, limit: 1000000 });
         const priorityMapping = { 1: 'Urgente', 2: 'Alta', 3: 'Média', 4: 'Normal' };
 
         // ── Step 0: Tabelas de apoio ────────────────────────────────────────────
@@ -1532,26 +1532,30 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
 
         let nextDocRow = 5;
 
-        nextDocRow = writeDocBlock(nextDocRow, 'RESUMO DAS ABAS', [
-            { label: 'Capa', desc: 'Resumo executivo do relatório. Contém os filtros utilizados na extração, totais de pedidos, itens, saldo a faturar e a lista de pedidos consolidados neste documento.' },
-            { label: 'Entendendo a Planilha', desc: 'Esta aba. Contém o manual de leitura dos dados, destacando unidades de medida e dicas de uso.' },
-            { label: 'Pedidos', desc: 'Visão macro. Mostra uma linha por pedido. As colunas de recursos (ex: MO0001 - GUILHOTINA) exibem o somatório da carga de todos os itens daquele pedido para aquele recurso específico.' },
-            { label: 'Itens Detalhados', desc: 'Dados brutos. Relação de todos os itens e produtos dos pedidos, com informações como quantidades, datas PCP, e saldo a faturar. Não contém cálculos de carga.' },
-            { label: 'Carga por Recurso', desc: 'Visão micro. Expande a carga de cada item pendente individualmente, separando os tempos alocados para cada máquina/recurso.' },
-            { label: 'Execução OP', desc: 'Detalhamento da carga prevista x apontada para cada OP componente da estrutura do produto. Os tempos são exibidos em MINUTOS.' },
-            { label: 'Prog. Entregas', desc: 'Matriz de entregas projetadas para os próximos 14 dias com base na Data PCP dos itens.' }
+        nextDocRow = writeDocBlock(nextDocRow, 'RESUMO DAS ABAS DO EXCEL', [
+            { label: 'Capa', desc: 'Resumo executivo do relatório. Exibe as informações de geração, filtros aplicados na pesquisa, indicadores rápidos (KPIs) com o total de pedidos, itens e saldo total a faturar, além de uma tabela consolidada com o andamento de todos os pedidos incluídos.' },
+            { label: 'Entendendo a Planilha', desc: 'Esta aba. Contém o manual de leitura dos dados, destacando unidades de medida, regras de conversão de tempo e dicas de uso.' },
+            { label: 'Resumo', desc: 'Consolidação dos produtos a serem fabricados que atendem aos filtros. Traz o código do produto, descrição, unidade de medida (UM), quantidade total demandada e a carga total acumulada distribuída por máquina/recurso (calculada em HORAS).' },
+            { label: 'Pedidos', desc: 'Visão macro. Mostra uma linha consolidada para cada Pedido de Venda. As colunas de recursos (ex: MO0001 - GUILHOTINA) exibem o somatório da carga de trabalho necessária de todos os itens daquele pedido naquele recurso específico (valores exibidos em HORAS PRODUTIVAS).' },
+            { label: 'Itens Detalhados', desc: 'Relação de todos os itens e produtos pendentes dos pedidos filtrados, com quantidades originais do pedido, quantidades já entregues, saldo restante a faturar, datas e grupo de prioridades. Não realiza cálculos de carga.' },
+            { label: 'Estrutura BOM', desc: 'Exibe o detalhamento multinível da engenharia (BOM) de todos os produtos do relatório. Traz a relação de componentes filhos, tipos de itens (MP, PI, PA), quantidade unitária na engenharia e a quantidade total necessária explodida para atender a demanda.' },
+            { label: 'Necessidade de Materiais', desc: 'Consolidado de necessidades de matérias-primas e componentes calculados a partir da explosão da BOM de todos os produtos ativos do relatório. Permite filtrar por tipo de insumo e escolher se a base de cálculo será a quantidade original ou o saldo a faturar.' },
+            { label: 'Carga por Recurso', desc: 'Visão micro em nível de item. Detalha a carga de tempo calculada (em MINUTOS) individualmente para cada item de pedido em cada máquina/recurso definido em seu roteiro e engenharia.' },
+            { label: 'Capacidade do Período', desc: 'Compara a capacidade diária instalada de cada recurso (em minutos) com a carga total demandada pelos pedidos para avaliar se há sobrecarga ou folga no período de produção selecionado.' },
+            { label: 'Execução OP', desc: 'Detalha o progresso físico e de tempo das ordens de produção (OPs) vinculadas aos itens do pedido, comparando os minutos previstos com os minutos já apontados pelos operadores no chão de fábrica por recurso.' },
+            { label: 'Prog. Entregas', desc: 'Matriz de cronograma projetado que distribui as quantidades de entrega dos itens de pedido ao longo dos próximos 14 dias com base nas datas de planejamento (Data PCP).' }
         ]) + 2;
 
         nextDocRow = writeDocBlock(nextDocRow, 'UNIDADES DE MEDIDA E REGRAS DE TEMPO', [
-            { label: 'Minutos (Aba Carga)', desc: 'Na aba "Carga por Recurso", os valores de tempo nas colunas de máquinas/recursos estão estritamente em MINUTOS.' },
-            { label: 'Horas (Aba Pedidos)', desc: 'Na aba "Pedidos", os valores de tempo foram convertidos para HORAS PRODUTIVAS para facilitar a visualização de prazos e cargas macro.' },
-            { label: 'Regra de 50 Minutos', desc: 'ATENÇÃO: Para a conversão de horas na aba Pedidos, é utilizada a métrica padrão da MetalFisa de eficiência. Sendo assim, 1 HORA PRODUTIVA = 50 MINUTOS de trabalho líquido. Exemplo: 100 minutos de carga aparecerá como 2.00 horas.' },
+            { label: 'Minutos (Abas Carga, Execução OP e Capacidade)', desc: 'Nestas abas, os valores de tempo nas colunas de máquinas/recursos estão estritamente em MINUTOS.' },
+            { label: 'Horas (Abas Pedidos e Resumo)', desc: 'Nestas abas, os valores de tempo foram convertidos para HORAS PRODUTIVAS para facilitar a visualização de prazos e cargas de trabalho macro.' },
+            { label: 'Regra de 50 Minutos', desc: 'ATENÇÃO: Para a conversão de horas na aba Pedidos e Resumo, é utilizada a métrica padrão da MetalFisa de eficiência. Sendo assim, 1 HORA PRODUTIVA = 50 MINUTOS de trabalho líquido. Exemplo: 100 minutos de carga aparecerão como 2.00 horas.' },
             { label: 'Explosão da Estrutura (BOM)', desc: 'O tempo total alocado considera não apenas a operação direta do produto principal, mas SOMA AUTOMATICAMENTE o tempo de TODOS os componentes filhos necessários para a fabricação, percorrendo recursivamente a Engenharia (nível 0, nível 1, etc).' },
             { label: 'Soma de Tempo Nível 0', desc: 'O tempo gasto na montagem ou operação do próprio produto pai (nível 0) também é somado aos tempos dos componentes filhos para compor a carga total.' }
         ]) + 2;
 
         nextDocRow = writeDocBlock(nextDocRow, 'DICAS DE LEITURA', [
-            { label: 'Auto-filtro (Setinhas)', desc: 'Todas as abas de dados (Pedidos, Itens, Carga) possuem auto-filtros na linha 1. Você pode clicar nas setinhas do cabeçalho para filtrar clientes específicos, pedidos ou faixas de data.' },
+            { label: 'Auto-filtro (Setinhas)', desc: 'Todas as abas de dados (Pedidos, Itens, Carga, etc.) possuem auto-filtros na linha 1. Você pode clicar nas setinhas do cabeçalho para filtrar clientes específicos, pedidos ou faixas de data.' },
             { label: 'Primeira e Última Data PCP', desc: 'Na aba Pedidos, as datas de Início e Fim PCP são calculadas analisando automaticamente todos os itens daquele pedido, extraindo a data mais antiga e a mais recente informada.' },
             { label: 'Cores do Cabeçalho', desc: 'Colunas em Azul Marinho (Escuro) são informações fixas do pedido/produto. Colunas em Azul Claro (no final à direita) representam as cargas dinâmicas dos recursos/máquinas.' }
         ]);
@@ -1662,6 +1666,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
             const resName = recursoNomeMap[r] || r;
             execRecursoCols.push({ header: `${resName} (Executado)`, key: `rec_${r}_exec`, width: 22 });
             execRecursoCols.push({ header: `${resName} (Previsto)`,  key: `rec_${r}_prev`, width: 22 });
+            execRecursoCols.push({ header: `${resName} (Qtd Apontada)`, key: `rec_${r}_qtd_apontada`, width: 22 });
         });
         sheetExecucao.columns = [...execFixedCols, ...execRecursoCols];
 
@@ -1887,13 +1892,15 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
                         const previstoMins = previsto > 0 ? previsto : 0;
                         const executadoMins = executado > 0 ? executado : 0;
                         
-                        if (previstoMins > 0 || executadoMins > 0) {
+                        if (previstoMins > 0 || executadoMins > 0 || qtdApontada > 0) {
                             execRow[`rec_${r}_exec`] = executadoMins;
                             execRow[`rec_${r}_prev`] = previstoMins;
+                            execRow[`rec_${r}_qtd_apontada`] = qtdApontada > 0 ? qtdApontada : null;
                             hasLoad = true;
                         } else {
                             execRow[`rec_${r}_exec`] = null;
                             execRow[`rec_${r}_prev`] = null;
+                            execRow[`rec_${r}_qtd_apontada`] = null;
                         }
                     });
                     
@@ -2035,6 +2042,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
             sheetOrders.getColumn(`rec_${r}`).numFmt = '#,##0.00';
             sheetExecucao.getColumn(`rec_${r}_exec`).numFmt = '#,##0.00';
             sheetExecucao.getColumn(`rec_${r}_prev`).numFmt = '#,##0.00';
+            sheetExecucao.getColumn(`rec_${r}_qtd_apontada`).numFmt = '#,##0.00';
             sheetResumo.getColumn(`rec_${r}`).numFmt = '#,##0.00';
         });
         sheetResumo.getColumn('qtd_total').numFmt = '#,##0.00';
@@ -2662,7 +2670,7 @@ router.get('/resource-evolution', async (req, res) => {
 // GET /api/reports/sales-planning/master-sheet
 router.get('/sales-planning/master-sheet', async (req, res) => {
     try {
-        const { rows } = await fetchSalesPlanningData(req.query, { page: 1, limit: 5000 });
+        const { rows } = await fetchSalesPlanningData(req.query, { page: 1, limit: 1000000 });
         const data0 = req.query.data_0 || null;
 
         let capacidadeMap = {};
@@ -2990,6 +2998,7 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                         
                         execRow[`previsto_${r}`] = parseFloat(previsto.toFixed(2));
                         execRow[`apontado_${r}`] = parseFloat(apontado.toFixed(2));
+                        execRow[`qtd_apontada_${r}`] = parseFloat(qtdApontada.toFixed(2));
                     });
                     
                     // Apenas adiciona OP se ela tiver carga prevista ou apontada em algum recurso conhecido

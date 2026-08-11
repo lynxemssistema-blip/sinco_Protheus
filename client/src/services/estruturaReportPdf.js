@@ -255,7 +255,7 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
     head: [['#', 'Nív', 'TP', 'Código', 'Descrição', 'Rv MF', 'Cod Prod Cliente', 'Origem da Restrição', 'Descrição da Restrição', 'Status', 'Data Emissão']],
     body: restricRows.map((r) => r.data),
     theme: 'grid',
-    styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'courier' },
+    styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
     headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
@@ -341,7 +341,7 @@ function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr
     head: [['ITEM', 'STATUS', 'RESUMO', 'DESCRIÇÃO DA RESTRIÇÃO', 'REVISÃO', 'RESPONSÁVEL', 'ÚLT. ALTERAÇÃO']],
     body: sz0Rows.map(r => r.data),
     theme: 'grid',
-    styles: { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'courier' },
+    styles: { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
     headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 15 },
@@ -420,7 +420,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       head: [['ITEM', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSÁRIA', 'UM', 'Rv MF', 'Cód Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
       body: matRows.map((r) => r.data),
       theme: 'grid',
-      styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'courier' },
+      styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'helvetica' },
       headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
       columnStyles: {
         0: { halign: 'center', cellWidth: 10 },
@@ -479,7 +479,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
         head: [['SEQ', 'OPERAÇÃO', 'DESCRIÇÃO DA OPERAÇÃO', 'TEMPO PADRÃO (MIN)', 'RECURSO', 'DEPARTAMENTO', 'FERRAMENTA']],
         body: opRows,
         theme: 'grid',
-        styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'courier' },
+        styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
         headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
         columnStyles: {
           0: { halign: 'center', cellWidth: 14 },
@@ -533,7 +533,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
         head: [['#', 'Cód. Produto Cliente', 'Cliente', 'Rv Cliente', 'Rv MF', 'Código MF', 'Descrição', 'Emissão']],
         body: sz1Rows,
         theme: 'grid',
-        styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'courier' },
+        styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
         headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
         columnStyles: {
           0: { halign: 'center', cellWidth: 12 },
@@ -625,7 +625,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       head: [['ITEM', 'TP', 'NÍVEL', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSARIA', 'UM', 'Rv MF', 'Cod Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
       body: allRows.map((r) => r.data),
       theme: 'grid',
-      styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'courier' },
+      styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'helvetica' },
       headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
       columnStyles: {
         0: { halign: 'center', cellWidth: 12 },

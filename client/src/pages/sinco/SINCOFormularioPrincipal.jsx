@@ -1035,16 +1035,61 @@ export default function SINCOFormularioPrincipal() {
                                             if (!dens) return;
                                             const val = dens.replace(',', '.');
                                             
-                                            // Atualiza no banco
                                             try {
                                                 await api.post('/sinco/materiais-apoio', { nome: desc, densidade: val });
-                                                // Atualiza local após sucesso
                                                 const newMat = { nome: desc, densidade: val };
                                                 setMateriaisSalvos(prev => [...prev.filter(m => m.nome !== desc), newMat].sort((a,b) => a.nome.localeCompare(b.nome)));
                                                 setDados(p => ({ ...p, densidade: val }));
                                             } catch (err) {
                                                 console.error(err);
                                                 alert('Erro ao salvar no banco. Verifique sua conexão.');
+                                            }
+                                        } else if (e.target.value === 'EDIT_MAT') {
+                                            // Lista materiais para escolher qual editar
+                                            const lista = materiaisSalvos.map((m, i) => `${i + 1}. ${m.nome} (${m.densidade})`).join('\n');
+                                            const idx = window.prompt(`Qual material deseja editar?\n\n${lista}\n\nDigite o número:`);
+                                            if (!idx) return;
+                                            const i = parseInt(idx) - 1;
+                                            if (i < 0 || i >= materiaisSalvos.length) { alert('Número inválido.'); return; }
+                                            
+                                            const matOriginal = materiaisSalvos[i];
+                                            const novoNome = window.prompt("Novo nome:", matOriginal.nome);
+                                            if (!novoNome) return;
+                                            const novaDens = window.prompt("Nova densidade:", String(matOriginal.densidade));
+                                            if (!novaDens) return;
+                                            const valDens = novaDens.replace(',', '.');
+                                            
+                                            try {
+                                                await api.put('/sinco/materiais-apoio', { nomeOriginal: matOriginal.nome, nome: novoNome, densidade: valDens });
+                                                setMateriaisSalvos(prev => 
+                                                    prev.map(m => m.nome === matOriginal.nome ? { nome: novoNome, densidade: valDens } : m)
+                                                       .sort((a,b) => a.nome.localeCompare(b.nome))
+                                                );
+                                                if (String(dados.densidade) === String(matOriginal.densidade)) {
+                                                    setDados(p => ({ ...p, densidade: valDens }));
+                                                }
+                                                alert(`Material "${novoNome}" atualizado com sucesso!`);
+                                            } catch (err) {
+                                                console.error(err);
+                                                alert('Erro ao atualizar material.');
+                                            }
+                                        } else if (e.target.value === 'DELETE_MAT') {
+                                            const lista = materiaisSalvos.map((m, i) => `${i + 1}. ${m.nome} (${m.densidade})`).join('\n');
+                                            const idx = window.prompt(`Qual material deseja EXCLUIR?\n\n${lista}\n\nDigite o número:`);
+                                            if (!idx) return;
+                                            const i = parseInt(idx) - 1;
+                                            if (i < 0 || i >= materiaisSalvos.length) { alert('Número inválido.'); return; }
+                                            
+                                            const mat = materiaisSalvos[i];
+                                            if (!window.confirm(`Tem certeza que deseja excluir "${mat.nome}" (${mat.densidade})?`)) return;
+                                            
+                                            try {
+                                                await api.delete('/sinco/materiais-apoio', { data: { nome: mat.nome } });
+                                                setMateriaisSalvos(prev => prev.filter(m => m.nome !== mat.nome));
+                                                alert(`Material "${mat.nome}" excluído com sucesso!`);
+                                            } catch (err) {
+                                                console.error(err);
+                                                alert('Erro ao excluir material.');
                                             }
                                         } else if (e.target.value === 'MANUAL') {
                                             const val = window.prompt("Digite o valor da densidade (ex: 7.85):", dados.densidade || '');
@@ -1064,8 +1109,11 @@ export default function SINCOFormularioPrincipal() {
                                     {materiaisSalvos.map(m => (
                                         <option key={m.nome} value={m.densidade}>{m.nome} ({Number(m.densidade).toFixed(2)})</option>
                                     ))}
+                                    <option disabled>───────────────</option>
                                     <option value="MANUAL">+ Digitar Manualmente...</option>
                                     <option value="ADD_NEW">+ Cadastrar Novo Material...</option>
+                                    <option value="EDIT_MAT">✏️ Editar Material...</option>
+                                    <option value="DELETE_MAT">🗑️ Excluir Material...</option>
                                 </select>
                             ) : (
                                 <input type="text" value={dados.densidade} readOnly className={readCls} />
@@ -1073,23 +1121,23 @@ export default function SINCOFormularioPrincipal() {
                         </div>
                         <div className="col-span-2">
                             <label className={lblCls}>Peso (kg)</label>
-                            <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                            <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
                         <div className="col-span-1">
                             <label className={lblCls}>Área (m²)</label>
-                            <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                            <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
                         <div className="col-span-1">
                             <label className={lblCls}>Espess. (mm)</label>
-                            <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({ ...p, espessura: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                            <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({ ...p, espessura: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
                         <div className="col-span-1">
                             <label className={lblCls}>Larg. (mm)</label>
-                            <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({ ...p, largura: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                            <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({ ...p, largura: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
                         <div className="col-span-1">
                             <label className={lblCls}>Compr. (mm)</label>
-                            <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({ ...p, comprimento: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                            <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({ ...p, comprimento: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
 
                         {/* Linha 3 */}

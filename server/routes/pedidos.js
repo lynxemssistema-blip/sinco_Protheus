@@ -1450,6 +1450,110 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE CLASSIFICAÇÃO ---
 
+            // --- INÍCIO BUSCA DE NOTAS DE ENGENHARIA (app_sales_order_item_notes) ---
+            try {
+                if (uniquePedidos.length > 0) {
+                    const placeholders = uniquePedidos.map(() => '?').join(',');
+                    const [notesRows] = await mysqlPool.query(
+                        `SELECT 
+                            pedido, item, project_type, engineering_start_date,
+                            bom_prepared_by, bom_prepared_at, bom_released_at, bom_notes,
+                            designer_name, designer_start_forecast, designer_end_forecast,
+                            designer_start_real, designer_end_real, designer_notes,
+                            pcp_mat_req_date, pcp_mat_req_user, pcp_mech_start_date, pcp_mech_start_user,
+                            pcp_cut_rel_date, pcp_cut_rel_user, pcp_notes,
+                            designer_production_release_date, pcp_planned_eng_date, pcp_planned_eng_obs
+                         FROM app_sales_order_item_notes
+                         WHERE TRIM(pedido) IN (${placeholders})`,
+                        uniquePedidos
+                    );
+                    const notesMap = {};
+                    notesRows.forEach(n => {
+                        const key = `${String(n.pedido).trim()}|${String(n.item).trim()}`;
+                        notesMap[key] = n;
+                    });
+                    result.rows.forEach(r => {
+                        const key = `${String(r.pedido).trim()}|${String(r.item).trim()}`;
+                        const notes = notesMap[key];
+                        if (notes) {
+                            r.project_type = notes.project_type;
+                            r.engineering_start_date = notes.engineering_start_date;
+                            r.bom_prepared_by = notes.bom_prepared_by;
+                            r.bom_prepared_at = notes.bom_prepared_at;
+                            r.bom_released_at = notes.bom_released_at;
+                            r.bom_notes = notes.bom_notes;
+                            r.designer_name = notes.designer_name;
+                            r.designer_start_forecast = notes.designer_start_forecast;
+                            r.designer_end_forecast = notes.designer_end_forecast;
+                            r.designer_start_real = notes.designer_start_real;
+                            r.designer_end_real = notes.designer_end_real;
+                            r.designer_notes = notes.designer_notes;
+                            r.pcp_mat_req_date = notes.pcp_mat_req_date;
+                            r.pcp_mat_req_user = notes.pcp_mat_req_user;
+                            r.pcp_mech_start_date = notes.pcp_mech_start_date;
+                            r.pcp_mech_start_user = notes.pcp_mech_start_user;
+                            r.pcp_cut_rel_date = notes.pcp_cut_rel_date;
+                            r.pcp_cut_rel_user = notes.pcp_cut_rel_user;
+                            r.pcp_notes = notes.pcp_notes;
+                            r.designer_production_release_date = notes.designer_production_release_date;
+                            r.pcp_planned_eng_date = notes.pcp_planned_eng_date;
+                            r.pcp_planned_eng_obs = notes.pcp_planned_eng_obs;
+                        } else {
+                            r.project_type = null;
+                            r.engineering_start_date = null;
+                            r.bom_prepared_by = null;
+                            r.bom_prepared_at = null;
+                            r.bom_released_at = null;
+                            r.bom_notes = null;
+                            r.designer_name = null;
+                            r.designer_start_forecast = null;
+                            r.designer_end_forecast = null;
+                            r.designer_start_real = null;
+                            r.designer_end_real = null;
+                            r.designer_notes = null;
+                            r.pcp_mat_req_date = null;
+                            r.pcp_mat_req_user = null;
+                            r.pcp_mech_start_date = null;
+                            r.pcp_mech_start_user = null;
+                            r.pcp_cut_rel_date = null;
+                            r.pcp_cut_rel_user = null;
+                            r.pcp_notes = null;
+                            r.designer_production_release_date = null;
+                            r.pcp_planned_eng_date = null;
+                            r.pcp_planned_eng_obs = null;
+                        }
+                    });
+                } else {
+                    result.rows.forEach(r => {
+                        r.project_type = null;
+                        r.engineering_start_date = null;
+                        r.bom_prepared_by = null;
+                        r.bom_prepared_at = null;
+                        r.bom_released_at = null;
+                        r.bom_notes = null;
+                        r.designer_name = null;
+                        r.designer_start_forecast = null;
+                        r.designer_end_forecast = null;
+                        r.designer_start_real = null;
+                        r.designer_end_real = null;
+                        r.designer_notes = null;
+                        r.pcp_mat_req_date = null;
+                        r.pcp_mat_req_user = null;
+                        r.pcp_mech_start_date = null;
+                        r.pcp_mech_start_user = null;
+                        r.pcp_cut_rel_date = null;
+                        r.pcp_cut_rel_user = null;
+                        r.pcp_notes = null;
+                        r.designer_production_release_date = null;
+                        r.pcp_planned_eng_date = null;
+                        r.pcp_planned_eng_obs = null;
+                    });
+                }
+            } catch (err) {
+                console.error('[ENGINEERING NOTES FETCH ERROR]', err);
+            }
+            // --- FIM BUSCA DE NOTAS DE ENGENHARIA ---
+
             const finalRows = result.rows.map(decodeMemosInRow);
 
             // Prioriza ordenação das OPs com prioridade
@@ -1821,10 +1925,10 @@ router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
             // 2b. PCP / Designer notes (MySQL)
             mysqlPool.execute(
                 `SELECT TRIM(pedido) AS pedido, TRIM(item) AS item_number,
-                         pcp_notes, designer_notes
+                         pcp_notes, designer_notes, updated_at, updated_by
                   FROM app_sales_order_item_notes
-                  WHERE TRIM(pedido) = ?`,
-                [idSemZeros]
+                  WHERE TRIM(pedido) = ? OR TRIM(pedido) = ?`,
+                [id, idSemZeros]
             ),
             // 2c. Ref / Rev cliente — SZ1 (PG)
             codCliente && productCodes.length > 0
@@ -1897,8 +2001,26 @@ router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
         }
 
         // ── STEP 3: Merge + decode and build response ──────────────────────────
+        let latestUpdateDate = null;
+        let latestUpdateUser = null;
         const notesMap = {};
-        notes.forEach(n => { notesMap[n.item_number] = n; });
+        notes.forEach(n => {
+            notesMap[n.item_number] = n;
+            if (n.updated_at) {
+                const d = new Date(n.updated_at);
+                if (!latestUpdateDate || d > latestUpdateDate) {
+                    latestUpdateDate = d;
+                    latestUpdateUser = n.updated_by;
+                }
+            }
+        });
+
+        let dataAlteracaoStr = null;
+        if (latestUpdateDate) {
+            const pad = (n) => String(n).padStart(2, '0');
+            const d = latestUpdateDate;
+            dataAlteracaoStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
 
         const itens = pgResult.rows.map(row => {
             // Decode bytea memo fields (Protheus stores observations as raw binary)
@@ -1982,6 +2104,8 @@ router.get('/:id/pdf-data', checkOrderAccess, async (req, res) => {
             pedido_cliente:     first.ped_cliente || '',
             entrega:            first.entrega || '',
             observacoes_gerais: obsCapaRaw || '',
+            data_alteracao:     dataAlteracaoStr,
+            usuario_alteracao:  latestUpdateUser,
         };
 
         return res.json({ capa, itens });

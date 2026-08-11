@@ -190,7 +190,7 @@ const MasterSheetTab = ({ filterParams }) => {
 
     return (
         <div className="flex flex-col h-full border border-slate-300 shadow-sm bg-white rounded-md overflow-hidden">
-            {/* Header Tabs */}
+            {/* Header Tabs Row */}
             <div className="flex bg-slate-100 border-b border-slate-300 overflow-x-auto shrink-0 scrollbar-hide">
                 {tabs.map(t => (
                     <button
@@ -204,10 +204,16 @@ const MasterSheetTab = ({ filterParams }) => {
                         {t.icon} {t.label}
                     </button>
                 ))}
+            </div>
+            
+            {/* Simulation and Actions Control Row */}
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-300 shrink-0 gap-3 flex-wrap">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                    Planilha Mestra
+                </div>
                 
-                {/* FCS Simulation Config */}
-                <div className="ml-auto flex items-center gap-3 px-4 bg-slate-50 border-l border-slate-300">
-                    <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">Data Início (FCS):</span>
+                <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">Data Início (FCS):</span>
                     <input 
                         type="date" 
                         value={data0}
@@ -218,9 +224,9 @@ const MasterSheetTab = ({ filterParams }) => {
                     <button 
                         onClick={handleRunSimulation}
                         disabled={loading}
-                        className="px-3 py-1.5 bg-[#1E3A5F] text-white text-sm font-medium rounded hover:bg-[#0D6EFD] transition-colors disabled:opacity-50 flex items-center gap-2"
+                        className="px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-semibold rounded hover:bg-[#0D6EFD] transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
-                        {simulating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        {simulating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                         Simular Prazos
                     </button>
 
@@ -228,19 +234,19 @@ const MasterSheetTab = ({ filterParams }) => {
                         <button
                             onClick={handleExportExcel}
                             disabled={!data || loading}
-                            className="px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                             title="Exportar todas as abas da Planilha Mestra para Excel (.xlsx)"
                         >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3.5 h-3.5" />
                             Excel
                         </button>
                         <button
                             onClick={handleExportPdf}
                             disabled={!data || loading}
-                            className="px-3 py-1.5 bg-rose-700 text-white text-sm font-medium rounded hover:bg-rose-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            className="px-3 py-1.5 bg-rose-700 text-white text-xs font-semibold rounded hover:bg-rose-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                             title="Exportar aba atual para PDF (.pdf)"
                         >
-                            <FileText className="w-4 h-4" />
+                            <FileText className="w-3.5 h-3.5" />
                             PDF
                         </button>
                     </div>
@@ -348,21 +354,63 @@ const DocsTab = () => (
         </div>
         
         <div>
-            <h3 className="text-lg font-bold text-[#0D6EFD] mb-2 border-b pb-1">Resumo das Abas</h3>
-            <ul className="space-y-3 text-sm text-slate-700">
-                <li><strong className="text-[#1E3A5F]">Capa:</strong> Resumo executivo do relatório.</li>
-                <li><strong className="text-[#1E3A5F]">Pedidos:</strong> Visão macro. Mostra uma linha por pedido. As colunas de recursos exibem a carga em HORAS.</li>
-                <li><strong className="text-[#1E3A5F]">Itens Detalhados:</strong> Relação de itens pendentes sem os cálculos de carga.</li>
-                <li><strong className="text-[#1E3A5F]">Carga por Recurso:</strong> Visão micro. Mostra a carga de cada item pendente individualmente em MINUTOS.</li>
-                <li><strong className="text-[#1E3A5F]">Execução OP:</strong> Detalhamento da carga prevista x apontada para cada OP componente da estrutura do produto. Os tempos são exibidos em MINUTOS.</li>
-                <li><strong className="text-[#1E3A5F]">Prog. Entregas:</strong> Matriz de entregas projetadas para os próximos 14 dias com base na Data PCP dos itens.</li>
+            <h3 className="text-lg font-bold text-[#0D6EFD] mb-2 border-b pb-1">Resumo Detalhado das Abas</h3>
+            <ul className="space-y-4 text-sm text-slate-700">
+                <li>
+                    <strong className="text-[#1E3A5F]">1. Capa:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Resumo executivo do relatório. Exibe as informações de geração, filtros aplicados na pesquisa, indicadores rápidos (KPIs) com o total de pedidos, itens e saldo total a faturar, além de uma tabela consolidada com o andamento de todos os pedidos incluídos.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">2. Entendendo a Planilha:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Este guia explicativo. Contém o manual de leitura dos dados, unidades de medida aplicadas, regras de tempo para conversão de horas/minutos, dicas de filtros e descrição detalhada do conteúdo de cada aba.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">3. Resumo:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Consolidação dos produtos a serem fabricados que atendem aos filtros. Traz o código do produto, descrição, unidade de medida (UM), quantidade total demandada e a carga total acumulada distribuída por máquina/recurso (calculada em HORAS).</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">4. Pedidos:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Visão macro. Mostra uma linha consolidada para cada Pedido de Venda. As colunas de recursos (ex: MO0001 - GUILHOTINA) exibem o somatório da carga de trabalho necessária de todos os itens daquele pedido naquele recurso específico (valores exibidos em HORAS PRODUTIVAS).</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">5. Itens Detalhados:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Relação de todos os itens e produtos pendentes dos pedidos filtrados, com quantidades originais do pedido, quantidades já entregues, saldo restante a faturar, datas e grupo de prioridades. Não realiza cálculos de carga.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">6. Estrutura dos Produtos (Estrutura BOM):</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Exibe o detalhamento multinível da engenharia (BOM) de todos os produtos do relatório. Traz a relação de componentes filhos, tipos de itens (MP, PI, PA), quantidade unitária na engenharia e a quantidade total necessária explodida para atender a demanda.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">7. Necessidade de Materiais:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Consolorado de necessidades de matérias-primas e componentes calculados a partir da explosão da BOM de todos os produtos ativos do relatório. Permite filtrar por tipo de insumo e escolher se a base de cálculo será a quantidade original ou o saldo a faturar.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">8. Carga por Recurso:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Visão micro em nível de item. Detalha a carga de tempo calculada (em MINUTOS) individualmente para cada item de pedido em cada máquina/recurso definido em seu roteiro e engenharia.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">9. Capacidade do Período:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Compara a capacidade diária instalada de cada recurso (em minutos) com a carga total demandada pelos pedidos para avaliar se há sobrecarga ou folga no período de produção selecionado.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">10. Execução OP:</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Detalha o progresso físico e de tempo das ordens de produção (OPs) vinculadas aos itens do pedido, comparando os minutos previstos com os minutos já apontados pelos operadores no chão de fábrica por recurso.</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">11. Prog. Entregas (Exclusivo Excel):</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Matriz de cronograma projetado que distribui as quantidades de entrega dos itens de pedido ao longo dos próximos 14 dias com base nas datas de planejamento (Data PCP).</span>
+                </li>
+                <li>
+                    <strong className="text-[#1E3A5F]">12. Análise de Carga (Exclusivo Web):</strong> 
+                    <span className="text-slate-600 block mt-0.5 pl-4">Gráficos e painéis interativos de análise de carga acumulada por recurso no período.</span>
+                </li>
             </ul>
         </div>
 
         <div>
             <h3 className="text-lg font-bold text-[#0D6EFD] mb-2 border-b pb-1">Unidades de Medida e Regras</h3>
             <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 text-sm text-yellow-800 space-y-2">
-                <p><strong>Atenção (Regra de 50 Minutos):</strong> Na aba Pedidos, os valores de tempo foram convertidos para HORAS PRODUTIVAS utilizando a métrica padrão MetalFisa.</p>
+                <p><strong>Atenção (Regra de 50 Minutos):</strong> Na aba Pedidos e Resumo, os valores de tempo de recursos são mostrados em HORAS PRODUTIVAS utilizando a métrica de eficiência padrão MetalFisa.</p>
                 <p><strong>1 HORA PRODUTIVA = 50 MINUTOS</strong> de trabalho líquido (excluindo pausas, setups extra, etc).</p>
             </div>
             <p className="text-sm mt-3 text-slate-700">
@@ -371,6 +419,7 @@ const DocsTab = () => (
         </div>
     </div>
 );
+
 
 const ResumoTab = ({ data }) => {
     // Agrupa a carga total de cada recurso por produto (em minutos na origem)
@@ -1204,6 +1253,28 @@ const ExecucaoTab = ({ data }) => {
         </div>
     );
 
+    // Calculate column totals
+    const totals = useMemo(() => {
+        const res = {
+            qtd_planejada: 0,
+        };
+        (data.recursos || []).forEach(r => {
+            res[`previsto_${r}`] = 0;
+            res[`apontado_${r}`] = 0;
+            res[`qtd_apontada_${r}`] = 0;
+        });
+        
+        (data.execucao_op || []).forEach(c => {
+            res.qtd_planejada += (c.qtd_planejada || 0);
+            (data.recursos || []).forEach(r => {
+                res[`previsto_${r}`] += (c[`previsto_${r}`] || 0);
+                res[`apontado_${r}`] += (c[`apontado_${r}`] || 0);
+                res[`qtd_apontada_${r}`] += (c[`qtd_apontada_${r}`] || 0);
+            });
+        });
+        return res;
+    }, [data.execucao_op, data.recursos]);
+
     return (
         <div className="w-full h-full relative">
             <table className="w-full text-[13px] text-left border-collapse">
@@ -1218,16 +1289,17 @@ const ExecucaoTab = ({ data }) => {
                         <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-right">Qtde PCP</th>
                         {/* Dynamic Resource Columns */}
                         {data.recursos.map(r => (
-                            <th colSpan={2} key={r} className="px-3 py-1 bg-[#0D6EFD] text-white border-r border-b border-[#2C80FF] text-center whitespace-nowrap">
-                                {data.recursoNomeMap[r] || r} (min)
+                            <th colSpan={3} key={r} className="px-3 py-1 bg-[#0D6EFD] text-white border-r border-b border-[#2C80FF] text-center whitespace-nowrap">
+                                {data.recursoNomeMap[r] || r}
                             </th>
                         ))}
                     </tr>
                     <tr>
                         {data.recursos.map(r => (
                             <React.Fragment key={r + '_subs'}>
-                                <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Prev</th>
-                                <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Apon</th>
+                                <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Prev (min)</th>
+                                <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Apon (min)</th>
+                                <th className="px-2 py-1 bg-[#084FB8] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Qtd (un)</th>
                             </React.Fragment>
                         ))}
                     </tr>
@@ -1250,6 +1322,7 @@ const ExecucaoTab = ({ data }) => {
                             {data.recursos.map(r => {
                                 const previsto = c[`previsto_${r}`] || 0;
                                 const apontado = c[`apontado_${r}`] || 0;
+                                const qtdApontada = c[`qtd_apontada_${r}`] || 0;
                                 return (
                                     <React.Fragment key={r + '_vals'}>
                                         <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${previsto > 0 ? 'text-[#0D6EFD] font-bold' : 'text-slate-400'}`}>
@@ -1258,12 +1331,35 @@ const ExecucaoTab = ({ data }) => {
                                         <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${apontado > 0 ? 'text-green-600 font-bold' : 'text-slate-400'}`}>
                                             {apontado > 0 ? formatNum(apontado) : '-'}
                                         </td>
+                                        <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${qtdApontada > 0 ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>
+                                            {qtdApontada > 0 ? formatNum(qtdApontada) : '-'}
+                                        </td>
                                     </React.Fragment>
                                 );
                             })}
                         </tr>
                     ))}
                 </tbody>
+                <tfoot>
+                    <tr className="bg-slate-100 font-bold text-slate-800 border-t-2 border-slate-300 sticky bottom-0 z-10 shadow">
+                        <td className="px-3 py-2 border-r" colSpan={4}>TOTAL</td>
+                        <td className="px-3 py-2 border-r text-right">{formatNum(totals.qtd_planejada)}</td>
+                        <td className="px-3 py-2 border-r text-center">-</td>
+                        <td className="px-3 py-2 border-r text-right">-</td>
+                        {data.recursos.map(r => {
+                            const totPrev = totals[`previsto_${r}`] || 0;
+                            const totApon = totals[`apontado_${r}`] || 0;
+                            const totQtd = totals[`qtd_apontada_${r}`] || 0;
+                            return (
+                                <React.Fragment key={r + '_tots'}>
+                                    <td className="px-2 py-2 border-r text-right text-blue-700">{totPrev > 0 ? formatNum(totPrev) : '-'}</td>
+                                    <td className="px-2 py-2 border-r text-right text-green-700">{totApon > 0 ? formatNum(totApon) : '-'}</td>
+                                    <td className="px-2 py-2 border-r text-right text-emerald-700">{totQtd > 0 ? formatNum(totQtd) : '-'}</td>
+                                </React.Fragment>
+                            );
+                        })}
+                    </tr>
+                </tfoot>
             </table>
         </div>
     );
