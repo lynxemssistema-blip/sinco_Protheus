@@ -94,6 +94,7 @@ export const MENU_GROUPS = [
             { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'planejador_avancado', label: 'Planejamento Estratégico', path: '/pcp/planejador-avancado', icon: GitMerge },
             { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
+            { id: 'bom_appointment', label: 'Apontamento por Estrutura', path: '/pcp/apontamento-estrutura', icon: Network },
             { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText },
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
             { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },

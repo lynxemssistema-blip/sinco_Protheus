@@ -33,7 +33,58 @@ router.get('/', async (req, res) => {
             hideInactive = settings[0].setting_value === 'true';
         }
 
-        // 1. Get all candidate rows matching the MySQL criteria
+        // 1. Query Protheus (Postgres) FIRST to get base active items
+        let pgClientQuery = `
+            SELECT DISTINCT 
+                TRIM(c6.c6_num) as pedido, 
+                TRIM(c6.c6_item) as item,
+                TRIM(c6.c6_produto) as codigo,
+                TRIM(sb1.b1_msblql) as b1_msblql,
+                TRIM(c6.c6_xrevm) as rev_codigo,
+                TRIM(c6.c6_xrevc) as c6_rev_cliente
+            FROM public.sc6010 c6
+            JOIN public.sc5010 c5 ON c5.c5_num = c6.c6_num AND c5.c5_filial = c6.c6_filial AND COALESCE(c5.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+            WHERE COALESCE(c6.d_e_l_e_t_, '') = ''
+            AND (c6.c6_qtdven - c6.c6_qtdent) > 0
+            ${getInactiveFilter('c5.c5_num')}
+        `;
+        const pgParams = [];
+        let pgParamIndex = 1;
+
+        if (pedido) {
+            const pedidoList = String(pedido).split(',').map(p => p.trim()).filter(Boolean);
+            if (pedidoList.length > 0) {
+                const conditions = pedidoList.map((p) => {
+                    pgParams.push(`%${p}%`);
+                    return `c5.c5_num ILIKE $${pgParamIndex++}`;
+                }).join(' OR ');
+                pgClientQuery += ` AND (${conditions})`;
+            }
+        }
+
+        if (cliente && cliente.trim()) {
+            pgClientQuery += ` AND sa1.a1_nome ILIKE $${pgParamIndex++}`;
+            pgParams.push(`%${cliente.trim()}%`);
+        }
+
+        let matchedRows = [];
+        try {
+            const pgRes = await db.query(pgClientQuery, pgParams);
+            matchedRows = pgRes.rows;
+        } catch (pgErr) {
+            console.error("Error executing Postgres filter for candidates:", pgErr);
+        }
+
+        if (matchedRows.length === 0) {
+            return res.json({
+                data: [],
+                meta: { total: 0, page: pageParsed, limit: limitParsed }
+            });
+        }
+
+        // 2. Fetch MySQL data to apply MySQL-specific filters
         const allowedDateFields = new Set([
             'engineering_start_date',
             'designer_production_release_date',
@@ -51,87 +102,48 @@ router.get('/', async (req, res) => {
         `;
         const candidateParams = [];
 
-        if (pedido) {
-            const pedidoList = String(pedido).split(',')
-                .map(p => p.trim())
-                .filter(p => p.length > 0)
-                .map(p => p.padStart(6, '0'));
-            
-            if (pedidoList.length > 0) {
-                const placeholders = pedidoList.map(() => '?').join(', ');
-                candidateQuery += ` AND n.pedido IN (${placeholders})`;
-                candidateParams.push(...pedidoList);
-            }
-        }
-
         if (projetista) {
             candidateQuery += ' AND n.designer_name LIKE ?';
             candidateParams.push(`%${projetista}%`);
         }
-
         if (startDate) {
             candidateQuery += ` AND n.${selectedDateField} >= ?`;
             candidateParams.push(startDate);
         }
-
         if (endDate) {
             candidateQuery += ` AND n.${selectedDateField} <= ?`;
-            candidateParams.push(endDate);
+            candidateParams.push(`${endDate} 23:59:59`);
         }
-
         if (hideInactive) {
             candidateQuery += ' AND n.pedido NOT IN (SELECT pedido_numero FROM app_pedidos_inativos)';
         }
 
-        if (release_status === 'unreleased') {
-            candidateQuery += ' AND (n.designer_production_release_date IS NULL OR n.designer_production_release_date = "")';
-        } else if (release_status === 'released') {
-            candidateQuery += ' AND (n.designer_production_release_date IS NOT NULL AND n.designer_production_release_date <> "")';
-        }
+        const [mysqlRows] = await mysqlPool.query(candidateQuery, candidateParams);
+        const mysqlSet = new Set(mysqlRows.map(r => `${String(r.pedido).trim()}-${String(r.item).trim()}`));
+        const hasMySqlSpecificFilters = !!(projetista || startDate || endDate);
 
-        const [candidateRows] = await mysqlPool.query(candidateQuery, candidateParams);
+        const [allReleasedRows] = await mysqlPool.query(`SELECT pedido, item FROM app_sales_order_item_notes WHERE designer_production_release_date IS NOT NULL AND designer_production_release_date <> ""`);
+        const allReleasedSet = new Set(allReleasedRows.map(r => `${String(r.pedido).trim()}-${String(r.item).trim()}`));
 
-        if (candidateRows.length === 0) {
-            return res.json({
-                data: [],
-                meta: { total: 0, page: pageParsed, limit: limitParsed }
-            });
-        }
+        // 3. Intersect Postgres universe with MySQL filters
+        matchedRows = matchedRows.filter(r => {
+            const key = `${r.pedido.trim()}-${r.item.trim()}`;
+            
+            if (release_status === 'released') {
+                if (!allReleasedSet.has(key)) return false;
+            } else if (release_status === 'unreleased') {
+                if (allReleasedSet.has(key)) return false;
+            }
 
-        // 2. Filter candidates via Protheus (Postgres) to check balance and active filters
-        let filteredPairs = [];
-        const pairsSql = candidateRows.map(r => `('${r.pedido.trim()}', '${r.item.trim()}')`).join(',');
-        let pgClientQuery = `
-            SELECT DISTINCT 
-                TRIM(c6.c6_num) as pedido, 
-                TRIM(c6.c6_item) as item,
-                TRIM(c6.c6_produto) as codigo,
-                TRIM(sb1.b1_msblql) as b1_msblql,
-                TRIM(c6.c6_xrevm) as rev_codigo,
-                TRIM(c6.c6_xrevc) as c6_rev_cliente
-            FROM public.sc6010 c6
-            JOIN public.sc5010 c5 ON c5.c5_num = c6.c6_num AND c5.c5_filial = c6.c6_filial AND COALESCE(c5.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
-            LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND COALESCE(sb1.d_e_l_e_t_, '') = ''
-            WHERE (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${pairsSql})
-            AND COALESCE(c6.d_e_l_e_t_, '') = ''
-            AND (c6.c6_qtdven - c6.c6_qtdent) > 0
-            ${getInactiveFilter('c5.c5_num')}
-        `;
-        const pgParams = [];
-        let pgParamIndex = 1;
+            if (hasMySqlSpecificFilters) {
+                if (!mysqlSet.has(key)) return false;
+            }
+            
+            return true;
+        });
 
-        if (cliente && cliente.trim()) {
-            pgClientQuery += ` AND sa1.a1_nome ILIKE $${pgParamIndex}`;
-            pgParams.push(`%${cliente.trim()}%`);
-            pgParamIndex++;
-        }
-
-        try {
-            const pgRes = await db.query(pgClientQuery, pgParams);
-            let matchedRows = pgRes.rows;
-
-            if (project_type && matchedRows.length > 0) {
+        // 4. Apply project_type calculations
+        if (project_type && matchedRows.length > 0) {
                 const productCodes = [...new Set(matchedRows.map(r => (r.codigo || '').trim()).filter(Boolean))];
                 const sg1Set = new Set();
                 const sg2Set = new Set();
@@ -190,11 +202,15 @@ router.get('/', async (req, res) => {
                 });
             }
 
-            filteredPairs = matchedRows.map(r => ({ pedido: r.pedido.trim(), item: r.item.trim() }));
-        } catch (pgErr) {
-            console.error("Error executing Postgres filter for candidates:", pgErr);
-            filteredPairs = [];
-        }
+        let filteredPairs = matchedRows.map(r => ({ pedido: r.pedido.trim(), item: r.item.trim() }));
+
+        // Sort by pedido and item
+        filteredPairs.sort((a, b) => {
+            if (a.pedido !== b.pedido) {
+                return a.pedido.localeCompare(b.pedido);
+            }
+            return a.item.localeCompare(b.item);
+        });
 
         const totalFiltered = filteredPairs.length;
         if (totalFiltered === 0) {
@@ -230,7 +246,7 @@ router.get('/', async (req, res) => {
         const [rows] = await mysqlPool.query(finalQuery);
 
         // 5. Enrich rows with Postgres data
-        const pairs = rows.map(r => `('${r.pedido.trim()}', '${r.item.trim()}')`);
+        const pairs = pagePairs.map(r => `('${r.pedido.trim()}', '${r.item.trim()}')`);
         
         let pgRows = [];
         if (pairs.length > 0) {
@@ -314,8 +330,15 @@ router.get('/', async (req, res) => {
             }
         }
 
-        const enrichedData = rows.map(row => {
-            const pInfo = pgMap[`${row.pedido.trim()}-${row.item.trim()}`];
+        const mysqlMap = {};
+        rows.forEach(r => {
+            mysqlMap[`${String(r.pedido).trim()}-${String(r.item).trim()}`] = r;
+        });
+
+        const enrichedData = pagePairs.map(pair => {
+            const key = `${pair.pedido.trim()}-${pair.item.trim()}`;
+            const row = mysqlMap[key] || { pedido: pair.pedido, item: pair.item };
+            const pInfo = pgMap[key];
             let calcType = 'PCP';
             
             if (pInfo) {

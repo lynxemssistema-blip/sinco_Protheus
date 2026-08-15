@@ -2839,24 +2839,32 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                     const opClean = String(it.op_protheus).trim();
                     if (opClean && opClean !== '-' && opClean !== '') {
                         const [opCheck] = await connection.query(
-                            "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
-                            [opClean]
+                            "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? AND TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1",
+                            [opClean, String(it.pedido).trim(), String(it.item).trim()]
                         );
                         if (opCheck.length > 0) {
                             const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
                             const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
-                            if (existingDate !== newDate) {
+                            if (existingDate !== newDate && !req.body.sobrescrever_existente) {
                                 throw new Error(`A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.`);
                             }
                         }
                     }
                 }
 
-                let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
-                let paramsDup = [String(pedido).trim(), String(item).trim(), data_entrega_pcp];
+                let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1`;
+                let paramsDup = [String(pedido).trim(), String(item).trim()];
                 const [dupCheck] = await connection.query(queryDup, paramsDup);
                 if (dupCheck.length > 0) {
-                    continue;
+                    if (req.body.sobrescrever_existente) {
+                        const existingId = dupCheck[0].id;
+                        await connection.query(
+                            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=? WHERE id=?',
+                            [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, it.op_protheus || null, existingId]
+                        );
+                        savedItems.push({ id: existingId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
+                    }
+                    continue; // Skip the INSERT below, either because we updated it, or we are skipping it entirely
                 }
 
                 if (qtd_total_item !== undefined) {
@@ -2908,25 +2916,34 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             const opClean = String(req.body.op_protheus).trim();
             if (opClean && opClean !== '-' && opClean !== '') {
                 const [opCheck] = await mysqlPool.query(
-                    "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
-                    [opClean]
+                    "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? AND TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1",
+                    [opClean, String(pedido).trim(), String(item).trim()]
                 );
                 if (opCheck.length > 0) {
                     const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
                     const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
-                    if (existingDate !== newDate) {
+                    if (existingDate !== newDate && !req.body.sobrescrever_existente) {
                         return res.status(400).json({ error: `A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.` });
                     }
                 }
             }
         }
 
-        let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND data_entrega_pcp = ? LIMIT 1`;
-        let paramsDup = [String(pedido).trim(), String(item).trim(), data_entrega_pcp];
+        let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1`;
+        let paramsDup = [String(pedido).trim(), String(item).trim()];
         
         const [dupCheck] = await mysqlPool.query(queryDup, paramsDup);
         if (dupCheck.length > 0) {
-             return res.status(400).json({ error: 'Já existe um registro de Data PCP para este pedido/item nesta data.' });
+             if (req.body.sobrescrever_existente) {
+                 const existingId = dupCheck[0].id;
+                 await mysqlPool.query(
+                     'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
+                     [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, existingId]
+                 );
+                 return res.json({ success: true, id: existingId, updated: true });
+             } else {
+                 return res.status(400).json({ error: 'Já existe uma Programação PCP para este pedido/item. Só é permitida uma data por OP. Edite a programação existente.' });
+             }
         }
 
         if (qtd_total_item !== undefined) {
@@ -3424,6 +3441,7 @@ router.get('/portal-cliente', async (req, res) => {
 
         const auth = await getAuthorizedOrders(req);
         let extraFilters = '';
+        const params = [];
 
         // Filtrar pedidos inativos (app_pedidos_inativos)
         try {
@@ -3434,42 +3452,52 @@ router.get('/portal-cliente', async (req, res) => {
         }
 
         if (cliente) {
-            const safe = cliente.replace(/'/g, "''");
-            if (safe) extraFilters += ` AND (TRIM(sa1.a1_nome) ILIKE '%${safe}%' OR TRIM(c5.c5_cliente) ILIKE '%${safe}%')`;
+            const term = cliente.trim();
+            if (term) {
+                params.push(`%${term}%`);
+                extraFilters += ` AND (TRIM(sa1.a1_nome) ILIKE $${params.length} OR TRIM(c5.c5_cliente) ILIKE $${params.length})`;
+            }
         }
 
-        if (pedido) {
-            const terms = String(pedido)
-                .split(',')
-                .map(t => t.replace(/'/g, "''").trim())
-                .filter(Boolean);
+        // Gera as variações plausíveis de um código de pedido/OC (com e sem zeros à esquerda)
+        // para permitir busca exata tolerante a formatação, sem cair em "contém em qualquer posição"
+        // (que gerava falsos positivos, ex: buscar "4618" também retornava "046180").
+        const buildExactCodeVariants = (rawTerm) => {
+            const term = rawTerm.trim();
+            const variants = new Set([term]);
+            if (/^\d+$/.test(term)) {
+                const noLeadingZeros = term.replace(/^0+/, '') || '0';
+                variants.add(noLeadingZeros);
+                if (noLeadingZeros.length <= 6) variants.add(noLeadingZeros.padStart(6, '0'));
+            }
+            return Array.from(variants);
+        };
 
-            if (terms.length > 0) {
-                const clauses = terms.map(term => {
-                    const clean = term.replace(/^0+/, '') || term;
-                    const padded = clean.length <= 6 ? clean.padStart(6, '0') : clean;
-                    return `(TRIM(c5.c5_num) ILIKE '%${term}%' OR TRIM(c5.c5_num) ILIKE '%${clean}%' OR TRIM(c5.c5_num) ILIKE '%${padded}%')`;
-                });
-                extraFilters += ` AND (${clauses.join(' OR ')})`;
+        if (pedido) {
+            const terms = String(pedido).split(',').map(t => t.trim()).filter(Boolean);
+            const allVariants = terms.flatMap(buildExactCodeVariants);
+            if (allVariants.length > 0) {
+                params.push(allVariants);
+                extraFilters += ` AND TRIM(c5.c5_num) = ANY($${params.length}::text[])`;
             }
         }
 
         if (produto) {
-            const safe = produto.replace(/[^a-zA-Z0-9-]/g, '');
-            if (safe) extraFilters += ` AND c6.c6_produto LIKE '${safe}%'`;
+            const term = produto.trim();
+            if (term) {
+                params.push(`${term}%`);
+                extraFilters += ` AND c6.c6_produto LIKE $${params.length}`;
+            }
         }
 
         if (pedcli) {
-            const terms = String(pedcli)
-                .split(',')
-                .map(t => t.replace(/'/g, "''").trim())
-                .filter(Boolean);
-
+            // Ordem de Compra é referência livre do cliente (formato variável), então
+            // usa-se busca por conteúdo (contém) em vez de igualdade exata como no Pedido.
+            const terms = String(pedcli).split(',').map(t => t.trim()).filter(Boolean);
             if (terms.length > 0) {
                 const clauses = terms.map(term => {
-                    const clean = term.replace(/^0+/, '') || term;
-                    const padded = clean.length <= 6 ? clean.padStart(6, '0') : clean;
-                    return `(TRIM(c6.c6_pedcli) ILIKE '%${term}%' OR TRIM(c6.c6_pedcli) ILIKE '%${clean}%' OR TRIM(c6.c6_pedcli) ILIKE '%${padded}%')`;
+                    params.push(`%${term}%`);
+                    return `TRIM(c6.c6_pedcli) ILIKE $${params.length}`;
                 });
                 extraFilters += ` AND (${clauses.join(' OR ')})`;
             }
@@ -3480,17 +3508,15 @@ router.get('/portal-cliente', async (req, res) => {
 
         if (refCliente) {
             const rawTerms = String(refCliente).split(',').map(t => t.trim()).filter(Boolean);
-            const clauses = [];
-            for (const raw of rawTerms) {
-                const clean = raw.replace(/[^a-zA-Z0-9]/g, '');
-                if (clean) {
-                    clauses.push(`REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g') ILIKE '%${clean}%'`);
-                }
-            }
-            if (clauses.length > 0) {
+            const cleanTerms = rawTerms.map(t => t.replace(/[^a-zA-Z0-9]/g, '')).filter(Boolean);
+            if (cleanTerms.length > 0) {
+                const clauses = cleanTerms.map(clean => {
+                    params.push(`%${clean}%`);
+                    return `REGEXP_REPLACE(TRIM(sz1.z1_codcli), '[^a-zA-Z0-9]', '', 'g') ILIKE $${params.length}`;
+                });
                 extraFilters += ` AND EXISTS (
-                    SELECT 1 FROM public.sz1010 sz1 
-                    WHERE sz1.z1_produto = c6.c6_produto 
+                    SELECT 1 FROM public.sz1010 sz1
+                    WHERE sz1.z1_produto = c6.c6_produto
                       AND (${clauses.join(' OR ')})
                       AND COALESCE(sz1.d_e_l_e_t_, '') = ''
                 )`;
@@ -3498,17 +3524,23 @@ router.get('/portal-cliente', async (req, res) => {
         }
 
         if (dataInicial || dataFinal) {
+            // Só aceita datas no formato estrito emitido pelo <input type="date"> (YYYY-MM-DD)
+            const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+            const safeDataInicial = isValidDate(dataInicial) ? dataInicial : null;
+            const safeDataFinal = isValidDate(dataFinal) ? dataFinal : null;
+            const fmt = (d) => d ? d.replace(/-/g, '') : null;
+
             if (dateType === 'pcp') {
                 try {
                     let pcpSql = 'SELECT DISTINCT pedido, item FROM app_pcp_delivery_forecasts WHERE 1=1';
                     const pcpParams = [];
-                    if (dataInicial) {
+                    if (safeDataInicial) {
                         pcpSql += ' AND data_entrega_pcp >= ?';
-                        pcpParams.push(dataInicial);
+                        pcpParams.push(safeDataInicial);
                     }
-                    if (dataFinal) {
+                    if (safeDataFinal) {
                         pcpSql += ' AND data_entrega_pcp <= ?';
-                        pcpParams.push(dataFinal);
+                        pcpParams.push(safeDataFinal);
                     }
                     const [pcpRows] = await mysqlPool.execute(pcpSql, pcpParams);
                     if (pcpRows.length > 0) {
@@ -3521,23 +3553,33 @@ router.get('/portal-cliente', async (req, res) => {
                     console.warn('[Portal Cliente] Erro no filtro por Data PCP:', pcpErr.message);
                 }
             } else if (dateType === 'nf') {
-                const fmt = (d) => d ? d.replace(/-/g, '') : null;
                 let nfSub = `EXISTS (
-                    SELECT 1 FROM public.sd2010 d2 
+                    SELECT 1 FROM public.sd2010 d2
                     JOIN public.sf2010 f2 ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND COALESCE(f2.d_e_l_e_t_, '') = ''
-                    WHERE d2.d2_pedido = c5.c5_num 
-                      AND d2.d2_itempv = c6.c6_item 
+                    WHERE d2.d2_pedido = c5.c5_num
+                      AND d2.d2_itempv = c6.c6_item
                       AND COALESCE(d2.d_e_l_e_t_, '') = ''`;
-                if (dataInicial) nfSub += ` AND f2.f2_emissao >= '${fmt(dataInicial)}'`;
-                if (dataFinal)   nfSub += ` AND f2.f2_emissao <= '${fmt(dataFinal)}'`;
+                if (safeDataInicial) {
+                    params.push(fmt(safeDataInicial));
+                    nfSub += ` AND f2.f2_emissao >= $${params.length}`;
+                }
+                if (safeDataFinal) {
+                    params.push(fmt(safeDataFinal));
+                    nfSub += ` AND f2.f2_emissao <= $${params.length}`;
+                }
                 nfSub += `)`;
                 extraFilters += ` AND ${nfSub}`;
             } else {
                 const colMap = { pedido: 'c5.c5_emissao', entrega: 'c6.c6_entreg' };
                 const col = colMap[dateType] || 'c5.c5_emissao';
-                const fmt = (d) => d ? d.replace(/-/g, '') : null;
-                if (dataInicial) extraFilters += ` AND ${col} >= '${fmt(dataInicial)}'`;
-                if (dataFinal)   extraFilters += ` AND ${col} <= '${fmt(dataFinal)}'`;
+                if (safeDataInicial) {
+                    params.push(fmt(safeDataInicial));
+                    extraFilters += ` AND ${col} >= $${params.length}`;
+                }
+                if (safeDataFinal) {
+                    params.push(fmt(safeDataFinal));
+                    extraFilters += ` AND ${col} <= $${params.length}`;
+                }
             }
         }
 
@@ -3572,7 +3614,6 @@ router.get('/portal-cliente', async (req, res) => {
         }
 
         let clientFilter = '';
-        const params = [];
 
         if (auth.isExternal && auth.tipoExterno === 'cliente' && auth.idCliente) {
             const clienteIdPadded = auth.idCliente.trim().padEnd(6, ' ');
@@ -3687,11 +3728,19 @@ router.get('/portal-cliente', async (req, res) => {
                 // Batch lookup 4: NFs (SD2010 + SF2010)
                 const uniquePedidos = [...new Set(itemRows.map(r => String(r.pedido).trim()))];
                 if (uniquePedidos.length > 0) {
+                    const nfQueryParams = [uniquePedidos];
                     let nfWhere = `WHERE d2.d2_pedido = ANY($1::varchar[]) AND COALESCE(d2.d_e_l_e_t_, '') = ''`;
                     if (dateType === 'nf') {
-                        const fmt = (d) => d ? d.replace(/-/g, '') : null;
-                        if (dataInicial) nfWhere += ` AND f2.f2_emissao >= '${fmt(dataInicial)}'`;
-                        if (dataFinal)   nfWhere += ` AND f2.f2_emissao <= '${fmt(dataFinal)}'`;
+                        const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+                        const fmt = (d) => d.replace(/-/g, '');
+                        if (isValidDate(dataInicial)) {
+                            nfQueryParams.push(fmt(dataInicial));
+                            nfWhere += ` AND f2.f2_emissao >= $${nfQueryParams.length}`;
+                        }
+                        if (isValidDate(dataFinal)) {
+                            nfQueryParams.push(fmt(dataFinal));
+                            nfWhere += ` AND f2.f2_emissao <= $${nfQueryParams.length}`;
+                        }
                     }
                     const nfResult = await pgClient.query(`
                         SELECT TRIM(d2.d2_pedido) AS pedido, TRIM(d2.d2_itempv) AS item, TRIM(d2.d2_doc) AS nota, TRIM(d2.d2_serie) AS serie,
@@ -3706,7 +3755,7 @@ router.get('/portal-cliente', async (req, res) => {
                         LEFT JOIN public.sb1010 sb1nf ON sb1nf.b1_cod = d2.d2_cod AND COALESCE(sb1nf.d_e_l_e_t_, '') = ''
                         ${nfWhere}
                         ORDER BY f2.f2_emissao DESC, d2.d2_pedido DESC, d2.d2_itempv ASC
-                    `, [uniquePedidos]);
+                    `, nfQueryParams);
                     nfRows = nfResult.rows;
                 }
             }

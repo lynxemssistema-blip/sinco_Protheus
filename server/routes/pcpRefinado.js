@@ -197,7 +197,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
         }
 
         const targetDateStr = data.replace(/-/g, ''); // YYYYMMDD
-        
+
         pgClient = await db.connect();
 
         // 1. Fetch planning rows for this resource covering targetDate
@@ -242,7 +242,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
             LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod)=TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
             ${pgWhere}
         `, [opNums]);
-        
+
         const opRows = pgResult.rows;
         const opMap = {};
         opRows.forEach(r => {
@@ -281,7 +281,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
         `, [opNums]);
         const apptsMap = {};
         appts.forEach(a => {
-            apptsMap[`${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.op_sequencia||'').trim()}|${(a.operacao_codigo||'').trim()}`] = parseFloat(a.total) || 0;
+            apptsMap[`${(a.op_numero || '').trim()}|${(a.op_item || '').trim()}|${(a.op_sequencia || '').trim()}|${(a.operacao_codigo || '').trim()}`] = parseFloat(a.total) || 0;
         });
 
         // Fetch config (MySQL)
@@ -298,12 +298,12 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
         const getBusinessDaysBetween = (startStr, endStr) => {
             if (!startStr) return [];
             if (!endStr || endStr < startStr) return [startStr];
-            const y1 = parseInt(startStr.substring(0,4));
-            const m1 = parseInt(startStr.substring(4,6)) - 1;
-            const d1 = parseInt(startStr.substring(6,8));
-            const y2 = parseInt(endStr.substring(0,4));
-            const m2 = parseInt(endStr.substring(4,6)) - 1;
-            const d2 = parseInt(endStr.substring(6,8));
+            const y1 = parseInt(startStr.substring(0, 4));
+            const m1 = parseInt(startStr.substring(4, 6)) - 1;
+            const d1 = parseInt(startStr.substring(6, 8));
+            const y2 = parseInt(endStr.substring(0, 4));
+            const m2 = parseInt(endStr.substring(4, 6)) - 1;
+            const d2 = parseInt(endStr.substring(6, 8));
             let current = new Date(y1, m1, d1, 12, 0, 0);
             const end = new Date(y2, m2, d2, 12, 0, 0);
             if (isNaN(current.getTime()) || isNaN(end.getTime())) return [startStr];
@@ -322,9 +322,9 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
 
         const fmtDate = (val) => {
             if (!val) return '';
-            if (typeof val === 'string') return val.replace(/-/g,'').substring(0,8);
+            if (typeof val === 'string') return val.replace(/-/g, '').substring(0, 8);
             if (val instanceof Date) {
-                return `${val.getFullYear()}${String(val.getMonth()+1).padStart(2,'0')}${String(val.getDate()).padStart(2,'0')}`;
+                return `${val.getFullYear()}${String(val.getMonth() + 1).padStart(2, '0')}${String(val.getDate()).padStart(2, '0')}`;
             }
             return '';
         };
@@ -339,7 +339,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
             if (opRow.pedido && inativosSet.has(opRow.pedido)) continue;
 
             const prodRouting = routingMap[opRow.produto] || {};
-            const routeEntry  = prodRouting[opcn];
+            const routeEntry = prodRouting[opcn];
             if (!routeEntry) continue;
 
             const pIni = fmtDate(plan.data_planejada_inicio);
@@ -350,16 +350,16 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
             const g2_minutos = parseFloat(routeEntry.tempo) || 0;
             const unitTimeMin = g2_minutos > 0 ? g2_minutos : (parseFloat(conf.tempo_padrao_minutos) || 0);
 
-            const apptKey = `${opn}|${itn}|${(plan.op_sequencia||'').trim()}|${opcn}`;
+            const apptKey = `${opn}|${itn}|${(plan.op_sequencia || '').trim()}|${opcn}`;
             const qtde_apontada = apptsMap[apptKey] || 0;
-            const qtde_total    = Number(opRow.qtde) || 0;
-            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (Number(opRow.qtde_feita) || 0);
+            const qtde_total = Number(opRow.qtde) || 0;
+            const qtde_feita = qtde_apontada > 0 ? qtde_apontada : (Number(opRow.qtde_feita) || 0);
             const qtde_pendente = Math.max(0, qtde_total - qtde_feita);
 
             const min_totais = qtde_total * unitTimeMin;
-            const min_exec   = Math.min(qtde_feita, qtde_total) * unitTimeMin;
-            const min_pend   = qtde_pendente * unitTimeMin;
-            const capacity   = conf.capacidade_diaria_minutos || 480;
+            const min_exec = Math.min(qtde_feita, qtde_total) * unitTimeMin;
+            const min_pend = qtde_pendente * unitTimeMin;
+            const capacity = conf.capacidade_diaria_minutos || 480;
 
             const bDays = getBusinessDaysBetween(pIni, pFim);
             if (!bDays.includes(targetDateStr)) continue;
@@ -389,7 +389,7 @@ router.get('/taxa-ocupacao/ops', async (req, res) => {
                 op: opn,
                 operacao: opcn,
                 item_op: itn,
-                sequen: (plan.op_sequencia||'').trim(),
+                sequen: (plan.op_sequencia || '').trim(),
                 recurso: recurso,
                 produto: opRow.produto,
                 pedido: opRow.pedido || '',
@@ -444,56 +444,56 @@ router.put('/op/:op/dates', async (req, res) => {
               AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
         `;
         const queryParams = [op];
-        if (item_op)         { queryParams.push(item_op.trim());         pgQuery += ` AND TRIM(c2.c2_item)   = $${queryParams.length}`; }
-        if (sequen)          { queryParams.push(sequen.trim());          pgQuery += ` AND TRIM(c2.c2_sequen) = $${queryParams.length}`; }
-        if (operacao_codigo) { 
+        if (item_op) { queryParams.push(item_op.trim()); pgQuery += ` AND TRIM(c2.c2_item)   = $${queryParams.length}`; }
+        if (sequen) { queryParams.push(sequen.trim()); pgQuery += ` AND TRIM(c2.c2_sequen) = $${queryParams.length}`; }
+        if (operacao_codigo) {
             const opcs = operacao_codigo.split(',').map(s => s.trim()).filter(Boolean);
             if (opcs.length > 1) {
                 queryParams.push(opcs);
                 pgQuery += ` AND TRIM(g2.g2_operac) = ANY($${queryParams.length})`;
             } else {
-                queryParams.push(operacao_codigo.trim()); 
+                queryParams.push(operacao_codigo.trim());
                 pgQuery += ` AND TRIM(g2.g2_operac) = $${queryParams.length}`;
             }
         }
-        if (pedido)          { queryParams.push(pedido.trim());          pgQuery += ` AND TRIM(c2.c2_pedido) = $${queryParams.length}`; }
-        if (item_pedido)     { queryParams.push(item_pedido.trim());     pgQuery += ` AND TRIM(c2.c2_itempv) = $${queryParams.length}`; }
-        if (produto)         { queryParams.push(produto.trim());         pgQuery += ` AND TRIM(c2.c2_produto) = $${queryParams.length}`; }
+        if (pedido) { queryParams.push(pedido.trim()); pgQuery += ` AND TRIM(c2.c2_pedido) = $${queryParams.length}`; }
+        if (item_pedido) { queryParams.push(item_pedido.trim()); pgQuery += ` AND TRIM(c2.c2_itempv) = $${queryParams.length}`; }
+        if (produto) { queryParams.push(produto.trim()); pgQuery += ` AND TRIM(c2.c2_produto) = $${queryParams.length}`; }
 
         const pgResult = await pgClient.query(pgQuery, queryParams);
         if (pgResult.rows.length === 0) {
             return res.status(404).json({ error: 'OP nao encontrada ou sem operacoes no roteiro.' });
         }
 
-        const fmtISO = (yyyymmdd) => yyyymmdd ? `${yyyymmdd.substring(0,4)}-${yyyymmdd.substring(4,6)}-${yyyymmdd.substring(6,8)}` : null;
+        const fmtISO = (yyyymmdd) => yyyymmdd ? `${yyyymmdd.substring(0, 4)}-${yyyymmdd.substring(4, 6)}-${yyyymmdd.substring(6, 8)}` : null;
         const formattedStart = fmtISO(data_inicio);
-        const formattedEnd   = fmtISO(data_fim);
+        const formattedEnd = fmtISO(data_fim);
         const usuario = req.user?.login || req.user?.username || 'pcp_refinado';
 
         const [existingRows] = await mysqlPool.query(`SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim FROM app_production_planning WHERE op_numero = ?`, [op]);
         const existingMap = {};
-        existingRows.forEach(r => { existingMap[`${(r.op_numero||'').trim()}_${(r.op_item||'').trim()}_${(r.op_sequencia||'').trim()}_${(r.operacao_codigo||'').trim()}`] = r; });
+        existingRows.forEach(r => { existingMap[`${(r.op_numero || '').trim()}_${(r.op_item || '').trim()}_${(r.op_sequencia || '').trim()}_${(r.operacao_codigo || '').trim()}`] = r; });
 
         const mysqlValues = [], historicoValues = [];
         const hoje = new Date();
         const formatOld = (d) => {
             if (!d) return null;
-            if (typeof d === 'string') return d.substring(0,10);
-            if (d instanceof Date) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            if (typeof d === 'string') return d.substring(0, 10);
+            if (d instanceof Date) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             return null;
         };
 
         pgResult.rows.forEach(row => {
-            const myOp   = row.op_num;
-            const myItem = row.item_op  || '01';
-            const mySeq  = row.sequen   || '001';
-            const myOpc  = row.operacao || '01';
+            const myOp = row.op_num;
+            const myItem = row.item_op || '01';
+            const mySeq = row.sequen || '001';
+            const myOpc = row.operacao || '01';
             mysqlValues.push([myOp, myItem, mySeq, myOpc, row.recurso || null, row.produto || null, formattedStart, formattedEnd, usuario, 'Atualizacao via Taxa de Ocupacao']);
             const existing = existingMap[`${myOp}_${myItem}_${mySeq}_${myOpc}`];
             const fOldS = formatOld(existing?.data_planejada_inicio);
             const fOldE = formatOld(existing?.data_planejada_fim);
             if (fOldS !== formattedStart || fOldE !== formattedEnd) {
-                historicoValues.push([myOp, myOpc, usuario, hoje, `Inicio: ${fOldS||'N/A'} | Fim: ${fOldE||'N/A'}`, `Inicio: ${formattedStart||'N/A'} | Fim: ${formattedEnd||'N/A'}`, 'Painel Taxa de Ocupacao']);
+                historicoValues.push([myOp, myOpc, usuario, hoje, `Inicio: ${fOldS || 'N/A'} | Fim: ${fOldE || 'N/A'}`, `Inicio: ${formattedStart || 'N/A'} | Fim: ${formattedEnd || 'N/A'}`, 'Painel Taxa de Ocupacao']);
             }
         });
 
@@ -547,14 +547,14 @@ router.get('/rastreabilidade', async (req, res) => {
     let pgClient;
     try {
         pgClient = await db.connect();
-        
+
         const { pedido, cliente, produto, dataInicial, dataFinal, dateType, only_active } = req.query;
         let whereClauses = ["COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')"];
-        
+
         if (only_active !== 'false') {
-             whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
+            whereClauses.push("(c6.c6_qtdven - c6.c6_qtdent) > 0");
         }
-        
+
         if (pedido) {
             const pedidoList = String(pedido).split(',')
                 .map(p => p.trim().replace(/[^a-zA-Z0-9]/g, ''))
@@ -570,7 +570,7 @@ router.get('/rastreabilidade', async (req, res) => {
         }
         if (cliente) whereClauses.push(`TRIM(a1.a1_nome) ILIKE '%${cliente.trim()}%'`);
         if (produto) whereClauses.push(`TRIM(c6.c6_produto) ILIKE '%${produto.trim()}%'`);
-        
+
         if (dataInicial && dataFinal) {
             const di = dataInicial.replace(/-/g, '');
             const df = dataFinal.replace(/-/g, '');
@@ -580,7 +580,7 @@ router.get('/rastreabilidade', async (req, res) => {
                 whereClauses.push(`c5.c5_emissao BETWEEN '${di}' AND '${df}'`);
             }
         }
-        
+
         const whereSql = whereClauses.join(' AND ');
 
         const pedidosQuery = `
@@ -601,21 +601,21 @@ router.get('/rastreabilidade', async (req, res) => {
             LIMIT 50
         `;
         const pedidosResult = await pgClient.query(pedidosQuery);
-        
+
         if (pedidosResult.rows.length === 0) {
             return res.json([]);
         }
 
         const produtosSet = new Set();
-        const pedidosMap = {}; 
-        
+        const pedidosMap = {};
+
         for (const row of pedidosResult.rows) {
             produtosSet.add(row.produto);
             if (!pedidosMap[row.pedido]) {
-                const ano = row.data_entrega.substring(0,4);
-                const mes = row.data_entrega.substring(4,6);
-                const dia = row.data_entrega.substring(6,8);
-                
+                const ano = row.data_entrega.substring(0, 4);
+                const mes = row.data_entrega.substring(4, 6);
+                const dia = row.data_entrega.substring(6, 8);
+
                 pedidosMap[row.pedido] = {
                     pedido: row.pedido,
                     cliente: row.cliente,
@@ -641,9 +641,9 @@ router.get('/rastreabilidade', async (req, res) => {
         }
 
         const arrayProdutos = Array.from(produtosSet);
-        
+
         if (arrayProdutos.length > 0) {
-            const placeholders = arrayProdutos.map((_, i) => `$${i+1}`).join(',');
+            const placeholders = arrayProdutos.map((_, i) => `$${i + 1}`).join(',');
             const estoqueQuery = `
                 SELECT TRIM(b2_cod) as produto, SUM(b2_qatu) as qtd_estoque
                 FROM public.sb2010
@@ -656,7 +656,7 @@ router.get('/rastreabilidade', async (req, res) => {
             for (const row of estoqueResult.rows) {
                 estoqueMap[row.produto] = Number(row.qtd_estoque) || 0;
             }
-            
+
             for (const key in pedidosMap) {
                 for (const item of pedidosMap[key].itens) {
                     const est = estoqueMap[item.produto] || 0;
@@ -696,15 +696,15 @@ router.get('/rastreabilidade', async (req, res) => {
             ORDER BY op_num, op_item, op_seq
         `;
         const opsResult = await pgClient.query(opsQuery);
-        
-        const opsPorItemPedido = {}; 
+
+        const opsPorItemPedido = {};
         const allOpProdutos = new Set();
-        
+
         for (const op of opsResult.rows) {
             allOpProdutos.add(op.produto);
             const k = `${op.pedido}_${op.itempv}`;
             if (!opsPorItemPedido[k]) opsPorItemPedido[k] = [];
-            
+
             let statusOp = 'Não Iniciado';
             if (op.qtd_feita >= op.qtd_op) statusOp = 'Concluído';
             else if (op.qtd_feita > 0) statusOp = 'Em Andamento';
@@ -715,7 +715,7 @@ router.get('/rastreabilidade', async (req, res) => {
                 produto: op.produto,
                 qtd_op: op.qtd_op,
                 qtd_feita: op.qtd_feita,
-                tipo: op.op_seq === '001' ? 'PAI' : 'FILHA', 
+                tipo: op.op_seq === '001' ? 'PAI' : 'FILHA',
                 status_op: statusOp,
                 operacoes: [],
                 ops_filhas: []
@@ -735,7 +735,7 @@ router.get('/rastreabilidade', async (req, res) => {
                 }
             }
         }
-        
+
         for (const key in pedidosMap) {
             for (const item of pedidosMap[key].itens) {
                 const opKey = `${item.pedido || pedidosMap[key].pedido}_${item.item}`;
@@ -747,7 +747,7 @@ router.get('/rastreabilidade', async (req, res) => {
 
         const arrayOpProdutos = Array.from(allOpProdutos);
         if (arrayOpProdutos.length > 0) {
-            const placeholders = arrayOpProdutos.map((_, i) => `$${i+1}`).join(',');
+            const placeholders = arrayOpProdutos.map((_, i) => `$${i + 1}`).join(',');
             const roteiroQuery = `
                 SELECT 
                     TRIM(g2_produto) AS produto,
@@ -762,7 +762,7 @@ router.get('/rastreabilidade', async (req, res) => {
                 ORDER BY g2_operac
             `;
             const roteiroResult = await pgClient.query(roteiroQuery, arrayOpProdutos);
-            
+
             // BUSCAR CAPACIDADES PADRÃO (FALLBACK)
             const [mysqlResult] = await mysqlPool.query('SELECT recurso_codigo, tempo_padrao_minutos FROM app_recursos_capacidade');
             const fallbackCapacidade = {};
@@ -770,10 +770,10 @@ router.get('/rastreabilidade', async (req, res) => {
                 fallbackCapacidade[row.recurso_codigo] = Number(row.tempo_padrao_minutos) || 0;
             });
 
-            const roteiroMap = {}; 
+            const roteiroMap = {};
             for (const rot of roteiroResult.rows) {
                 if (!roteiroMap[rot.produto]) roteiroMap[rot.produto] = [];
-                
+
                 let tempad = Math.round((Number(rot.g2_tempad) || 0) * 1000) / 1000;
                 // Fallback para o valor configurado na tela de Capacidades se o roteiro vier zerado
                 // Tanto a tabela MySQL quanto o roteiro usam minutos
@@ -792,9 +792,9 @@ router.get('/rastreabilidade', async (req, res) => {
                     status: 'pendente'
                 });
             }
-            
+
             const mysqlPool = require('../services/mysqlService');
-            
+
             // Get opCodes and opCodOperacoes to fetch from MySQL
             const opCodes = [];
             const opCodOperacoes = [];
@@ -813,7 +813,7 @@ router.get('/rastreabilidade', async (req, res) => {
 
             const uniqueOpCodes = [...new Set(opCodes)];
             const uniqueOpCodOperacoes = [...new Set(opCodOperacoes)];
-            
+
             let appointments = [];
             let plans = [];
 
@@ -861,7 +861,7 @@ router.get('/rastreabilidade', async (req, res) => {
                                         plan.op_sequencia === o_seq &&
                                         plan.operacao_codigo === r.op_seq
                                     );
-                                    
+
                                     const qtd_total = currentOp.qtd_op;
                                     const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
                                     let status = 'pendente';
@@ -886,7 +886,7 @@ router.get('/rastreabilidade', async (req, res) => {
                         };
 
                         processOp(op);
-                        
+
                         if (op.ops_filhas) {
                             for (const filha of op.ops_filhas) {
                                 processOp(filha);
@@ -901,7 +901,7 @@ router.get('/rastreabilidade', async (req, res) => {
             for (const op of arrayOpProdutos) {
                 allProductCodes.add(op);
             }
-            
+
             const arrayAllProducts = Array.from(allProductCodes);
             if (arrayAllProducts.length > 0) {
                 try {
@@ -910,7 +910,7 @@ router.get('/rastreabilidade', async (req, res) => {
                         `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${placeholdersDocs})`,
                         arrayAllProducts
                     );
-                    
+
                     const docsMap = {};
                     docsResult.forEach(d => {
                         if (!docsMap[d.produto_codigo]) docsMap[d.produto_codigo] = [];
@@ -921,11 +921,11 @@ router.get('/rastreabilidade', async (req, res) => {
                         for (const item of pedidosMap[key].itens) {
                             const pDocs = docsMap[item.produto] || [];
                             item.primeiro_arquivo = pDocs.length > 0 ? pDocs[0].url_arquivo : null;
-                            
+
                             for (const op of item.ops) {
                                 const opDocs = docsMap[op.produto] || [];
                                 op.primeiro_arquivo = opDocs.length > 0 ? opDocs[0].url_arquivo : null;
-                                
+
                                 if (op.ops_filhas) {
                                     for (const filha of op.ops_filhas) {
                                         const fDocs = docsMap[filha.produto] || [];
@@ -952,9 +952,9 @@ router.get('/rastreabilidade', async (req, res) => {
 router.get('/cronograma', async (req, res) => {
     let pgClient;
     try {
-        const { 
-            pedido, cliente, produto, pedcli, dataInicial, dataFinal, 
-            dateType = 'entrega', only_active = 'true', tipo_item = '', 
+        const {
+            pedido, cliente, produto, pedcli, dataInicial, dataFinal,
+            dateType = 'entrega', only_active = 'true', tipo_item = '',
             op_status = '', sortBy = 'emissao', sortOrder = 'DESC',
             page = '1', limit = '200'
         } = req.query;
@@ -997,7 +997,7 @@ router.get('/cronograma', async (req, res) => {
 
         if (cliente) {
             const resTemp = await pgClient.query(
-                `SELECT a1_cod, a1_loja FROM public.sa1010 WHERE COALESCE(d_e_l_e_t_, '') = '' AND a1_nome ILIKE $1 LIMIT 5000`, 
+                `SELECT a1_cod, a1_loja FROM public.sa1010 WHERE COALESCE(d_e_l_e_t_, '') = '' AND a1_nome ILIKE $1 LIMIT 5000`,
                 [`%${cliente}%`]
             );
             const clienteMatches = resTemp.rows;
@@ -1024,7 +1024,7 @@ router.get('/cronograma', async (req, res) => {
             const tipos = tipo_item.split(',').filter(Boolean);
             if (tipos.length > 0) {
                 const tipoConditions = [];
-                
+
                 if (tipos.includes('Restrição')) {
                     tipoConditions.push(`(
                         EXISTS (
@@ -1080,7 +1080,7 @@ router.get('/cronograma', async (req, res) => {
                         )
                     ))`);
                 }
-                
+
                 if (tipoConditions.length > 0) {
                     whereSql += ` AND (${tipoConditions.join(' OR ')})`;
                 }
@@ -1161,13 +1161,13 @@ router.get('/cronograma', async (req, res) => {
             if (matchingKeys.length === 0) {
                 return res.json([]);
             }
-            
+
             const limitKeys = matchingKeys.slice(0, 10000);
             const inList = limitKeys.map(k => {
                 const [p, i] = k.split('|');
                 return `('${p}', '${i}')`;
             }).join(', ');
-            
+
             whereSql += ` AND (TRIM(c6.c6_num), TRIM(c6.c6_item)) IN (${inList})`;
         }
 
@@ -1530,10 +1530,10 @@ router.get('/cronograma', async (req, res) => {
                                 plan.op_sequencia === o_seq &&
                                 plan.operacao_codigo === r.op_seq
                             );
-                            
+
                             const qtd_total = currentOp.qtd_op;
                             const qtd_apontada = a ? (parseFloat(a.total_produzido) || 0) : 0;
-                            
+
                             totalOpUnits += qtd_total;
                             totalDoneUnits += qtd_apontada;
 
@@ -1598,7 +1598,7 @@ router.post('/smart-plan', async (req, res) => {
                     agent_logs: result.agent_logs
                 });
             }
-            require('fs').writeFileSync('smart_plan_error.txt', 'FCS Engine Error: ' + result.error + '\nLogs:\n' + (result.agent_logs||[]).join('\n'));
+            require('fs').writeFileSync('smart_plan_error.txt', 'FCS Engine Error: ' + result.error + '\nLogs:\n' + (result.agent_logs || []).join('\n'));
             return res.status(500).json({ error: result.error, agent_logs: result.agent_logs });
         }
 
@@ -1629,8 +1629,8 @@ router.post('/smart-plan', async (req, res) => {
  */
 router.get('/ops-abertas', async (req, res) => {
     try {
-        const limit  = Math.min(500, Math.max(1, parseInt(req.query.limit)  || 100));
-        const offset = Math.max(0,              parseInt(req.query.offset) || 0);
+        const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
+        const offset = Math.max(0, parseInt(req.query.offset) || 0);
 
         // Conta total de OPs abertas (rápido, usa índice)
         const countRes = await db.query(`
@@ -1720,7 +1720,7 @@ router.post('/smart-plan/global', async (req, res) => {
                 });
 
                 if (result.success) {
-                    totalPlans  += result.plans        || 0;
+                    totalPlans += result.plans || 0;
                     totalSlices += result.daily_slices || 0;
                     allLogs.push(...(result.agent_logs || []));
                     allLogs.push(`✅ Lote ${b + 1} OK: ${result.plans || 0} plano(s) | ${result.daily_slices || 0} fatia(s).`);
@@ -1746,12 +1746,12 @@ router.post('/smart-plan/global', async (req, res) => {
 
         res.json({
             message: `Planejamento global concluído. ${allOpNums.length} OPs em ${batches.length} lote(s).`,
-            total_ops:    allOpNums.length,
-            batches:      batches.length,
-            plans:        totalPlans,
+            total_ops: allOpNums.length,
+            batches: batches.length,
+            plans: totalPlans,
             daily_slices: totalSlices,
             batch_errors: batchErrors,
-            agent_logs:   allLogs,
+            agent_logs: allLogs,
         });
     } catch (error) {
         console.error('❌ Erro em /smart-plan/global:', error);
@@ -1855,5 +1855,425 @@ router.post('/smart-plan/analyze', async (req, res) => {
         if (pgClient) pgClient.release();
     }
 });
+
+
+
+// ── ROTA: Estrutura de Produto por Pedido/OP (BOM Tree + Apontamentos) ──────────
+// GET /api/pcp-refinado/estrutura-pedido
+// Params: op, pedido, produto, cliente, operacao, recurso,
+//         data_inicio, data_fim, data_entrega_inicio, data_entrega_fim,
+//         status, tipo_produto
+router.get('/estrutura-pedido', async (req, res) => {
+    let pgClient;
+    try {
+        const {
+            op = '', pedido = '', produto = '', cliente = '',
+            operacao = '', recurso = '',
+            data_inicio = '', data_fim = '',
+            data_entrega_inicio = '', data_entrega_fim = '',
+            status: statusFilter = '',
+            tipo_produto = ''
+        } = req.query;
+
+        pgClient = await db.connect();
+
+        // ── 1. OPs do Protheus (sc2010) ──────────────────────────────────────
+        const pgWhere = [`COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')`];
+        const pgParams = [];
+
+        if (op) {
+            const opList = op.split(',')
+                .map(o => o.trim())
+                .filter(Boolean)
+                .map(o => (o.length <= 6 ? o.padStart(6, '0') : o));
+            if (opList.length === 1) {
+                pgParams.push(opList[0]);
+                pgWhere.push(`TRIM(c2.c2_num) = $${pgParams.length}`);
+            } else if (opList.length > 1) {
+                pgParams.push(opList);
+                pgWhere.push(`TRIM(c2.c2_num) = ANY($${pgParams.length})`);
+            }
+        }
+        if (pedido) {
+            const pedList = pedido.split(',')
+                .map(p => p.trim())
+                .filter(Boolean)
+                .map(p => (p.length <= 6 ? p.padStart(6, '0') : p));
+            if (pedList.length === 1) {
+                pgParams.push(pedList[0]);
+                pgWhere.push(`TRIM(c2.c2_pedido) = $${pgParams.length}`);
+            } else if (pedList.length > 1) {
+                pgParams.push(pedList);
+                pgWhere.push(`TRIM(c2.c2_pedido) = ANY($${pgParams.length})`);
+            }
+        }
+        if (produto) { 
+            pgParams.push(`%${produto.trim().toUpperCase()}%`); 
+            const pIdx = pgParams.length;
+            pgWhere.push(`(
+                UPPER(TRIM(c2.c2_produto)) LIKE $${pIdx} 
+                OR UPPER(TRIM(b1.b1_desc)) LIKE $${pIdx}
+                OR TRIM(c2.c2_num) IN (
+                    SELECT LEFT(TRIM(d4_op), 6)
+                    FROM public.sd4010
+                    WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
+                      AND UPPER(TRIM(d4_cod)) LIKE $${pIdx}
+                )
+            )`); 
+        }
+        if (data_inicio) { pgParams.push(data_inicio.replace(/-/g, '')); pgWhere.push(`c2.c2_datpri >= $${pgParams.length}`); }
+        if (data_fim) { pgParams.push(data_fim.replace(/-/g, '')); pgWhere.push(`c2.c2_datprf <= $${pgParams.length}`); }
+        if (data_entrega_inicio) { pgParams.push(data_entrega_inicio.replace(/-/g, '')); pgWhere.push(`c6.c6_entreg >= $${pgParams.length}`); }
+        if (data_entrega_fim) { pgParams.push(data_entrega_fim.replace(/-/g, '')); pgWhere.push(`c6.c6_entreg <= $${pgParams.length}`); }
+        if (tipo_produto && tipo_produto !== 'Todos') { pgParams.push(tipo_produto.trim()); pgWhere.push(`TRIM(b1.b1_tipo) = $${pgParams.length}`); }
+        if (cliente) { pgParams.push(`%${cliente.trim().toUpperCase()}%`); pgWhere.push(`UPPER(TRIM(c6.c6_zclien)) LIKE $${pgParams.length}`); }
+
+        // Filtro por operação/recurso (precisa de join com sg2010)
+        let joinSg2 = '';
+        if (operacao || recurso) {
+            joinSg2 = `JOIN public.sg2010 g2filt ON TRIM(g2filt.g2_produto) = TRIM(c2.c2_produto)
+                       AND COALESCE(g2filt.d_e_l_e_t_,'') IN ('',' ')`;
+            if (operacao) { pgParams.push(operacao.trim()); pgWhere.push(`TRIM(g2filt.g2_operac) = $${pgParams.length}`); }
+            if (recurso) { pgParams.push(`%${recurso.trim().toUpperCase()}%`); pgWhere.push(`UPPER(TRIM(g2filt.g2_recurso)) LIKE $${pgParams.length}`); }
+        }
+
+        const pgQuery = `
+            SELECT DISTINCT
+                TRIM(c2.c2_num)      AS pedido,
+                TRIM(c2.c2_item)     AS item_op,
+                TRIM(c2.c2_sequen)   AS sequen,
+                TRIM(c2.c2_produto)  AS produto,
+                c2.c2_quant          AS qtde,
+                c2.c2_quje           AS qtde_feita,
+                TRIM(c2.c2_itempv)   AS item_pv,
+                TRIM(c2.c2_pedido)   AS num_pedido,
+                TRIM(c2.c2_status)   AS status_op,
+                c2.c2_datpri         AS dt_abertura,
+                c2.c2_datprf         AS dt_prazo_op,
+                TRIM(b1.b1_desc)     AS desc_produto,
+                TRIM(b1.b1_tipo)     AS tipo_produto,
+                TRIM(b1.b1_um)       AS um,
+                TRIM(c6.c6_entreg)   AS dt_entrega_pv,
+                TRIM(c6.c6_zclien)   AS cliente,
+                TRIM(c5.c5_client)   AS cod_cliente
+            FROM public.sc2010 c2
+            LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto)
+                AND COALESCE(b1.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sc6010 c6 ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido)
+                AND TRIM(c6.c6_itemop) = TRIM(c2.c2_item)
+                AND COALESCE(c6.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
+            ${joinSg2}
+            WHERE ${pgWhere.join(' AND ')}
+            ORDER BY pedido, item_op, sequen
+            LIMIT 500
+        `;
+
+        const pgRes = await pgClient.query(pgQuery, pgParams);
+        const mainOps = pgRes.rows;
+
+        if (mainOps.length === 0) {
+            pgClient.release(); pgClient = null;
+            return res.json({ pedidos: [], total: 0 });
+        }
+
+        // Extrair números distintos de OP para buscar todas as sequências (inclusive filhas com c2_pedido vazio)
+        const mainOpNums = [...new Set(mainOps.map(r => r.pedido).filter(Boolean))];
+
+        const secondRes = await pgClient.query(`
+            SELECT DISTINCT
+                TRIM(c2.c2_num)      AS pedido,
+                TRIM(c2.c2_item)     AS item_op,
+                TRIM(c2.c2_sequen)   AS sequen,
+                TRIM(c2.c2_produto)  AS produto,
+                c2.c2_quant          AS qtde,
+                c2.c2_quje           AS qtde_feita,
+                TRIM(c2.c2_itempv)   AS item_pv,
+                TRIM(c2.c2_pedido)   AS num_pedido,
+                TRIM(c2.c2_status)   AS status_op,
+                c2.c2_datpri         AS dt_abertura,
+                c2.c2_datprf         AS dt_prazo_op,
+                TRIM(b1.b1_desc)     AS desc_produto,
+                TRIM(b1.b1_tipo)     AS tipo_produto,
+                TRIM(b1.b1_um)       AS um
+            FROM public.sc2010 c2
+            LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto)
+                AND COALESCE(b1.d_e_l_e_t_,'') IN ('',' ')
+            WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
+              AND TRIM(c2.c2_num) = ANY($1)
+        `, [mainOpNums]);
+
+        // Buscar informações de cabeçalho do pedido de venda da OP pai (sequência 001) no Protheus
+        const headersRes = await pgClient.query(`
+            SELECT DISTINCT
+                TRIM(c2.c2_num)      AS pedido,
+                TRIM(c2.c2_item)     AS item_op,
+                TRIM(c2.c2_pedido)   AS num_pedido,
+                TRIM(c2.c2_itempv)   AS item_pv,
+                TRIM(c6.c6_entreg)   AS dt_entrega_pv,
+                TRIM(c6.c6_zclien)   AS cliente,
+                TRIM(c5.c5_client)   AS cod_cliente
+            FROM public.sc2010 c2
+            LEFT JOIN public.sc6010 c6 ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido)
+                AND TRIM(c6.c6_itemop) = TRIM(c2.c2_item)
+                AND COALESCE(c6.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
+            WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
+              AND TRIM(c2.c2_num) = ANY($1)
+              AND TRIM(c2.c2_sequen) = '001'
+        `, [mainOpNums]);
+
+        const mainInfoMap = {};
+        headersRes.rows.forEach(r => {
+            mainInfoMap[`${r.pedido}_${r.item_op}`] = {
+                num_pedido: r.num_pedido,
+                item_pv: r.item_pv,
+                dt_entrega_pv: r.dt_entrega_pv,
+                cliente: r.cliente,
+                cod_cliente: r.cod_cliente
+            };
+        });
+
+        // Enriquecer OPs filhas com dados do cliente e pedido
+        const opRows = secondRes.rows.map(r => {
+            const info = mainInfoMap[`${r.pedido}_${r.item_op}`] || {};
+            return {
+                ...r,
+                num_pedido: r.num_pedido?.trim() ? r.num_pedido : (info.num_pedido || ''),
+                item_pv: r.item_pv?.trim() ? r.item_pv : (info.item_pv || ''),
+                dt_entrega_pv: r.dt_entrega_pv || (info.dt_entrega_pv || ''),
+                cliente: r.cliente?.trim() ? r.cliente : (info.cliente || ''),
+                cod_cliente: r.cod_cliente?.trim() ? r.cod_cliente : (info.cod_cliente || '')
+            };
+        });
+
+        const produtos = [...new Set(opRows.map(r => r.produto).filter(Boolean))];
+        const opKeys = opRows.map(r => `${r.pedido}${r.item_op}${r.sequen}`);
+
+        // ── 2. Empenhos da OP no Protheus (SD4010) ──────────────────────────
+        const sd4Res = await pgClient.query(`
+            SELECT TRIM(d4_op) AS op_pai, TRIM(d4_cod) AS componente,
+                   d4_qtdeori AS qtde_orig, d4_quant AS qtde_pend
+            FROM public.sd4010
+            WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(d4_op) = ANY($1)
+        `, [opKeys]);
+
+        const sd4Map = {};
+        const allComponents = new Set([...produtos]);
+        sd4Res.rows.forEach(r => {
+            if (!sd4Map[r.op_pai]) sd4Map[r.op_pai] = [];
+            sd4Map[r.op_pai].push(r);
+            allComponents.add(r.componente);
+        });
+
+        const allComponentsArr = [...allComponents];
+
+        // ── 3. Roteiro (SG2010) ───────────────────────────────────────────────
+        const sg2Res = await pgClient.query(`
+            SELECT TRIM(g2_produto) produto, TRIM(g2_operac) operac,
+                   TRIM(g2_recurso) recurso, TRIM(g2_descri) desc_recurso, g2_tempad tempo_padrao
+            FROM public.sg2010
+            WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(g2_produto) = ANY($1)
+            ORDER BY g2_produto, g2_operac
+        `, [allComponentsArr]);
+
+        const rotMap = {};
+        sg2Res.rows.forEach(r => {
+            if (!rotMap[r.produto]) rotMap[r.produto] = [];
+            rotMap[r.produto].push(r);
+        });
+
+        // ── 3.5 Descrições (SB1010) ───────────────────────────────────────────
+        let filhoDescMap = {};
+        if (allComponentsArr.length > 0) {
+            const sb1Res = await pgClient.query(
+                `SELECT TRIM(b1_cod) cod, TRIM(b1_desc) descricao, TRIM(b1_tipo) tipo, TRIM(b1_um) um
+                 FROM public.sb1010
+                 WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(b1_cod) = ANY($1)`,
+                [allComponentsArr]
+            );
+            sb1Res.rows.forEach(r => { filhoDescMap[r.cod] = r; });
+        }
+        pgClient.release(); pgClient = null;
+
+        // ── 3.7 Buscar quais desses produtos possuem desenho técnico (.pdf) no MySQL ──
+        const docsSet = new Set();
+        if (allComponentsArr.length > 0) {
+            try {
+                const [docsRows] = await mysqlPool.query(
+                    `SELECT DISTINCT TRIM(produto_codigo) AS produto_codigo 
+                     FROM produtos_docs 
+                     WHERE produto_codigo IN (?) 
+                       AND url_arquivo IS NOT NULL 
+                       AND url_arquivo != '' 
+                       AND LOWER(url_arquivo) LIKE '%.pdf'`,
+                    [allComponentsArr]
+                );
+                docsRows.forEach(d => {
+                    docsSet.add(d.produto_codigo.trim());
+                });
+            } catch (mysqlErr) {
+                console.error('[pcpRefinado] Erro ao carregar docsSet:', mysqlErr.message);
+            }
+        }
+
+        // ── 4. Apontamentos (MySQL) ───────────────────────────────────────────
+        const opNums = [...new Set(opRows.map(r => r.pedido))];
+        const [appointments] = await mysqlPool.query(`
+            SELECT op_numero, op_item, op_sequencia, operacao_codigo,
+                   SUM(quantidade) AS total_produzido, MAX(data_fim) AS ultima_atualizacao
+            FROM app_production_appointments WHERE op_numero IN (?)
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+        `, [opNums]);
+
+        const apptMap = {};
+        appointments.forEach(a => {
+            apptMap[`${a.op_numero}|${a.op_item}|${a.op_sequencia}|${a.operacao_codigo}`] = a;
+        });
+
+        // ── 5. FCS Planning por operação (MySQL) ──────────────────────────────
+        const [fcsPlanning] = await mysqlPool.query(`
+            SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
+            FROM app_production_planning WHERE op_numero IN (?)
+        `, [opNums]);
+
+        const fcsMap = {};
+        const fcsItemSummary = {};
+        fcsPlanning.forEach(f => {
+            const opN = (f.op_numero || '').trim();
+            const opI = (f.op_item || '').trim();
+            const opS = (f.op_sequencia || '').trim();
+            const opC = (f.operacao_codigo || '').trim();
+            fcsMap[`${opN}|${opI}|${opS}|${opC}`] = f;
+            const sk = `${opN}|${opI}`;
+            if (!fcsItemSummary[sk]) {
+                fcsItemSummary[sk] = { dt_inicio_fcs: f.data_planejada_inicio, dt_fim_fcs: f.data_planejada_fim };
+            } else {
+                if (f.data_planejada_inicio && f.data_planejada_inicio < fcsItemSummary[sk].dt_inicio_fcs) fcsItemSummary[sk].dt_inicio_fcs = f.data_planejada_inicio;
+                if (f.data_planejada_fim && f.data_planejada_fim > fcsItemSummary[sk].dt_fim_fcs) fcsItemSummary[sk].dt_fim_fcs = f.data_planejada_fim;
+            }
+        });
+
+        // ── 5.5 Forecast PCP ─────────────────────────────────────────────────
+        const forecastMap = await getForecastMapCached();
+
+        // ── 6. Montar Árvore ──────────────────────────────────────────────────
+        const pedidosMap = {};
+        opRows.forEach(op => {
+            const numPedido = op.num_pedido || op.pedido;
+            if (!pedidosMap[numPedido]) {
+                pedidosMap[numPedido] = { pedido: numPedido, cliente: op.cliente || '—', cod_cliente: op.cod_cliente, itens: {}, total_itens: 0, pct_global: 0 };
+            }
+            const itemKey = `${op.pedido}_${op.item_op}_${op.sequen}`;
+            if (!pedidosMap[numPedido].itens[itemKey]) {
+                const fcs = fcsItemSummary[`${op.pedido}|${op.item_op}`] || {};
+                const fc = forecastMap.get(`${numPedido}|${op.item_pv || op.item_op}`) || forecastMap.get(`${op.pedido}|${op.item_op}`) || {};
+
+                const roteiro = (rotMap[op.produto] || []).map(r => {
+                    const appt = apptMap[`${op.pedido}|${op.item_op}|${op.sequen}|${r.operac}`] || {};
+                    const fcsOp = fcsMap[`${op.pedido}|${op.item_op}|${op.sequen}|${r.operac}`] || {};
+                    const qtdeProd = Number(appt.total_produzido) || 0;
+                    const qtdePlan = Number(op.qtde) || 0;
+                    const pct = qtdePlan > 0 ? Math.min(100, Math.round((qtdeProd / qtdePlan) * 100)) : 0;
+                    let statusRec = 'waiting';
+                    if (pct >= 100) statusRec = 'done';
+                    else if (pct > 0) statusRec = 'in_progress';
+                    return {
+                        operac: r.operac, recurso: r.recurso, desc_recurso: r.desc_recurso || r.recurso,
+                        tempo_padrao: Number(r.tempo_padrao) || 0,
+                        tempo_total_min: Math.round((Number(r.tempo_padrao) || 0) * (Number(op.qtde) || 0)),
+                        qtde_planejada: qtdePlan, qtde_produzida: qtdeProd, pct, status: statusRec,
+                        ultima_atualizacao: appt.ultima_atualizacao || null,
+                        data_planejada_inicio: fcsOp.data_planejada_inicio || null,
+                        data_planejada_fim: fcsOp.data_planejada_fim || null
+                    };
+                });
+
+                let pctItem = roteiro.length > 0 ? roteiro[roteiro.length - 1].pct : 0;
+                let statusItem = 'waiting';
+                if (pctItem >= 100) statusItem = 'done';
+                else if (pctItem > 0 || roteiro.some(r => r.pct > 0)) statusItem = 'in_progress';
+
+                const opKey = `${op.pedido}${op.item_op}${op.sequen}`;
+                const materiais = (sd4Map[opKey] || []).map(m => {
+                    const d = filhoDescMap[m.componente] || {};
+                    const qtdeTotal = Number(m.qtde_orig) || 0;
+                    const qtdeUnit = Number(op.qtde) > 0 ? (qtdeTotal / Number(op.qtde)) : qtdeTotal;
+                    return {
+                        codigo: m.componente,
+                        descricao: d.descricao || '—',
+                        tipo: d.tipo || '?',
+                        um: d.um || '?',
+                        nivel: '01',
+                        qtde_unitaria: qtdeUnit,
+                        qtde_total: qtdeTotal,
+                        perda: 0,
+                        has_pdf: docsSet.has(m.componente.trim())
+                    };
+                });
+
+                // Mapa de roteiro por componente PI/PA (para expandir sub-ops no frontend)
+                const materiais_roteiro = {};
+                materiais.forEach(m => {
+                    if ((m.tipo === 'PI' || m.tipo === 'PA') && rotMap[m.codigo]) {
+                        materiais_roteiro[m.codigo] = rotMap[m.codigo].map(r => ({
+                            operac: r.operac,
+                            recurso: r.recurso,
+                            desc_recurso: r.desc_recurso || r.recurso,
+                            tempo_padrao: Number(r.tempo_padrao) || 0,
+                            data_planejada_inicio: null,
+                            data_planejada_fim: null
+                        }));
+                    }
+                });
+
+                pedidosMap[numPedido].itens[itemKey] = {
+                    op: op.pedido, item_op: op.item_op, item_pv: op.item_pv, sequen: op.sequen,
+                    produto: op.produto, desc_produto: op.desc_produto || '—', tipo_produto: op.tipo_produto || '?',
+                    um: op.um || 'UN', qtde: Number(op.qtde) || 0, qtde_feita: Number(op.qtde_feita) || 0,
+                    qtde_pendente: Math.max(0, (Number(op.qtde) || 0) - (Number(op.qtde_feita) || 0)),
+                    pct_global: pctItem, status: statusItem,
+                    dt_abertura: op.dt_abertura || '', dt_prazo_op: op.dt_prazo_op || '',
+                    dt_entrega_pv: op.dt_entrega_pv || '',
+                    dt_pcp: fc.data_entrega_pcp || null,
+                    dt_faturamento_previsto: fc.data_prevista_faturamento || null,
+                    dt_inicio_fcs: fcs.dt_inicio_fcs || null, dt_fim_fcs: fcs.dt_fim_fcs || null,
+                    recursos: roteiro, materiais, materiais_roteiro,
+                    has_pdf: docsSet.has(op.produto.trim())
+                };
+            }
+        });
+
+        // ── 7. Arrays + filtros ───────────────────────────────────────────────
+        const pedidos = Object.values(pedidosMap).map(p => {
+            const itensArr = Object.values(p.itens);
+            const itensFiltrados = statusFilter && statusFilter !== 'Todos'
+                ? itensArr.filter(i => {
+                    if (statusFilter === 'Pendente') return i.status === 'waiting';
+                    if (statusFilter === 'Em Andamento') return i.status === 'in_progress';
+                    if (statusFilter === 'Concluído') return i.status === 'done';
+                    return true;
+                })
+                : itensArr;
+            const totalPct = itensFiltrados.reduce((s, i) => s + (i.pct_global || 0), 0);
+            p.pct_global = itensFiltrados.length > 0 ? Math.round(totalPct / itensFiltrados.length) : 0;
+            p.total_itens = itensFiltrados.length;
+            p.itens = itensFiltrados.sort((a, b) => (a.item_pv || '').localeCompare(b.item_pv || ''));
+            return p;
+        }).filter(p => p.itens.length > 0);
+
+        res.json({ pedidos, total: pedidos.reduce((s, p) => s + p.total_itens, 0) });
+
+    } catch (err) {
+        console.error('❌ [ESTRUTURA-PEDIDO]', err.message, err.stack?.split('\n')[1]);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (pgClient) pgClient.release();
+    }
+});
+
+
 
 module.exports = router;

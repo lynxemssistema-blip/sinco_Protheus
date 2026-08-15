@@ -194,7 +194,9 @@ export const generateOPMirrorPdf = (mirrorData) => {
             doc.text(`MetalFisa - App Gerado em: ${dataGeracao}`, 10, doc.internal.pageSize.getHeight() - 10);
         }
 
-        doc.save(`Espeho_OP_Pedido_${mirrorData.pedido?.pedido || 'desconhecido'}.pdf`);
+        const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+        const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
+        doc.save(`Espeho_OP_Pedido_${mirrorData.pedido?.pedido || 'desconhecido'}${opSuffix}.pdf`);
 
     } catch (e) {
         console.error("Error drawing OP Mirror PDF:", e);

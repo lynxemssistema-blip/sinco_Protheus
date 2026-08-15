@@ -313,7 +313,9 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
         if (includeRoteiroStamp) {
             filenameSuffix = includeDesc ? '_Por_Recursos_Roteiro_Descricao.pdf' : '_Por_Recursos_Roteiro.pdf';
         }
-        link.download = `Pacote_OP_${safePedido}${filenameSuffix}`;
+    const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+    const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
+        link.download = `Pacote_OP_${safePedido}${opSuffix}${filenameSuffix}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

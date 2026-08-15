@@ -74,7 +74,7 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
 
-        console.error(`❌ Erro na API [${status || 'NET'}] ${error.config?.method?.toUpperCase() || '?'} ${error.config?.url} — ${error.message}`);
+        console.error(`❌ Erro na API [${status || 'NET'}] ${error.config?.method?.toUpperCase() || '?'} ${error.config?.url} — ${error.message}`, data);
         return Promise.reject(error);
     }
 );
@@ -461,6 +461,7 @@ export const getPlanningHistory = (op) => api.get(`/production/planning-history/
 export const getPlanningPrefs = (op) => api.get(`/production/planning-prefs/${encodeURIComponent(op)}`).then(res => res.data);
 export const savePlanningPrefs = (op, prefs) => api.put(`/production/planning-prefs/${encodeURIComponent(op)}`, prefs).then(res => res.data);
 export const getRecursosOrdem = () => api.get('/pcp-refinado/recursos').then(res => res.data);
+export const getEstruturaPedido = (params) => api.get('/pcp-refinado/estrutura-pedido', { params }).then(res => res.data);
 
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);

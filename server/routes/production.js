@@ -896,6 +896,10 @@ router.get('/', async (req, res) => {
     try {
         const { op, item, sequencia, produto, cliente, operacao, planned_date_start, planned_date_end, setor } = req.query;
         const pedido = req.query.pedido;
+        
+        // Paginacao
+        const limitSql = parseInt(req.query.limit, 10) || 500;
+        const offsetSql = parseInt(req.query.offset, 10) || 0;
 
         // 0. Pre-filter by Planned Dates (MySQL) if provided
         let plannedOpsFilter = null;
@@ -1099,7 +1103,7 @@ WITH op_base AS (
         AND COALESCE(root_op.d_e_l_e_t_,'') IN ('', ' ')
     ${s1Where}
     ORDER BY c2.c2_num DESC, c2.c2_item, c2.c2_sequen
-    LIMIT 5000
+    LIMIT ${limitSql} OFFSET ${offsetSql}
 ),
 op_enrich AS (
     SELECT
@@ -1133,7 +1137,6 @@ op_enrich AS (
     ${clienteClause}
     ${pendingClause}
     ORDER BY ob.c2_num DESC, ob.c2_item, ob.c2_sequen
-    LIMIT 500
 )
 SELECT
     oe.c2_num AS op, oe.c2_item AS item_op, oe.c2_sequen AS sequen,
@@ -1402,7 +1405,11 @@ ORDER BY oe.c2_num DESC, oe.c2_item, oe.c2_sequen
 
 // GET /api/production/matrix - Matrix View (Items as Rows, Operations as Columns)
 router.get('/matrix', async (req, res) => {
+    let pgClient = null;
     try {
+        pgClient = await db.connect();
+        await pgClient.query("SET client_encoding TO 'WIN1252'");
+
         const { op, produto, cliente, pedido, operacao, data_inicio, data_fim } = req.query;
 
         if (!op && !produto && !cliente && !pedido && !operacao && !data_inicio && !data_fim) {
@@ -1421,7 +1428,7 @@ router.get('/matrix', async (req, res) => {
         let prodCond = '';
         if (produto) {
             try {
-                const prodMatchRes = await db.query(`
+                const prodMatchRes = await pgClient.query(`
                     SELECT TRIM(b1_cod) as cod
                     FROM public.sb1010
                     WHERE (b1_cod ILIKE $1 OR b1_desc ILIKE $1)
@@ -1443,7 +1450,7 @@ router.get('/matrix', async (req, res) => {
         let opCond = '';
         if (operacao) {
             try {
-                const sgRes = await db.query(`
+                const sgRes = await pgClient.query(`
                     SELECT DISTINCT TRIM(g2_produto) as cod
                     FROM public.sg2010
                     WHERE COALESCE(d_e_l_e_t_,'') IN ('', ' ')
@@ -1526,7 +1533,7 @@ router.get('/matrix', async (req, res) => {
             ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
         `;
 
-        const pgRes = await db.query(pgQuery, params);
+        const pgRes = await pgClient.query(pgQuery, params);
         const items = pgRes.rows;
 
         console.log(`📦 [MATRIX] Found ${items.length} items`);
@@ -1547,7 +1554,7 @@ router.get('/matrix', async (req, res) => {
 
         // 4. Buscar Roteiros (Postgres Only)
         // JOIN com g2_recurso para informações extras, mas chave principal é g2_operac
-        const routingRes = await db.query(`
+        const routingRes = await pgClient.query(`
             SELECT
                 c2.c2_num as op,
                 c2.c2_item as item_op,
@@ -1780,6 +1787,11 @@ router.get('/matrix', async (req, res) => {
     } catch (err) {
         console.error('[MATRIX FATAL ERROR]', err);
         res.status(500).json({ error: err.message, step: 'FATAL', stack: err.stack });
+    } finally {
+        if (pgClient) {
+            await pgClient.query("SET client_encoding TO 'UTF8'").catch(e => console.error('Erro resetando encoding:', e));
+            pgClient.release();
+        }
     }
 });
 

@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getAppointmentHistory, getCompanySettings, getOpRoteiroSaldo, saveAppointment } from '../services/api';
 import { useTimer } from '../contexts/TimerContext';
 
-export default function ProductionAppointmentModal({ op, onClose, onSave }) {
+export default function ProductionAppointmentModal({ op, onClose, onSave, onSaved }) {
     const { user, hasPermission } = useAuth();
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
     const timerId = `${op.op}_${op.item_op || '01'}_${op.sequen || '001'}_${op.operacao}`;
@@ -252,8 +252,9 @@ export default function ProductionAppointmentModal({ op, onClose, onSave }) {
             }
 
             // Notifica o componente pai sobre a conclusão do salvamento para atualizar a listagem
-            if (savedPayloads.length > 0) {
-                onSave(savedPayloads);
+            const callback = onSave || onSaved;
+            if (savedPayloads.length > 0 && typeof callback === 'function') {
+                callback(savedPayloads);
             }
         } catch (error) {
             // Como o modal já sumiu, lidamos com erros em background

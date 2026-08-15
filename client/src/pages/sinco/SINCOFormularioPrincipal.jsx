@@ -760,6 +760,7 @@ export default function SINCOFormularioPrincipal() {
         }
 
         const formatItem = (r) => ({
+            RECNO: r.recno ? Number(r.recno) : "",
             Z1_CLIENTE: String(r.cliente || '').trim().toUpperCase(),
             Z1_LOJA: String(r.loja || '0001').trim().toUpperCase(),
             Z1_PRODUTO: produto,
@@ -772,25 +773,21 @@ export default function SINCOFormularioPrincipal() {
         const alteracoes = [];
 
         validos.forEach(r => {
-            if (r.isNew) {
+            if (r.isNew || !r.recno) {
                 insercoes.push(formatItem(r));
             } else {
                 const index = editedRestricoes.indexOf(r);
                 const original = restricoes[index];
                 
-                // Se a chave mudou (revisão ou cod cliente), o Protheus não aceita NOPER=4. Devemos inserir (NOPER=3).
-                const keyChanged = String(original.revisao).trim().toUpperCase() !== String(r.revisao).trim().toUpperCase() || 
-                                   String(original.cod_cliente).trim().toUpperCase() !== String(r.cod_cliente).trim().toUpperCase();
-                
-                if (keyChanged) {
-                    insercoes.push(formatItem(r));
-                } else {
-                    // Só envia alteração se algo mudou
-                    if (String(original.desc_cliente).trim().toUpperCase() !== String(r.desc_cliente).trim().toUpperCase() || 
-                        String(original.cliente).trim().toUpperCase() !== String(r.cliente).trim().toUpperCase() || 
-                        String(original.loja).trim().toUpperCase() !== String(r.loja).trim().toUpperCase()) {
-                        alteracoes.push(formatItem(r));
-                    }
+                // Como agora temos o RECNO como ID absoluto da linha, 
+                // qualquer edição (seja chave ou secundária) é enviada como NOPER=4 (Alteração)
+                if (String(original.revisao).trim().toUpperCase() !== String(r.revisao).trim().toUpperCase() || 
+                    String(original.cod_cliente).trim().toUpperCase() !== String(r.cod_cliente).trim().toUpperCase() ||
+                    String(original.desc_cliente).trim().toUpperCase() !== String(r.desc_cliente).trim().toUpperCase() || 
+                    String(original.cliente).trim().toUpperCase() !== String(r.cliente).trim().toUpperCase() || 
+                    String(original.loja).trim().toUpperCase() !== String(r.loja).trim().toUpperCase()) {
+                    
+                    alteracoes.push(formatItem(r));
                 }
             }
         });

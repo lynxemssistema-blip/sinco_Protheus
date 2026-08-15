@@ -276,9 +276,8 @@ export default function ProductionControl() {
         setLoading(true);
         setApiError(null);
         try {
-            const params = { ...filters, limit: 5000 };
+            const params = { ...filters };
             
-            // For status array, join it into a single string for backend if needed, 
             if (Array.isArray(params.status) && params.status.length > 0) {
                 params.status = params.status.join(',');
             }
@@ -289,13 +288,36 @@ export default function ProductionControl() {
                 }
             });
 
-            const res = await getProductionDashboard(params, currentAbortController.signal);
-            
-            // Only update state if this request wasn't aborted by a newer one
             if (abortControllerRef.current === currentAbortController) {
-                setOps(res.data);
-                setVisibleCount(100);
-                setTotal(res.total);
+                setOps([]);
+            }
+
+            const BATCH_SIZE = 500;
+            let offset = 0;
+            let keepLoading = true;
+            let accumulatedData = [];
+
+            while (keepLoading) {
+                if (abortControllerRef.current !== currentAbortController) break;
+
+                const res = await getProductionDashboard({ ...params, limit: BATCH_SIZE, offset }, currentAbortController.signal);
+                
+                if (abortControllerRef.current !== currentAbortController) break;
+
+                const newBatch = res.data || [];
+                accumulatedData = [...accumulatedData, ...newBatch];
+                
+                setOps([...accumulatedData]);
+                setVisibleCount(Math.max(100, accumulatedData.length));
+                if (res.total !== undefined) {
+                    setTotal(res.total);
+                }
+
+                if (newBatch.length < BATCH_SIZE) {
+                    keepLoading = false;
+                } else {
+                    offset += BATCH_SIZE;
+                }
             }
         } catch (error) {
             if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {

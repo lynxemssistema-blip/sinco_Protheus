@@ -37,6 +37,7 @@ const Settings = React.lazy(() => import('./pages/Settings'));
 const ProductionControl = React.lazy(() => import('./pages/ProductionControl'));
 const ProductionAnalytics = React.lazy(() => import('./pages/ProductionAnalytics'));
 const ProductionMatrixPage = React.lazy(() => import('./pages/ProductionMatrixPage'));
+const BOMAppointmentPage   = React.lazy(() => import('./pages/BOMAppointmentPage'));
 const VerticalAppointmentPage = React.lazy(() => import('./pages/VerticalAppointmentPage'));
 const ConferenciaPage = React.lazy(() => import('./pages/ConferenciaPage'));
 const EngineeringOrdersPage = React.lazy(() => import('./pages/EngineeringOrdersPage'));
@@ -466,6 +467,11 @@ function App() {
                                         <Route path="/producao-matrix" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionMatrixPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/apontamento-estrutura" element={
+                                            <Layout fullWidth={true}>
+                                                <BOMAppointmentPage />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/apontamento-vertical" element={

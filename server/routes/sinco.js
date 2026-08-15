@@ -1016,7 +1016,8 @@ router.get('/restricoes/:codigo', async (req, res) => {
                 TRIM(z1_nomecli)  AS nome_cliente,
                 TRIM(z1_codcli)   AS cod_cliente,
                 TRIM(z1_desccli)  AS desc_cliente,
-                TRIM(z1_revisao)  AS revisao
+                TRIM(z1_revisao)  AS revisao,
+                R_E_C_N_O_        AS recno
             FROM public.sz1010
             WHERE TRIM(z1_produto) = $1
               AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'

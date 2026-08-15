@@ -494,7 +494,9 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
         }
 
         const safePedido = mirrorData.pedido.pedido ? String(mirrorData.pedido.pedido).replace(/[^a-zA-Z0-9]/g, '') : 'Desconhecido';
-        doc.save(`Rastreabilidade_Operacoes_PV_${safePedido}.pdf`);
+        const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+        const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
+        doc.save(`Rastreabilidade_Operacoes_PV_${safePedido}${opSuffix}.pdf`);
 
     } catch (error) {
         console.error("Error generating OP Operation Refresh PDF:", error);

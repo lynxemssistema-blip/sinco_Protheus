@@ -14,7 +14,8 @@ const EMPTY_FORM = {
     serie_metalfisa: '',
     lote: '',
     numero_lote: '',
-    gerar_op_protheus: true
+    gerar_op_protheus: true,
+    sobrescrever_existente: false
 };
 
 const getDisplayOp = (op, itemNumber) => {
@@ -103,6 +104,20 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                 value={value.observacao}
                 onChange={e => onChange(p => ({ ...p, observacao: e.target.value }))} />
         </div>
+
+        {!isEdit && (
+            <div className="p-3 mb-2 rounded-lg border bg-amber-50 border-amber-100 flex items-center justify-between">
+                <div>
+                    <div className="text-sm font-semibold text-amber-900">Sobrescrever Existentes</div>
+                    <div className="text-xs text-amber-700">Substituir se já houver data PCP?</div>
+                </div>
+                <label className="relative flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={value.sobrescrever_existente} 
+                        onChange={(e) => onChange(p => ({ ...p, sobrescrever_existente: e.target.checked }))} />
+                    <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${value.sobrescrever_existente ? 'bg-amber-500 after:translate-x-full' : 'bg-gray-300'}`}></div>
+                </label>
+            </div>
+        )}
 
         {!hideOpSwitch && (
             <div className={`p-3 rounded-lg border flex items-center justify-between opacity-80 ${canGenerateOp ? 'bg-indigo-50 border-indigo-100' : 'bg-red-50 border-red-100'}`}>
@@ -280,7 +295,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                     serie_cliente: formData.serie_cliente || null,
                     serie_metalfisa: formData.serie_metalfisa || null,
                     lote: formData.lote || null,
-                    numero_lote: formData.numero_lote || null
+                    numero_lote: formData.numero_lote || null,
+                    sobrescrever_existente: formData.sobrescrever_existente
                 });
 
                 // 3. Criar OPs no Protheus — quantidade = o que foi efetivamente salvo no PCP
@@ -408,7 +424,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 lote: formData.lote || null,
                 numero_lote: formData.numero_lote || null,
                 qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
-                op_protheus: hasOp ? item.op_num : null
+                op_protheus: hasOp ? item.op_num : null,
+                sobrescrever_existente: formData.sobrescrever_existente
             });
 
             const forecastId = forecastRes.data.id;
@@ -633,15 +650,6 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                                     canGenerateOp={canGenerateOp}
                                 />
                             </div>
-                            {!isBatch && qtdDisponivel <= 0 && programacoes.length > 0 && (
-                                <div className="absolute inset-0 z-10 bg-white/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
-                                    <div className="bg-emerald-100 p-3 rounded-full mb-3 shadow-sm border border-emerald-200">
-                                        <CheckCircle className="h-8 w-8 text-emerald-600" />
-                                    </div>
-                                    <h4 className="font-bold text-gray-800 mb-1">Total Programado!</h4>
-                                    <p className="text-xs text-gray-500">A quantidade total deste item já foi parametrizada.</p>
-                                </div>
-                            )}
                         </div>
                     )}
 

@@ -21,6 +21,7 @@ import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
 import PCPBalanceModal from './PCPBalanceModal';
 import ClassificacaoModal from './orders/ClassificacaoModal';
+import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -121,6 +122,8 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [corteForecastTarget, setCorteForecastTarget] = useState(null);
     const [pcpBalanceTarget, setPcpBalanceTarget] = useState(null);
+    const [showSmartPlanModal, setShowSmartPlanModal] = useState(false);
+    const [smartPlanTarget, setSmartPlanTarget] = useState([]);
     const [reportSelectedItems, setReportSelectedItems] = useState(null);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
@@ -339,18 +342,38 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
     const hasNextPage = page < totalPages;
 
+    
+    const toggleSelectItem = (pedido, item) => {
+        const id = `${pedido}-${item}`;
+        setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            if (viewMode === 'flat') {
+                setSelectedItems([...sortedOrders]);
+            } else {
+                const allIds = [];
+                sortedOrders.forEach(o => {
+                    const itemsList = o.itens || (orderItems && orderItems[o.pedido]) || [];
+                    itemsList.forEach(i => allIds.push(`${o.pedido}-${i.item}`));
+                });
+                setSelectedItems(allIds);
+            }
+        } else {
+            setSelectedItems([]);
+        }
+    };
     const handleExpandRow = useCallback((pedidoId) => {
         hookHandleExpandRow(pedidoId, expandedRow, setExpandedRow);
     }, [hookHandleExpandRow, expandedRow, setExpandedRow]);
 
     // Selection State (Flat View)
     const [selectedItems, setSelectedItems] = useState([]);
+    const [isBulkPrinting, setIsBulkPrinting] = useState(false);
+    const [bulkPrintProgress, setBulkPrintProgress] = useState({ current: 0, total: 0, label: '' });
     const [activeRowKey, setActiveRowKey] = useState(null);
 
-    const handleSelectAll = (e) => {
-        if (e.target.checked) setSelectedItems([...orders]);
-        else setSelectedItems([]);
-    };
 
     const handleSelectItem = useCallback((item) => {
         setSelectedItems(prev => {
@@ -836,6 +859,68 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
+    
+    const handleBulkPrint = async (type) => {
+        if (selectedItems.length === 0) return;
+        setIsBulkPrinting(true);
+        setBulkPrintProgress({ current: 0, total: selectedItems.length, label: '' });
+
+        try {
+            for (let i = 0; i < selectedItems.length; i++) {
+                const sel = selectedItems[i];
+                let pedido, item;
+                if (typeof sel === 'string') {
+                    [pedido, item] = sel.split('-');
+                } else {
+                    pedido = sel.pedido;
+                    item = sel.item;
+                }
+                setBulkPrintProgress({ current: i + 1, total: selectedItems.length, label: `Pedido ${pedido} Item ${item}` });
+
+                switch (type) {
+                    case 'op_mirror':
+                        await handlePrintOPMirror(pedido, null, item);
+                        break;
+                    case 'op_ficha':
+                        await handlePrintFichas(pedido, null, item);
+                        break;
+                    case 'op_oper':
+                        await handlePrintOPByOperation(pedido, null, item);
+                        break;
+                    case 'op_drawings':
+                        await handlePrintOPByOperationWithDrawings(pedido, null, item);
+                        break;
+                    case 'op_resource_drawings':
+                        await handlePrintOPByResourceWithDrawings(pedido, null, item);
+                        break;
+                    case 'op_stamp_drawings':
+                        await handlePrintOPWithOpsStampWithDrawings(pedido, null, item);
+                        break;
+                    case 'op_stamp_resource_drawings':
+                        await handlePrintOPWithOpsStampDrawingsByResource(pedido, null, item);
+                        break;
+                    case 'op_stamp_desc_drawings':
+                        await handlePrintOPWithOpsStampWithDescDrawings(pedido, null, item);
+                        break;
+                    case 'op_stamp_desc_resource_drawings':
+                        await handlePrintOPWithOpsStampWithDescDrawingsByResource(pedido, null, item);
+                        break;
+                }
+
+                if (i < selectedItems.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
+            }
+        } catch (error) {
+            console.error('Bulk print error:', error);
+            alert('Erro durante a impressão em lote.');
+        } finally {
+            setIsBulkPrinting(false);
+            setBulkPrintProgress({ current: 0, total: 0, label: '' });
+            setSelectedItems([]);
+        }
+    };
+
     const handlePrintOPMirror = async (pedido, e, itemId = null) => {
         if (e) e.stopPropagation();
         // Guard: never call op-mirror with an empty pedido (would produce 500 or /op-mirror/?...)
@@ -852,6 +937,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+            const orderObj = orders.find(o => o.pedido === pedido);
+            const targetItemObj = orderObj?.itens?.find(i => i.item === itemId);
+            mirrorData.opNumFromTable = targetItemObj ? (targetItemObj.op_num_completa || targetItemObj.op_num || '') : '';
 
 
             const { generateOPMirrorPdf } = await import('../services/opMirrorPdfGenerator');
@@ -901,6 +989,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+            const orderObj = orders.find(o => o.pedido === pedido);
+            const targetItemObj = orderObj?.itens?.find(i => i.item === itemId);
+            mirrorData.opNumFromTable = targetItemObj ? (targetItemObj.op_num_completa || targetItemObj.op_num || '') : '';
 
             const userName = user?.nome || 'Usuário';
             const { generateOPByOperationWithDrawingsPdf } = await import('../services/opByOperationWithDrawingsPdfGenerator');
@@ -1051,6 +1142,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+            const orderObj = orders.find(o => o.pedido === pedido);
+            const targetItemObj = orderObj?.itens?.find(i => i.item === itemId);
+            mirrorData.opNumFromTable = targetItemObj ? (targetItemObj.op_num_completa || targetItemObj.op_num || '') : '';
 
             const { generateOPByOperationPdf } = await import('../services/opByOperationPdfGenerator');
             generateOPByOperationPdf(mirrorData);
@@ -1863,7 +1957,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 </div>
                 
                 {/* Lote Actions */}
-                {selectedItems.length > 0 && viewMode === 'flat' && (
+                {selectedItems.length > 0 && (
                     <div className="px-4 flex items-center gap-2">
                         <button
                             onClick={() => openPriorityModal(selectedItems, 'faturamento')}
@@ -1886,6 +1980,13 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             <StickyNote className="w-4 h-4" />
                             Ata ({selectedItems.length})
                         </button>
+                                                <button
+                            onClick={() => { setSmartPlanTarget(selectedItems); setShowSmartPlanModal(true); }}
+                            className="flex items-center gap-2 px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded shadow text-sm font-medium transition-colors"
+                        >
+                            <Bot className="w-4 h-4" />
+                            Planejamento Inteligente ({selectedItems.length})
+                        </button>
                         <button
                             onClick={() => setPcpBalanceTarget(selectedItems)}
                             className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded shadow text-sm font-medium transition-colors"
@@ -1907,6 +2008,27 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             <Scissors className="w-4 h-4" />
                             Gerar Lote de Corte ({selectedItems.length})
                         </button>
+                        
+                        {/* Imprimir OPs Dropdown */}
+                        <div className="relative group z-[100]">
+                            <button className="flex items-center gap-2 px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded shadow text-sm font-medium transition-colors">
+                                <Printer className="w-4 h-4" />
+                                Imprimir OPs ({selectedItems.length})
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                            </button>
+                            <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-2xl py-2 hidden group-hover:block z-[100]">
+                                <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Formatos de Impressão</div>
+                                <button onClick={() => handleBulkPrint('op_mirror')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">Espelho OP</button>
+                                <button onClick={() => handleBulkPrint('op_ficha')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">Fichas de Operação</button>
+                                <button onClick={() => handleBulkPrint('op_oper')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP por Operações</button>
+                                <button onClick={() => handleBulkPrint('op_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos</button>
+                                <button onClick={() => handleBulkPrint('op_resource_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Por Recurso)</button>
+                                <button onClick={() => handleBulkPrint('op_stamp_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Carimbo)</button>
+                                <button onClick={() => handleBulkPrint('op_stamp_resource_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Por Recurso + Carimbo)</button>
+                                <button onClick={() => handleBulkPrint('op_stamp_desc_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Carimbo + Descrição)</button>
+                                <button onClick={() => handleBulkPrint('op_stamp_desc_resource_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Por Recurso + Carimbo + Descrição)</button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -2232,6 +2354,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                                             <table className="w-full text-sm text-left text-gray-500">
                                                                                 <thead className="text-xs text-gray-400 uppercase bg-gray-50/50 border-b border-gray-100">
                                                                                     <tr>
+                                                                                        <th className="px-3 py-2 w-10 text-center"><input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" onChange={handleSelectAll} checked={selectedItems.length > 0 && selectedItems.length >= orders.reduce((acc, o) => acc + (orderItems[o.pedido] ? orderItems[o.pedido].length : 0), 0)} /></th>
                                                                                         <th className="px-4 py-2">Item</th>
                                                                                         <th className="px-4 py-2 text-center">OP</th>
                                                                                         <th className="px-4 py-2">Cód. Produto</th>
@@ -2856,6 +2979,20 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 )
             }
             {
+                showSmartPlanModal && (
+                    <div onClick={e => e.stopPropagation()}>
+                        <PlanejamentoInteligenteModal
+                            isOpen={showSmartPlanModal}
+                            onClose={() => setShowSmartPlanModal(false)}
+                            selectedPedidos={smartPlanTarget}
+                            onPlanSuccess={() => {
+                                fetchData(); // atualiza dados mas NÃO fecha o modal — usuário precisa imprimir o relatório
+                            }}
+                        />
+                    </div>
+                )
+            }
+            {
                 pcpForecastTarget && (
                     <div onClick={e => e.stopPropagation()}>
                         <PCPForecastModal
@@ -3028,7 +3165,19 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
             
             {/* Retry Toast â€” shown during exponential backoff on 500 errors */}
             <RetryToast retryInfo={retryInfo} />
-        </div>
+        
+            {/* Bulk Printing Progress */}
+            {isBulkPrinting && bulkPrintProgress.total > 0 && (
+                <div className="fixed bottom-6 right-6 bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center space-x-4 animate-bounce">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <div>
+                        <div className="font-semibold text-lg">Gerando arquivo {bulkPrintProgress.current} de {bulkPrintProgress.total}...</div>
+                        <div className="text-emerald-100 text-sm">{bulkPrintProgress.label}</div>
+                    </div>
+                </div>
+            )}
+
+                     </div>
     );
 };
 

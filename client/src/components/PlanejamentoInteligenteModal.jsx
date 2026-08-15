@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Calendar, Play, AlertTriangle, X, CheckCircle, Clock, Loader2, BrainCircuit, Database, Cpu, FileText } from 'lucide-react';
+import { Bot, Calendar, Play, AlertTriangle, X, CheckCircle, Clock, Loader2, BrainCircuit, Database, Cpu, FileText, FileSpreadsheet } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import SmartPlannerReport from './SmartPlannerReport';
 
-export default function PlanejamentoInteligenteModal({ isOpen, onClose, selectedOps, onPlanSuccess, hermesTaskId = null }) {
+export default function PlanejamentoInteligenteModal({ isOpen, onClose, selectedOps, selectedPedidos, onPlanSuccess, hermesTaskId = null }) {
     const getTodayDate = () => {
         const today = new Date();
         return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -12,12 +12,15 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
 
     const [dataInicio, setDataInicio] = useState(getTodayDate());
     const [includeSaturday, setIncludeSaturday] = useState(false);
+    const [clearExisting, setClearExisting] = useState(false);
+    const [syncDataPcp, setSyncDataPcp] = useState(false);
     const [loading, setLoading] = useState(false);
     const [missingTimes, setMissingTimes] = useState([]);
     const [successMessage, setSuccessMessage] = useState('');
     const [agentLogs, setAgentLogs] = useState([]);
     const [reportData, setReportData] = useState(null);
     const [showReport, setShowReport] = useState(false);
+    const [exportingExcel, setExportingExcel] = useState(false);
     const [resourceChart, setResourceChart] = useState({});
     const [finalAnswer, setFinalAnswer] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
@@ -50,6 +53,8 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             setResourceChart({});
             pendingAlloc.current = null;
             setIncludeSaturday(false);
+            setClearExisting(false);
+            setSyncDataPcp(false);
         }
     }, [isOpen]);
 
@@ -153,6 +158,33 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
         setAgentLogs(prev => [...prev, { msg, icon, time: new Date() }]);
     };
 
+    // Exporta o relatório como Excel
+    const handleExportExcel = async () => {
+        if (!reportData) return;
+        setExportingExcel(true);
+        try {
+            const response = await api.post(
+                '/pcp-refinado/smart-plan/export-excel',
+                { report: reportData },
+                { responseType: 'blob' }
+            );
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            const now = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            link.href = url;
+            link.setAttribute('download', `Planejamento-FCS-${now}.xlsx`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('Excel gerado com sucesso!');
+        } catch (err) {
+            toast.error('Erro ao gerar Excel: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setExportingExcel(false);
+        }
+    };
+
     // Distribui `totalMin` pelos dias úteis entre dateStart e dateEnd,
     // respeitando o teto de `capDia` por dia e a opção de sábado.
     const distributeLoad = (dateStart, dateEnd, totalMin, capDia, includeSat = false) => {
@@ -191,40 +223,52 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             return;
         }
 
-        if (!selectedOps || selectedOps.length === 0) {
-            toast.warning('Nenhuma OP selecionada para planejamento.');
+        if ((!selectedOps || selectedOps.length === 0) && (!selectedPedidos || selectedPedidos.length === 0)) {
+            toast.warning('Nenhuma OP ou Pedido selecionado para planejamento.');
             return;
         }
 
-        const opList = selectedOps.map(op => op.op || op.op_num);
+        const opList = selectedOps?.map(op => op.op || op.op_num) || [];
 
         setLoading(true);
         setMissingTimes([]);
         setSuccessMessage('');
         setAgentLogs([]);
+        addLog(`[SISTEMA] Iniciando Inteligência de Planejamento para ${selectedPedidos?.length ? selectedPedidos.length + ' Pedidos' : (selectedOps?.length || 0) + ' OPs'}...`, <Bot className="w-4 h-4" />);
 
         try {
             const BATCH_SIZE = 50;
             let totalPlans = 0;
             let finalReport = null;
-            let totalLotes = Math.ceil(opList.length / BATCH_SIZE);
+            let totalLotes = Math.ceil(opList.length / BATCH_SIZE) || 1;
 
-            addLog(`Iniciando sequenciamento de ${opList.length} OPs em ${totalLotes} lote(s)...`, <BrainCircuit className="w-4 h-4 text-indigo-500" />);
-
-            for (let i = 0; i < opList.length; i += BATCH_SIZE) {
+            for (let i = 0; i < (opList.length || 1); i += BATCH_SIZE) {
                 const batch = opList.slice(i, i + BATCH_SIZE);
                 const loteNum = Math.floor(i / BATCH_SIZE) + 1;
 
-                addLog(`📦 Processando lote ${loteNum}/${totalLotes} (${batch.length} OPs)...`, <FileText className="w-4 h-4 text-indigo-400" />);
+                addLog(`📦 Processando lote ${loteNum}/${totalLotes}...`, <FileText className="w-4 h-4 text-indigo-400" />);
 
-                const res = await api.post('/pcp-refinado/smart-plan', {
-                    ops: batch,
-                    data_inicio: dataInicio,
-                    include_saturday: includeSaturday,
-                    preload_existing: loteNum > 1 // Carrega do BD a partir do lote 2
-                }, {
-                    timeout: 600000 // 10 minutos por lote (600000ms)
-                });
+                let res;
+                if (selectedPedidos && selectedPedidos.length > 0) {
+                    res = await api.post('/pcp-refinado/smart-plan-pedidos', {
+                        pedidos: selectedPedidos,
+                        data_inicio: dataInicio,
+                        include_saturday: includeSaturday,
+                        clear_existing: clearExisting,
+                        sync_data_pcp: syncDataPcp
+                    });
+                } else {
+                    res = await api.post('/pcp-refinado/smart-plan', {
+                        ops: batch,
+                        data_inicio: dataInicio,
+                        include_saturday: includeSaturday,
+                        preload_existing: loteNum > 1,
+                        clear_existing: loteNum === 1 ? clearExisting : false, // Só limpa no primeiro lote
+                        sync_data_pcp: syncDataPcp
+                    }, {
+                        timeout: 600000
+                    });
+                }
 
                 if (res.data.agent_logs && res.data.agent_logs.length > 0) {
                     pendingAlloc.current = null;
@@ -247,6 +291,12 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                 minNeeded: parseFloat(opMatch[2]),
                                 capDia: parseFloat(opMatch[3])
                             };
+                            // Tenta capturar descrição do log de capacidade anterior
+                            // Formato: "  [MO0013] LASER: 1920 min/dia"
+                            const descMatch = log.match(/\[(\w+)\]\s+(.+?):\s*[\d]+\s*min\/dia/);
+                            if (descMatch && descMatch[1] === opMatch[1]) {
+                                pendingAlloc.current.desc = descMatch[2].trim();
+                            }
                         }
                         const allocMatch = log.match(/Aloca[çc][aã]o conclu[íi]da: de (\d{4}-\d{2}-\d{2}) at[eé] (\d{4}-\d{2}-\d{2})/);
                         if (allocMatch && pendingAlloc.current) {
@@ -255,7 +305,7 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                             const dayMap = distributeLoad(d1, d2, minNeeded, capDia, includeSaturday);
                             setResourceChart(prev => {
                                 const next = { ...prev };
-                                if (!next[recurso]) next[recurso] = { capDia, dates: {} };
+                                if (!next[recurso]) next[recurso] = { capDia, desc: pendingAlloc.current.desc || '', dates: {} };
                                 next[recurso].dates = { ...next[recurso].dates };
                                 Object.entries(dayMap).forEach(([d, min]) => {
                                     next[recurso].dates[d] = (next[recurso].dates[d] || 0) + min;
@@ -283,7 +333,10 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                 }
             }
 
-            setSuccessMessage(`Sucesso! ${totalPlans} operações sequenciadas pelo agente de IA.`);
+            const modoLabel = selectedPedidos?.length
+                ? `${selectedPedidos.length} pedido(s)`
+                : `${totalPlans} operações`;
+            setSuccessMessage(`✅ Planejamento concluído! ${modoLabel} sequenciados pelo Agente FCS. Use os botões abaixo para exportar o relatório.`);
             toast.success('Planejamento inteligente aplicado com sucesso!');
 
             if (finalReport) setReportData(finalReport);
@@ -371,6 +424,8 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         data_inicio:      dataInicio,
                         include_saturday: includeSaturday,
                         preload_existing: true,
+                        clear_existing:   loteNum === 1 ? clearExisting : false,
+                        sync_data_pcp:    syncDataPcp
                     }, { timeout: 600000 });
 
                     totalPlans += res.data.plans || 0;
@@ -387,10 +442,13 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                     }
 
                     if (res.data.report?.carga_diaria) {
+                        const resumoRecursos = res.data.report.resumo_recursos || {};
                         setResourceChart(prev => {
                             const next = { ...prev };
                             for (const [rec, info] of Object.entries(res.data.report.carga_diaria)) {
-                                if (!next[rec]) next[rec] = { capDia: info.capDia, dates: {} };
+                                const desc = resumoRecursos[rec]?.desc_recurso || next[rec]?.desc || '';
+                                if (!next[rec]) next[rec] = { capDia: info.capDia, desc, dates: {} };
+                                else next[rec].desc = next[rec].desc || desc;
                                 for (const [d, min] of Object.entries(info.dates || {})) {
                                     next[rec].dates[d] = (next[rec].dates[d] || 0) + min;
                                 }
@@ -496,8 +554,58 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                             </div>
                             <span className="text-sm text-slate-600 font-medium">Incluir Sábado</span>
                         </label>
+
+                        {/* Toggle: Limpar carga existente */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none pb-0.5" title="Apaga toda a alocação futura dos recursos antes de recalcular. Use para replanejar do zero.">
+                            <div
+                                onClick={() => !loading && setClearExisting(v => !v)}
+                                className={`w-10 h-5 rounded-full relative transition-colors ${clearExisting ? 'bg-red-500' : 'bg-slate-300'} ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${clearExisting ? 'translate-x-5' : ''}`} />
+                            </div>
+                            <span className={`text-sm font-medium ${clearExisting ? 'text-red-600' : 'text-slate-600'}`}>
+                                {clearExisting ? '🗑️ Limpar carga existente' : 'Manter carga existente'}
+                            </span>
+                        </label>
+
+                        {/* Toggle: Sincronizar Data PCP */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none pb-0.5" title="Quando a Data PCP for anterior à Data Início, sobrescreve a Data PCP com a Prev. Fat calculada.">
+                            <div
+                                onClick={() => !loading && setSyncDataPcp(v => !v)}
+                                className={`w-10 h-5 rounded-full relative transition-colors ${syncDataPcp ? 'bg-amber-500' : 'bg-slate-300'} ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${syncDataPcp ? 'translate-x-5' : ''}`} />
+                            </div>
+                            <span className={`text-sm font-medium ${syncDataPcp ? 'text-amber-700' : 'text-slate-600'}`}>
+                                {syncDataPcp ? '📅 Sync Prev. Fat → Data PCP' : 'Não sincronizar Data PCP'}
+                            </span>
+                        </label>
+
+                        {/* Aviso explicativo do Sync — aparece apenas quando ativo */}
+                        {syncDataPcp && (
+                            <div className="w-full mt-1 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed space-y-1.5 animate-in fade-in duration-200">
+                                <p className="font-bold text-amber-900 flex items-center gap-1.5">
+                                    <span>📅</span> Regra do Sync Prev. Fat → Data PCP
+                                </p>
+                                <p>
+                                    Após calcular a <span className="font-semibold">Prev. Fat</span> de cada pedido, o motor verifica se a <span className="font-semibold">Data PCP</span> está <span className="font-semibold text-red-700">vencida</span> (anterior à Data de Início).
+                                </p>
+                                <div className="bg-amber-100 rounded p-2 space-y-0.5 font-mono text-[11px]">
+                                    <div className="text-slate-600">Data de Início informada: <span className="font-bold text-slate-800">{dataInicio || '—'}</span></div>
+                                    <div className="text-red-700">Data PCP vencida (ex): <span className="line-through">05/07/2026</span></div>
+                                    <div className="text-emerald-700">Motor calcula Prev. Fat: <span className="font-bold">28/08/2026</span></div>
+                                    <div className="text-amber-700 font-bold">→ Data PCP atualizada para: 28/08/2026 ✓</div>
+                                </div>
+                                <p className="text-amber-700">
+                                    ⚠️ Apenas datas PCP <span className="font-semibold">anteriores à Data de Início</span> são sobrescritas. Datas futuras válidas <span className="font-semibold">nunca são alteradas</span>.
+                                </p>
+                            </div>
+                        )}
+
                         <div className="text-xs text-slate-400 self-end pb-1">
-                            {selectedOps.length} OP(s) selecionada(s)
+                            {selectedPedidos?.length
+                                ? `${selectedPedidos.length} Pedido(s) selecionado(s)`
+                                : `${selectedOps?.length ?? 0} OP(s) selecionada(s)`}
                         </div>
                     </div>
 
@@ -549,7 +657,10 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                             <div key={recurso}>
                                                 <div className="flex items-center gap-2 mb-1.5">
                                                     <span className="text-xs font-bold text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded">{recurso}</span>
-                                                    <span className="text-xs text-slate-400">cap. {info.capDia} min/dia</span>
+                                                    {info.desc && info.desc !== recurso && (
+                                                        <span className="text-xs font-semibold text-indigo-600">{info.desc}</span>
+                                                    )}
+                                                    <span className="text-xs text-slate-400 ml-auto">cap. {info.capDia} min/dia</span>
                                                 </div>
                                                 <div className="space-y-1">
                                                     {sortedDates.map(([date, allocated]) => {
@@ -691,20 +802,26 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         <button onClick={onClose} className="px-5 py-2 text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition-colors text-sm">Cancelar</button>
                         {!hermesTaskId && (
                             <div className="flex gap-2 flex-wrap">
-                                <button
-                                    onClick={handlePlanAll}
-                                    disabled={!dataInicio}
-                                    title="Executa o FCS em TODAS as OPs abertas do Protheus, em lotes de 100"
-                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
-                                >
-                                    <Play className="w-4 h-4" /> Planejar Todas as OPs
-                                </button>
+                                {/* Só mostra 'Planejar Todas as OPs' no modo de OPs, nunca no modo de Pedidos */}
+                                {!selectedPedidos?.length && (
+                                    <button
+                                        onClick={handlePlanAll}
+                                        disabled={!dataInicio}
+                                        title="Executa o FCS em TODAS as OPs abertas do Protheus, em lotes de 100"
+                                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
+                                    >
+                                        <Play className="w-4 h-4" /> Planejar Todas as OPs
+                                    </button>
+                                )}
                                 <button
                                     onClick={handlePlan}
-                                    disabled={!dataInicio || selectedOps.length === 0}
+                                    disabled={!dataInicio || (selectedPedidos?.length ? selectedPedidos.length === 0 : (selectedOps?.length ?? 0) === 0)}
                                     className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 text-sm"
                                 >
-                                    <Play className="w-4 h-4" /> Executar ({selectedOps.length} OPs)
+                                    <Play className="w-4 h-4" />
+                                    {selectedPedidos?.length
+                                        ? `Executar (${selectedPedidos.length} Pedido${selectedPedidos.length > 1 ? 's' : ''})`
+                                        : `Executar (${selectedOps?.length ?? 0} OPs)`}
                                 </button>
                             </div>
                         )}
@@ -730,7 +847,28 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                     </div>
                 )}
                 {successMessage && !loading && (
-                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
+                    <div className="p-4 border-t border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0">
+                        {/* Botões de Exportação */}
+                        {reportData && (
+                            <div className="flex gap-2 flex-wrap">
+                                <button
+                                    onClick={handleExportExcel}
+                                    disabled={exportingExcel}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg transition-all shadow-md active:scale-95 text-sm flex items-center gap-2"
+                                >
+                                    {exportingExcel
+                                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</>
+                                        : <><FileSpreadsheet className="w-4 h-4" /> Exportar Excel</>
+                                    }
+                                </button>
+                                <button
+                                    onClick={() => setShowReport(true)}
+                                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-all shadow-md active:scale-95 text-sm flex items-center gap-2"
+                                >
+                                    <FileText className="w-4 h-4" /> Ver Relatório PDF
+                                </button>
+                            </div>
+                        )}
                         <button onClick={onClose} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all shadow-md active:scale-95 text-sm">Fechar</button>
                     </div>
                 )}

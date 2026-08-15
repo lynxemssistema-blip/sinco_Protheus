@@ -164,74 +164,83 @@ async function rebuildDailyOccupancyCache() {
             return dates.length > 0 ? dates : [startStr];
         };
 
-        // 6. Aggregation
+        // 6. Aggregation — direto de app_production_planning por recurso_codigo + data_planejada_inicio
+        // Não depende de operacao_codigo ou roteiro. O planning já tem recurso_codigo gravado.
         console.time('Step 6: Aggregation');
         const aggregated = {};
-        const uniquePlans = [];
-        const seenPlans = new Set();
-        for (const plan of planRows) {
-            const key = `${(plan.op_numero||'').trim()}|${(plan.op_item||'').trim()}|${(plan.op_sequencia||'').trim()}|${(plan.operacao_codigo||'').trim()}`;
-            if (!seenPlans.has(key)) {
-                seenPlans.add(key);
-                uniquePlans.push(plan);
-            }
-        }
 
-        // Yield the event loop every 500 items so concurrent API requests are not blocked
+        // Busca a carga planejada agrupada por recurso + dia diretamente do MySQL
+        // Distribui a carga de OPs que cruzam múltiplos dias pelos dias de negócio no range
         const yieldLoop = () => new Promise(resolve => setImmediate(resolve));
 
-        for (let planIdx = 0; planIdx < uniquePlans.length; planIdx++) {
+        // Processa em chunks de 500 para não bloquear o loop de eventos
+        for (let planIdx = 0; planIdx < planRows.length; planIdx++) {
             if (planIdx > 0 && planIdx % 500 === 0) await yieldLoop();
-            const plan = uniquePlans[planIdx];
-            const opn  = (plan.op_numero       || '').trim();
-            const itn  = (plan.op_item         || '').trim();
-            const opcn = (plan.operacao_codigo || '').trim();
+            const plan = planRows[planIdx];
+            const resCode = (plan.recurso_codigo || '').trim();
+            if (!resCode) continue;
+
+            const opn = (plan.op_numero || '').trim();
+            const itn = (plan.op_item   || '').trim();
+
+            // Descarta pedidos inativos
+            const opRow = opMap[`${opn}|${itn}`];
+            if (opRow?.pedido && inativosSet.has(opRow.pedido)) continue;
+
             const pIni = fmtDate(plan.data_planejada_inicio);
             const pFim = fmtDate(plan.data_planejada_fim);
             if (!pIni) continue;
 
-            const opRow = opMap[`${opn}|${itn}`];
-            if (!opRow) continue;
-            // Se tiver pedido e estiver na lista de inativos, desconsidera
-            if (opRow.pedido && inativosSet.has(opRow.pedido)) continue;
+            const conf     = configMap[resCode] || {};
+            const capacity = parseFloat(conf.capacidade_diaria_minutos) || 480;
 
-            const prodRouting = routingMap[opRow.produto] || {};
-            const routeEntry  = prodRouting[opcn];
-            if (!routeEntry) continue;
+            // Obtém o tempo unitário do roteiro para calcular carga em minutos
+            let unitTimeMin = 0;
+            if (opRow) {
+                const opcn = (plan.operacao_codigo || '').trim();
+                const prodRouting = routingMap[opRow.produto] || {};
+                const rEntry = prodRouting[opcn.padStart(4,'0')] || prodRouting[opcn];
+                if (rEntry) {
+                    unitTimeMin = parseFloat(rEntry.tempo) || 0;
+                }
+            }
+            // Fallback: usa tempo_padrao_minutos do recurso se não achou roteiro
+            if (unitTimeMin <= 0) unitTimeMin = parseFloat(conf.tempo_padrao_minutos) || 0;
 
-            const resCode = routeEntry.recurso_codigo;
-            if (!resCode) continue;
-
-            const conf = configMap[resCode] || {};
-            const g2_minutos = Math.round((parseFloat(routeEntry.tempo) || 0) * 1000) / 1000;
-            let unitTimeMin = g2_minutos > 0 ? g2_minutos : (parseFloat(conf.tempo_padrao_minutos) || 0);
-
-            const apptKey = `${opn}|${itn}|${opcn}`;
-            const qtde_apontada = apptsMap[apptKey] || 0;
-            const qtde_total    = Number(opRow.qtde) || 0;
-            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (Number(opRow.qtde_feita) || 0);
+            // Calcula qtde pendente
+            const opcKey = `${opn}|${itn}|${(plan.operacao_codigo||'').trim()}`;
+            const qtde_apontada = apptsMap[opcKey] || 0;
+            const qtde_total    = opRow ? (Number(opRow.qtde) || 0) : 0;
+            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (opRow ? (Number(opRow.qtde_feita) || 0) : 0);
             const qtde_pendente = Math.max(0, qtde_total - qtde_feita);
 
-            const min_totais = qtde_total                        * unitTimeMin;
-            const min_exec   = Math.min(qtde_feita, qtde_total)  * unitTimeMin;
-            const min_pend   = qtde_pendente                      * unitTimeMin;
-            const capacity   = conf.capacidade_diaria_minutos || 480;
+            const min_totais = qtde_total    * unitTimeMin;
+            const min_exec   = Math.min(qtde_feita, qtde_total) * unitTimeMin;
+            const min_pend   = qtde_pendente * unitTimeMin;
 
+            // Distribui pelos dias úteis entre inicio e fim
             const bDays = getBusinessDaysBetween(pIni, pFim);
-            let remaining_totais = min_totais;
+            let remaining_totais = min_totais || capacity; // se não há tempo, usa 1 capacidade como proxy
+
+            const resDescri = (opRow && routingMap[opRow.produto])
+                ? Object.values(routingMap[opRow.produto]).find(e => e.recurso_codigo === resCode)?.recurso_descri || resCode
+                : resCode;
 
             for (let i = 0; i < bDays.length; i++) {
                 const d = bDays[i];
-                let alloc_totais = (i === bDays.length - 1) ? remaining_totais : Math.min(remaining_totais, capacity);
-                let alloc_pend = (min_totais > 0) ? (alloc_totais / min_totais) * min_pend : 0;
-
-                remaining_totais -= alloc_totais;
+                const alloc_totais = (i === bDays.length - 1) ? remaining_totais : Math.min(remaining_totais, capacity);
+                const alloc_pend   = (min_totais > 0) ? (alloc_totais / min_totais) * min_pend : alloc_totais;
+                remaining_totais  -= alloc_totais;
 
                 if (!aggregated[d]) aggregated[d] = {};
                 if (!aggregated[d][resCode]) {
                     aggregated[d][resCode] = {
-                        recurso_codigo: resCode, recurso_descri: routeEntry.recurso_descri,
-                        minutos_consumidos: 0, minutos_totais: 0, minutos_executados: 0, minutos_pendentes: 0,
+                        recurso_codigo: resCode,
+                        recurso_descri: resDescri,
+                        minutos_consumidos: 0,
+                        minutos_totais: 0,
+                        minutos_executados: 0,
+                        minutos_pendentes: 0,
                         capacidade_diaria: capacity
                     };
                 }

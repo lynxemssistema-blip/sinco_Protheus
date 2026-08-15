@@ -225,7 +225,9 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Pacote_OP_${safePedido}.pdf`;
+    const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+    const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
+        link.download = `Pacote_OP_${safePedido}${opSuffix}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

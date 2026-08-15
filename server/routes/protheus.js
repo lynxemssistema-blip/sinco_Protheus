@@ -16,6 +16,32 @@ async function queryProtheus(sql, params = []) {
 }
 
 // =========================================================================
+// ROTA: Buscar Produto Info (Fiscal/Logistica) para VB.NET
+// =========================================================================
+router.get('/produto-info/:codigo', async (req, res) => {
+    try {
+        const codigo = req.params.codigo;
+        const codigoLimpo = String(codigo).toUpperCase().trim();
+        const sql = `SELECT b1_posipi, b1_locpad, b1_origem, b1_finalid, b1_xcoddes FROM public.sb1010 WHERE TRIM(b1_cod) = $1 AND COALESCE(d_e_l_e_t_, '') = ''`;
+        const prodRes = await queryProtheus(sql, [codigoLimpo]);
+        if (prodRes.length > 0) {
+            res.json({
+                b1_posipi: prodRes[0].b1_posipi?.trim() || "00000000",
+                b1_locpad: prodRes[0].b1_locpad?.trim() || "03",
+                b1_origem: prodRes[0].b1_origem?.trim() || "0",
+                b1_finalid: prodRes[0].b1_finalid?.trim() || "1",
+                b1_xcoddes: prodRes[0].b1_xcoddes?.trim() || "",
+                existe: true
+            });
+        } else {
+            res.json({ b1_posipi: "00000000", b1_locpad: "03", b1_origem: "0", b1_finalid: "1", b1_xcoddes: "", existe: false });
+        }
+    } catch (err) {
+        res.json({ b1_posipi: "00000000", b1_locpad: "03", b1_origem: "0", b1_finalid: "1", b1_xcoddes: "", existe: false });
+    }
+});
+
+// =========================================================================
 // ROTA: Buscar Associação Fornecedor x Produto (De/Para NF)
 // =========================================================================
 router.post('/de-para-produtos', async (req, res) => {
@@ -267,6 +293,10 @@ router.post('/produtos/create', async (req, res) => {
 // =========================================================================
 router.post('/produtos/update', async (req, res) => {
     try {
+        console.log('\n======================================================');
+        console.log('[PRODUTOS UPDATE] INICIANDO REQUISIÇÃO DE EDIÇÃO...');
+        console.log('[PRODUTOS UPDATE] Payload recebido do frontend:', JSON.stringify(req.body, null, 2));
+        
         const {
             codigo,
             titulo,
@@ -300,6 +330,8 @@ router.post('/produtos/update', async (req, res) => {
             throw new Error('Token JWT retornado estava em branco.');
         }
 
+        console.log('[PRODUTOS UPDATE] Token JWT obtido com sucesso!');
+
         // 2. Limpeza e Formatação
         let tituloLimpo = (titulo || '').toUpperCase().trim();
         tituloLimpo = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
@@ -313,19 +345,24 @@ router.post('/produtos/update', async (req, res) => {
         const numEspessura = parseFloat(espessura) || 0;
         const numArea = parseFloat(area) || 0; // Area = B5_VOLUME no desktop app
 
-        // 2.5 Resgatar valores originais (Fiscal/Logística) para não sobrescrever
+        // 2.5 Resgatar valores originais (Fiscal/Logística e Desenho) para não sobrescrever
         let b1_posipi = "00000000";
         let b1_locpad = "03";
         let b1_origem = "0";
         let b1_finalid = "1";
+        let b1_xcoddes = codDesHigienizado; // Usa o novo caso não encontre
+        let noperVal = "3"; // Por padrao assume Novo
 
         try {
-            const prodRes = await queryProtheus(`SELECT b1_posipi, b1_locpad, b1_origem, b1_finalid FROM public.sb1010 WHERE b1_cod = $1 AND COALESCE(d_e_l_e_t_, '') = ''`, [String(codigo).toUpperCase().trim()]);
+            const prodRes = await queryProtheus(`SELECT b1_posipi, b1_locpad, b1_origem, b1_finalid, b1_xcoddes FROM public.sb1010 WHERE TRIM(b1_cod) = $1 AND COALESCE(d_e_l_e_t_, '') = ''`, [String(codigo).toUpperCase().trim()]);
             if (prodRes.length > 0) {
                 b1_posipi = (prodRes[0].b1_posipi || b1_posipi).trim();
                 b1_locpad = (prodRes[0].b1_locpad || b1_locpad).trim();
                 b1_origem = (prodRes[0].b1_origem || b1_origem).trim();
                 b1_finalid = (prodRes[0].b1_finalid || b1_finalid).trim();
+                // Se houver código de desenho original no banco, priorizamos ele para não perder:
+                b1_xcoddes = (prodRes[0].b1_xcoddes || b1_xcoddes).trim();
+                noperVal = "4"; // Produto Existe, faremos Update!
             }
         } catch (dbErr) {
             console.error('Aviso: Erro ao resgatar valores fiscais antigos do Produto, usando fallback padrão:', dbErr.message);
@@ -338,7 +375,7 @@ router.post('/produtos/update', async (req, res) => {
                     {
                         EMPRESA: "01",
                         CFILANT: "01",
-                        NOPER: "3", // Desktop usa 3 para Create/Update
+                        NOPER: noperVal,
                         B1_COD: String(codigo).toUpperCase().trim(),
                         B1_GRUPO: grupo.split(/[\-\s]/)[0],
                         B1_DESC: tituloLimpo,
@@ -349,7 +386,7 @@ router.post('/produtos/update', async (req, res) => {
                         B1_POSIPI: b1_posipi,
                         B1_FINALID: b1_finalid,
                         B1_ORIGEM: b1_origem,
-                        B1_XCODDES: codDesHigienizado,
+                        B1_XCODDES: b1_xcoddes,
                         B1_PESO: numPeso,
                         B1_PESBRU: numPeso,
                         B5_CEME: tituloLimpo,
@@ -362,8 +399,12 @@ router.post('/produtos/update', async (req, res) => {
             }
         };
 
+        console.log('[PRODUTOS UPDATE] Payload formatado para enviar ao Protheus:');
+        console.log(JSON.stringify(payload, null, 2));
+
         // 4. Envio POST
         const createUrl = 'https://192.168.1.60:47500/produtos/create';
+        console.log(`[PRODUTOS UPDATE] Enviando POST para: ${createUrl}`);
         const createRes = await axios.post(createUrl, payload, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
             httpsAgent,
@@ -371,6 +412,10 @@ router.post('/produtos/update', async (req, res) => {
         });
 
         const responseData = createRes.data;
+        
+        console.log('[PRODUTOS UPDATE] Resposta da TOTVS Protheus recebida:');
+        console.log(JSON.stringify(responseData, null, 2));
+        console.log('======================================================\n');
 
         res.json({ success: true, message: 'Produto salvo/atualizado no Protheus.', raw: responseData });
 
@@ -795,7 +840,8 @@ router.get('/produto-cliente/:codigo', async (req, res) => {
                 TRIM(z1_produto) as z1_produto,
                 TRIM(z1_codcli) as z1_codcli,
                 TRIM(z1_desccli) as z1_desccli,
-                TRIM(z1_revisao) as z1_revisao
+                TRIM(z1_revisao) as z1_revisao,
+                R_E_C_N_O_ as recno
             FROM public.sz1010
             WHERE TRIM(z1_produto) = $1
             AND d_e_l_e_t_ = ' '
@@ -847,9 +893,9 @@ router.post('/produto-cliente/editar', async (req, res) => {
         const responseData = createRes.data;
         console.log('📬 [SZ1 PRODUTO-CLIENTE] Resposta Protheus:', responseData);
 
-        // Se o status da API for OK, mas o conteúdo for um erro
-        if (responseData.status === "error") {
-            return res.status(400).json({ error: 'Erro ao processar produto-cliente no Protheus', details: responseData.message || responseData });
+        // Se o status da API for OK, mas o conteúdo for um erro ou erro parcial
+        if (responseData.status === "error" || responseData.status === "partial") {
+            return res.status(400).json({ error: 'Erro no Protheus', details: responseData.message || responseData });
         }
 
         res.json({ success: true, message: 'Produto-cliente (SZ1) atualizado com sucesso', raw: responseData });

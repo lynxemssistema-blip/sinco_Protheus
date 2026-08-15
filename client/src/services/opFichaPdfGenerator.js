@@ -260,7 +260,9 @@ export const generateOPFichaPdf = (mirrorData) => {
             return;
         }
 
-        doc.save(`Fichas_de_Operacao_Pedido_${mirrorData.pedido?.pedido || '000'}.pdf`);
+        const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+        const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
+        doc.save(`Fichas_de_Operacao_Pedido_${mirrorData.pedido?.pedido || '000'}${opSuffix}.pdf`);
 
     } catch (e) {
         console.error("Error drawing OP Fichas PDF:", e);

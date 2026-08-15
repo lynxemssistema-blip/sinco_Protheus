@@ -1,0 +1,4 @@
+Created At: 2026-08-14T14:41:41-03:00
+Completed At: 2026-08-14T14:41:42-03:00
+{"File":"c:\\Users\\lynx\\Documents\\MetalFisa Anty\\server\\routes\\pcpRefinado.js","LineNumber":1917,"LineContent":"// GET /api/pcp-refinado/estrutura-pedido"}
+{"File":"c:\\Users\\lynx\\Documents\\MetalFisa Anty\\server\\routes\\pcpRefinado.js","LineNumber":1921,"LineContent":"router.get('/estrutura-pedido', async (req, res) =\u003e {"}
