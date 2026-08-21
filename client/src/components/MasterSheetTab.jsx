@@ -4,6 +4,7 @@ import { exportMasterSheetExcel, exportMasterSheetPdf } from '../services/master
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Download, Info, Table, Box, List, Settings, Activity, BarChart2, X, ChevronDown, FileText, Loader2, Play } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
 
 const getFileUrl = (path) => {
     if (!path) return '';
@@ -185,7 +186,8 @@ const MasterSheetTab = ({ filterParams }) => {
         { id: 'carga', label: 'Carga por Recurso', icon: <Settings className="w-4 h-4" /> },
         { id: 'capacidade_periodo', label: 'Capacidade do Período', icon: <BarChart2 className="w-4 h-4" /> },
         { id: 'execucao', label: 'Execução OP', icon: <Activity className="w-4 h-4" /> },
-        { id: 'analise', label: 'Análise de Carga', icon: <BarChart2 className="w-4 h-4" /> }
+        { id: 'analise', label: 'Análise de Carga', icon: <BarChart2 className="w-4 h-4" /> },
+        { id: 'grafico_capacidade', label: 'Gráfico Capacidade', icon: <BarChart2 className="w-4 h-4" /> }
     ];
 
     return (
@@ -277,6 +279,7 @@ const MasterSheetTab = ({ filterParams }) => {
                 {activeTab === 'capacidade_periodo' && <CapacidadePeriodoTab data={data} filterParams={filterParams} />}
                 {activeTab === 'execucao' && <ExecucaoTab data={data} />}
                 {activeTab === 'analise' && <AnaliseTab data={data} />}
+                {activeTab === 'grafico_capacidade' && <CapacidadeGraficoTab data={data} filterParams={filterParams} />}
             </div>
         </div>
     );
@@ -1149,14 +1152,14 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
 
     // ── Calculate load and totals per resource ──
     const reportData = useMemo(() => {
-        const MIN_POR_HORA = 55;
+        const MIN_POR_HORA = 50;
         return recursos.map(r => {
             const cod = r.trim().toUpperCase();
             const capDiaria = capacidades[cod] || 0;
             const capTotal = capDiaria * days;
 
             // Sum load for this resource across all items in data.carga
-            const cargaPrevista = carga.reduce((sum, item) => {
+            let cargaPrevista = carga.reduce((sum, item) => {
                 // If filter date range is specified, strictly filter items to that range
                 if (filterParams?.dataInicial && filterParams?.dataFinal) {
                     const itemDateVal = item.data_pcp || item.entrega;
@@ -1201,7 +1204,7 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
                 <div>
                     <h2 className="text-xl font-black text-[#1E3A5F]">Capacidade do Período Filtrado</h2>
                     <p className="text-sm text-slate-500 mt-1">
-                        Carga prevista (soma total de horas) comparada à capacidade total das máquinas no período selecionado. (1 hora = 55 minutos)
+                        Carga prevista (demanda total) comparada à capacidade total das máquinas no período selecionado. (1 hora = 50 minutos)
                     </p>
                 </div>
                 <div className="bg-slate-100 px-4 py-2 rounded border border-slate-200 text-right">
@@ -1245,6 +1248,205 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
                                         </span>
                                     </div>
                                 </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const CapacidadeGraficoTab = ({ data, filterParams }) => {
+    const recursos = data.recursos || [];
+    const nomeMap = data.recursoNomeMap || {};
+    const carga = data.carga || [];
+    const capacidades = data.capacidades || {};
+
+    // ── Calculate days in period ──
+    const days = useMemo(() => {
+        let dIni = filterParams?.dataInicial ? new Date(filterParams.dataInicial) : null;
+        let dFim = filterParams?.dataFinal ? new Date(filterParams.dataFinal) : null;
+
+        if (!dIni || !dFim) {
+            const pcpDates = carga.map(c => {
+                const dateVal = c.data_pcp || c.entrega;
+                if (!dateVal) return null;
+                const str = String(dateVal).trim();
+                let d;
+                if (str.length === 8 && !str.includes('-')) {
+                    d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8));
+                } else {
+                    d = new Date(str);
+                }
+                return isNaN(d.getTime()) ? null : d;
+            }).filter(Boolean);
+
+            if (pcpDates.length > 0) {
+                if (!dIni) dIni = new Date(Math.min(...pcpDates));
+                if (!dFim) dFim = new Date(Math.max(...pcpDates));
+            }
+        }
+
+        if (!dIni || !dFim) return 1;
+
+        let count = 0;
+        let cur = new Date(dIni.getTime());
+        cur.setHours(0,0,0,0);
+        const end = new Date(dFim.getTime());
+        end.setHours(23,59,59,999);
+
+        while (cur <= end) {
+            const day = cur.getDay();
+            if (day !== 0 && day !== 6) {
+                count++;
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+        return count || 1;
+    }, [filterParams, carga]);
+
+    const reportData = useMemo(() => {
+        const MIN_POR_HORA = 50;
+        return recursos.map(r => {
+            const cod = r.trim().toUpperCase();
+            const capDiaria = capacidades[cod] || 0;
+            const capTotal = capDiaria * days;
+
+            let cargaPrevista = carga.reduce((sum, item) => {
+                if (filterParams?.dataInicial && filterParams?.dataFinal) {
+                    const itemDateVal = item.data_pcp || item.entrega;
+                    if (itemDateVal) {
+                        const str = String(itemDateVal).trim();
+                        let d;
+                        if (str.length === 8 && !str.includes('-')) {
+                            d = new Date(str.substring(0, 4) + '-' + str.substring(4, 6) + '-' + str.substring(6, 8) + 'T00:00:00');
+                        } else {
+                            d = new Date(str);
+                        }
+                        if (!isNaN(d.getTime())) {
+                            const dIniLimit = new Date(filterParams.dataInicial);
+                            const dFimLimit = new Date(filterParams.dataFinal);
+                            if (d < dIniLimit || d > dFimLimit) {
+                                return sum;
+                            }
+                        }
+                    }
+                }
+                return sum + (Number(item['rec_' + r]) || 0);
+            }, 0);
+
+            const saldo = capTotal - cargaPrevista;
+            const ocupacao = capTotal > 0 ? (cargaPrevista / capTotal) * 100 : 0;
+
+            return {
+                recurso: r,
+                nome: nomeMap[r] || r,
+                capTotalHrs: parseFloat((capTotal / MIN_POR_HORA).toFixed(2)),
+                cargaPrevistaHrs: parseFloat((cargaPrevista / MIN_POR_HORA).toFixed(2)),
+                saldoHrs: parseFloat((saldo / MIN_POR_HORA).toFixed(2)),
+                ocupacao: parseFloat(ocupacao.toFixed(2))
+            };
+        });
+    }, [recursos, capacidades, days, carga, nomeMap, filterParams]);
+
+    const CustomTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            const data = payload[0].payload;
+            return (
+                <div className="bg-white p-3 border border-slate-200 rounded shadow-lg text-sm">
+                    <p className="font-bold text-[#1E3A5F] border-b pb-1 mb-2">{data.nome} ({label})</p>
+                    <p className="text-slate-600">Capacidade: <span className="font-semibold text-slate-800">{data.capTotalHrs}h</span></p>
+                    <p className="text-blue-600">Demanda: <span className="font-semibold">{data.cargaPrevistaHrs}h</span></p>
+                    <p className={data.saldoHrs < 0 ? "text-red-600" : "text-emerald-600"}>
+                        Saldo: <span className="font-semibold">{data.saldoHrs}h</span>
+                    </p>
+                    <p className="text-slate-500 mt-1">Ocupação: <span className="font-bold">{data.ocupacao}%</span></p>
+                </div>
+            );
+        }
+        return null;
+    };
+
+    return (
+        <div className="p-6 w-full">
+            <div className="mb-6 border-b border-slate-200 pb-4 flex justify-between items-end">
+                <div>
+                    <h2 className="text-xl font-black text-[#1E3A5F]">Análise Gráfica: Capacidade vs Demanda</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                        Comparativo visual da capacidade total disponível e da carga de trabalho prevista por máquina.
+                    </p>
+                </div>
+                <div className="bg-slate-100 px-4 py-2 rounded border border-slate-200 text-right">
+                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">Dias Úteis Considerados</span>
+                    <span className="text-lg font-black text-[#1E3A5F]">{days} {days === 1 ? 'Dia Útil' : 'Dias Úteis'}</span>
+                </div>
+            </div>
+
+            <div className="w-full h-[500px] bg-white border border-slate-200 rounded p-4 shadow-sm">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                        data={reportData}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                    >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis 
+                            dataKey="recurso" 
+                            tick={{ fontSize: 11, fill: '#64748b' }} 
+                            angle={-45} 
+                            textAnchor="end"
+                            interval={0}
+                        />
+                        <YAxis 
+                            tick={{ fontSize: 12, fill: '#64748b' }} 
+                            label={{ value: 'Horas (h)', angle: -90, position: 'insideLeft', style: { fill: '#64748b', fontSize: 12 } }}
+                        />
+                        <RechartsTooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                        <Bar 
+                            dataKey="capTotalHrs" 
+                            name="Capacidade (h)" 
+                            fill="#94a3b8" 
+                            radius={[4, 4, 0, 0]}
+                            barSize={30}
+                        >
+                            <LabelList dataKey="capTotalHrs" position="top" angle={-90} offset={12} fill="#64748b" fontSize={11} fontWeight="bold" />
+                        </Bar>
+                        <Bar 
+                            dataKey="cargaPrevistaHrs" 
+                            name="Demanda (h)" 
+                            fill="#3b82f6" 
+                            radius={[4, 4, 0, 0]}
+                            barSize={30}
+                        >
+                            <LabelList dataKey="cargaPrevistaHrs" position="top" angle={-90} offset={12} fill="#2563eb" fontSize={11} fontWeight="bold" />
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+
+            {/* Tabela de resumo (útil para visualização e impressão PDF) */}
+            <div className="mt-8 border border-slate-200 rounded overflow-hidden shadow-sm bg-white">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                        <tr>
+                            <th className="px-4 py-2 border-r border-slate-200">Máquina</th>
+                            <th className="px-4 py-2 border-r border-slate-200 text-right">Capacidade (h)</th>
+                            <th className="px-4 py-2 border-r border-slate-200 text-right">Demanda (h)</th>
+                            <th className="px-4 py-2 border-r border-slate-200 text-right">Saldo (h)</th>
+                            <th className="px-4 py-2 text-right">% Ocup.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {reportData.map((row, idx) => (
+                            <tr key={row.recurso} className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                                <td className="px-4 py-2 font-medium text-slate-700 border-r border-slate-100">{row.nome}</td>
+                                <td className="px-4 py-2 text-right text-slate-600 border-r border-slate-100">{row.capTotalHrs.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-blue-600 border-r border-slate-100">{row.cargaPrevistaHrs.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
+                                <td className={`px-4 py-2 text-right font-semibold border-r border-slate-100 ${row.saldoHrs < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {row.saldoHrs.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                                </td>
+                                <td className="px-4 py-2 text-right text-slate-600">{row.ocupacao.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
                             </tr>
                         ))}
                     </tbody>
