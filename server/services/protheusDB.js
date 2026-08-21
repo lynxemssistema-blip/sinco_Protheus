@@ -14,6 +14,10 @@ const pool = new Pool({
     statement_timeout: 45000,
 });
 
+pool.on('connect', (client) => {
+    client.query("SET client_encoding TO 'WIN1252'");
+});
+
 pool.on('error', (err) => {
     console.error('⚠️ [Protheus DB Pool] idle client error:', err.message);
 });

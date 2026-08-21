@@ -722,6 +722,9 @@ const MateriaisNecessariosTab = ({
                     cliente: item.cliente,
                     produtoFinal: parentProd,
                     descFinal: item.descricao || '-',
+                    entrega: item.entrega || item.order?.proxima_entrega || null,
+                    dataPcp: item.data_pcp || null,
+                    qtdePcp: item.qtde_pcp != null ? item.qtde_pcp : null,
                     qtdFaturar: parentQtd,
                     materialCod: c.comp,
                     materialDesc: c.desc || '-',
@@ -911,6 +914,9 @@ const MateriaisNecessariosTab = ({
                                 <th className="px-4 py-3 border-b border-slate-300">Pedido</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Cliente</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Prod. Final</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-center w-28">Data Entrega</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-center w-28 bg-[#152e4d]">Data PCP</th>
+                                <th className="px-4 py-3 border-b border-slate-300 text-right w-24 bg-[#152e4d]">Qtde PCP</th>
                                 <th className="px-4 py-3 border-b border-slate-300 text-right w-24">Qtd Base</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Cód. Material</th>
                                 <th className="px-4 py-3 border-b border-slate-300">Descrição do Material</th>
@@ -928,13 +934,16 @@ const MateriaisNecessariosTab = ({
                         <tbody>
                             {filteredDetailed.length === 0 ? (
                                 <tr>
-                                    <td colSpan={exibirCustos ? 11 : 9} className="px-4 py-8 text-center text-slate-400">Nenhum material detalhado encontrado.</td>
+                                    <td colSpan={exibirCustos ? 14 : 12} className="px-4 py-8 text-center text-slate-400">Nenhum material detalhado encontrado.</td>
                                 </tr>
                             ) : filteredDetailed.map((row, idx) => (
                                 <tr key={`${row.pedido}_${row.materialCod}_${idx}`} className={`hover:bg-blue-50 border-b border-slate-200 last:border-b-0 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                                     <td className="px-4 py-3 font-semibold text-slate-700">{row.pedido}</td>
                                     <td className="px-4 py-3 text-slate-600 truncate max-w-xs">{row.cliente}</td>
                                     <td className="px-4 py-3 font-mono text-slate-600" title={row.descFinal}>{row.produtoFinal}</td>
+                                    <td className="px-4 py-3 text-center text-slate-600 font-mono text-xs">{formatDate(row.entrega)}</td>
+                                    <td className="px-4 py-3 text-center font-bold text-blue-800 bg-blue-50/40 font-mono text-xs">{formatDate(row.dataPcp)}</td>
+                                    <td className="px-4 py-3 text-right font-medium text-slate-700 bg-blue-50/40">{row.qtdePcp != null ? formatNum(row.qtdePcp) : '-'}</td>
                                     <td className="px-4 py-3 text-right">{formatNum(row.qtdFaturar)}</td>
                                     <td className="px-4 py-3 font-mono font-bold text-[#1E3A5F]">{row.materialCod}</td>
                                     <td className="px-4 py-3 text-slate-800 truncate max-w-xs">{row.materialDesc}</td>

@@ -1,15 +1,18 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import {
     Search, GitFork, ChevronDown, ChevronRight, CheckCircle, Clock,
     AlertTriangle, Package, Wrench, Layers, Calendar, History,
-    Play, Filter, X, RefreshCw, Building2, FileText, Info
+    Play, Filter, X, RefreshCw, Building2, FileText, Info, Workflow, Target, Truck
 } from 'lucide-react';
 import { getEstruturaPedido, saveAppointment, getAppointmentHistory, getCompanySettings, getProductDocs, getFileUrl } from '../services/api';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
 import { useTimer } from '../contexts/TimerContext';
+import BOMOrganogram from '../components/BOMOrganogram';
+import ProcessFlowchart from '../components/ProcessFlowchart';
+import ItemRomaneiosModal from '../components/ItemRomaneiosModal';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const fmtDate = (raw) => {
@@ -40,6 +43,73 @@ const STATUS_CFG = {
     waiting:     { label: 'Aguardando',   bg: 'bg-slate-100',  text: 'text-slate-500',  border: 'border-slate-200',  dot: 'bg-slate-300',  icon: AlertTriangle },
 };
 
+export const RomaneioBadge = ({ romaneios, produto, descricao, onOpenDetails }) => {
+    if (!romaneios || romaneios.length === 0) return null;
+
+    const totalEnviado = romaneios.reduce((s, r) => s + (Number(r.quantidade_enviada) || 0), 0);
+    const totalRecebido = romaneios.reduce((s, r) => s + (Number(r.quantidade_recebida) || 0), 0);
+    const totalSaldo = romaneios.reduce((s, r) => s + (Number(r.saldo_pendente) || 0), 0);
+
+    const isTodosRecebidos = totalSaldo <= 0 && totalEnviado > 0;
+    const isParcial = totalRecebido > 0 && !isTodosRecebidos;
+
+    const badgeColor = isTodosRecebidos 
+        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400'
+        : isParcial
+            ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100 hover:border-blue-400'
+            : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 hover:border-amber-400';
+
+    const iconColor = isTodosRecebidos ? 'text-emerald-600' : isParcial ? 'text-blue-600' : 'text-amber-600';
+
+    const lines = romaneios.map(r => 
+        `• Rom. #${r.romaneio_id} (${r.fornecedor_nome || 'Terceiro'}): Env ${r.quantidade_enviada} em ${fmtDate(r.data_liberacao)} | Ret ${r.quantidade_recebida} | Saldo ${r.saldo_pendente}`
+    );
+
+    const tooltipText = `Histórico de Terceiros (${romaneios.length} ${romaneios.length === 1 ? 'Romaneio' : 'Romaneios'}):\n` +
+        `• Total Enviado: ${totalEnviado} PC | Total Recebido: ${totalRecebido} PC | Saldo: ${totalSaldo} PC\n\n` +
+        lines.join('\n') +
+        `\n\n👉 Clique para abrir todos os romaneios e histórico de entregas`;
+
+    const handleClick = (e) => {
+        e.stopPropagation();
+        if (onOpenDetails) {
+            onOpenDetails({ produto, descricao, romaneios });
+        }
+    };
+
+    return (
+        <button 
+            type="button"
+            onClick={handleClick}
+            className={`inline-flex items-center gap-1.5 text-[10px] font-bold border px-2 py-0.5 rounded-md shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95 ${badgeColor}`}
+            title={tooltipText}
+        >
+            <Truck className={`w-3 h-3 ${iconColor}`} />
+            <span>
+                {romaneios.length === 1 ? (
+                    <>
+                        Rom. #{romaneios[0].romaneio_id}
+                        {isTodosRecebidos 
+                            ? ` • Retornado (${totalRecebido} PC)` 
+                            : isParcial 
+                                ? ` • Ret. Parcial (${totalRecebido}/${totalEnviado})` 
+                                : ` • No Terceiro (${totalEnviado} PC)`}
+                    </>
+                ) : (
+                    <>
+                        {romaneios.length} Romaneios
+                        {isTodosRecebidos 
+                            ? ` • Retornado (${totalRecebido} PC)` 
+                            : isParcial 
+                                ? ` • Ret. ${totalRecebido}/${totalEnviado} (${totalSaldo} Pend)` 
+                                : ` • No Terceiro (${totalEnviado} PC)`}
+                    </>
+                )}
+            </span>
+        </button>
+    );
+};
+
 const TIPO_CFG = {
     PI: { bg: 'bg-blue-100',   text: 'text-blue-700' },
     PA: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
@@ -47,9 +117,10 @@ const TIPO_CFG = {
 };
 
 const EMPTY_FILTERS = {
-    op: '', pedido: '', produto: '', cliente: '', operacao: '', recurso: '',
-    data_inicio: '', data_fim: '', data_entrega_inicio: '', data_entrega_fim: '',
+    op: '', pedido: '', cliente: '', ref_cliente: '', recurso: '',
+    data_entrega_inicio: '', data_entrega_fim: '',
     status: 'Todos', tipo_produto: 'Todos',
+    exibir_concluidos: false
 };
 
 // ─── Sub-componente: Badge de Status ─────────────────────────────────────────
@@ -94,7 +165,13 @@ function DateCard({ icon: Icon, label, value, raw, variant = 'default' }) {
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 export default function BOMAppointmentPage() {
-    const [filters, setFilters] = useState(EMPTY_FILTERS);
+    const [filters, setFilters] = useState(() => {
+        try {
+            const saved = localStorage.getItem('bom_filters');
+            if (saved) return { ...EMPTY_FILTERS, ...JSON.parse(saved) };
+        } catch(e) {}
+        return EMPTY_FILTERS;
+    });
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -105,35 +182,79 @@ export default function BOMAppointmentPage() {
     const [showMateriais, setShowMateriais] = useState(true);
     const [appointingOp, setAppointingOp] = useState(null);
     const [historyTarget, setHistoryTarget] = useState(null);
+    const [romaneiosModalData, setRomaneiosModalData] = useState(null);
     const [appointmentMode, setAppointmentMode] = useState('free');
+    const [activeTab, setActiveTab] = useState(() => {
+        return localStorage.getItem('bom_activeTab') || 'table';
+    }); // 'table' ou 'organogram'
+    const [activeRootKey, setActiveRootKey] = useState('all');
+
+    useEffect(() => {
+        localStorage.setItem('bom_filters', JSON.stringify(filters));
+    }, [filters]);
+
+    useEffect(() => {
+        localStorage.setItem('bom_activeTab', activeTab);
+    }, [activeTab]);
 
     const processedData = React.useMemo(() => {
         if (!data) return null;
         const newPedidos = data.pedidos.map(p => {
-            const itens = p.itens;
-            itens.forEach(i => { i.subItens = []; });
+            let itens = p.itens || [];
+            if (!filters.exibir_concluidos) {
+                itens = itens.filter(i => {
+                    // O filtro de concluídos/sem saldo só se aplica a OPs de primeiro nível (raízes do pedido)
+                    const isRoot = i.sequen === '001';
+                    if (!isRoot) return true; // Sempre mantém sub-OPs/componentes na árvore
+
+                    const isDone = i.status === 'done';
+                    const hasNoOpQty = i.qtde_pendente !== undefined && Number(i.qtde_pendente) <= 0;
+                    const hasNoPvSaldo = i.pv_saldo !== undefined && Number(i.pv_saldo) <= 0;
+                    
+                    // Uma OP só é ocultada por padrão se terminou no chão de fábrica E NÃO tem saldo a faturar no PV
+                    const isFullyFinished = (isDone || hasNoOpQty) && hasNoPvSaldo;
+                    return !isFullyFinished;
+                });
+            }
+            // Clona os itens para evitar mutações
+            const clonedItens = itens.map(i => ({ ...i, subItens: [] }));
             const roots = [];
-            itens.forEach(i => {
+            clonedItens.forEach(i => {
                 let isChild = false;
-                for (const parent of itens) {
+                for (const parent of clonedItens) {
                     if (parent === i) continue;
-                    if (parent.materiais.some(m => m.codigo?.trim() === i.produto?.trim())) {
+                    // Garante que o componente pertence ao mesmo item/linha do pedido de venda (item_op)
+                    if (parent.item_op === i.item_op && parent.materiais.some(m => m.codigo?.trim() === i.produto?.trim())) {
                         parent.subItens.push(i);
                         isChild = true;
                         break;
                     }
                 }
-                if (!isChild) roots.push(i);
+                if (!isChild) {
+                    roots.push(i);
+                }
             });
-            return { ...p, treeItens: roots.length > 0 ? roots : itens };
+            return { ...p, itens: clonedItens, treeItens: roots.length > 0 ? roots : clonedItens };
         });
         return { ...data, pedidos: newPedidos };
-    }, [data]);
+    }, [data, filters.exibir_concluidos]);
 
     React.useEffect(() => {
         getCompanySettings()
             .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
             .catch(() => setAppointmentMode('free'));
+    }, []);
+
+    React.useEffect(() => {
+        const hasFilter = Object.entries(filters).some(([k, v]) =>
+            !['status', 'tipo_produto', 'exibir_concluidos'].includes(k) && typeof v === 'string' && v.trim() !== ''
+        );
+        if (hasFilter) {
+            const timer = setTimeout(() => {
+                handleSearch();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
     }, []);
 
     const { timers, startTimer, pauseTimer, getElapsedTime } = useTimer();
@@ -240,17 +361,96 @@ export default function BOMAppointmentPage() {
             recurso:          recurso.recurso,
             cod_produto_op:   item.produto,
             desc_produto:     item.desc_produto,
-            desc_operacao:    `${recurso.operac} - ${recurso.desc_recurso}`,
+            desc_operacao:    `${recurso.operac} - ${recurso.recurso ? recurso.recurso + ' — ' : ''}${recurso.desc_recurso || ''}`,
             qtd_planejada_op: recurso.qtde_planejada,
             qtd_produzida_real: recurso.qtde_produzida,
         });
     };
 
-    const handleAppointmentSaved = useCallback(async (saved) => {
+    const handleAppointmentSaved = useCallback((saved) => {
         setAppointingOp(null);
         toast.success('Apontamento salvo!');
-        // Refresh apenas o item selecionado (re-fetch completo por ora)
-        if (data) handleSearch();
+        if (!data || !saved || saved.length === 0) return;
+
+        setData(prevData => {
+            if (!prevData) return null;
+            // Clonar pedidos e itens profundamente para atualizar de forma imutável
+            const newPedidos = prevData.pedidos.map(p => {
+                let pedidoChanged = false;
+                const newItens = p.itens.map(item => {
+                    // Verificar se existe algum apontamento salvo para esta OP
+                    const appts = saved.filter(appt => 
+                        item.op?.trim() === appt.op?.trim() && 
+                        item.item_op?.trim() === appt.item_op?.trim() && 
+                        item.sequen?.trim() === appt.op_sequencia?.trim()
+                    );
+                    
+                    if (appts.length > 0) {
+                        pedidoChanged = true;
+                        // Clonar recursos/roteiro
+                        const newRecursos = item.recursos.map(recurso => {
+                            const matchAppts = appts.filter(appt => recurso.operac?.trim() === appt.operacao_codigo?.trim());
+                            if (matchAppts.length > 0) {
+                                const totalApontado = matchAppts.reduce((sum, appt) => sum + (Number(appt.quantidade) || 0), 0);
+                                const novaQtd = (Number(recurso.qtde_produzida) || 0) + totalApontado;
+                                const qtdPlan = Number(recurso.qtde_planejada) || 0;
+                                const pct = qtdPlan > 0 ? Math.round((novaQtd / qtdPlan) * 100) : 0;
+                                const status = pct >= 100 ? 'done' : (pct > 0 ? 'in_progress' : 'waiting');
+                                return {
+                                    ...recurso,
+                                    qtde_produzida: novaQtd,
+                                    pct: pct > 100 ? 100 : pct,
+                                    status
+                                };
+                            }
+                            return recurso;
+                        });
+
+                        // Recalcular percentual global e status da OP
+                        const pctItem = newRecursos.length > 0 ? newRecursos[newRecursos.length - 1].pct : 0;
+                        let statusItem = 'waiting';
+                        if (pctItem >= 100) statusItem = 'done';
+                        else if (pctItem > 0 || newRecursos.some(r => r.pct > 0)) statusItem = 'in_progress';
+
+                        const updatedItem = {
+                            ...item,
+                            recursos: newRecursos,
+                            qtde_feita: newRecursos.length > 0 ? newRecursos[newRecursos.length - 1].qtde_produzida : item.qtde_feita,
+                            qtde_pendente: Math.max(0, (Number(item.qtde) || 0) - (newRecursos.length > 0 ? newRecursos[newRecursos.length - 1].qtde_produzida : item.qtde_feita)),
+                            pct_global: pctItem,
+                            status: statusItem
+                        };
+
+                        // Se este item estiver selecionado no painel lateral de detalhes, atualiza-o também
+                        setSelectedItem(prevSelected => {
+                            if (prevSelected && 
+                                prevSelected.op === updatedItem.op && 
+                                prevSelected.item_op === updatedItem.item_op && 
+                                prevSelected.sequen === updatedItem.sequen) {
+                                return updatedItem;
+                            }
+                            return prevSelected;
+                        });
+
+                        return updatedItem;
+                    }
+                    return item;
+                });
+
+                if (pedidoChanged) {
+                    // Recalcula o percentual global do pedido com base nos itens filtrados
+                    const totalPct = newItens.reduce((s, i) => s + (i.pct_global || 0), 0);
+                    const pctGlobalPedido = newItens.length > 0 ? Math.round(totalPct / newItens.length) : 0;
+                    return {
+                        ...p,
+                        itens: newItens,
+                        pct_global: pctGlobalPedido
+                    };
+                }
+                return p;
+            });
+            return { ...prevData, pedidos: newPedidos };
+        });
     }, [data]);
 
     const modeLabel = { sequence: 'Sequência', balance: 'Saldo', free: 'Livre' };
@@ -285,14 +485,12 @@ export default function BOMAppointmentPage() {
             {/* ── FILTROS ── */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                 {/* Linha principal */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                     {[
-                        { key: 'data_inicio', label: 'Abertura Início', type: 'date' },
-                        { key: 'data_fim',    label: 'Abertura Final',  type: 'date' },
                         { key: 'op',          label: 'OP',              type: 'text', ph: 'Ex: 4618, 4619' },
                         { key: 'pedido',      label: 'Pedido',          type: 'text', ph: 'Ex: 4618, 4619' },
                         { key: 'cliente',     label: 'Cliente',         type: 'text', ph: 'Nome...' },
-                        { key: 'produto',     label: 'Produto',         type: 'text', ph: 'Código ou desc...' },
+                        { key: 'ref_cliente', label: 'Ref. Cliente',    type: 'text', ph: 'Ex: 4353...' },
                     ].map(f => (
                         <div key={f.key}>
                             <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wide">{f.label}</label>
@@ -306,20 +504,6 @@ export default function BOMAppointmentPage() {
                             />
                         </div>
                     ))}
-                    {/* Operação com Legenda */}
-                    <div>
-                        <label className="flex items-center justify-between text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wide">
-                            <span>Operação</span>
-                            <button onClick={() => setShowLegend(true)} className="text-blue-500 hover:text-blue-700 normal-case text-[10px] font-normal">(Legenda)</button>
-                        </label>
-                        <input
-                            type="text" placeholder="Cód..."
-                            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={filters.operacao}
-                            onChange={e => setFilters(p => ({ ...p, operacao: e.target.value }))}
-                            onKeyDown={handleKeyDown}
-                        />
-                    </div>
                     {/* Botão Buscar */}
                     <button
                         onClick={handleSearch}
@@ -381,6 +565,16 @@ export default function BOMAppointmentPage() {
                                 {['Todos','PI','PA','MP'].map(s => <option key={s}>{s}</option>)}
                             </select>
                         </div>
+                        <div className="flex flex-col justify-end pb-2 col-span-2">
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                                <div className="relative flex items-center">
+                                    <input type="checkbox" className="sr-only" checked={filters.exibir_concluidos} onChange={e => setFilters(p => ({ ...p, exibir_concluidos: e.target.checked }))} />
+                                    <div className={`block w-8 h-5 rounded-full transition-colors ${filters.exibir_concluidos ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
+                                    <div className={`absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform ${filters.exibir_concluidos ? 'transform translate-x-3' : ''}`}></div>
+                                </div>
+                                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide group-hover:text-slate-800 transition-colors">Exibir Concluídos / Sem Saldo</span>
+                            </label>
+                        </div>
                         <button onClick={handleClearFilters} className="flex items-center justify-center gap-1 text-sm text-slate-500 border border-slate-200 rounded-lg py-2 hover:bg-slate-50">
                             <X className="w-4 h-4" /> Limpar
                         </button>
@@ -415,11 +609,49 @@ export default function BOMAppointmentPage() {
                             <GitFork className="w-5 h-5 text-blue-400" />
                             <span className="font-bold text-base">Árvore Matricial de OPs do Pedido</span>
                         </div>
-                        <span className="text-sm text-slate-300 font-medium">{processedData.total} itens</span>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center bg-slate-800 rounded-lg p-0.5 border border-slate-700/50">
+                                <button
+                                    onClick={() => setActiveTab('table')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'table' 
+                                            ? 'bg-blue-600 text-white shadow-sm' 
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <Layers className="w-3.5 h-3.5" />
+                                    Tabela de Estrutura
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('organogram')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'organogram' 
+                                            ? 'bg-blue-600 text-white shadow-sm' 
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <GitFork className="w-3.5 h-3.5" />
+                                    Organograma Interativo
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('flowchart')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'flowchart' 
+                                            ? 'bg-blue-600 text-white shadow-sm' 
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <Workflow className="w-3.5 h-3.5" />
+                                    Fluxograma de Processos
+                                </button>
+                            </div>
+                            <span className="text-sm text-slate-300 font-medium">{processedData.total} itens</span>
+                        </div>
                     </div>
 
-                    <div className="flex-1 overflow-auto">
-                        <table className="w-full text-sm">
+                    {activeTab === 'table' ? (
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                 <tr>
                                     <th className="px-5 py-3 text-left font-bold text-slate-700 uppercase tracking-wide text-xs w-[250px]">Item da Estrutura</th>
@@ -439,11 +671,12 @@ export default function BOMAppointmentPage() {
                                         const pureMaterials = (item.materiais || []).filter(m => !item.subItens?.some(sub => sub.produto?.trim() === m.codigo?.trim()));
                                         const hasChildren = (item.recursos && item.recursos.length > 0) || (item.subItens && item.subItens.length > 0) || (pureMaterials.length > 0);
                                         
+                                        const isProduzidoComSaldoPV = level === 0 && (item.status === 'done' || (item.qtde_pendente !== undefined && Number(item.qtde_pendente) <= 0)) && (Number(item.pv_saldo) > 0);
                                         const rows = [];
                                         
                                         // 1. PRODUTO (A linha principal da OP)
                                         rows.push(
-                                            <tr key={iKey} className="hover:bg-slate-50 transition-colors group border-b border-slate-100">
+                                            <tr key={iKey} className={`${isProduzidoComSaldoPV ? 'bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-500' : 'hover:bg-slate-50'} transition-colors group border-b border-slate-100`}>
                                                 <td className="px-5 py-3 cursor-pointer" onClick={() => toggleItem(iKey)} style={{ paddingLeft: `${1.25 + (level * 1.5)}rem` }}>
                                                     <div className="flex items-center gap-2">
                                                         {hasChildren ? (
@@ -461,7 +694,14 @@ export default function BOMAppointmentPage() {
                                                 </td>
                                                 <td className="px-5 py-3 cursor-pointer" onClick={() => toggleItem(iKey)}>
                                                     <div className="flex items-center justify-between gap-2 max-w-[250px]">
-                                                        <div className="font-bold text-slate-800 text-xs hover:text-blue-600 transition-colors">{item.produto}</div>
+                                                        <div className="font-bold text-slate-800 text-xs hover:text-blue-600 transition-colors">
+                                                            {item.produto}
+                                                            {item.ref_cliente && (
+                                                                <span className="ml-2 inline-block text-[9px] font-mono text-slate-500 bg-slate-100 px-1 py-0.2 rounded font-normal" title="Referência do Cliente">
+                                                                    Ref: {item.ref_cliente}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); handleViewDrawing(item.produto); }}
                                                             className={`p-1 hover:bg-slate-200 rounded transition-colors ${item.has_pdf ? 'text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 ring-1 ring-red-200/50' : 'text-slate-400 hover:text-blue-600'}`}
@@ -472,6 +712,12 @@ export default function BOMAppointmentPage() {
                                                     </div>
                                                     <div className="text-[10px] text-slate-500 truncate max-w-[220px]" title={item.desc_produto}>{item.desc_produto}</div>
                                                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                        {isProduzidoComSaldoPV && (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md shadow-xs" title="Produção concluída no chão de fábrica, aguardando faturamento/entrega no pedido de venda">
+                                                                <Target className="w-3 h-3 text-amber-600 animate-pulse" />
+                                                                Saldo PV: {item.pv_saldo} {item.um} (Produzido)
+                                                            </span>
+                                                        )}
                                                         {item.dt_pcp && (
                                                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded shadow-xs" title="Data prevista pelo PCP (Forecast)">
                                                                 <Calendar className="w-3 h-3 text-indigo-600" />
@@ -483,11 +729,24 @@ export default function BOMAppointmentPage() {
                                                                 Entrega PV: {fmtDate(item.dt_entrega_pv)}
                                                             </span>
                                                         )}
+                                                        {item.romaneios && item.romaneios.length > 0 && (
+                                                            <RomaneioBadge 
+                                                                romaneios={item.romaneios} 
+                                                                produto={item.produto} 
+                                                                descricao={item.desc_produto} 
+                                                                onOpenDetails={setRomaneiosModalData} 
+                                                            />
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-5 py-3 text-center">
                                                     <StatusBadge status={item.status} />
                                                     <div className="mt-1 text-[10px] font-bold text-slate-400">{item.pct_global}% Concluído</div>
+                                                    {isProduzidoComSaldoPV && (
+                                                        <span className="mt-1 inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title="Produzido na fábrica, pendente faturamento">
+                                                            <Target className="w-2.5 h-2.5 text-amber-600" /> Aguardando Fat.
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-5 py-3 text-center">
                                                     <div className="text-xs">
@@ -519,8 +778,8 @@ export default function BOMAppointmentPage() {
                                                             </td>
                                                             <td className="px-5 py-2.5">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-[11px] font-mono text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{r.recurso}</span>
-                                                                    <div className="text-[11px] text-slate-700 font-medium truncate max-w-[200px]" title={r.desc_recurso}>{r.desc_recurso}</div>
+                                                                    <span className="text-[11px] font-mono font-bold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{r.recurso}</span>
+                                                                    <div className="text-[11px] text-slate-800 font-semibold truncate max-w-[200px]" title={`${r.recurso} — ${r.desc_recurso}`}>{r.desc_recurso}</div>
                                                                 </div>
                                                                 {r.data_planejada_inicio && (
                                                                     <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50/80 px-1.5 py-0.5 rounded w-fit border border-blue-200" title="Data Início Planejada pelo Sequenciamento">
@@ -601,6 +860,16 @@ export default function BOMAppointmentPage() {
                                                             </td>
                                                             <td className="px-5 py-2.5">
                                                                 <div className="text-[11px] text-slate-700 font-medium truncate max-w-[250px]" title={m.descricao}>{m.descricao}</div>
+                                                                {m.romaneios && m.romaneios.length > 0 && (
+                                                                    <div className="mt-1">
+                                                                        <RomaneioBadge 
+                                                                            romaneios={m.romaneios} 
+                                                                            produto={m.codigo} 
+                                                                            descricao={m.descricao} 
+                                                                            onOpenDetails={setRomaneiosModalData} 
+                                                                        />
+                                                                    </div>
+                                                                )}
                                                             </td>
                                                             <td className="px-5 py-2.5 text-center">
                                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isProdutoIntermediario ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{m.tipo}</span>
@@ -702,6 +971,25 @@ export default function BOMAppointmentPage() {
                             </tbody>
                         </table>
                     </div>
+                    ) : activeTab === 'organogram' ? (
+                        <BOMOrganogram
+                            data={processedData}
+                            onApontar={handleApontar}
+                            onViewDrawing={handleViewDrawing}
+                            onSelectMaterial={handleSelectMaterial}
+                            activeRootKey={activeRootKey}
+                            setActiveRootKey={setActiveRootKey}
+                        />
+                    ) : (
+                        <ProcessFlowchart
+                            data={processedData}
+                            onApontar={handleApontar}
+                            onViewDrawing={handleViewDrawing}
+                            onSelectMaterial={handleSelectMaterial}
+                            activeRootKey={activeRootKey}
+                            setActiveRootKey={setActiveRootKey}
+                        />
+                    )}
                 </div>
             )}
 
@@ -727,6 +1015,13 @@ export default function BOMAppointmentPage() {
                 />
             )}
             {showLegend && <ProcessLegendModal onClose={() => setShowLegend(false)} />}
+            
+            {/* Modal de Detalhamento de Múltiplos Romaneios */}
+            <ItemRomaneiosModal
+                isOpen={!!romaneiosModalData}
+                onClose={() => setRomaneiosModalData(null)}
+                itemData={romaneiosModalData}
+            />
         </div>
     );
 }

@@ -225,7 +225,31 @@ router.post('/solicitacoes', async (req, res) => {
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'Nenhum item válido informado.' });
         }
-        console.log("====== DEBUG ITEMS[0] ======", items[0]);
+
+        // ── VALIDAÇÃO PROTHEUS: Bloquear faturamento se o Pedido de Compra do Cliente (c6_pedcli) for "PRODUÇÃO" ──
+        const protheusDB = require('../services/protheusDB');
+        try {
+            // Monta as tuplas para consulta em lote no Protheus
+            const valuesPlaceholder = items.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+            const queryParams = items.flatMap(it => [String(it.pedido).trim().padStart(6, '0'), String(it.item).trim()]);
+            const pgRes = await protheusDB.query(`
+                SELECT DISTINCT TRIM(c6_num) as pedido, TRIM(c6_item) as item, TRIM(c6_pedcli) as ped_cliente
+                FROM public.sc6010
+                WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
+                  AND (TRIM(c6_num), TRIM(c6_item)) IN (${valuesPlaceholder})
+            `, queryParams);
+
+            const hasProducao = pgRes.rows.some(r => {
+                const pcVal = String(r.ped_cliente || '').trim().toUpperCase();
+                return pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO';
+            });
+
+            if (hasProducao) {
+                return res.status(400).json({ error: 'Itens com Pedido de Compra "PRODUÇÃO" não podem ser faturados.' });
+            }
+        } catch (pgErr) {
+            console.error('⚠️ [FAT] Erro ao validar pedido de compra PRODUÇÃO no Protheus:', pgErr.message);
+        }
 
         await connection.beginTransaction();
 

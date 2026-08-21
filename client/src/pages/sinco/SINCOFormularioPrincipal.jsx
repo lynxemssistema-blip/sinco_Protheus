@@ -759,15 +759,20 @@ export default function SINCOFormularioPrincipal() {
             keySet.add(uniqueKey);
         }
 
-        const formatItem = (r) => ({
-            RECNO: r.recno ? Number(r.recno) : "",
-            Z1_CLIENTE: String(r.cliente || '').trim().toUpperCase(),
-            Z1_LOJA: String(r.loja || '0001').trim().toUpperCase(),
-            Z1_PRODUTO: produto,
-            Z1_CODCLI: String(r.cod_cliente || '').trim().toUpperCase(),
-            Z1_DESCCLI: String(r.desc_cliente || '').trim().toUpperCase(),
-            Z1_REVISAO: String(r.revisao || '').trim().toUpperCase()
-        });
+        const formatItem = (r) => {
+            const desc = String(r.desc_cliente || r.nome_cliente || dados?.descricao || produto || '').trim().toUpperCase();
+            const item = {};
+            if (r.recno && !isNaN(Number(r.recno))) {
+                item.RECNO = Number(r.recno);
+            }
+            item.Z1_CLIENTE = String(r.cliente || '').trim().toUpperCase();
+            item.Z1_LOJA = String(r.loja || '0001').trim().toUpperCase();
+            item.Z1_PRODUTO = produto;
+            item.Z1_CODCLI = String(r.cod_cliente || '').trim().toUpperCase();
+            item.Z1_DESCCLI = desc;
+            item.Z1_REVISAO = String(r.revisao || '').trim().toUpperCase();
+            return item;
+        };
 
         const insercoes = [];
         const alteracoes = [];
@@ -1270,7 +1275,7 @@ export default function SINCOFormularioPrincipal() {
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.descricao}>
-                                                    {r.isNew ? <span className="text-slate-400 italic">Produto a ser validado pelo Protheus</span> : <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || '—'}</span>}
+                                                    {r.isNew ? <span className="text-indigo-600 font-medium italic">{r.descricao || 'Produto a ser validado pelo Protheus'}</span> : <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || '—'}</span>}
                                                 </td>
                                                 <td className="px-3 py-2 text-right">
                                                     {isEditingArvore ? (
@@ -1774,7 +1779,7 @@ export default function SINCOFormularioPrincipal() {
                                                         operacao: nextOpStr,
                                                         descricao: '',
                                                         recurso: '',
-                                                        setup: 0,
+                                                        setup: 1,
                                                         tempo: 1,
                                                         isNew: true,
                                                         deleted: false
@@ -1959,14 +1964,30 @@ export default function SINCOFormularioPrincipal() {
                             </button>
                         </div>
                         <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && searchQuery.length >= 3) {
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && searchQuery.length >= 3) {
+                                                setSearching(true);
+                                                searchSincoProdutos(searchQuery)
+                                                    .then(res => setSearchResults(res || []))
+                                                    .catch(err => showToast("Erro ao buscar materiais", 'error'))
+                                                    .finally(() => setSearching(false));
+                                            }
+                                        }}
+                                        placeholder="Digite ao menos 3 letras e pressione Enter ou Buscar..."
+                                        className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-shadow"
+                                        autoFocus
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        if (searchQuery.length >= 3) {
                                             setSearching(true);
                                             searchSincoProdutos(searchQuery)
                                                 .then(res => setSearchResults(res || []))
@@ -1974,10 +1995,12 @@ export default function SINCOFormularioPrincipal() {
                                                 .finally(() => setSearching(false));
                                         }
                                     }}
-                                    placeholder="Digite ao menos 3 letras e pressione Enter..."
-                                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-shadow"
-                                    autoFocus
-                                />
+                                    disabled={searchQuery.length < 3 || searching}
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    <Search className="w-4 h-4" />
+                                    Buscar
+                                </button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-auto p-0">

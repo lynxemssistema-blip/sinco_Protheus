@@ -300,12 +300,12 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         }
                         const allocMatch = log.match(/Aloca[çc][aã]o conclu[íi]da: de (\d{4}-\d{2}-\d{2}) at[eé] (\d{4}-\d{2}-\d{2})/);
                         if (allocMatch && pendingAlloc.current) {
-                            const { recurso, minNeeded, capDia } = pendingAlloc.current;
+                            const { recurso, minNeeded, capDia, desc = '' } = pendingAlloc.current;
                             const d1 = allocMatch[1], d2 = allocMatch[2];
                             const dayMap = distributeLoad(d1, d2, minNeeded, capDia, includeSaturday);
                             setResourceChart(prev => {
                                 const next = { ...prev };
-                                if (!next[recurso]) next[recurso] = { capDia, desc: pendingAlloc.current.desc || '', dates: {} };
+                                if (!next[recurso]) next[recurso] = { capDia, desc, dates: {} };
                                 next[recurso].dates = { ...next[recurso].dates };
                                 Object.entries(dayMap).forEach(([d, min]) => {
                                     next[recurso].dates[d] = (next[recurso].dates[d] || 0) + min;

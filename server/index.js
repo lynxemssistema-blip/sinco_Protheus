@@ -214,6 +214,9 @@ console.log('✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.');
 // Romaneios Route
 app.use('/api/romaneios', require('./routes/romaneios'));
 
+// Engetron Route
+app.use('/api/engetron', require('./routes/engetron'));
+
 // Stock Route
 app.use('/api/stock', require('./routes/stock'));
 

@@ -180,8 +180,8 @@ const EngineeringReleaseModal = ({
         if (structure && structure.length > 0) {
             bomRows = structure.map(item => {
                 const status = productStatuses[item.codigo] || 'NORMAL';
-                const statusColor = status === 'NOVO' ? '#166534' : status === 'REVISAO' ? '#854d0e' : '#475569';
-                const statusBg = status === 'NOVO' ? '#dcfce7' : status === 'REVISAO' ? '#fef08a' : '#f1f5f9';
+                const statusColor = status === 'NOVO' ? '#166534' : status === 'REVISAO' ? '#854d0e' : status === 'RESTRICAO' ? '#991b1b' : '#475569';
+                const statusBg = status === 'NOVO' ? '#dcfce7' : status === 'REVISAO' ? '#fef08a' : status === 'RESTRICAO' ? '#fee2e2' : '#f1f5f9';
                 const paddingLeft = item.nivel * 20 + 8; // Indent level
                 
                 return `

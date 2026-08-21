@@ -1,17 +1,76 @@
 import React, { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
     UploadCloud, FileSpreadsheet, RefreshCw, Trash2,
-    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, FileDown, Layers, XCircle
+    CheckCircle2, FileUp, Search, X, ChevronDown, ChevronRight, AlertCircle, Download, FileDown, Layers, XCircle, Copy
 } from 'lucide-react';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
 import ConfirmModal from '../../components/ConfirmModal';
 import { toast } from 'react-toastify';
 
-const fmtDate = (d) => d
-    ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    : '';
+const fmtDate = (d) => {
+    if (!d) return '';
+    try {
+        if (d instanceof Date) {
+            return d.toLocaleDateString('pt-BR');
+        }
+        const s = String(d).split('T')[0].split(' ')[0].trim();
+        if (s.length === 8 && /^\d{8}$/.test(s)) {
+            return `${s.substring(6, 8)}/${s.substring(4, 6)}/${s.substring(0, 4)}`;
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            const [y, m, day] = s.split('-');
+            return `${day}/${m}/${y}`;
+        }
+        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+            return s;
+        }
+        const dObj = new Date(d);
+        if (!isNaN(dObj.getTime())) {
+            return dObj.toLocaleDateString('pt-BR');
+        }
+    } catch(e) {}
+    return String(d).substring(0, 10);
+};
+
 const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
+
+const normalizeSearch = (s) => {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toLowerCase()
+        .trim();
+};
+
+const parseExcelDate = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return null;
+        return val.toISOString().split('T')[0];
+    }
+    if (typeof val === 'number') {
+        // Excel serial date
+        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+        if (!isNaN(date.getTime())) {
+            return date.toISOString().split('T')[0];
+        }
+    }
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return s;
+    }
+    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) {
+        const dia = dmy[1].padStart(2, '0');
+        const mes = dmy[2].padStart(2, '0');
+        const ano = dmy[3];
+        return `${ano}-${mes}-${dia}`;
+    }
+    return null;
+};
 
 export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
     // ── Upload ────────────────────────────────────────────────────────────────
@@ -48,7 +107,29 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
         errors: []
     });
 
-    const handleUpdateSinco = async (pedido, item, dataPlanilha) => {
+    const [contextMenu, setContextMenu] = useState({
+        isOpen: false,
+        x: 0,
+        y: 0,
+        row: null,
+        rowIndex: null,
+        groupKey: null
+    });
+
+    useEffect(() => {
+        const handleClick = () => setContextMenu(prev => ({ ...prev, isOpen: false }));
+        const handleScroll = () => setContextMenu(prev => ({ ...prev, isOpen: false }));
+        
+        document.addEventListener('click', handleClick);
+        document.addEventListener('scroll', handleScroll, true);
+        
+        return () => {
+            document.removeEventListener('click', handleClick);
+            document.removeEventListener('scroll', handleScroll, true);
+        };
+    }, []);
+
+    const handleUpdateSinco = async (pedido, item, dataPlanilha, saldo) => {
         if (!pedido || !item || !dataPlanilha) {
             toast.error('Pedido, Item ou Data ausentes (Verifique o PO Number).');
             return;
@@ -58,7 +139,8 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
             const res = await api.post('/wabtec-datas/update-sinco-date', {
                 pedido_metal: pedido,
                 item: item,
-                nova_data: dataPlanilha
+                nova_data: dataPlanilha,
+                saldo: saldo
             });
             if (res.data.success) {
                 toast.success(`Pedido ${pedido} Item ${item} atualizado no SINCO!`);
@@ -89,6 +171,8 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
         });
 
         try {
+            const updates = [];
+
             for (let i = 0; i < total; i++) {
                 const r = rowsToUpdate[i];
                 const itemNum = i + 1;
@@ -98,7 +182,7 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                     ...prev,
                     currentStep: itemNum,
                     percentage: pct,
-                    message: `[${itemNum}/${total}] Sincronizando: PO ${r.po_number || '-'} | Pedido: ${r.pedido_metal || '-'}`
+                    message: `[${itemNum}/${total}] Processando: PO ${r.po_number || '-'} | Pedido: ${r.pedido_metal || '-'}`
                 }));
 
                 if (!r.pedido_metal || !r.data_pcp_cliente) {
@@ -107,11 +191,11 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
 
                 let currentItem = r.sinco_item;
 
-                // Step 1: Fetch item if missing, exactly like 'Buscar SINCO'
+                // Se faltar item, busca rapidamente
                 if (!currentItem) {
                     try {
                         const fetchRes = await api.get('/wabtec-datas/sinco-date', {
-                            params: { pedido_metal: r.pedido_metal, po_number: r.po_number, cod_produto: r.cod_produto }
+                            params: { pedido_metal: r.pedido_metal, po_number: r.po_number, cod_produto: r.cod_produto, item_cliente: r.item_cliente }
                         });
                         if (fetchRes.data && fetchRes.data.item) {
                             currentItem = fetchRes.data.item;
@@ -122,19 +206,26 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                     }
                 }
 
-                // Step 2: Update if we have the item, exactly like 'Enviar SINCO'
                 if (currentItem) {
-                    try {
-                        await api.post('/wabtec-datas/update-sinco-date', {
-                            pedido_metal: r.pedido_metal,
-                            item: currentItem,
-                            nova_data: r.data_pcp_cliente
-                        });
-                        successCount++;
-                    } catch (e) {
-                        console.error('Erro ao atualizar item no SINCO:', e);
-                    }
+                    updates.push({
+                        pedido_metal: r.pedido_metal,
+                        item: currentItem,
+                        nova_data: r.data_pcp_cliente,
+                        saldo: r.saldo
+                    });
                 }
+            }
+
+            if (updates.length > 0) {
+                setProgress(prev => ({
+                    ...prev,
+                    message: `Enviando ${updates.length} itens validados para o banco de dados...`
+                }));
+                const bulkRes = await api.post('/wabtec-datas/update-sinco-date-bulk', {
+                    updates,
+                    usuario: 'Wabtec Datas Bulk'
+                });
+                successCount = bulkRes.data?.successCount || updates.length;
             }
 
             setProgress(prev => ({
@@ -146,7 +237,7 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
             }));
 
             if (successCount > 0) {
-                toast.success(`${successCount} itens enviados ao SINCO com sucesso! (Buscados: ${fetchCount})`);
+                toast.success(`${successCount} itens enviados ao SINCO em lote com sucesso! (Buscados: ${fetchCount})`);
                 if (selectedLote) fetchData(selectedLote);
             } else {
                 toast.warning('Nenhum item válido foi processado no lote.');
@@ -164,24 +255,20 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
         }
     };
 
-    const handleFetchSinco = async (pedido, po_number, cod_produto, index) => {
-        if (!pedido || !po_number || !cod_produto) {
-            toast.error('Pedido, PO Number ou Produto ausentes.');
+    const handleFetchSinco = async (pedido, po_number, cod_produto, item_cliente, index) => {
+        if (!pedido) {
+            toast.error('Pedido Metalfisa ausente.');
             return;
         }
         setFetchingSinco(index);
         try {
             const res = await api.get('/wabtec-datas/sinco-date', {
-                params: { pedido_metal: pedido, po_number: po_number, cod_produto: cod_produto }
+                params: { pedido_metal: pedido, po_number: po_number, cod_produto: cod_produto, item_cliente: item_cliente }
             });
             
             // Update the specific row in the frontend state
             if (res.data.item) {
-                toast.success(`Data buscada com sucesso!`);
-                
-                // We need to update the data state
-                // Actually the cleanest way is just to re-fetch the whole lot?
-                // Or update the local `filteredRows` or `data`?
+                toast.success(`Item ${res.data.item} localizado no Protheus/SINCO!`);
                 if (selectedLote) fetchData(selectedLote);
             } else {
                 toast.error(res.data.msg || 'Item não encontrado.');
@@ -300,7 +387,23 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                             setProgress(prev => ({ ...prev, currentStep: 3, percentage: 80, message: `Mapeando ${rawData.length - 1} linhas de dados...` }));
 
                             setTimeout(() => {
-                                const headers = rawData[0];
+                                const headers = rawData[0] || [];
+                                const normHeaders = headers.map(h => normalizeSearch(h));
+
+                                // Localizador inteligente de índice por palavras-chave com fallback
+                                const findCol = (keywords, fallback) => {
+                                    const normKeywords = keywords.map(k => normalizeSearch(k));
+                                    const found = normHeaders.findIndex(h => normKeywords.some(k => h === k || h.includes(k) || k.includes(h)));
+                                    return found !== -1 ? found : fallback;
+                                };
+
+                                const colPo = findCol(['numeropo', 'ponumber', 'po', 'pedidocliente'], 1);
+                                const colItemCliente = findCol(['numerodeitem', 'itemcliente', 'partnumber'], 2);
+                                const colSincoDate = findCol(['sinco', 'datapcp', 'necessariopordata', 'dataentrega'], 9); // Col J ("SINCO")
+                                const colPedidoMetal = findCol(['pedido', 'pedidometal', 'numpedido'], 12); // Col M ("PEDIDO")
+                                const colCodProduto = findCol(['cod', 'codproduto', 'produto', 'codigoproduto'], 13); // Col N ("COD")
+                                const colSaldo = findCol(['saldo', 'quantidadeaberta', 'qtdtotal'], 14); // Col O ("SALDO")
+
                                 const parsedRows = [];
 
                                 for (let i = 1; i < rawData.length; i++) {
@@ -309,19 +412,19 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                                     const hasData = row.some(cell => cell !== null && cell !== '');
                                     if (!hasData) continue;
 
+                                    const rawSincoDate = row[colSincoDate];
+                                    // Se Col J estiver vazia, tenta Col 10 (Necessario por Data)
+                                    const parsedDate = parseExcelDate(rawSincoDate) || (row[10] ? parseExcelDate(row[10]) : null);
+
                                     const mappedRow = {
-                                        po_number: row[1] || '',
-                                        pedido_metal: row[2] || '',
-                                        cod_produto: row[3] || '',
-                                        saldo: row[4] || 0,
-                                        item_cliente: row[12] || '',
-                                        data_pcp_cliente: row[24] || null,
+                                        po_number: String(row[colPo] || '').trim(),
+                                        pedido_metal: String(row[colPedidoMetal] || '').trim(),
+                                        cod_produto: String(row[colCodProduto] || '').trim(),
+                                        saldo: Number(row[colSaldo]) || 0,
+                                        item_cliente: String(row[colItemCliente] || '').trim(),
+                                        data_pcp_cliente: parsedDate,
                                         raw_data: {}
                                     };
-
-                                    if (mappedRow.data_pcp_cliente instanceof Date) {
-                                        mappedRow.data_pcp_cliente = mappedRow.data_pcp_cliente.toISOString().split('T')[0];
-                                    }
 
                                     headers.forEach((header, index) => {
                                         if (header) {
@@ -452,26 +555,29 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
     // Choose which dataset to display: previewData or DB data
     const currentData = previewMode ? previewData : data;
 
-    // Apply text filter
+    // Apply text filter with robust normalization (ignoring accents, special chars and extra spaces)
     const filteredRows = useMemo(() => {
         let result = currentData;
         if (filterText.trim()) {
-            const s = filterText.toLowerCase();
+            const normFilter = normalizeSearch(filterText);
             result = result.filter(r =>
-                String(r.po_number || '').toLowerCase().includes(s) ||
-                String(r.pedido_metal || '').toLowerCase().includes(s) ||
-                String(r.cod_produto || '').toLowerCase().includes(s) ||
-                String(r.item_cliente || '').toLowerCase().includes(s)
+                normalizeSearch(r.po_number).includes(normFilter) ||
+                normalizeSearch(r.pedido_metal).includes(normFilter) ||
+                normalizeSearch(r.cod_produto).includes(normFilter) ||
+                normalizeSearch(r.item_cliente).includes(normFilter) ||
+                normalizeSearch(r.saldo).includes(normFilter) ||
+                (r.data_pcp_cliente && normalizeSearch(fmtDate(r.data_pcp_cliente)).includes(normFilter)) ||
+                (r.data_sinco && normalizeSearch(fmtDate(r.data_sinco)).includes(normFilter))
             );
         }
         Object.keys(columnFilters).forEach(key => {
             if (columnFilters[key].trim()) {
-                const searchStr = columnFilters[key].toLowerCase();
+                const normColFilter = normalizeSearch(columnFilters[key]);
                 result = result.filter(r => {
-                    const cellVal = key === 'data_pcp_cliente' && r[key] 
-                        ? fmtDate(r[key]).toLowerCase() 
-                        : String(r[key] || '').toLowerCase();
-                    return cellVal.includes(searchStr);
+                    const rawVal = key === 'data_pcp_cliente' && r[key] 
+                        ? fmtDate(r[key]) 
+                        : (key === 'data_sinco' && r[key] ? fmtDate(r[key]) : String(r[key] || ''));
+                    return normalizeSearch(rawVal).includes(normColFilter);
                 });
             }
         });
@@ -525,8 +631,104 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
     };
 
     // ── Table row renderers ───────────────────────────────────────────────────
+    const handleContextMenu = (e, row, rowIndex, groupKey = null) => {
+        e.preventDefault();
+        setContextMenu({
+            isOpen: true,
+            x: e.clientX,
+            y: e.clientY,
+            row,
+            rowIndex,
+            groupKey
+        });
+    };
+
+    const renderContextMenu = () => {
+        if (!contextMenu.isOpen || !contextMenu.row) return null;
+        
+        const { x, y, row, rowIndex, groupKey } = contextMenu;
+        const isGroupChild = groupKey !== null;
+        const fetchId = isGroupChild ? `${groupKey}-${rowIndex}` : rowIndex;
+
+        const copyToClipboard = (text, label) => {
+            navigator.clipboard.writeText(text);
+            toast.info(`${label} copiado!`);
+            setContextMenu(prev => ({ ...prev, isOpen: false }));
+        };
+
+        return (
+            <div 
+                className="fixed z-[1000] bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-2xl py-2 w-64 text-sm font-medium transition-all"
+                style={{ top: Math.min(y, window.innerHeight - 300), left: Math.min(x, window.innerWidth - 250) }}
+                onClick={(e) => e.stopPropagation()}
+                onContextMenu={(e) => e.preventDefault()}
+            >
+                <div className="px-3 pb-2 mb-2 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Ações da Linha</span>
+                </div>
+                
+                <button 
+                    disabled={!row.pedido_metal || fetchingSinco === fetchId}
+                    onClick={() => {
+                        handleFetchSinco(row.pedido_metal, row.po_number, row.cod_produto, row.item_cliente, fetchId);
+                        setContextMenu(prev => ({ ...prev, isOpen: false }));
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <Search className="w-4 h-4 text-slate-400" /> 
+                    {fetchingSinco === fetchId ? 'Buscando...' : 'Buscar Item no SINCO'}
+                </button>
+
+                <button 
+                    disabled={!row.data_pcp_cliente || !row.pedido_metal || !row.sinco_item || updatingSinco === `${row.pedido_metal}-${row.sinco_item}`}
+                    onClick={() => {
+                        handleUpdateSinco(row.pedido_metal, row.sinco_item, row.data_pcp_cliente, row.saldo);
+                        setContextMenu(prev => ({ ...prev, isOpen: false }));
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <RefreshCw className="w-4 h-4 text-slate-400" />
+                    {updatingSinco === `${row.pedido_metal}-${row.sinco_item}` ? 'Enviando...' : 'Sincronizar Data (SINCO)'}
+                </button>
+
+                <div className="px-3 pt-2 mt-2 mb-1 border-t border-slate-100">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Copiar Dados</span>
+                </div>
+                
+                <button onClick={() => copyToClipboard(row.po_number || '', 'PO Number')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
+                    <Copy className="w-3.5 h-3.5 text-slate-400" /> PO Number
+                </button>
+                <button onClick={() => copyToClipboard(row.pedido_metal || '', 'Pedido Metalfisa')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
+                    <Copy className="w-3.5 h-3.5 text-slate-400" /> Pedido Metalfisa
+                </button>
+                <button onClick={() => copyToClipboard(row.cod_produto || '', 'Código Produto')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
+                    <Copy className="w-3.5 h-3.5 text-slate-400" /> Código Produto
+                </button>
+                <button onClick={() => copyToClipboard(row.item_cliente || '', 'Ref. Cliente')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
+                    <Copy className="w-3.5 h-3.5 text-slate-400" /> Ref. Cliente
+                </button>
+
+                {row.sinco_item && (
+                    <>
+                        <div className="px-3 pt-2 mt-2 mb-1 border-t border-slate-100">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Informações SINCO</span>
+                        </div>
+                        <div className="px-4 py-1.5 text-xs text-slate-600 bg-slate-50/50 flex flex-col gap-1 rounded mx-2">
+                            <div className="flex justify-between"><span className="font-semibold">Item ERP:</span> <span className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded border border-indigo-100">{row.sinco_item}</span></div>
+                            <div className="flex justify-between"><span className="font-semibold">Data ERP:</span> <span className="font-mono">{row.data_sinco ? fmtDate(row.data_sinco) : '-'}</span></div>
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    };
+
     const renderFlatRows = () => filteredRows.map((r, i) => (
-        <tr key={i} className="hover:bg-indigo-50/30 transition-colors">
+        <tr 
+            key={i} 
+            className="hover:bg-indigo-50/30 transition-colors"
+            onContextMenu={(e) => handleContextMenu(e, r, i)}
+        >
             <td className="px-4 py-2 font-mono text-xs font-bold text-slate-700">{r.po_number || '-'}</td>
             <td className="px-4 py-2 font-mono text-xs text-blue-700 font-semibold">{r.pedido_metal || '-'}</td>
             <td className="px-4 py-2 text-xs text-slate-800">{r.cod_produto || '-'}</td>
@@ -541,13 +743,13 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                     <td className="px-4 py-2 text-center flex items-center justify-center gap-2">
                         <button 
                             disabled={!r.pedido_metal || fetchingSinco === i}
-                            onClick={() => handleFetchSinco(r.pedido_metal, r.po_number, r.cod_produto, i)}
+                            onClick={() => handleFetchSinco(r.pedido_metal, r.po_number, r.cod_produto, r.item_cliente, i)}
                             className="bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white px-2 py-1.5 rounded text-[10px] font-bold transition disabled:opacity-50">
                             {fetchingSinco === i ? '...' : 'Buscar SINCO'}
                         </button>
                         <button 
                             disabled={!r.data_pcp_cliente || !r.pedido_metal || !r.sinco_item || updatingSinco === `${r.pedido_metal}-${r.sinco_item}`}
-                            onClick={() => handleUpdateSinco(r.pedido_metal, r.sinco_item, r.data_pcp_cliente)}
+                            onClick={() => handleUpdateSinco(r.pedido_metal, r.sinco_item, r.data_pcp_cliente, r.saldo)}
                             className="bg-indigo-100 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-1.5 rounded text-[10px] font-bold transition disabled:opacity-50">
                             {updatingSinco === `${r.pedido_metal}-${r.sinco_item}` ? '...' : 'Enviar SINCO'}
                         </button>
@@ -591,7 +793,11 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
 
                 {/* Child rows */}
                 {isOpen && g.rows.map((r, i) => (
-                    <tr key={`${g.key}-${i}`} className="hover:bg-indigo-50/20 transition-colors border-l-2 border-indigo-300">
+                    <tr 
+                        key={`${g.key}-${i}`} 
+                        className="hover:bg-indigo-50/20 transition-colors border-l-2 border-indigo-300"
+                        onContextMenu={(e) => handleContextMenu(e, r, i, g.key)}
+                    >
                         <td className="px-4 py-2 pl-9 font-mono text-xs text-slate-500">{r.po_number || '-'}</td>
                         <td className="px-4 py-2 font-mono text-xs text-blue-700 font-semibold">{r.pedido_metal || '-'}</td>
                         <td className="px-4 py-2 text-xs text-slate-800">{r.cod_produto || '-'}</td>
@@ -606,13 +812,13 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                                 <td className="px-4 py-2 text-center flex items-center justify-center gap-2">
                                     <button 
                                         disabled={!r.pedido_metal || fetchingSinco === `${g.key}-${i}`}
-                                        onClick={() => handleFetchSinco(r.pedido_metal, r.po_number, r.cod_produto, `${g.key}-${i}`)}
+                                        onClick={() => handleFetchSinco(r.pedido_metal, r.po_number, r.cod_produto, r.item_cliente, `${g.key}-${i}`)}
                                         className="bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white px-2 py-1.5 rounded text-[10px] font-bold transition disabled:opacity-50">
                                         {fetchingSinco === `${g.key}-${i}` ? '...' : 'Buscar SINCO'}
                                     </button>
                                     <button 
                                         disabled={!r.data_pcp_cliente || !r.pedido_metal || !r.sinco_item || updatingSinco === `${r.pedido_metal}-${r.sinco_item}`}
-                                        onClick={() => handleUpdateSinco(r.pedido_metal, r.sinco_item, r.data_pcp_cliente)}
+                                        onClick={() => handleUpdateSinco(r.pedido_metal, r.sinco_item, r.data_pcp_cliente, r.saldo)}
                                         className="bg-indigo-100 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-1.5 rounded text-[10px] font-bold transition disabled:opacity-50">
                                         {updatingSinco === `${r.pedido_metal}-${r.sinco_item}` ? '...' : 'Enviar SINCO'}
                                     </button>
@@ -786,7 +992,7 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
             )}
 
             {/* Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm relative" style={{ minHeight: '300px' }}>
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] border border-slate-200 rounded-xl bg-white shadow-sm relative">
                 {loading && (
                     <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center">
                         <div className="flex items-center gap-3 px-6 py-3 bg-white border border-slate-200 rounded-xl shadow-lg text-indigo-600 font-bold">
@@ -836,14 +1042,14 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                                 </th>
                                 <th className="px-4 py-2 align-top text-xs font-bold text-slate-600 uppercase tracking-wider">
                                     <div className="flex flex-col gap-1.5">
-                                        <span>Data Planilha</span>
+                                        <span>Data Planilha (Col J)</span>
                                         <input type="text" placeholder="Filtrar..." value={columnFilters.data_pcp_cliente} onChange={e => setColumnFilters({...columnFilters, data_pcp_cliente: e.target.value})} className="px-2 py-1 text-[10px] border border-slate-200 rounded font-normal w-full" />
                                     </div>
                                 </th>
                                 {!previewMode && (
                                     <>
                                         <th className="px-4 py-2 align-top text-xs font-bold text-slate-600 uppercase tracking-wider text-center border-l border-slate-200 bg-slate-100">
-                                            Data PCP
+                                            Data Atual SINCO
                                         </th>
                                         <th className="px-4 py-2 align-top text-xs font-bold text-slate-600 uppercase tracking-wider text-center">
                                             Ação
@@ -968,6 +1174,9 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                     </div>
                 </div>
             )}
+            
+            {/* Context Menu Render */}
+            {renderContextMenu()}
         </div>
     );
 }

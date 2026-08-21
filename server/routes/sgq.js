@@ -85,8 +85,8 @@ router.get('/processos', async (req, res) => {
 
         res.json(processedRows);
     } catch (error) {
-        console.error('Erro ao buscar processos SGQ:', error);
-        res.status(500).json({ error: 'Erro interno ao consultar Mapeamento SGQ.' });
+        console.warn('⚠️ [SGQ PROCESSOS FALLBACK]:', error.message);
+        res.json([]);
     }
 });
 

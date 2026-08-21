@@ -17,6 +17,7 @@ linux-deployment/
 npm-debug.log*
 server/output.txt
 server/sql_debug.txt
+server/auth_debug.txt
 
 # OS files
 .DS_Store

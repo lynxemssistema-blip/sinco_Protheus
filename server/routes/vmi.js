@@ -2959,4 +2959,484 @@ router.delete('/oc-fornecedores/lotes/:loteId', async (req, res) => {
     }
 });
 
+// =========================================================================
+// ── DEMANDA MÊS: UPLOAD E CRUZAMENTO COM PROTHEUS + SINCO ───────────────
+// =========================================================================
+router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo Excel fornecido.' });
+        }
+
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true });
+        // Escolhe a primeira aba ou a aba 'METALFISA' se existir
+        const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('METALFISA')) || workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) {
+            return res.status(400).json({ error: 'Nenhuma aba encontrada no arquivo Excel.' });
+        }
+
+        // Limita o range da planilha para as linhas reais preenchidas (evita ler 1 milhão de linhas vazias)
+        let maxRow = 0;
+        for (let r = 1; r <= 3000; r++) {
+            if (sheet['A' + r]) maxRow = r;
+        }
+        if (maxRow > 0) {
+            sheet['!ref'] = 'A1:H' + (maxRow + 5);
+        }
+
+        const rawRows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null });
+        if (rawRows.length < 4) {
+            return res.status(400).json({ error: 'Planilha com formato inválido ou poucas linhas.' });
+        }
+
+        // Localizar a linha de cabeçalho exata (procura linha que contenha datas ou meses ou AGOSTO / SETEMBRO / PRODUTO)
+        let headerRowIdx = -1;
+        for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+            const r = rawRows[i] || [];
+            const str = r.map(c => String(c || '').toUpperCase()).join(' ');
+            if (str.includes('DEMANDAS') && (str.includes('AGOSTO') || str.includes('SETEMBRO') || str.includes('PREVIS'))) {
+                headerRowIdx = i;
+                break;
+            }
+            if (str.includes('PRODUTO') && str.includes('DESCRIC')) {
+                headerRowIdx = i;
+                break;
+            }
+        }
+        if (headerRowIdx === -1) headerRowIdx = 3;
+
+        // Se a linha 3 for "DEMANDAS" agrupadas e a linha 4 tiver os meses/datas, usamos a linha 4 para os nomes das colunas
+        if (headerRowIdx < rawRows.length - 1) {
+            const nextRowStr = (rawRows[headerRowIdx + 1] || []).map(c => String(c || '').toUpperCase()).join(' ');
+            if (nextRowStr.includes('PRODUTO') || nextRowStr.includes('DESCRIC') || nextRowStr.includes('TOTAL')) {
+                headerRowIdx = headerRowIdx + 1;
+            }
+        }
+
+        const headerRow = rawRows[headerRowIdx] || [];
+        
+        // Identificar colunas de meses de demanda
+        const monthCols = [];
+        for (let c = 3; c < Math.min(headerRow.length, 15); c++) {
+            const cellVal = headerRow[c];
+            if (cellVal) {
+                let monthLabel = '';
+                if (cellVal instanceof Date) {
+                    const m = cellVal.getUTCMonth() + 1;
+                    const y = cellVal.getUTCFullYear();
+                    const mNames = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                    monthLabel = `${mNames[m] || m}/${y}`;
+                } else {
+                    const s = String(cellVal).trim();
+                    if (s.toLowerCase().includes('total')) break;
+                    monthLabel = s;
+                }
+                if (monthLabel && !monthLabel.toLowerCase().includes('total') && !monthLabel.toLowerCase().includes('follow')) {
+                    monthCols.push({ colIdx: c, label: monthLabel });
+                }
+            }
+        }
+
+        if (monthCols.length === 0) {
+            monthCols.push(
+                { colIdx: 3, label: 'Agosto' },
+                { colIdx: 4, label: 'Setembro' },
+                { colIdx: 5, label: 'Outubro' },
+                { colIdx: 6, label: 'Novembro' }
+            );
+        }
+
+        function cleanCode(str) {
+            if (!str) return '';
+            return String(str).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        }
+
+        function getMonthGroup(dateVal) {
+            if (!dateVal) return 'SEM DATA PCP';
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return 'SEM DATA PCP';
+            const m = d.getUTCMonth() + 1;
+            const y = d.getUTCFullYear();
+            const mNames = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            return `${mNames[m] || m}/${y}`;
+        }
+
+        // Extrair itens do Excel
+        const excelItems = [];
+        for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+            const row = rawRows[r];
+            if (!row || row.length === 0) continue;
+            const refRaw = String(row[0] || '').trim();
+            const descrRaw = String(row[1] || '').trim();
+            if (!refRaw || refRaw.toUpperCase() === 'PRODUTO' || refRaw.toUpperCase().includes('TOTAL')) continue;
+
+            const demandas = {};
+            let totalDemanda = 0;
+            monthCols.forEach(m => {
+                const val = row[m.colIdx];
+                const num = (typeof val === 'number') ? val : (val === '-' || !val ? 0 : parseFloat(val) || 0);
+                demandas[m.label] = num;
+                totalDemanda += num;
+            });
+
+            excelItems.push({
+                refCliente: refRaw,
+                refClean: cleanCode(refRaw),
+                descricao: descrRaw,
+                demandas,
+                totalDemanda
+            });
+        }
+
+        if (excelItems.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item com referência de cliente encontrado na planilha.' });
+        }
+
+        // Executar todas as consultas em paralelo no PostgreSQL e MySQL simultaneamente
+        const [vmiMapRes, sz1Res, sc6Res, sc2Res, pcpRes] = await Promise.all([
+            // 1. Carregar mapeamento VMI (app_demanda_vmi_map)
+            mysqlPool.query('SELECT codigo_produto_cliente, b1_cod, descricao_protheus, z1_revisao FROM app_demanda_vmi_map')
+                .catch(e => {
+                    console.warn('[DEMANDA MÊS] Aviso ao ler app_demanda_vmi_map:', e.message);
+                    return [[]];
+                }),
+            // 2. Carregar SZ1010 (De-Para Protheus)
+            db.query(`
+                SELECT TRIM(z1_codcli) as cod_cli,
+                       TRIM(z1_produto) as b1_cod
+                FROM public.sz1010
+                WHERE COALESCE(d_e_l_e_t_, '') <> '*' AND TRIM(z1_produto) <> ''
+            `),
+            // 3. Carregar Pedidos em Aberto com Saldo no Protheus (SC6010)
+            db.query(`
+                SELECT TRIM(c6.c6_num) as pedido_metal,
+                       TRIM(c6.c6_item) as item_pedido,
+                       TRIM(c6.c6_pedcli) as pedido_cliente,
+                       TRIM(c6.c6_produto) as cod_produto,
+                       TRIM(c6.c6_descri) as desc_produto,
+                       TRIM(c6.c6_xproc1) as ref_cliente,
+                       TRIM(a1.a1_nome) as nome_cliente,
+                       (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) as saldo_a_faturar,
+                       c6.c6_entreg as data_entrega_protheus
+                FROM public.sc6010 c6
+                LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c6.c6_cli AND COALESCE(a1.d_e_l_e_t_, '') <> '*'
+                WHERE (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0
+                  AND COALESCE(c6.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                  AND UPPER(a1.a1_nome) LIKE '%VMI SISTEMAS%'
+            `),
+            // 4. Carregar OPs do Protheus (SC2010)
+            db.query(`
+                SELECT TRIM(c2_pedido) as pedido,
+                   TRIM(c2_itempv) as item,
+                   TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) as numero_op,
+                   (COALESCE(c2_quant, 0) - COALESCE(c2_quje, 0)) as saldo_op
+                FROM public.sc2010
+                WHERE (COALESCE(c2_quant, 0) - COALESCE(c2_quje, 0)) > 0
+                  AND COALESCE(d_e_l_e_t_, '') NOT IN ('*', '  *')
+            `),
+            // 5. Carregar Previsões PCP do SINCO (app_pcp_delivery_forecasts)
+            mysqlPool.query(`
+                SELECT TRIM(pedido) as pedido,
+                       TRIM(item) as item,
+                       TRIM(op_protheus) as op_protheus,
+                       data_entrega_pcp,
+                       quantidade_pcp
+                FROM app_pcp_delivery_forecasts
+                WHERE data_entrega_pcp IS NOT NULL
+            `).catch(e => {
+                console.warn('[DEMANDA MÊS] Aviso ao ler app_pcp_delivery_forecasts:', e.message);
+                return [[]];
+            })
+        ]);
+
+        // 1. Indexar De-Para VMI
+        const vmiMapRows = vmiMapRes[0] || [];
+        const vmiList = [];
+        const vmiMap = new Map();
+        for (const m of vmiMapRows) {
+            const k = cleanCode(m.codigo_produto_cliente);
+            if (k) {
+                vmiMap.set(k, m.b1_cod);
+                vmiList.push({ codCliClean: k, b1Cod: m.b1_cod });
+            }
+        }
+
+        // 2. Indexar SZ1010 Protheus
+        const sz1List = [];
+        const sz1Map = new Map();
+        for (const z of sz1Res.rows) {
+            const k = cleanCode(z.cod_cli);
+            if (k) {
+                if (!sz1Map.has(k)) sz1Map.set(k, z.b1_cod);
+                sz1List.push({ codCliClean: k, b1Cod: z.b1_cod });
+            }
+        }
+
+        // 3. Indexar Pedidos Protheus (SC6010)
+        const protheusByRef = new Map();
+        const sc6List = [];
+        for (const row of sc6Res.rows) {
+            const refClean = cleanCode(row.ref_cliente);
+            const prodClean = cleanCode(row.cod_produto);
+            sc6List.push({ ...row, refClean, prodClean });
+
+            const keys = [refClean, prodClean].filter(Boolean);
+            for (const k of keys) {
+                if (!protheusByRef.has(k)) protheusByRef.set(k, []);
+                protheusByRef.get(k).push(row);
+            }
+        }
+
+        // 4. Indexar OPs (SC2010)
+        const opMap = new Map();
+        for (const op of sc2Res.rows) {
+            const k = `${op.pedido}|${op.item}`;
+            if (!opMap.has(k)) opMap.set(k, []);
+            opMap.get(k).push(op);
+        }
+
+        // 5. Indexar Previsões PCP (SINCO)
+        const pcpRows = pcpRes[0] || [];
+        const pcpMap = new Map();
+        for (const p of pcpRows) {
+            const k = `${p.pedido}|${p.item}`;
+            if (!pcpMap.has(k)) pcpMap.set(k, []);
+            pcpMap.get(k).push(p);
+        }
+
+        // 6. Montar o cruzamento completo
+        let totalComSaldo = 0;
+        let totalSemSaldo = 0;
+        let totalSaldoGeral = 0;
+        let totalDemandaGeral = 0;
+
+        const resultadoCruzamento = excelItems.map(item => {
+            const ref = item.refClean;
+
+            // Rastrear b1_cod (Exato e Inteligente por prefixo/sufixo)
+            let b1Cod = vmiMap.get(ref) || sz1Map.get(ref) || null;
+            if (!b1Cod) {
+                const vMatch = vmiList.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref));
+                if (vMatch) b1Cod = vMatch.b1Cod;
+            }
+            if (!b1Cod) {
+                const sMatch = sz1List.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref));
+                if (sMatch) b1Cod = sMatch.b1Cod;
+            }
+            
+            // Buscar pedidos vinculados no Protheus
+            let matchedOrders = protheusByRef.get(ref) || [];
+            if (matchedOrders.length === 0 && b1Cod) {
+                matchedOrders = protheusByRef.get(cleanCode(b1Cod)) || [];
+            }
+            if (matchedOrders.length === 0) {
+                const b1Clean = b1Cod ? cleanCode(b1Cod) : null;
+                matchedOrders = sc6List.filter(o => {
+                    if (b1Clean && o.prodClean === b1Clean) return true;
+                    if (o.refClean && (o.refClean.endsWith(ref) || o.refClean.includes(ref))) return true;
+                    return false;
+                });
+            }
+
+            // Deduplicar pedidos encontrados
+            const uniqueOrdersMap = new Map();
+            for (const o of matchedOrders) {
+                const k = `${o.pedido_metal}|${o.item_pedido}`;
+                if (!uniqueOrdersMap.has(k)) uniqueOrdersMap.set(k, o);
+            }
+            const uniqueOrders = Array.from(uniqueOrdersMap.values());
+
+            const hasBalance = uniqueOrders.length > 0;
+            if (hasBalance) totalComSaldo++;
+            else totalSemSaldo++;
+
+            let saldoTotalItem = 0;
+            const pcpPorMes = {};
+
+            const pedidosDetalhados = uniqueOrders.map(o => {
+                const saldo = Number(o.saldo_a_faturar) || 0;
+                saldoTotalItem += saldo;
+                if (!b1Cod) b1Cod = o.cod_produto;
+
+                const ops = opMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+                const pcps = pcpMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+
+                if (pcps.length > 0) {
+                    for (const fc of pcps) {
+                        const mesGrp = getMonthGroup(fc.data_entrega_pcp);
+                        const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
+                        pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                    }
+                } else {
+                    pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
+                }
+
+                return {
+                    pedido_metal: o.pedido_metal,
+                    item_pedido: o.item_pedido,
+                    pedido_cliente: o.pedido_cliente,
+                    cod_produto: o.cod_produto,
+                    desc_produto: o.desc_produto,
+                    nome_cliente: o.nome_cliente,
+                    saldo_a_faturar: saldo,
+                    ops: ops.map(op => ({
+                        numero_op: op.numero_op,
+                        saldo_op: Number(op.saldo_op) || 0
+                    })),
+                    previsoes_pcp: pcps.map(p => {
+                        let dtStr = null;
+                        if (p.data_entrega_pcp) {
+                            try {
+                                const dt = new Date(p.data_entrega_pcp);
+                                if (!isNaN(dt.getTime())) {
+                                    dtStr = dt.toISOString().split('T')[0];
+                                } else {
+                                    dtStr = String(p.data_entrega_pcp);
+                                }
+                            } catch {
+                                dtStr = String(p.data_entrega_pcp);
+                            }
+                        }
+                        return {
+                            data_pcp: dtStr,
+                            quantidade_pcp: parseFloat(p.quantidade_pcp) || saldo,
+                            op_vinculada: p.op_protheus || 'SEM OP'
+                        };
+                    })
+                };
+            });
+
+            totalSaldoGeral += saldoTotalItem;
+            totalDemandaGeral += item.totalDemanda;
+
+            return {
+                ref_cliente: item.refCliente,
+                codigo_metalfisa: b1Cod || (uniqueOrders[0]?.cod_produto) || 'NÃO MAPEADO',
+                descricao: item.descricao || (uniqueOrders[0]?.desc_produto) || '',
+                possui_saldo: hasBalance,
+                total_saldo_faturar: saldoTotalItem,
+                demandas: item.demandas,
+                total_demanda: item.totalDemanda,
+                pcp_por_mes: pcpPorMes,
+                pedidos: pedidosDetalhados,
+                presente_na_planilha: true
+            };
+        });
+
+        // 7. Incluir todos os demais pedidos e itens VMI com saldo que NÃO estavam na planilha Excel
+        const usedOrderKeys = new Set();
+        resultadoCruzamento.forEach(it => {
+            it.pedidos?.forEach(p => usedOrderKeys.add(`${p.pedido_metal}|${p.item_pedido}`));
+        });
+
+        const remainingOrders = sc6List.filter(o => !usedOrderKeys.has(`${o.pedido_metal}|${o.item_pedido}`));
+        
+        // Agrupar pedidos restantes por código de produto / ref
+        const remainingGrouped = new Map();
+        for (const o of remainingOrders) {
+            const groupKey = o.cod_produto || o.ref_cliente || `${o.pedido_metal}|${o.item_pedido}`;
+            if (!remainingGrouped.has(groupKey)) {
+                remainingGrouped.set(groupKey, []);
+            }
+            remainingGrouped.get(groupKey).push(o);
+        }
+
+        const outrosItensVmi = [];
+        for (const [groupKey, orders] of remainingGrouped.entries()) {
+            let saldoTotalGrupo = 0;
+            const pcpPorMes = {};
+
+            const pedidosDetalhados = orders.map(o => {
+                const saldo = Number(o.saldo_a_faturar) || 0;
+                saldoTotalGrupo += saldo;
+
+                const ops = opMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+                const pcps = pcpMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+
+                if (pcps.length > 0) {
+                    for (const fc of pcps) {
+                        const mesGrp = getMonthGroup(fc.data_entrega_pcp);
+                        const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
+                        pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                    }
+                } else {
+                    pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
+                }
+
+                return {
+                    pedido_metal: o.pedido_metal,
+                    item_pedido: o.item_pedido,
+                    pedido_cliente: o.pedido_cliente,
+                    cod_produto: o.cod_produto,
+                    desc_produto: o.desc_produto,
+                    saldo_a_faturar: saldo,
+                    ops: ops.map(op => ({
+                        numero_op: op.numero_op,
+                        saldo_op: Number(op.saldo_op) || 0
+                    })),
+                    previsoes_pcp: pcps.map(p => {
+                        let dtStr = null;
+                        if (p.data_entrega_pcp) {
+                            try {
+                                const dt = new Date(p.data_entrega_pcp);
+                                if (!isNaN(dt.getTime())) {
+                                    dtStr = dt.toISOString().split('T')[0];
+                                } else {
+                                    dtStr = String(p.data_entrega_pcp);
+                                }
+                            } catch {
+                                dtStr = String(p.data_entrega_pcp);
+                            }
+                        }
+                        return {
+                            data_pcp: dtStr,
+                            quantidade_pcp: parseFloat(p.quantidade_pcp) || saldo,
+                            op_vinculada: p.op_protheus || 'SEM OP'
+                        };
+                    })
+                };
+            });
+
+            totalSaldoGeral += saldoTotalGrupo;
+            totalComSaldo++;
+
+            outrosItensVmi.push({
+                ref_cliente: orders[0]?.ref_cliente || 'VMI GERAL',
+                codigo_metalfisa: orders[0]?.cod_produto || 'NÃO MAPEADO',
+                descricao: orders[0]?.desc_produto || '',
+                possui_saldo: true,
+                total_saldo_faturar: saldoTotalGrupo,
+                demandas: {}, // Sem demanda na planilha
+                total_demanda: 0,
+                pcp_por_mes: pcpPorMes,
+                pedidos: pedidosDetalhados,
+                presente_na_planilha: false
+            });
+        }
+
+        const listaFinalItens = [...resultadoCruzamento, ...outrosItensVmi];
+
+        res.json({
+            success: true,
+            sheetName,
+            mesesDemanda: monthCols.map(m => m.label),
+            totais: {
+                totalItens: listaFinalItens.length,
+                totalItensPlanilha: excelItems.length,
+                totalItensForaPlanilha: outrosItensVmi.length,
+                totalComSaldo,
+                totalSemSaldo,
+                totalSaldoGeral,
+                totalDemandaGeral
+            },
+            itens: listaFinalItens
+        });
+
+    } catch (err) {
+        console.error('[DEMANDA MÊS PROCESSAR]', err);
+        res.status(500).json({ error: 'Erro ao processar planilha de demanda: ' + err.message });
+    }
+});
+
 

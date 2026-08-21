@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../services/mysqlService');
+const protheusDB = require('../services/protheusDB');
 const sincoAgentBridge = require('../services/sincoAgentBridge');
 
 console.log('🔄 [DEBUG] Loading Sinco Routes...');
@@ -895,8 +896,6 @@ router.post('/validar-estruturas', express.json(), async (req, res) => {
         res.status(500).json({ error: 'Erro ao validar estruturas no Protheus' });
     }
 });
-
-const protheusDB = require('../services/protheusDB');
 
 async function queryProtheus(sql, params) {
     const res = await protheusDB.query(sql, params);

@@ -880,7 +880,6 @@ router.get('/visao', async (req, res) => {
         }
     } catch (err) {
         console.error('[setores/visao] Erro geral:', err.message, err.stack);
-        require('fs').appendFileSync('C:\\Users\\adm\\Desktop\\MetalFisa Anty\\server\\error_log.txt', err.stack + '\n');
         res.status(500).json({ error: err.message });
     }
 });

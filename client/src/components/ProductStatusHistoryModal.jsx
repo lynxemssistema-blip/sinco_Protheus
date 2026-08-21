@@ -98,6 +98,7 @@ const ProductStatusHistoryModal = ({ isOpen, onClose, codigo }) => {
                                                 <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full 
                                                     ${item.estado_anterior === 'NOVO' ? 'bg-green-100 text-green-800' : 
                                                       item.estado_anterior === 'REVISAO' ? 'bg-yellow-100 text-yellow-800' : 
+                                                      item.estado_anterior === 'RESTRICAO' ? 'bg-red-100 text-red-800' : 
                                                       'bg-gray-100 text-gray-800'}`}>
                                                     {item.estado_anterior}
                                                 </span>
@@ -106,6 +107,7 @@ const ProductStatusHistoryModal = ({ isOpen, onClose, codigo }) => {
                                                 <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full shadow-sm
                                                     ${item.estado_novo === 'NOVO' ? 'bg-green-500 text-white' : 
                                                       item.estado_novo === 'REVISAO' ? 'bg-yellow-400 text-yellow-900' : 
+                                                      item.estado_novo === 'RESTRICAO' ? 'bg-red-500 text-white' : 
                                                       'bg-gray-200 text-gray-800'}`}>
                                                     {item.estado_novo}
                                                 </span>

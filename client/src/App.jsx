@@ -87,6 +87,7 @@ const VMIDashboardPage = React.lazy(() => import('./pages/vmi/VMIDashboardPage')
 const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage'));
 const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
+const DemandaMesPage = React.lazy(() => import('./pages/vmi/DemandaMesPage'));
 const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
 const SWorks = React.lazy(() => import('./pages/SWorks'));
 const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
@@ -119,6 +120,7 @@ const WabtecPPAPsPage = React.lazy(() => import('./pages/wabtec/WabtecPPAPsPage'
 const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
 const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
 const WabtecDatasSolicitacaoPage = React.lazy(() => import('./pages/wabtec/WabtecDatasSolicitacaoPage'));
+const DemandaEngetron = React.lazy(() => import('./pages/engetron/DemandaEngetron'));
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
@@ -751,6 +753,11 @@ function App() {
                                                 <DemandaVMIContainer />
                                             </Layout>
                                         } />
+                                        <Route path="/vmi/demanda-mes" element={
+                                            <Layout fullWidth={true}>
+                                                <DemandaMesPage />
+                                            </Layout>
+                                        } />
                                         <Route path="/vmi/pedido" element={
                                             <Layout fullWidth={true}>
                                                 <VMIPedidosContainer />
@@ -805,6 +812,13 @@ function App() {
                                         <Route path="/wabtec/datas-solicitacao" element={
                                             <Layout fullWidth={true}>
                                                 <WabtecDatasSolicitacaoPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* Engetron Routes */}
+                                        <Route path="/engetron/dashboard" element={
+                                            <Layout fullWidth={true}>
+                                                <DemandaEngetron />
                                             </Layout>
                                         } />
 

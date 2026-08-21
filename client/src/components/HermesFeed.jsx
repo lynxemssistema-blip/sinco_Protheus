@@ -44,11 +44,20 @@ export default function HermesFeed() {
 
     useEffect(() => {
         // Inicializa conexão socket
-        const socket = io(window.location.origin);
+        const socket = io(window.location.origin, {
+            transports: ['websocket', 'polling'],
+            reconnectionAttempts: 5,
+            reconnectionDelay: 5000,
+            timeout: 10000
+        });
         socketRef.current = socket;
 
         socket.on('connect', () => {
             console.log('🟢 [HermesFeed] Conectado ao servidor via Socket.io');
+        });
+
+        socket.on('connect_error', () => {
+            // Silencioso em caso de reconexão
         });
 
         // Escuta mensagens do feed

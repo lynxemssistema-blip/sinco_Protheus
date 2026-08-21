@@ -8,7 +8,7 @@ const mysqlPool = require('../services/mysqlService');
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_produto_estados (
                 codigo_produto VARCHAR(50) PRIMARY KEY,
-                estado ENUM('NOVO', 'REVISAO', 'NORMAL') DEFAULT 'NORMAL',
+                estado ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO') DEFAULT 'NORMAL',
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 updated_by VARCHAR(100)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -18,8 +18,8 @@ const mysqlPool = require('../services/mysqlService');
             CREATE TABLE IF NOT EXISTS app_produto_estados_historico (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 codigo_produto VARCHAR(50) NOT NULL,
-                estado_anterior ENUM('NOVO', 'REVISAO', 'NORMAL'),
-                estado_novo ENUM('NOVO', 'REVISAO', 'NORMAL') NOT NULL,
+                estado_anterior ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO'),
+                estado_novo ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO') NOT NULL,
                 acao VARCHAR(100) NOT NULL,
                 usuario VARCHAR(100) NOT NULL,
                 data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -27,6 +27,16 @@ const mysqlPool = require('../services/mysqlService');
                 INDEX idx_data_hist (data_hora)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
+
+        // Safely alter existing tables to support RESTRICAO
+        try {
+            await mysqlPool.query(`ALTER TABLE app_produto_estados MODIFY COLUMN estado ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO') DEFAULT 'NORMAL'`);
+        } catch (e) {}
+        try {
+            await mysqlPool.query(`ALTER TABLE app_produto_estados_historico MODIFY COLUMN estado_anterior ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO')`);
+            await mysqlPool.query(`ALTER TABLE app_produto_estados_historico MODIFY COLUMN estado_novo ENUM('NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO') NOT NULL`);
+        } catch (e) {}
+
         console.log('✅ Product Status tables initialized');
     } catch (err) {
         console.error('❌ Error initializing Product Status tables:', err);
@@ -55,7 +65,7 @@ router.post('/:codigo', async (req, res) => {
         const { codigo } = req.params;
         const { estado, usuario, acao = 'MARCACAO_MANUAL' } = req.body;
 
-        if (!['NOVO', 'REVISAO', 'NORMAL'].includes(estado)) {
+        if (!['NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO'].includes(estado)) {
             return res.status(400).json({ error: 'Estado inválido' });
         }
         if (!usuario) {
@@ -135,7 +145,7 @@ router.post('/batch/update', async (req, res) => {
         if (!Array.isArray(codigos) || codigos.length === 0) {
             return res.json({ success: true, count: 0 });
         }
-        if (!['NOVO', 'REVISAO', 'NORMAL'].includes(estado)) {
+        if (!['NOVO', 'REVISAO', 'NORMAL', 'RESTRICAO'].includes(estado)) {
             return res.status(400).json({ error: 'Estado inválido' });
         }
         if (!usuario) {

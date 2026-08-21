@@ -256,6 +256,22 @@ export const downloadRomaneioBundle = async (id) => {
     return response.data;
 };
 
+export const downloadRelatorioTratamentoExcel = async (months = 5, includeFinancials = false) => {
+    const response = await api.get('/romaneios/relatorio-tratamento-excel', {
+        params: { months, includeFinancials },
+        responseType: 'blob'
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `Relatorio_Envio_Fornecedores_Tratamento_${months ? `${months}Meses` : 'Completo'}_${includeFinancials ? 'ComValores' : 'SemValores'}_KG.xlsx`;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+};
+
 export const getProductDocs = async (codigo) => {
     const response = await api.get(`/docs/${encodeURIComponent(codigo)}`);
     return response.data;
@@ -462,6 +478,10 @@ export const getPlanningPrefs = (op) => api.get(`/production/planning-prefs/${en
 export const savePlanningPrefs = (op, prefs) => api.put(`/production/planning-prefs/${encodeURIComponent(op)}`, prefs).then(res => res.data);
 export const getRecursosOrdem = () => api.get('/pcp-refinado/recursos').then(res => res.data);
 export const getEstruturaPedido = (params) => api.get('/pcp-refinado/estrutura-pedido', { params }).then(res => res.data);
+
+export const createPendenciasSnapshot = (data) => api.post('/pcp-refinado/pendencias-snapshot', data).then(res => res.data);
+export const getPendenciasSnapshots = (op) => api.get('/pcp-refinado/pendencias-snapshot', { params: { op } }).then(res => res.data);
+export const getPendenciasSnapshotById = (id) => api.get(`/pcp-refinado/pendencias-snapshot/${id}`).then(res => res.data);
 
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);

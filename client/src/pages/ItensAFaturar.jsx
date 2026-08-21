@@ -396,6 +396,11 @@ const ItensAFaturar = () => {
         const key = row._row_key;
         if (parseFloat(row.qtd_faturar) <= 0) return toast.warning('Este item não possui saldo para faturamento.');
 
+        const pcVal = String(row.ped_cliente || '').trim().toUpperCase();
+        if (pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO') {
+            return toast.warning('Itens com Pedido de Compra "PRODUÇÃO" não podem ser faturados.');
+        }
+
         setSelectedItems(prev => {
             const copy = { ...prev };
             if (copy[key]) {
@@ -429,7 +434,12 @@ const ItensAFaturar = () => {
     };
 
     const handleSelectAllOnPage = () => {
-        const availableRows = filteredRows.filter(r => parseFloat(r.qtd_faturar) > 0);
+        const availableRows = filteredRows.filter(r => {
+            const isFechado = parseFloat(r.qtd_faturar) <= 0;
+            const pcVal = String(r.ped_cliente || '').trim().toUpperCase();
+            const isProducao = pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO';
+            return !isFechado && !isProducao;
+        });
         const allSelected = availableRows.every(r => !!selectedItems[r._row_key]);
 
         if (allSelected) {
@@ -1224,7 +1234,21 @@ const ItensAFaturar = () => {
                                             type="checkbox"
                                             className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer"
                                             onChange={handleSelectAllOnPage}
-                                            checked={filteredRows.length > 0 && filteredRows.filter(r => parseFloat(r.qtd_faturar) > 0).every(r => !!selectedItems[r._row_key])}
+                                            checked={
+                                                filteredRows.length > 0 && 
+                                                filteredRows.filter(r => {
+                                                    const isFechado = parseFloat(r.qtd_faturar) <= 0;
+                                                    const pcVal = String(r.ped_cliente || '').trim().toUpperCase();
+                                                    const isProducao = pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO';
+                                                    return !isFechado && !isProducao;
+                                                }).length > 0 &&
+                                                filteredRows.filter(r => {
+                                                    const isFechado = parseFloat(r.qtd_faturar) <= 0;
+                                                    const pcVal = String(r.ped_cliente || '').trim().toUpperCase();
+                                                    const isProducao = pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO';
+                                                    return !isFechado && !isProducao;
+                                                }).every(r => !!selectedItems[r._row_key])
+                                            }
                                             disabled={filteredRows.length === 0}
                                         />
                                     </div>
@@ -1288,13 +1312,15 @@ const ItensAFaturar = () => {
                                     const key = order._row_key;
                                     const isSelected = !!selectedItems[key];
                                     const isFechado = parseFloat(order.qtd_faturar) <= 0;
+                                    const pcVal = String(order.ped_cliente || '').trim().toUpperCase();
+                                    const isProducao = pcVal === 'PRODUÇÃO' || pcVal === 'PRODUCAO';
                                     const prog = order._pcp_prog;
                                     const concluido = isLastOpConcluido(order);
 
                                     return (
                                         <tr
                                             key={`${key}-${idx}`}
-                                            className={`${isSelected ? 'bg-blue-50/70 border-l-2 border-l-blue-500' : concluido ? 'bg-green-50/40 border-l-2 border-l-green-500 hover:bg-green-50/70' : 'bg-white hover:bg-gray-50/50'} ${isFechado ? 'opacity-60' : ''} transition-all cursor-pointer`}
+                                            className={`${isSelected ? 'bg-blue-50/70 border-l-2 border-l-blue-500' : concluido ? 'bg-green-50/40 border-l-2 border-l-green-500 hover:bg-green-50/70' : 'bg-white hover:bg-gray-50/50'} ${isFechado || isProducao ? 'opacity-60' : ''} transition-all cursor-pointer`}
                                             onClick={() => handleSelectItem(order)}
                                         >
                                             <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1303,7 +1329,7 @@ const ItensAFaturar = () => {
                                                     className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer disabled:opacity-50"
                                                     checked={isSelected}
                                                     onChange={() => handleSelectItem(order)}
-                                                    disabled={isFechado}
+                                                    disabled={isFechado || isProducao}
                                                 />
                                             </td>
                                             <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1330,7 +1356,15 @@ const ItensAFaturar = () => {
                                                 <div className="truncate max-w-[150px]" title={order.nome_cliente}>{order.nome_cliente}</div>
                                             </td>
                                             <td className="px-3 py-2 text-gray-500 text-xs">{formatProtheusDate(order.emissao)}</td>
-                                            <td className="px-3 py-2 text-xs text-gray-500">{order.ped_cliente || '-'}</td>
+                                            <td className="px-3 py-2 text-xs">
+                                                {isProducao ? (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+                                                        PRODUÇÃO
+                                                    </span>
+                                                ) : (
+                                                    order.ped_cliente || '-'
+                                                )}
+                                            </td>
                                             <td className="px-3 py-2 text-xs text-gray-500">{order.ref_cliente || '-'}</td>
                                             
                                             {canViewFinancials && <td className="px-3 py-2 text-right font-mono text-gray-700">{formatCurrency(order.valor_unitario)}</td>}

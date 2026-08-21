@@ -15,7 +15,9 @@ const EMPTY_FORM = {
     lote: '',
     numero_lote: '',
     gerar_op_protheus: true,
-    sobrescrever_existente: false
+    sobrescrever_existente: false,
+    fracionar_op: false,
+    qtd_por_op: ''
 };
 
 const getDisplayOp = (op, itemNumber) => {
@@ -137,6 +139,38 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
             </div>
         )}
 
+        {/* FRACIONAMENTO */}
+        {!value.isBatch && !isEdit && canGenerateOp && value.gerar_op_protheus && (
+            <div className={`p-3 rounded-lg border flex flex-col gap-2 ${value.fracionar_op ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="text-sm font-semibold text-gray-800">Fracionar OP em Lotes</div>
+                        <div className="text-[10px] text-gray-500">Dividir a OP principal em frações menores.</div>
+                    </div>
+                    <label className="relative flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={value.fracionar_op} 
+                            onChange={(e) => onChange(p => ({ ...p, fracionar_op: e.target.checked }))} />
+                        <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${value.fracionar_op ? 'bg-indigo-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
+                    </label>
+                </div>
+                {value.fracionar_op && (
+                    <div className="mt-2 flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-700">Quantidade por Lote/OP</label>
+                        <input type="number" min="0.01" step="0.01" max={value.quantidade_pcp || qtdDisponivel}
+                            placeholder="Ex: 5"
+                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            value={value.qtd_por_op}
+                            onChange={(e) => onChange(p => ({ ...p, qtd_por_op: e.target.value }))}
+                        />
+                        {value.quantidade_pcp && value.qtd_por_op && Number(value.qtd_por_op) > 0 && (
+                            <div className="text-[10px] text-indigo-700 font-medium bg-indigo-100 p-1.5 rounded mt-1">
+                                💡 Serão geradas <strong>{Math.ceil(Number(value.quantidade_pcp) / Number(value.qtd_por_op))}</strong> OPs independentes sequenciais.
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        )}
 
         <div className="flex gap-2 mt-1">
             <button type="submit" disabled={saving}
@@ -412,60 +446,81 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         setSaving(true);
         try {
             const hasOp = !!(item.op_num && String(item.op_num).trim() !== '-' && String(item.op_num).trim() !== '');
-            const forecastRes = await api.post('/pedidos/pcp-forecasts', {
-                pedido, item: itemNum,
-                data_entrega_pcp: formData.data_entrega_pcp,
-                quantidade_pcp: novaQtd,
-                usuario: user?.nome || user?.name || user?.login || 'Usuário',
-                observacao: formData.observacao || null,
-                numero_serie: formData.numero_serie || null,
-                serie_cliente: formData.serie_cliente || null,
-                serie_metalfisa: formData.serie_metalfisa || null,
-                lote: formData.lote || null,
-                numero_lote: formData.numero_lote || null,
-                qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
-                op_protheus: hasOp ? item.op_num : null,
-                sobrescrever_existente: formData.sobrescrever_existente
-            });
-
-            const forecastId = forecastRes.data.id;
-
-            if (canGenerateOp && formData.gerar_op_protheus) {
-                const protheusItems = [{
-                    filial: item.filial || '01',
-                    produto: item.codigo,
-                    quant: novaQtd,
-                    datpri: formData.data_entrega_pcp.replace(/-/g, ''),
-                    datprf: formData.data_entrega_pcp.replace(/-/g, ''),
-                    obs: formData.observacao,
-                    pedido: pedido,
-                    itempv: itemNum
-                }];
-                console.log("🚀 [PROTHEUS PAYLOAD SINGLE] Enviando JSON:", JSON.stringify({ items: protheusItems }, null, 2));
-                const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
-                
-                if (protheusRes.data.op_number) {
-                    await api.patch(`/pedidos/pcp-forecasts/${forecastId}/op`, { op_protheus: protheusRes.data.op_number });
+            
+            // -- LÓGICA DE FRACIONAMENTO --
+            let fracoes = [];
+            const qtdTotalStr = String(novaQtd);
+            const qtdTotalNum = Number(qtdTotalStr);
+            
+            if (formData.fracionar_op && formData.qtd_por_op && Number(formData.qtd_por_op) > 0) {
+                const step = Number(String(formData.qtd_por_op).replace(',', '.'));
+                let restante = qtdTotalNum;
+                while (restante > 0) {
+                    const frac = Math.min(restante, step);
+                    fracoes.push(frac);
+                    restante = Number((restante - frac).toFixed(4));
                 }
-
-                toast.success(`OP gerada com sucesso no Protheus.`);
+            } else {
+                fracoes.push(qtdTotalNum);
             }
 
-            toast.success('Programação adicionada!');
-            setFormData(EMPTY_FORM);
+            for (let i = 0; i < fracoes.length; i++) {
+                const qtdFracao = fracoes[i];
+                if (fracoes.length > 1) {
+                    toast.info(`Processando lote ${i+1} de ${fracoes.length}...`, { autoClose: 2000, position: 'top-center' });
+                }
+                
+                const forecastRes = await api.post('/pedidos/pcp-forecasts', {
+                    pedido, item: itemNum,
+                    data_entrega_pcp: formData.data_entrega_pcp,
+                    quantidade_pcp: qtdFracao,
+                    usuario: user?.nome || user?.name || user?.login || 'Usuário',
+                    observacao: formData.observacao || null,
+                    numero_serie: formData.numero_serie || null,
+                    serie_cliente: formData.serie_cliente || null,
+                    serie_metalfisa: formData.serie_metalfisa || null,
+                    lote: formData.lote || null,
+                    numero_lote: formData.numero_lote || null,
+                    qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
+                    op_protheus: hasOp ? item.op_num : null,
+                    sobrescrever_existente: formData.sobrescrever_existente
+                });
+
+                const forecastId = forecastRes.data.id;
+
+                if (canGenerateOp && formData.gerar_op_protheus) {
+                    const protheusItems = [{
+                        filial: item.filial || '01',
+                        produto: item.codigo,
+                        quant: qtdFracao,
+                        datpri: formData.data_entrega_pcp.replace(/-/g, ''),
+                        datprf: formData.data_entrega_pcp.replace(/-/g, ''),
+                        obs: formData.observacao,
+                        pedido: pedido,
+                        itempv: itemNum
+                    }];
+                    console.log(`🚀 [PROTHEUS SINGLE Lote ${i+1}] Enviando JSON:`, JSON.stringify({ items: protheusItems }, null, 2));
+                    try {
+                        const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                        if (protheusRes.data.op_number) {
+                            await api.patch(`/pedidos/pcp-forecasts/${forecastId}/op`, { op_protheus: protheusRes.data.op_number });
+                        }
+                    } catch (err) {
+                        const errData = err.response?.data;
+                        const errMsg = errData?.details || errData?.error || err.message || 'Erro no Protheus';
+                        toast.error(`A OP do Lote ${i+1} falhou: ${errMsg}`, { autoClose: 8000 });
+                    }
+                }
+            }
+
+            toast.success(fracoes.length > 1 ? `Programação dividida em ${fracoes.length} OPs com sucesso!` : 'Programação adicionada com sucesso!');
+            setFormData(prev => ({ ...EMPTY_FORM, isBatch: prev.isBatch, data_entrega_pcp: prev.data_entrega_pcp }));
             const newProgs = await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess(newProgs);
         } catch (err) {
-            // Determina se o erro veio do PCP (salvar) ou do Protheus (OP)
-            const isProtheusErr = err?.config?.url?.includes('protheus') || err?.config?.url?.includes('ordem-producao');
             const errData = err.response?.data;
             const errMsg = errData?.details || errData?.error || err.message || 'Erro ao salvar.';
-            console.error('❌ [ERRO SINGLE]', isProtheusErr ? 'PROTHEUS' : 'PCP', '→', errMsg, errData || err.message);
-            if (isProtheusErr) {
-                toast.error(`Programação salva, mas falha ao Gerar O.P. no Protheus: ${errMsg}`, { autoClose: 10000 });
-            } else {
-                toast.error(`Falha ao salvar programação: ${errMsg}`, { autoClose: 8000 });
-            }
+            toast.error(`Falha ao salvar programação: ${errMsg}`, { autoClose: 8000 });
         } finally {
             setSaving(false);
         }

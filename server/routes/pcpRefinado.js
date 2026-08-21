@@ -5,34 +5,32 @@ const db = require('../db');
 const { analisarRelatorioFCS } = require('../services/geminiPcpService');
 const { runFcsSequencing } = require('../services/fcsEngine');
 const { rebuildDailyOccupancyCache } = require('../services/occupancyCacheService');
+const { planPedidosFCS } = require('../services/fcsPedidosEngine');
+const { generateExcelReport } = require('../services/fcsReportService');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
-// ── Forecast cache (módulo) — TTL 60s, evita fetch MySQL por requisição ────
-let _fcCache = { map: new Map(), expiresAt: 0 };
-async function getForecastMapCached() {
-    if (Date.now() < _fcCache.expiresAt) return _fcCache.map;
-    const map = new Map();
+// ── Tabela de snapshots da lista de pendências de apontamento por OP ───────
+(async () => {
     try {
-        const [rows] = await mysqlPool.query(`
-            SELECT TRIM(pedido) as pedido, TRIM(item) as item,
-                   MAX(data_entrega_pcp) as data_entrega_pcp,
-                   MAX(data_prevista_faturamento) as data_prevista_faturamento
-            FROM app_pcp_delivery_forecasts
-            WHERE pedido IS NOT NULL AND item IS NOT NULL
-            GROUP BY TRIM(pedido), TRIM(item)
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_pcp_pendencias_snapshot (
+                id                INT AUTO_INCREMENT PRIMARY KEY,
+                op_num            VARCHAR(20) NOT NULL,
+                pedido            VARCHAR(20) DEFAULT NULL,
+                usuario           VARCHAR(100) DEFAULT NULL,
+                total_pendencias  INT DEFAULT 0,
+                itens_pendentes   LONGTEXT NOT NULL,
+                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_op (op_num),
+                INDEX idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
-        for (const row of rows) {
-            map.set(`${row.pedido}|${row.item}`, {
-                data_entrega_pcp: row.data_entrega_pcp || null,
-                data_prevista_faturamento: row.data_prevista_faturamento || null
-            });
-        }
     } catch (err) {
-        console.error('getForecastMapCached error:', err.message);
+        console.error('❌ Error initializing app_pcp_pendencias_snapshot table:', err.message);
     }
-    _fcCache = { map, expiresAt: Date.now() + 60_000 };
-    return map;
-}
+})();
+
+const { getForecastMapCached, invalidateForecastCache } = require('../services/forecastCache');
 
 // GET /api/pcp-refinado/recursos - Fetch all resources from Protheus and their capacities from MySQL
 router.get('/recursos', async (req, res) => {
@@ -547,6 +545,7 @@ router.get('/rastreabilidade', async (req, res) => {
     let pgClient;
     try {
         pgClient = await db.connect();
+        await pgClient.query("SET client_encoding TO 'WIN1252'");
 
         const { pedido, cliente, produto, dataInicial, dataFinal, dateType, only_active } = req.query;
         let whereClauses = ["COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')"];
@@ -944,7 +943,10 @@ router.get('/rastreabilidade', async (req, res) => {
         res.json(Object.values(pedidosMap));
 
     } finally {
-        if (pgClient) pgClient.release();
+        if (pgClient) {
+            await pgClient.query("SET client_encoding TO 'WIN1252'").catch(() => {});
+            pgClient.release();
+        }
     }
 });
 
@@ -964,6 +966,7 @@ router.get('/cronograma', async (req, res) => {
 
         pgClient = await db.connect();
         await pgClient.query("SET statement_timeout = '120000'");
+        await pgClient.query("SET client_encoding TO 'WIN1252'");
 
         const params = [];
         let paramCount = 1;
@@ -1576,10 +1579,12 @@ router.get('/cronograma', async (req, res) => {
         });
     } catch (err) {
         console.error('⚠️ Erro no endpoint /cronograma:', err);
-        require('fs').writeFileSync('error_log.txt', 'ERRO NO CRONOGRAMA:\n' + err.stack);
         res.status(500).json({ error: 'Erro interno ao processar o cronograma.', details: err.message });
     } finally {
-        if (pgClient) pgClient.release();
+        if (pgClient) {
+            await pgClient.query("SET client_encoding TO 'WIN1252'").catch(() => {});
+            pgClient.release();
+        }
     }
 });
 
@@ -1607,6 +1612,7 @@ router.post('/smart-plan', async (req, res) => {
             console.error('❌ [SMART PLAN] Error triggering background cache rebuild:', err);
         });
 
+        invalidateForecastCache();
         res.json({
             message: 'Planejamento inteligente concluído com sucesso.',
             plans: result.plans,
@@ -1616,6 +1622,70 @@ router.post('/smart-plan', async (req, res) => {
     } catch (error) {
         console.error('❌ Erro em /smart-plan:', error);
         require('fs').writeFileSync('smart_plan_error.txt', error.stack || error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/pcp-refinado/smart-plan-pedidos
+ * Planejamento inteligente de OPs atreladas a Pedidos específicos.
+ */
+router.post('/smart-plan-pedidos', async (req, res) => {
+    try {
+        const { pedidos, data_inicio, include_saturday, clear_existing, sync_data_pcp } = req.body;
+        const usuario = req.user?.login || req.user?.username || 'planejamento_pedidos';
+
+        const result = await planPedidosFCS({
+            pedidos,
+            data_inicio,
+            include_saturday: !!include_saturday,
+            clear_existing: !!clear_existing,
+            sync_data_pcp: !!sync_data_pcp,
+            usuario
+        });
+
+        if (!result.success) {
+            return res.status(500).json({ error: result.error, agent_logs: result.agent_logs });
+        }
+
+        // Rebuild occupancy cache in background to update the daily rate dashboard instantly
+        rebuildDailyOccupancyCache().catch(err => {
+            console.error('❌ [SMART PLAN PEDIDOS] Error triggering background cache rebuild:', err);
+        });
+
+        invalidateForecastCache();
+        res.json({
+            message: 'Planejamento de pedidos concluído com sucesso.',
+            plans: result.plans,
+            agent_logs: result.agent_logs,
+            report: result.report
+        });
+    } catch (error) {
+        console.error('❌ Erro em /smart-plan-pedidos:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/pcp-refinado/smart-plan/export-excel
+ * Exporta o relatório de planejamento inteligente em formato Excel (xlsx).
+ */
+router.post('/smart-plan/export-excel', async (req, res) => {
+    try {
+        const { report } = req.body;
+        if (!report) {
+            return res.status(400).json({ error: 'Relatório não fornecido.' });
+        }
+
+        const workbook = await generateExcelReport(report);
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="Planejamento-FCS.xlsx"');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error('❌ Erro em /smart-plan/export-excel:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1744,6 +1814,7 @@ router.post('/smart-plan/global', async (req, res) => {
             console.error('❌ Erro no rebuild do cache pós-global:', err)
         );
 
+        invalidateForecastCache();
         res.json({
             message: `Planejamento global concluído. ${allOpNums.length} OPs em ${batches.length} lote(s).`,
             total_ops: allOpNums.length,
@@ -1867,15 +1938,15 @@ router.get('/estrutura-pedido', async (req, res) => {
     let pgClient;
     try {
         const {
-            op = '', pedido = '', produto = '', cliente = '',
-            operacao = '', recurso = '',
-            data_inicio = '', data_fim = '',
+            op = '', pedido = '', cliente = '', ref_cliente = '',
+            recurso = '',
             data_entrega_inicio = '', data_entrega_fim = '',
             status: statusFilter = '',
             tipo_produto = ''
         } = req.query;
 
         pgClient = await db.connect();
+        await pgClient.query("SET client_encoding TO 'WIN1252'");
 
         // ── 1. OPs do Protheus (sc2010) ──────────────────────────────────────
         const pgWhere = [`COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')`];
@@ -1884,13 +1955,25 @@ router.get('/estrutura-pedido', async (req, res) => {
         if (op) {
             const opList = op.split(',')
                 .map(o => o.trim())
-                .filter(Boolean)
-                .map(o => (o.length <= 6 ? o.padStart(6, '0') : o));
+                .filter(Boolean);
             if (opList.length === 1) {
-                pgParams.push(opList[0]);
-                pgWhere.push(`TRIM(c2.c2_num) = $${pgParams.length}`);
+                const o = opList[0];
+                if (o.length > 6) {
+                    const num = o.substring(0, 6);
+                    const it = o.substring(6, 8);
+                    pgParams.push(num);
+                    pgWhere.push(`TRIM(c2.c2_num) = $${pgParams.length}`);
+                    if (it) {
+                        pgParams.push(it);
+                        pgWhere.push(`TRIM(c2.c2_item) = $${pgParams.length}`);
+                    }
+                } else {
+                    pgParams.push(o.padStart(6, '0'));
+                    pgWhere.push(`TRIM(c2.c2_num) = $${pgParams.length}`);
+                }
             } else if (opList.length > 1) {
-                pgParams.push(opList);
+                const nums = opList.map(o => (o.length <= 6 ? o.padStart(6, '0') : o.substring(0, 6)));
+                pgParams.push(nums);
                 pgWhere.push(`TRIM(c2.c2_num) = ANY($${pgParams.length})`);
             }
         }
@@ -1907,34 +1990,27 @@ router.get('/estrutura-pedido', async (req, res) => {
                 pgWhere.push(`TRIM(c2.c2_pedido) = ANY($${pgParams.length})`);
             }
         }
-        if (produto) { 
-            pgParams.push(`%${produto.trim().toUpperCase()}%`); 
-            const pIdx = pgParams.length;
-            pgWhere.push(`(
-                UPPER(TRIM(c2.c2_produto)) LIKE $${pIdx} 
-                OR UPPER(TRIM(b1.b1_desc)) LIKE $${pIdx}
-                OR TRIM(c2.c2_num) IN (
-                    SELECT LEFT(TRIM(d4_op), 6)
-                    FROM public.sd4010
-                    WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
-                      AND UPPER(TRIM(d4_cod)) LIKE $${pIdx}
-                )
-            )`); 
-        }
-        if (data_inicio) { pgParams.push(data_inicio.replace(/-/g, '')); pgWhere.push(`c2.c2_datpri >= $${pgParams.length}`); }
-        if (data_fim) { pgParams.push(data_fim.replace(/-/g, '')); pgWhere.push(`c2.c2_datprf <= $${pgParams.length}`); }
         if (data_entrega_inicio) { pgParams.push(data_entrega_inicio.replace(/-/g, '')); pgWhere.push(`c6.c6_entreg >= $${pgParams.length}`); }
         if (data_entrega_fim) { pgParams.push(data_entrega_fim.replace(/-/g, '')); pgWhere.push(`c6.c6_entreg <= $${pgParams.length}`); }
         if (tipo_produto && tipo_produto !== 'Todos') { pgParams.push(tipo_produto.trim()); pgWhere.push(`TRIM(b1.b1_tipo) = $${pgParams.length}`); }
         if (cliente) { pgParams.push(`%${cliente.trim().toUpperCase()}%`); pgWhere.push(`UPPER(TRIM(c6.c6_zclien)) LIKE $${pgParams.length}`); }
+        if (ref_cliente) {
+            pgParams.push(`%${ref_cliente.trim().toUpperCase()}%`);
+            pgWhere.push(`c2.c2_produto IN (
+                SELECT TRIM(z1_produto)
+                FROM public.sz1010
+                WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
+                  AND UPPER(TRIM(z1_codcli)) LIKE $${pgParams.length}
+            )`);
+        }
 
-        // Filtro por operação/recurso (precisa de join com sg2010)
+        // Filtro por recurso (precisa de join com sg2010)
         let joinSg2 = '';
-        if (operacao || recurso) {
+        if (recurso) {
             joinSg2 = `JOIN public.sg2010 g2filt ON TRIM(g2filt.g2_produto) = TRIM(c2.c2_produto)
                        AND COALESCE(g2filt.d_e_l_e_t_,'') IN ('',' ')`;
-            if (operacao) { pgParams.push(operacao.trim()); pgWhere.push(`TRIM(g2filt.g2_operac) = $${pgParams.length}`); }
-            if (recurso) { pgParams.push(`%${recurso.trim().toUpperCase()}%`); pgWhere.push(`UPPER(TRIM(g2filt.g2_recurso)) LIKE $${pgParams.length}`); }
+            pgParams.push(`%${recurso.trim().toUpperCase()}%`);
+            pgWhere.push(`UPPER(TRIM(g2filt.g2_recurso)) LIKE $${pgParams.length}`);
         }
 
         const pgQuery = `
@@ -1955,7 +2031,9 @@ router.get('/estrutura-pedido', async (req, res) => {
                 TRIM(b1.b1_um)       AS um,
                 TRIM(c6.c6_entreg)   AS dt_entrega_pv,
                 TRIM(c6.c6_zclien)   AS cliente,
-                TRIM(c5.c5_client)   AS cod_cliente
+                TRIM(c5.c5_client)   AS cod_cliente,
+                COALESCE(c6.c6_qtdven, 0) AS pv_qtdven,
+                COALESCE(c6.c6_qtdent, 0) AS pv_qtdent
             FROM public.sc2010 c2
             LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto)
                 AND COALESCE(b1.d_e_l_e_t_,'') IN ('',' ')
@@ -2013,7 +2091,10 @@ router.get('/estrutura-pedido', async (req, res) => {
                 TRIM(c2.c2_itempv)   AS item_pv,
                 TRIM(c6.c6_entreg)   AS dt_entrega_pv,
                 TRIM(c6.c6_zclien)   AS cliente,
-                TRIM(c5.c5_client)   AS cod_cliente
+                TRIM(c5.c5_client)   AS cod_cliente,
+                TRIM(c6.c6_pedcli)   AS ped_cliente,
+                COALESCE(c6.c6_qtdven, 0) AS pv_qtdven,
+                COALESCE(c6.c6_qtdent, 0) AS pv_qtdent
             FROM public.sc2010 c2
             LEFT JOIN public.sc6010 c6 ON TRIM(c6.c6_num) = TRIM(c2.c2_pedido)
                 AND TRIM(c6.c6_itemop) = TRIM(c2.c2_item)
@@ -2032,22 +2113,55 @@ router.get('/estrutura-pedido', async (req, res) => {
                 item_pv: r.item_pv,
                 dt_entrega_pv: r.dt_entrega_pv,
                 cliente: r.cliente,
-                cod_cliente: r.cod_cliente
+                cod_cliente: r.cod_cliente,
+                ped_cliente: r.ped_cliente,
+                pv_qtdven: Number(r.pv_qtdven) || 0,
+                pv_qtdent: Number(r.pv_qtdent) || 0
             };
         });
 
+        // Fallback em nível de OP (não de item_op): no Protheus é comum o item_op "raiz" vir com
+        // c2_pedido em branco enquanto outro item_op da MESMA OP tem o pedido preenchido. Uma OP
+        // pertence a um único pedido de venda, então nunca deve ser fragmentada em pedidos diferentes
+        // por causa disso — usamos aqui o primeiro pedido/cliente não vazio encontrado na própria OP.
+        const opLevelInfoMap = {};
+        headersRes.rows.forEach(r => {
+            if (!opLevelInfoMap[r.pedido] && r.num_pedido?.trim()) {
+                opLevelInfoMap[r.pedido] = {
+                    num_pedido: r.num_pedido,
+                    dt_entrega_pv: r.dt_entrega_pv,
+                    cliente: r.cliente,
+                    cod_cliente: r.cod_cliente,
+                    ped_cliente: r.ped_cliente,
+                    pv_qtdven: Number(r.pv_qtdven) || 0,
+                    pv_qtdent: Number(r.pv_qtdent) || 0
+                };
+            }
+        });
+
         // Enriquecer OPs filhas com dados do cliente e pedido
-        const opRows = secondRes.rows.map(r => {
+        let opRows = secondRes.rows.map(r => {
             const info = mainInfoMap[`${r.pedido}_${r.item_op}`] || {};
+            const opInfo = opLevelInfoMap[r.pedido] || {};
             return {
                 ...r,
-                num_pedido: r.num_pedido?.trim() ? r.num_pedido : (info.num_pedido || ''),
+                num_pedido: r.num_pedido?.trim() ? r.num_pedido : (info.num_pedido || opInfo.num_pedido || ''),
                 item_pv: r.item_pv?.trim() ? r.item_pv : (info.item_pv || ''),
-                dt_entrega_pv: r.dt_entrega_pv || (info.dt_entrega_pv || ''),
-                cliente: r.cliente?.trim() ? r.cliente : (info.cliente || ''),
-                cod_cliente: r.cod_cliente?.trim() ? r.cod_cliente : (info.cod_cliente || '')
+                dt_entrega_pv: r.dt_entrega_pv || (info.dt_entrega_pv || opInfo.dt_entrega_pv || ''),
+                cliente: r.cliente?.trim() ? r.cliente : (info.cliente || opInfo.cliente || ''),
+                cod_cliente: r.cod_cliente?.trim() ? r.cod_cliente : (info.cod_cliente || opInfo.cod_cliente || ''),
+                ped_cliente: r.ped_cliente?.trim() ? r.ped_cliente : (info.ped_cliente || opInfo.ped_cliente || ''),
+                pv_qtdven: info.pv_qtdven || opInfo.pv_qtdven || 0,
+                pv_qtdent: info.pv_qtdent || opInfo.pv_qtdent || 0
             };
         });
+
+        // ── CORREÇÃO DE BUG: Evitar vazamento de OPs duplicadas (mesmo c2_num) ──
+        // Se filtramos por pedido, garantimos que a OP resultante realmente pertence ao pedido
+        if (pedido) {
+            const pedList = pedido.split(',').map(p => p.trim()).filter(Boolean).map(p => p.length <= 6 ? p.padStart(6, '0') : p);
+            opRows = opRows.filter(r => pedList.includes(r.num_pedido));
+        }
 
         const produtos = [...new Set(opRows.map(r => r.produto).filter(Boolean))];
         const opKeys = opRows.map(r => `${r.pedido}${r.item_op}${r.sequen}`);
@@ -2068,15 +2182,33 @@ router.get('/estrutura-pedido', async (req, res) => {
             allComponents.add(r.componente);
         });
 
+        // ── 2.5 Estrutura BOM Estática (SG1010) como fallback ──────────────────
+        const sg1Res = await pgClient.query(`
+            SELECT TRIM(g1_cod) AS pai, TRIM(g1_comp) AS componente, g1_quant AS quant
+            FROM public.sg1010
+            WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(g1_cod) = ANY($1)
+        `, [produtos]);
+
+        const sg1Map = {};
+        sg1Res.rows.forEach(r => {
+            if (!sg1Map[r.pai]) sg1Map[r.pai] = [];
+            sg1Map[r.pai].push(r);
+            allComponents.add(r.componente);
+        });
+
         const allComponentsArr = [...allComponents];
 
-        // ── 3. Roteiro (SG2010) ───────────────────────────────────────────────
+        // ── 3. Roteiro (SG2010 + SH1010 Descrição Oficial) ───────────────────
         const sg2Res = await pgClient.query(`
-            SELECT TRIM(g2_produto) produto, TRIM(g2_operac) operac,
-                   TRIM(g2_recurso) recurso, TRIM(g2_descri) desc_recurso, g2_tempad tempo_padrao
-            FROM public.sg2010
-            WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(g2_produto) = ANY($1)
-            ORDER BY g2_produto, g2_operac
+            SELECT TRIM(g2.g2_produto) AS produto, TRIM(g2.g2_operac) AS operac,
+                   TRIM(g2.g2_recurso) AS recurso,
+                   COALESCE(NULLIF(TRIM(h1.h1_descri), ''), NULLIF(TRIM(g2.g2_descri), ''), TRIM(g2.g2_recurso)) AS desc_recurso,
+                   g2.g2_tempad AS tempo_padrao
+            FROM public.sg2010 g2
+            LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
+                AND COALESCE(h1.d_e_l_e_t_,'') IN ('',' ')
+            WHERE COALESCE(g2.d_e_l_e_t_,'') IN ('',' ') AND TRIM(g2.g2_produto) = ANY($1)
+            ORDER BY g2.g2_produto, g2.g2_operac
         `, [allComponentsArr]);
 
         const rotMap = {};
@@ -2095,6 +2227,18 @@ router.get('/estrutura-pedido', async (req, res) => {
                 [allComponentsArr]
             );
             sb1Res.rows.forEach(r => { filhoDescMap[r.cod] = r; });
+        }
+
+        // ── 3.6 Ref. Cliente por produto (SZ1010) ──────────────────────────────
+        let refClienteMap = {};
+        if (produtos.length > 0) {
+            const sz1Res = await pgClient.query(
+                `SELECT TRIM(z1_produto) AS produto, TRIM(z1_codcli) AS ref_cliente
+                 FROM public.sz1010
+                 WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ') AND TRIM(z1_produto) = ANY($1)`,
+                [produtos]
+            );
+            sz1Res.rows.forEach(r => { refClienteMap[r.produto] = r.ref_cliente; });
         }
         pgClient.release(); pgClient = null;
 
@@ -2159,10 +2303,147 @@ router.get('/estrutura-pedido', async (req, res) => {
         // ── 5.5 Forecast PCP ─────────────────────────────────────────────────
         const forecastMap = await getForecastMapCached();
 
+        // ── 5.5 Romaneios e Recebimentos de Terceiros (MySQL) ────────────────
+        let romaneiosByOpMap = {};
+        let romaneiosByProdMap = {};
+
+        const allOpKeys = opRows.map(r => `${(r.pedido || '').trim()}${(r.item_op || '').trim()}${(r.sequen || '').trim()}`).filter(Boolean);
+        const allOpNums = [...new Set(opRows.map(r => (r.pedido || '').trim()))].filter(Boolean);
+
+        if (allComponentsArr.length > 0 || allOpKeys.length > 0) {
+            try {
+                const [romaneioRows] = await mysqlPool.query(`
+                    SELECT 
+                        i.id AS item_id,
+                        i.romaneio_id,
+                        TRIM(i.codigo_produto) AS codigo_produto,
+                        TRIM(i.descricao_produto) AS descricao_produto,
+                        i.quantidade AS quantidade_enviada,
+                        TRIM(i.pedido) AS pedido,
+                        TRIM(i.item_pedido) AS item_pedido,
+                        r.cliente_nome AS fornecedor_nome,
+                        r.cliente_cod AS fornecedor_cod,
+                        r.data_liberacao,
+                        r.data_previsao_retorno,
+                        r.status AS romaneio_status,
+                        r.nf_saida,
+                        r.nf_retorno,
+                        t.description AS romaneio_tipo,
+                        COALESCE(SUM(rec.quantidade), 0) AS quantidade_recebida,
+                        (i.quantidade - COALESCE(SUM(rec.quantidade), 0)) AS saldo_pendente,
+                        MAX(rec.data_recebimento) AS data_ultimo_recebimento
+                    FROM app_romaneio_items i
+                    JOIN app_romaneios r ON i.romaneio_id = r.id
+                    LEFT JOIN app_romaneio_types t ON r.tipo_id = t.id
+                    LEFT JOIN app_romaneio_recebimentos rec ON i.id = rec.romaneio_item_id
+                    WHERE (TRIM(i.codigo_produto) IN (?) OR TRIM(i.pedido) IN (?) OR TRIM(i.pedido) IN (?))
+                    GROUP BY i.id, i.romaneio_id, i.codigo_produto, i.descricao_produto, i.quantidade, 
+                             i.pedido, i.item_pedido, r.cliente_nome, r.cliente_cod, r.data_liberacao, 
+                             r.data_previsao_retorno, r.status, r.nf_saida, r.nf_retorno, t.description
+                    ORDER BY r.data_liberacao DESC
+                `, [
+                    allComponentsArr.length > 0 ? allComponentsArr : ['__NONE__'],
+                    allOpKeys.length > 0 ? allOpKeys : ['__NONE__'],
+                    allOpNums.length > 0 ? allOpNums : ['__NONE__']
+                ]);
+
+                // Buscar detalhes de todos os apontamentos de recebimento individuais
+                const itemIds = romaneioRows.map(r => r.item_id).filter(Boolean);
+                let recMap = {};
+                if (itemIds.length > 0) {
+                    const [recRows] = await mysqlPool.query(`
+                        SELECT romaneio_item_id, quantidade, data_recebimento, usuario, observacao
+                        FROM app_romaneio_recebimentos
+                        WHERE romaneio_item_id IN (?)
+                        ORDER BY data_recebimento DESC
+                    `, [itemIds]);
+                    recRows.forEach(rec => {
+                        if (!recMap[rec.romaneio_item_id]) recMap[rec.romaneio_item_id] = [];
+                        recMap[rec.romaneio_item_id].push({
+                            quantidade: Number(rec.quantidade) || 0,
+                            data_recebimento: rec.data_recebimento,
+                            usuario: rec.usuario,
+                            observacao: rec.observacao
+                        });
+                    });
+                }
+
+                romaneioRows.forEach(row => {
+                    const prodKey = row.codigo_produto;
+                    const opKey = row.pedido; // ex: '00461949001'
+                    
+                    const saldo = Number(row.saldo_pendente) || 0;
+                    const recebida = Number(row.quantidade_recebida) || 0;
+                    const enviada = Number(row.quantidade_enviada) || 0;
+                    
+                    let statusRetorno = 'no_fornecedor';
+                    if (recebida >= enviada && enviada > 0) {
+                        statusRetorno = 'recebido';
+                    } else if (recebida > 0) {
+                        statusRetorno = 'parcial';
+                    }
+
+                    const romObj = {
+                        item_id: row.item_id,
+                        romaneio_id: row.romaneio_id,
+                        fornecedor_nome: row.fornecedor_nome,
+                        fornecedor_cod: row.fornecedor_cod,
+                        quantidade_enviada: enviada,
+                        quantidade_recebida: recebida,
+                        saldo_pendente: saldo,
+                        data_liberacao: row.data_liberacao,
+                        data_previsao_retorno: row.data_previsao_retorno,
+                        data_ultimo_recebimento: row.data_ultimo_recebimento,
+                        romaneio_status: row.romaneio_status,
+                        romaneio_tipo: row.romaneio_tipo,
+                        nf_saida: row.nf_saida,
+                        nf_retorno: row.nf_retorno,
+                        pedido: row.pedido,
+                        item_pedido: row.item_pedido,
+                        status_retorno: statusRetorno,
+                        recebimentos: recMap[row.item_id] || []
+                    };
+
+                    if (opKey) {
+                        if (!romaneiosByOpMap[opKey]) romaneiosByOpMap[opKey] = [];
+                        romaneiosByOpMap[opKey].push(romObj);
+                    }
+                    if (prodKey) {
+                        if (!romaneiosByProdMap[prodKey]) romaneiosByProdMap[prodKey] = [];
+                        romaneiosByProdMap[prodKey].push(romObj);
+                    }
+                });
+            } catch (romErr) {
+                console.error('[pcpRefinado] Erro ao carregar romaneios:', romErr.message);
+            }
+        }
+
+        const buildRomaneioResumo = (romList) => {
+            if (!romList || romList.length === 0) return null;
+            const total_enviado = romList.reduce((s, r) => s + (Number(r.quantidade_enviada) || 0), 0);
+            const total_recebido = romList.reduce((s, r) => s + (Number(r.quantidade_recebida) || 0), 0);
+            const total_saldo_pendente = romList.reduce((s, r) => s + (Number(r.saldo_pendente) || 0), 0);
+            let status_geral = 'no_fornecedor';
+            if (total_saldo_pendente <= 0 && total_enviado > 0) {
+                status_geral = 'recebido';
+            } else if (total_recebido > 0) {
+                status_geral = 'parcial';
+            }
+            return {
+                total_romaneios: romList.length,
+                total_enviado,
+                total_recebido,
+                total_saldo_pendente,
+                status_geral,
+                lista: romList
+            };
+        };
+
         // ── 6. Montar Árvore ──────────────────────────────────────────────────
         const pedidosMap = {};
         opRows.forEach(op => {
-            const numPedido = op.num_pedido || op.pedido;
+            // op.pedido é, na verdade, o número da OP (alias de c2_num) — nunca usar como fallback de pedido de venda
+            const numPedido = (op.num_pedido && op.num_pedido.trim()) ? op.num_pedido : '';
             if (!pedidosMap[numPedido]) {
                 pedidosMap[numPedido] = { pedido: numPedido, cliente: op.cliente || '—', cod_cliente: op.cod_cliente, itens: {}, total_itens: 0, pct_global: 0 };
             }
@@ -2196,11 +2477,32 @@ router.get('/estrutura-pedido', async (req, res) => {
                 if (pctItem >= 100) statusItem = 'done';
                 else if (pctItem > 0 || roteiro.some(r => r.pct > 0)) statusItem = 'in_progress';
 
+                let qtdeFeitaReal = Number(op.qtde_feita) || 0;
+                if (roteiro.length > 0) {
+                    const lastOp = roteiro[roteiro.length - 1];
+                    if (lastOp.qtde_produzida > qtdeFeitaReal) {
+                        qtdeFeitaReal = lastOp.qtde_produzida;
+                    }
+                }
+
                 const opKey = `${op.pedido}${op.item_op}${op.sequen}`;
-                const materiais = (sd4Map[opKey] || []).map(m => {
+                let materiaisRows = sd4Map[opKey];
+                
+                // Fallback para SG1010 se não houver empenho transacional (SD4)
+                if ((!materiaisRows || materiaisRows.length === 0) && sg1Map[op.produto]) {
+                    materiaisRows = sg1Map[op.produto].map(c => ({
+                        op_pai: opKey,
+                        componente: c.componente,
+                        qtde_orig: Number(c.quant) * (Number(op.qtde) || 1),
+                        qtde_pend: Number(c.quant) * (Number(op.qtde) || 1)
+                    }));
+                }
+
+                const materiais = (materiaisRows || []).map(m => {
                     const d = filhoDescMap[m.componente] || {};
                     const qtdeTotal = Number(m.qtde_orig) || 0;
                     const qtdeUnit = Number(op.qtde) > 0 ? (qtdeTotal / Number(op.qtde)) : qtdeTotal;
+                    const matRomaneios = (m.op_pai ? romaneiosByOpMap[m.op_pai] : null) || romaneiosByProdMap[m.componente.trim()] || [];
                     return {
                         codigo: m.componente,
                         descricao: d.descricao || '—',
@@ -2210,7 +2512,9 @@ router.get('/estrutura-pedido', async (req, res) => {
                         qtde_unitaria: qtdeUnit,
                         qtde_total: qtdeTotal,
                         perda: 0,
-                        has_pdf: docsSet.has(m.componente.trim())
+                        has_pdf: docsSet.has(m.componente.trim()),
+                        romaneios: matRomaneios,
+                        romaneio_resumo: buildRomaneioResumo(matRomaneios)
                     };
                 });
 
@@ -2229,19 +2533,30 @@ router.get('/estrutura-pedido', async (req, res) => {
                     }
                 });
 
+                const fullOpKey = `${(op.pedido || '').trim()}${(op.item_op || '').trim()}${(op.sequen || '').trim()}`;
+                const prodCode = (op.produto || '').trim();
+                const itemRomaneios = romaneiosByOpMap[fullOpKey] || romaneiosByProdMap[prodCode] || [];
+
                 pedidosMap[numPedido].itens[itemKey] = {
                     op: op.pedido, item_op: op.item_op, item_pv: op.item_pv, sequen: op.sequen,
                     produto: op.produto, desc_produto: op.desc_produto || '—', tipo_produto: op.tipo_produto || '?',
-                    um: op.um || 'UN', qtde: Number(op.qtde) || 0, qtde_feita: Number(op.qtde_feita) || 0,
-                    qtde_pendente: Math.max(0, (Number(op.qtde) || 0) - (Number(op.qtde_feita) || 0)),
+                    ped_cliente: op.ped_cliente || '', ref_cliente: refClienteMap[op.produto] || '',
+                    um: op.um || 'UN', qtde: Number(op.qtde) || 0, qtde_feita: qtdeFeitaReal,
+                    qtde_pendente: Math.max(0, (Number(op.qtde) || 0) - qtdeFeitaReal),
                     pct_global: pctItem, status: statusItem,
                     dt_abertura: op.dt_abertura || '', dt_prazo_op: op.dt_prazo_op || '',
                     dt_entrega_pv: op.dt_entrega_pv || '',
                     dt_pcp: fc.data_entrega_pcp || null,
+                    qtde_pcp: fc.quantidade_pcp || null,
                     dt_faturamento_previsto: fc.data_prevista_faturamento || null,
                     dt_inicio_fcs: fcs.dt_inicio_fcs || null, dt_fim_fcs: fcs.dt_fim_fcs || null,
                     recursos: roteiro, materiais, materiais_roteiro,
-                    has_pdf: docsSet.has(op.produto.trim())
+                    has_pdf: docsSet.has(op.produto.trim()),
+                    romaneios: itemRomaneios,
+                    romaneio_resumo: buildRomaneioResumo(itemRomaneios),
+                    pv_qtdven: Number(op.pv_qtdven) || 0,
+                    pv_qtdent: Number(op.pv_qtdent) || 0,
+                    pv_saldo: Math.max(0, (Number(op.pv_qtdven) || 0) - (Number(op.pv_qtdent) || 0))
                 };
             }
         });
@@ -2270,10 +2585,72 @@ router.get('/estrutura-pedido', async (req, res) => {
         console.error('❌ [ESTRUTURA-PEDIDO]', err.message, err.stack?.split('\n')[1]);
         res.status(500).json({ error: err.message });
     } finally {
-        if (pgClient) pgClient.release();
+        if (pgClient) {
+            await pgClient.query("SET client_encoding TO 'WIN1252'").catch(() => {});
+            pgClient.release();
+        }
     }
 });
 
 
+
+// ── Snapshots da Lista de Pendências (apontamento por recurso) por OP ──────
+// POST /api/pcp-refinado/pendencias-snapshot
+router.post('/pendencias-snapshot', async (req, res) => {
+    try {
+        const { op_num, pedido, itens_pendentes } = req.body;
+        if (!op_num || !Array.isArray(itens_pendentes)) {
+            return res.status(400).json({ error: 'op_num e itens_pendentes (array) são obrigatórios.' });
+        }
+        const usuario = req.user?.login || req.user?.nome || 'sistema';
+        const [result] = await mysqlPool.query(
+            `INSERT INTO app_pcp_pendencias_snapshot (op_num, pedido, usuario, total_pendencias, itens_pendentes)
+             VALUES (?, ?, ?, ?, ?)`,
+            [String(op_num).trim(), pedido ? String(pedido).trim() : null, usuario, itens_pendentes.length, JSON.stringify(itens_pendentes)]
+        );
+        res.json({ id: result.insertId, op_num, pedido, usuario, total_pendencias: itens_pendentes.length, created_at: new Date() });
+    } catch (err) {
+        console.error('❌ [PENDENCIAS-SNAPSHOT-CREATE]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/pcp-refinado/pendencias-snapshot?op=XXXX — histórico de snapshots da OP
+router.get('/pendencias-snapshot', async (req, res) => {
+    try {
+        const { op } = req.query;
+        if (!op) return res.status(400).json({ error: 'Parâmetro op é obrigatório.' });
+        const [rows] = await mysqlPool.query(
+            `SELECT id, op_num, pedido, usuario, total_pendencias, created_at
+             FROM app_pcp_pendencias_snapshot
+             WHERE op_num = ?
+             ORDER BY created_at DESC`,
+            [String(op).trim()]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('❌ [PENDENCIAS-SNAPSHOT-LIST]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/pcp-refinado/pendencias-snapshot/:id — detalhe de um snapshot específico
+router.get('/pendencias-snapshot/:id', async (req, res) => {
+    try {
+        const [rows] = await mysqlPool.query(
+            `SELECT * FROM app_pcp_pendencias_snapshot WHERE id = ?`,
+            [req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'Snapshot não encontrado.' });
+        const snapshot = rows[0];
+        if (typeof snapshot.itens_pendentes === 'string') {
+            snapshot.itens_pendentes = JSON.parse(snapshot.itens_pendentes);
+        }
+        res.json(snapshot);
+    } catch (err) {
+        console.error('❌ [PENDENCIAS-SNAPSHOT-GET]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 module.exports = router;

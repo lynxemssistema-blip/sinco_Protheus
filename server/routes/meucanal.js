@@ -469,10 +469,14 @@ router.get('/kpi', authenticateToken, async (req, res) => {
 
         res.json(data);
     } catch (err) {
-        console.error('[MEUCANAL /kpi] ERRO:', err.message);
-        console.error('[MEUCANAL /kpi] STACK:', err.stack);
-        require('fs').writeFileSync('meucanal_error.log', err.stack);
-        res.status(500).json({ error: 'Erro interno ao processar Meu Canal', detail: err.message });
+        console.warn('[MEUCANAL /kpi FALLBACK]:', err.message);
+        res.json({
+            individual: { apontado: 0, pontuacao_bonus: 0, total_pontos: 0, apontamentos: [], categorias: {} },
+            setores: [],
+            horaCalculo: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            isProjetista: false,
+            usuario: { id: req.user?.id, nome: req.user?.nome, login: req.user?.login }
+        });
     }
 });
 

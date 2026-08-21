@@ -198,6 +198,7 @@ export const MENU_GROUPS = [
         label: 'VMI',
         items: [
             { id: 'vmi_demanda', label: 'VMI Forecast', path: '/vmi/forecast', icon: ClipboardList },
+            { id: 'vmi_demanda_mes', label: 'Demanda Mês', path: '/vmi/demanda-mes', icon: Calendar },
             { id: 'vmi_pedido', label: 'VMI Pedido', path: '/vmi/pedido', icon: ListOrdered },
             { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
             { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },
@@ -214,6 +215,13 @@ export const MENU_GROUPS = [
             { id: 'wabtec_escopo', label: 'Escopo de Fornecimento', path: '/wabtec/escopo', icon: FileText },
             { id: 'wabtec_estrutura', label: 'Estrutura (Importação)', path: '/wabtec/estrutura', icon: GitMerge },
             { id: 'wabtec_datas_solicitacao', label: 'Datas de Solicitação', path: '/wabtec/datas-solicitacao', icon: Calendar }
+        ]
+    },
+    {
+        id: 'engetron',
+        label: 'Engetron',
+        items: [
+            { id: 'engetron_dashboard', label: 'Demandas Engetron', path: '/engetron/dashboard', icon: LayoutDashboard }
         ]
     },
     {

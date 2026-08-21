@@ -7,13 +7,13 @@ const pool = mysql.createPool({
     password: process.env.MYSQL_PASS,
     database: process.env.MYSQL_DB,
     waitForConnections: true,
-    connectionLimit: 15,       // Limitado a 15 porque max_user_connections no DB é 25
-    queueLimit: 200,           // Fila maior para absorver picos de requisições
+    connectionLimit: 8,        // Pool otimizado para reaproveitar conexões persistentes
+    queueLimit: 200,           // Fila para absorver picos de requisições
     charset: 'utf8mb4',
     enableKeepAlive: true,
-    keepAliveInitialDelay: 10000,
+    keepAliveInitialDelay: 5000,
     connectTimeout: 10000,
-    idleTimeout: 60000,
+    idleTimeout: 0,            // 0 = Nunca fechar conexões ociosas prematuramente (evita estourar max_connections_per_hour do Hostinger)
 });
 
 // DBA-tuned session variables set on connection initialization (avoids pool configuration warnings)

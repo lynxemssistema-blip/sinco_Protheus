@@ -385,6 +385,9 @@ const ProductStructure = () => {
                                 {productStatus === 'REVISAO' && (
                                     <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ml-2 shadow-sm border border-yellow-200">Revisão</span>
                                 )}
+                                {productStatus === 'RESTRICAO' && (
+                                    <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ml-2 shadow-sm border border-red-200">Restrição</span>
+                                )}
                             </div>
                             <p className="text-gray-500 font-mono inline-block px-2 py-1 rounded text-sm shadow-sm border border-gray-100 bg-white">
                                 {codigo}
@@ -427,6 +430,15 @@ const ProductStructure = () => {
                                     }`}
                                 >
                                     Revisão
+                                </button>
+                                <button
+                                    onClick={() => handleUpdateStatus('RESTRICAO')}
+                                    disabled={isUpdatingStatus}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-colors ${
+                                        productStatus === 'RESTRICAO' ? 'bg-red-500 text-white' : 'hover:bg-red-50 text-red-700'
+                                    }`}
+                                >
+                                    Restrição
                                 </button>
                                 <button
                                     onClick={() => handleUpdateStatus('NORMAL')}
@@ -570,6 +582,7 @@ const ProductStructure = () => {
                                         <tr className={`transition-colors ${
                                             productStatuses[item.codigo] === 'NOVO' ? 'bg-green-50/50 hover:bg-green-100/50' : 
                                             productStatuses[item.codigo] === 'REVISAO' ? 'bg-yellow-50/50 hover:bg-yellow-100/50' : 
+                                            productStatuses[item.codigo] === 'RESTRICAO' ? 'bg-red-50/50 hover:bg-red-100/50' :
                                             item.nivel === 0 ? 'bg-blue-50/30 hover:bg-blue-50' : 'hover:bg-slate-50'
                                         }`}>
                                             
@@ -717,12 +730,14 @@ const ProductStructure = () => {
                                                         className={`text-[10px] font-bold rounded-sm px-1 py-1 border transition-colors cursor-pointer appearance-none text-center shadow-sm ${
                                                             productStatuses[item.codigo] === 'NOVO' ? 'bg-green-100 text-green-800 border-green-300' :
                                                             productStatuses[item.codigo] === 'REVISAO' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                                            productStatuses[item.codigo] === 'RESTRICAO' ? 'bg-red-100 text-red-800 border-red-300' :
                                                             'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
                                                         }`}
                                                     >
                                                         <option value="NORMAL" className="bg-white text-gray-700">NORMAL</option>
                                                         <option value="NOVO" className="bg-white text-green-700">NOVO</option>
                                                         <option value="REVISAO" className="bg-white text-yellow-700">REVISÃO</option>
+                                                        <option value="RESTRICAO" className="bg-white text-red-700">RESTRIÇÃO</option>
                                                     </select>
                                                     <button 
                                                         onClick={() => { setHistoryModalCode(item.codigo); setShowStatusHistory(true); }}

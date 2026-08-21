@@ -47,20 +47,13 @@ async function handleSystemError(req, errorBody) {
         const rota = req.originalUrl;
         const stringErro = String(erroInfo).substring(0, 500);
 
+        // Do not query DB if the error itself is a DB limit or connection failure (prevents cascading exhaustion)
+        if (/ER_USER_LIMIT_REACHED|max_connections_per_hour|PROTOCOL_CONNECTION_LOST|ECONNREFUSED|POOL_TIMEOUT/i.test(stringErro)) {
+            return;
+        }
+
         // Salvar o erro no banco para a Lista de Erros (Settings)
         try {
-            await mysqlPool.query(`
-                CREATE TABLE IF NOT EXISTS app_system_errors (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    user_id INT NOT NULL,
-                    route VARCHAR(255) NOT NULL,
-                    error_details TEXT,
-                    status ENUM('Pendente', 'Resolvido', 'Cancelado') DEFAULT 'Pendente',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    resolved_at DATETIME NULL,
-                    resolved_by INT NULL
-                )
-            `);
             await mysqlPool.query(
                 `INSERT INTO app_system_errors (user_id, route, error_details, status) VALUES (?, ?, ?, 'Pendente')`,
                 [userId, rota, stringErro]

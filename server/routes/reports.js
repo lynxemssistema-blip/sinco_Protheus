@@ -1134,6 +1134,20 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         }
 
 
+        // ── Filtrar Inativos e Faturados do Export ──
+        rows.forEach(o => {
+            if (o.itens) {
+                o.itens = o.itens.filter(it => {
+                    const isFaturado = Number(it.qtd_faturar || 0) <= 0;
+                    const isInativo = (it.b1_msblql === '1' || it.b1_msblql === 'S' || it.b1_msblql === 'T' || it.b1_msblql === 'Y');
+                    return !isFaturado && !isInativo;
+                });
+            }
+        });
+        const validOrders = rows.filter(o => o.itens && o.itens.length > 0);
+        rows.length = 0; 
+        rows.push(...validOrders);
+
         // Coleta produtos únicos de todos os itens do resultado
         const allItems      = rows.flatMap(o => (o.itens || []).map(it => ({ ...it, order: o })));
         const uniqueProducts = [...new Set(allItems.map(it => it.produto.trim()))];
@@ -1165,7 +1179,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
                     ORDER BY bom.raiz, bom.comp`,
                     [uniqueProducts]
                 );
-                await client.query("SET client_encoding TO 'UTF8'");
+                await client.query("SET client_encoding TO 'WIN1252'").catch(() => {});
             } finally {
                 client.release();
             }
@@ -2059,12 +2073,22 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         sheetOrders.getColumn('proxima_entrega').numFmt = 'dd/mm/yyyy';
         sheetOrders.getColumn('pcp_inicio').numFmt      = 'dd/mm/yyyy';
         sheetOrders.getColumn('pcp_fim').numFmt         = 'dd/mm/yyyy';
+
         sheetItems.getColumn('emissao').numFmt          = 'dd/mm/yyyy';
         sheetItems.getColumn('entrega').numFmt          = 'dd/mm/yyyy';
         sheetItems.getColumn('data_pcp').numFmt         = 'dd/mm/yyyy';
+        sheetItems.getColumn('nova_data_pcp').numFmt    = 'dd/mm/yyyy';
+        sheetItems.getColumn('qtde_pcp').numFmt         = '#,##0.00';
+        sheetItems.getColumn('qtd').numFmt              = '#,##0.00';
+        sheetItems.getColumn('qtd_entreg').numFmt       = '#,##0.00';
+        sheetItems.getColumn('qtd_faturar').numFmt      = '#,##0.00';
+
         sheetCarga.getColumn('emissao').numFmt          = 'dd/mm/yyyy';
         sheetCarga.getColumn('entrega').numFmt          = 'dd/mm/yyyy';
         sheetCarga.getColumn('data_pcp').numFmt         = 'dd/mm/yyyy';
+        sheetCarga.getColumn('nova_data_pcp').numFmt    = 'dd/mm/yyyy';
+        sheetCarga.getColumn('qtde_pcp').numFmt         = '#,##0.00';
+        sheetCarga.getColumn('qtd_faturar').numFmt      = '#,##0.00';
 
         // ── Programação de Entregas ──────────────────────────────────────────────
         const formatDateKey = (dateObj) => {
@@ -2076,10 +2100,17 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
 
         const normalizeDate = (rawStr) => {
             if (!rawStr) return null;
+            if (rawStr instanceof Date && !isNaN(rawStr.getTime())) {
+                const y = rawStr.getFullYear();
+                const m = String(rawStr.getMonth() + 1).padStart(2, '0');
+                const d = String(rawStr.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
             const s = String(rawStr).trim();
             if (!s) return null;
             if (/^\d{8}$/.test(s)) return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
             if (s.includes('T')) return s.split('T')[0];
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
             return s;
         };
 
@@ -2164,25 +2195,38 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         });
 
         // ── POPULATE sheetBom ──
+        const baseCalculoBom = req.query.baseCalculo || 'saldo';
+        const parentQtyMapBom = {};
+        allItems.forEach(it => {
+            const p = (it.produto || '').trim();
+            const qty = baseCalculoBom === 'pedido' ? Number(it.qtd || 0) : Number(it.qtd_faturar || 0);
+            parentQtyMapBom[p] = (parentQtyMapBom[p] || 0) + qty;
+        });
+
         sheetBom.columns = [
             { header: 'Produto Pai (Raiz)', key: 'raiz', width: 20 },
             { header: 'Componente', key: 'comp', width: 20 },
             { header: 'Descrição Componente', key: 'desc', width: 35 },
             { header: 'UM', key: 'um', width: 10 },
             { header: 'Tipo', key: 'tipo', width: 10 },
-            { header: 'Qtd Unitária', key: 'quant', width: 15 }
+            { header: 'Qtd Unitária', key: 'quant', width: 15 },
+            { header: 'Qtd Total', key: 'qtdTotal', width: 15 }
         ];
         estruturasList.forEach(b => {
+            const parentQty = parentQtyMapBom[b.raiz] || 0;
+            const qtdTotal = (Number(b.quant) || 0) * parentQty;
             sheetBom.addRow({
                 raiz: b.raiz,
                 comp: b.comp,
                 desc: b.desc,
                 um: b.um,
                 tipo: b.tipo,
-                quant: b.quant
+                quant: b.quant,
+                qtdTotal: qtdTotal
             });
         });
         sheetBom.getColumn('quant').numFmt = '#,##0.00';
+        sheetBom.getColumn('qtdTotal').numFmt = '#,##0.00';
 
         // ── POPULATE sheetMateriais ──
         const canSeeFinancials = await hasFinancialAccess(req);
@@ -2195,10 +2239,14 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
             { header: 'Cliente', key: 'cliente', width: 30 },
             { header: 'Produto Final', key: 'produtoFinal', width: 20 },
             { header: 'Descrição Produto Final', key: 'descFinal', width: 35 },
+            { header: 'Data Entrega', key: 'entrega', width: 15 },
+            { header: 'Data PCP', key: 'data_pcp', width: 15 },
+            { header: 'Qtde PCP', key: 'qtde_pcp', width: 12 },
             { header: baseCalculo === 'pedido' ? 'Qtd Pedido' : 'Qtd Faturar', key: 'qtdFaturar', width: 15 },
             { header: 'Código do Material', key: 'materialCod', width: 20 },
             { header: 'Descrição do Material', key: 'materialDesc', width: 35 },
             { header: 'UM', key: 'um', width: 10 },
+            { header: 'Tipo', key: 'tipo', width: 10 },
             { header: 'Qtd Unitária (BOM)', key: 'qtdUnit', width: 18 },
             { header: 'Qtd Total Necessária', key: 'qtdTotal', width: 20 }
         ];
@@ -2218,30 +2266,38 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
 
             const comps = estruturasList.filter(e => e.raiz === parentProd);
             comps.forEach(c => {
-                const matchesTipo = filtroTipo === 'Todos' || c.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
+                const compTipo = (c.tipo || '').trim().toUpperCase();
+                const matchesTipo = filtroTipo === 'Todos' || compTipo === filtroTipo.toUpperCase();
                 if (!matchesTipo) return;
 
-                const totalQtd = parentQtd * c.quant;
+                const totalQtd = parentQtd * (Number(c.quant) || 0);
                 const rowData = {
-                    pedido: it.order.pedido,
-                    cliente: it.order.cliente,
+                    pedido: it.order?.pedido || it.pedido || '',
+                    cliente: it.order?.cliente || it.cliente || '',
                     produtoFinal: parentProd,
                     descFinal: it.descricao || '-',
+                    entrega: parseDate(it.entrega || it.order?.proxima_entrega),
+                    data_pcp: it.data_pcp ? parseDate(it.data_pcp) : null,
+                    qtde_pcp: it.qtde_pcp != null && it.qtde_pcp !== '' ? parseFloat(it.qtde_pcp) : null,
                     qtdFaturar: parentQtd,
                     materialCod: c.comp,
                     materialDesc: c.desc || '-',
                     um: c.um || '-',
-                    qtdUnit: c.quant,
+                    tipo: c.tipo || '-',
+                    qtdUnit: Number(c.quant) || 0,
                     qtdTotal: totalQtd
                 };
                 if (exibirCustos) {
-                    rowData.custoUnit = c.custo_unitario || 0;
-                    rowData.custoTotal = totalQtd * (c.custo_unitario || 0);
+                    rowData.custoUnit = Number(c.custo_unitario) || 0;
+                    rowData.custoTotal = totalQtd * (Number(c.custo_unitario) || 0);
                 }
                 sheetMateriais.addRow(rowData);
             });
         });
 
+        sheetMateriais.getColumn('entrega').numFmt = 'dd/mm/yyyy';
+        sheetMateriais.getColumn('data_pcp').numFmt = 'dd/mm/yyyy';
+        sheetMateriais.getColumn('qtde_pcp').numFmt = '#,##0.00';
         sheetMateriais.getColumn('qtdFaturar').numFmt = '#,##0.00';
         sheetMateriais.getColumn('qtdUnit').numFmt = '#,##0.00';
         sheetMateriais.getColumn('qtdTotal').numFmt = '#,##0.00';
@@ -2719,7 +2775,7 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                     ORDER BY bom.raiz, bom.comp`,
                     [uniqueProducts]
                 );
-                await client.query("SET client_encoding TO 'UTF8'");
+                await client.query("SET client_encoding TO 'WIN1252'").catch(() => {});
             } finally {
                 client.release();
             }
@@ -3021,6 +3077,18 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
         res.json(masterSheet);
     } catch (error) {
         console.error('[MasterSheet] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/reports/vmi-bicromatizacao/excel
+router.get('/vmi-bicromatizacao/excel', async (req, res) => {
+    try {
+        const { generateVmiBicromatReport } = require('../scripts/gerar_relatorio_bicromatizacao_vmi');
+        const result = await generateVmiBicromatReport();
+        res.download(result.downloadsPath, path.basename(result.downloadsPath));
+    } catch (error) {
+        console.error('[VMI Bicromatizacao] Error:', error);
         res.status(500).json({ error: error.message });
     }
 });

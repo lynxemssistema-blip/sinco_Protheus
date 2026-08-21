@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Droplets } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
 import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
@@ -22,6 +22,7 @@ import InvoiceDetailsModal from './InvoiceDetailsModal';
 import PCPBalanceModal from './PCPBalanceModal';
 import ClassificacaoModal from './orders/ClassificacaoModal';
 import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
+import BOMStructureModal from './BOMStructureModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -127,8 +128,10 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [reportSelectedItems, setReportSelectedItems] = useState(null);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
+    const [downloadingBicromat, setDownloadingBicromat] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
     const [priorityTarget, setPriorityTarget] = useState(null);
+    const [bomStructureTarget, setBomStructureTarget] = useState(null); // { op, itemPv }
     const [priorityMode, setPriorityMode] = useState('faturamento'); // 'faturamento' | 'op' — quais delas nao se misturam mais
     const [priorityText, setPriorityText] = useState('');
     const [priorityGroup, setPriorityGroup] = useState(1);
@@ -1232,6 +1235,42 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
+    const handleDownloadBicromatizacao = async () => {
+        setDownloadingBicromat(true);
+        try {
+            const token = localStorage.getItem('@MetalFisa:token') || '';
+            const url = `/api/reports/vmi-bicromatizacao/excel?token=${encodeURIComponent(token)}`;
+            const response = await fetch(url, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            if (!response.ok) {
+                let errMsg = `Erro ${response.status}`;
+                try {
+                    const errBody = await response.json();
+                    errMsg = errBody.error || errBody.message || errMsg;
+                } catch (_) {}
+                throw new Error(errMsg);
+            }
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const now = new Date();
+            const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+            a.href = blobUrl;
+            a.download = `Relatorio_Bicromatizacao_VMI_${stamp}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(blobUrl);
+            toast.success('Relatório de Bicromatização baixado com sucesso!');
+        } catch (err) {
+            console.error('[Bicromatização] Erro ao gerar:', err);
+            toast.error(`Erro ao gerar relatório: ${err.message}`);
+        } finally {
+            setDownloadingBicromat(false);
+        }
+    };
+
     const handleOpenDocs = (code, name) => {
         setSelectedProductForDocs({ code, name });
         setIsDocsModalOpen(true);
@@ -1466,8 +1505,23 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                         )}
                     </div>
 
-                    {/* View Mode Toggle */}
+                    {/* View Mode Toggle & Top Action Buttons */}
                     <div className="flex gap-2 items-center">
+                        <button
+                            type="button"
+                            onClick={handleDownloadBicromatizacao}
+                            disabled={downloadingBicromat}
+                            title="Baixar Estudo de Demanda de Bicromatização & Zincagens VMI (Excel)"
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300 transition-all shadow-sm disabled:opacity-50"
+                        >
+                            {downloadingBicromat ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
+                            ) : (
+                                <Droplets className="w-4 h-4 text-amber-600" />
+                            )}
+                            <span className="hidden md:inline">Prev-Bicromatização</span>
+                        </button>
+
                         <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleImportPCPFile} />
                         <button
                             onClick={() => fileInputRef.current?.click()}
@@ -2403,7 +2457,11 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                                                                     </td>
                                                                                                     <td className="px-4 py-2 text-center">
                                                                                                         <div className="flex items-center justify-center gap-1.5">
-                                                                                                            <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${String(item.op_tipo || '').trim().toUpperCase() === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
+                                                                                                            <span
+                                                                                                                className={`px-1.5 py-0.5 rounded text-xs font-mono ${String(item.op_tipo || '').trim().toUpperCase() === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'} ${item.op_num ? 'cursor-pointer hover:underline' : ''}`}
+                                                                                                                title={item.op_num ? 'Ver estrutura da OP' : undefined}
+                                                                                                                onClick={item.op_num ? (e) => { e.stopPropagation(); setBomStructureTarget({ op: item.op_num, itemPv: item.item, pedido: order.pedido, produto: item.codigo }); } : undefined}
+                                                                                                            >
                                                                                                                 {item.op_num || '-'}
                                                                                                             </span>
                                                                                                             {item.op_num && item.op_num !== '-' && (
@@ -2788,7 +2846,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 handlePrintOPByOperation={handlePrintOPByOperation}
                                                 handlePrintOPByOperationWithDrawings={handlePrintOPByOperationWithDrawings}
                                                 handlePrintOPByResourceWithDrawings={handlePrintOPByResourceWithDrawings}
-                                                handlePrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
+                                                                handlePrintOPWithOpsStampWithDrawings={handlePrintOPWithOpsStampWithDrawings}
                                                 handlePrintOPWithOpsStampDrawingsByResource={handlePrintOPWithOpsStampDrawingsByResource}
                                                 handlePrintOPWithOpsStampWithDescDrawings={handlePrintOPWithOpsStampWithDescDrawings}
                                                 handlePrintOPWithOpsStampWithDescDrawingsByResource={handlePrintOPWithOpsStampWithDescDrawingsByResource}
@@ -2796,7 +2854,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 setMenuPosition={setMenuPosition}
                                                 handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
                                                 onOpenClassificacaoModal={handleOpenClassificacaoModal}
-
+                                                onOpenBomStructure={(op, itemPv, pedido, produto) => setBomStructureTarget({ op, itemPv, pedido, produto })}
                                             />
                                         )}
                                     </>
@@ -2961,6 +3019,17 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                         }}
                         usuario={user?.nome}
                         canEdit={canEdit}
+                    />
+                )
+            }
+            {
+                bomStructureTarget && (
+                    <BOMStructureModal
+                        opNum={bomStructureTarget.op}
+                        itemPv={bomStructureTarget.itemPv}
+                        pedido={bomStructureTarget.pedido}
+                        produto={bomStructureTarget.produto}
+                        onClose={() => setBomStructureTarget(null)}
                     />
                 )
             }

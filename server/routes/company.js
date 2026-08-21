@@ -2,14 +2,25 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../services/mysqlService');
 
+let lastCompanySettings = {
+    id: 1,
+    cnpj: '00.000.000/0001-00',
+    razao_social: 'MetalFisa',
+    menu_config: null,
+    general_config: null
+};
+
 // Get Company Settings
 router.get('/', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT id, cnpj, razao_social, endereco, bairro, cidade, uf, cep, telefone, menu_config, general_config FROM app_company_settings WHERE id = 1');
-        res.json(rows[0] || {});
+        if (rows && rows[0]) {
+            lastCompanySettings = rows[0];
+        }
+        res.json(rows[0] || lastCompanySettings);
     } catch (err) {
-        console.error('❌ [COMPANY ERROR]', err.message);
-        res.status(500).json({ error: err.message });
+        console.warn('⚠️ [COMPANY FALLBACK]', err.message);
+        res.json(lastCompanySettings);
     }
 });
 

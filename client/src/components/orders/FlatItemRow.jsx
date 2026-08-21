@@ -48,6 +48,7 @@ const FlatItemRow = ({
     onSetMenuPosition,
     onUpdateFaturamentoDate,
     onOpenClassificacaoModal,
+    onOpenBomStructure,
     canEdit,
 }) => {
     const { user } = useAuth();
@@ -163,7 +164,11 @@ const FlatItemRow = ({
                     case 'op': return (
                         <td key={col.key} className="px-3 py-2 text-center bg-inherit min-w-[80px] max-w-[80px] w-[80px]">
                             <div className="flex items-center justify-center gap-1.5">
-                                <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'}`}>
+                                <span
+                                    className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'} ${hasOp && onOpenBomStructure ? 'cursor-pointer hover:underline' : ''}`}
+                                    title={hasOp ? 'Ver estrutura da OP' : undefined}
+                                    onClick={hasOp && onOpenBomStructure ? (e) => { e.stopPropagation(); onOpenBomStructure(item.op_num, item.item, item.pedido, item.codigo); } : undefined}
+                                >
                                     {getDisplayOp(item.op_num, item.item) || '-'}
                                 </span>
                                 {hasOp && opTypeLabel}

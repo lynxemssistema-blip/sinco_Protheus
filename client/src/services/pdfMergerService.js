@@ -53,11 +53,13 @@ export const generateMergedDrawingsPdf = async (structure, rootCode, productStat
                 const fontSize = 28;
 
                 // Adjust color based on status
-                let textColor = rgb(0.85, 0.1, 0.1); // Bright Red (default / NOVO / NORMAL)
+                let textColor = rgb(0.85, 0.1, 0.1); // Bright Red (default / NORMAL / RESTRICAO)
                 if (status === 'REVISAO') {
                     textColor = rgb(0.9, 0.6, 0.0); // Orange/Yellow
                 } else if (status === 'NOVO') {
                     textColor = rgb(0.1, 0.6, 0.1); // Green
+                } else if (status === 'RESTRICAO') {
+                    textColor = rgb(0.85, 0.1, 0.1); // Bright Red
                 }
 
                 for (const page of pages) {

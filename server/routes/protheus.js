@@ -717,7 +717,7 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
             data: {
                 NOPER: noper || 4, // 4 = Alterar (default), 3 = Incluir
                 EMPRESA: empresa || "01",
-                CFILANT: filial || "0101",
+                CFILANT: filial || "01",
                 G1_COD: produto,
                 G1_QUANT: quantidade || 1,
                 AUTOREV: false,
@@ -865,6 +865,22 @@ router.post('/produto-cliente/editar', async (req, res) => {
         if (!data || !data.produtos_clientes || !Array.isArray(data.produtos_clientes)) {
             return res.status(400).json({ error: 'Os dados do cliente e produtos_clientes são obrigatórios.' });
         }
+
+        // Sanitização e formatação: RECNO como primeiro campo e valor numérico
+        data.produtos_clientes = data.produtos_clientes.map(item => {
+            const formatted = {};
+            const recnoVal = item.RECNO !== undefined ? item.RECNO : item.recno;
+            if (recnoVal !== undefined && recnoVal !== null && String(recnoVal).trim() !== '' && !isNaN(Number(recnoVal))) {
+                formatted.RECNO = Number(recnoVal);
+            }
+            formatted.Z1_CLIENTE = String(item.Z1_CLIENTE || item.cliente || '').trim().toUpperCase();
+            formatted.Z1_LOJA = String(item.Z1_LOJA || item.loja || '0001').trim().toUpperCase();
+            formatted.Z1_PRODUTO = String(item.Z1_PRODUTO || item.produto || '').trim().toUpperCase();
+            formatted.Z1_CODCLI = String(item.Z1_CODCLI || item.cod_cliente || '').trim().toUpperCase();
+            formatted.Z1_DESCCLI = String(item.Z1_DESCCLI || item.desc_cliente || item.Z1_PRODUTO || 'PRODUTO').trim().toUpperCase();
+            formatted.Z1_REVISAO = String(item.Z1_REVISAO || item.revisao || '').trim().toUpperCase();
+            return formatted;
+        });
 
         // 1. Requisitar Token (Login)
         let accessToken = '';

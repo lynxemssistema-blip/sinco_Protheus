@@ -139,66 +139,7 @@ async function checkOrderAccess(req, res, next) {
     next();
 }
 
-// ── Forecast cache (módulo) — TTL 60s, evita fetch MySQL por requisição ────
-let _fcCache = { map: new Map(), expiresAt: 0 };
-async function getForecastMapCached() {
-    if (Date.now() < _fcCache.expiresAt) return _fcCache.map;
-    const map = new Map();
-    try {
-        const [rows] = await mysqlPool.query(`
-            SELECT TRIM(pedido) as pedido, TRIM(item) as item,
-                   data_entrega_pcp,
-                   data_prevista_faturamento,
-                   quantidade_pcp,
-                   TRIM(op_protheus) as op_protheus
-            FROM app_pcp_delivery_forecasts
-            WHERE pedido IS NOT NULL AND item IS NOT NULL
-        `);
-        for (const row of rows) {
-            const baseKey = `${row.pedido}|${row.item}`;
-            
-            // 1. Mapeamento específico por OP se houver
-            if (row.op_protheus && row.op_protheus !== '-') {
-                const opPrefix = String(row.op_protheus).trim().substring(0, 6);
-                if (opPrefix) {
-                    const opKey = `${baseKey}|${opPrefix}`;
-                    map.set(opKey, {
-                        data_entrega_pcp: row.data_entrega_pcp || null,
-                        data_prevista_faturamento: row.data_prevista_faturamento || null,
-                        quantidade_pcp: row.quantidade_pcp || null,
-                        op_protheus: row.op_protheus
-                    });
-                }
-            }
-            
-            // 2. Mapeamento geral/fallback por Pedido|Item (compatibilidade com telas que não usam OPs)
-            if (!map.has(baseKey)) {
-                map.set(baseKey, {
-                    data_entrega_pcp: row.data_entrega_pcp || null,
-                    data_prevista_faturamento: row.data_prevista_faturamento || null,
-                    quantidade_pcp: row.quantidade_pcp || null
-                });
-            } else {
-                const current = map.get(baseKey);
-                const currentVal = current.data_entrega_pcp ? new Date(current.data_entrega_pcp) : null;
-                const rowVal = row.data_entrega_pcp ? new Date(row.data_entrega_pcp) : null;
-                if (rowVal && (!currentVal || rowVal > currentVal)) {
-                    current.data_entrega_pcp = row.data_entrega_pcp;
-                }
-                const currentPrev = current.data_prevista_faturamento ? new Date(current.data_prevista_faturamento) : null;
-                const rowPrev = row.data_prevista_faturamento ? new Date(row.data_prevista_faturamento) : null;
-                if (rowPrev && (!currentPrev || rowPrev > currentPrev)) {
-                    current.data_prevista_faturamento = row.data_prevista_faturamento;
-                }
-                current.quantidade_pcp = (parseFloat(current.quantidade_pcp) || 0) + (parseFloat(row.quantidade_pcp) || 0);
-            }
-        }
-    } catch (err) {
-        console.error('getForecastMapCached error:', err.message);
-    }
-    _fcCache = { map, expiresAt: Date.now() + 60_000 };
-    return map;
-}
+const { getForecastMapCached, invalidateForecastCache } = require('../services/forecastCache');
 
 // GET /api/pedidos
 router.get('/', async (req, res) => {
@@ -623,8 +564,8 @@ router.get('/flat', async (req, res) => {
             getInactiveOrdersFilter()
         ]);
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
-        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
-        let countWhereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B' AND COALESCE(c6.d_e_l_e_t_, '') = ''" + inactiveFilterSql;
+        let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + inactiveFilterSql;
+        let countWhereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + inactiveFilterSql;
 
         const { isExternal, allowedOrders } = await getAuthorizedOrders(req);
         if (isExternal) {
@@ -1004,7 +945,7 @@ router.get('/flat', async (req, res) => {
 
             const fcJoinSql = `
                 LEFT JOIN (
-                    SELECT * FROM unnest(
+                    SELECT DISTINCT ON (fc_pedido, fc_item) * FROM unnest(
                         $${fcBase}::text[], $${fcBase+1}::text[],
                         $${fcBase+2}::timestamp[], $${fcBase+3}::timestamp[]
                     ) AS t(fc_pedido, fc_item, data_entrega_pcp, data_prevista_faturamento)
@@ -1103,9 +1044,18 @@ router.get('/flat', async (req, res) => {
                     c6.c6_pedcli,
                     ${fcJoin ? 'fc.data_entrega_pcp, fc.data_prevista_faturamento' : 'NULL::timestamp as data_entrega_pcp, NULL::timestamp as data_prevista_faturamento'}
                 FROM public.sc5010 c5
-                JOIN public.sc6010 c6
-                    ON COALESCE(c6.d_e_l_e_t_, '') = ''
-                    AND c6.c6_filial = c5.c5_filial
+                JOIN (
+                    -- DISTINCT ON garante 1 linha por (pedido, item) mesmo quando o Protheus
+                    -- possui múltiplas entradas em sc6010 para o mesmo par (ex: entregas parceladas).
+                    SELECT DISTINCT ON (TRIM(c6_num), TRIM(c6_item))
+                        c6_filial, c6_num, c6_item, c6_produto,
+                        c6_xrevm, c6_xrevc, c6_um, c6_qtdven, c6_qtdent,
+                        c6_prcven, c6_valor, c6_entreg, c6_pedcli, c6_qtdlib
+                    FROM public.sc6010
+                    WHERE COALESCE(d_e_l_e_t_, '') = ''
+                    ORDER BY TRIM(c6_num), TRIM(c6_item), c6_qtdven DESC
+                ) c6
+                    ON c6.c6_filial = c5.c5_filial
                     AND c6.c6_num = c5.c5_num
                 ${fcJoin}
                 ${whereClause}
@@ -1167,11 +1117,21 @@ router.get('/flat', async (req, res) => {
                 TRIM(c2.c2_tpop) AS op_tipo,
                 c2.c2_quant::numeric(18,6) AS op_qtd
             FROM paged_items pi
-            LEFT JOIN public.sc2010 c2
-                ON TRIM(c2.c2_pedido) = pi.pedido
-                AND TRIM(c2.c2_itempv) = pi.item
-                AND c2.c2_sequen = '001'
-                AND COALESCE(c2.d_e_l_e_t_, '') = ''
+            LEFT JOIN (
+                SELECT DISTINCT ON (TRIM(sub_c2.c2_pedido), TRIM(sub_c2.c2_itempv))
+                    TRIM(sub_c2.c2_pedido) AS pedido,
+                    TRIM(sub_c2.c2_itempv) AS item,
+                    sub_c2.c2_num,
+                    sub_c2.c2_item,
+                    sub_c2.c2_sequen,
+                    sub_c2.c2_tpop,
+                    sub_c2.c2_quant
+                FROM public.sc2010 sub_c2
+                WHERE sub_c2.c2_sequen = '001'
+                  AND COALESCE(sub_c2.d_e_l_e_t_, '') = ''
+                  AND TRIM(sub_c2.c2_pedido) IN (SELECT TRIM(c5_num) FROM paged_base)
+                ORDER BY TRIM(sub_c2.c2_pedido), TRIM(sub_c2.c2_itempv), sub_c2.c2_num DESC
+            ) c2 ON c2.pedido = pi.pedido AND c2.item = pi.item
             ${orderClauseOuter}
         `;
 
@@ -1357,6 +1317,85 @@ router.get('/flat', async (req, res) => {
                 result.rows.forEach(r => { r.op_prioridade = 0; });
             }
             // --- FIM BUSCA DE PRIORIDADES DE OP ---
+
+            // --- INÍCIO CÁLCULO EVOLUÇÃO OP ---
+            try {
+                const uniqueOpNumsEvol = [...new Set(result.rows.map(r => r.op_num ? String(r.op_num).trim() : null).filter(Boolean))];
+                if (uniqueOpNumsEvol.length > 0) {
+                    const pgQueryEvol = `
+                        WITH OPsCabecalho AS (
+                            SELECT 
+                                TRIM(c2.c2_num) AS op_num,
+                                c2.c2_item AS item_op,
+                                c2.c2_sequen AS op_sequencia_split,
+                                c2.c2_produto AS cod_produto,
+                                c2.c2_quant::numeric AS qtd_planejada,
+                                COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), (SELECT TRIM(parent.c2_pedido) FROM public.sc2010 parent WHERE parent.c2_num = c2.c2_num AND TRIM(parent.c2_item) IN ('01', '001', '1') AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ') LIMIT 1)) AS pedido,
+                                COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), (SELECT TRIM(parent.c2_itempv) FROM public.sc2010 parent WHERE parent.c2_num = c2.c2_num AND TRIM(parent.c2_item) IN ('01', '001', '1') AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ') LIMIT 1)) AS item_pedido
+                            FROM public.sc2010 c2
+                            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                              AND TRIM(c2.c2_num) = ANY($1::varchar[])
+                        )
+                        SELECT 
+                            op.op_num, op.item_op, op.cod_produto AS cod_produto_op, op.pedido, op.item_pedido, op.qtd_planejada,
+                            TRIM(g2.g2_operac) AS sequencia, op.op_sequencia_split
+                        FROM OPsCabecalho op
+                        LEFT JOIN public.sg2010 g2 ON btrim(g2.g2_produto) = btrim(op.cod_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                    `;
+                    const { rows: opsRowsEvol } = await db.query(pgQueryEvol, [uniqueOpNumsEvol]);
+
+                    if (opsRowsEvol.length > 0) {
+                        const opNumerosEvol = [...new Set(opsRowsEvol.map(o => String(o.op_num).trim()))];
+                        if (opNumerosEvol.length > 0) {
+                            const placeholdersEvol = opNumerosEvol.map(() => '?').join(',');
+                            const [appointmentsEvol] = await mysqlPool.execute(`
+                                SELECT op_numero, op_item, op_sequencia, operacao_codigo, SUM(quantidade) as total_produzido
+                                FROM app_production_appointments
+                                WHERE op_numero IN (${placeholdersEvol})
+                                GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+                            `, opNumerosEvol);
+
+                            const apptMapEvol = {};
+                            appointmentsEvol.forEach(a => {
+                                const key = `${a.op_numero}_${a.op_item}_${a.op_sequencia}_${a.operacao_codigo}`;
+                                apptMapEvol[key] = parseFloat(a.total_produzido) || 0;
+                            });
+
+                            const evolutionMap = {}; 
+                            const opsByItemEvol = {};
+                            
+                            opsRowsEvol.forEach(op => {
+                                const key = `${op.pedido}_${op.item_pedido}`;
+                                if (!opsByItemEvol[key]) opsByItemEvol[key] = [];
+
+                                const apptKey = `${op.op_num}_${op.item_op}_${op.op_sequencia_split}_${op.sequencia}`;
+                                const qtdApontada = apptMapEvol[apptKey] || 0;
+                                const qtdPlanejada = parseFloat(op.qtd_planejada) || 0;
+                                const pct = qtdPlanejada > 0 ? Math.round((qtdApontada / qtdPlanejada) * 100) : 0;
+
+                                opsByItemEvol[key].push(Math.min(pct, 100));
+                            });
+
+                            for (const key in opsByItemEvol) {
+                                const pcts = opsByItemEvol[key];
+                                const avg = pcts.length > 0 ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+                                evolutionMap[key] = avg;
+                            }
+
+                            result.rows.forEach(r => {
+                                const key = `${String(r.pedido).trim()}_${String(r.item).trim()}`;
+                                const evolucao_pct = evolutionMap[key] || 0;
+                                const op_qtd = parseFloat(r.op_qtd) || 0;
+                                r.saldo_produzido = (evolucao_pct / 100) * op_qtd;
+                                r.evolucao_pct = evolucao_pct;
+                            });
+                        }
+                    }
+                }
+            } catch (evolErr) {
+                console.error('[GET /flat] Erro no cálculo da evolução OP:', evolErr.message);
+            }
+            // --- FIM CÁLCULO EVOLUÇÃO OP ---
 
             // --- INÍCIO BUSCA DE TIPO DE STATUS (PCP/RESTRIÇÃO/REVISÃO/NOVO) ---
             try {
@@ -1552,7 +1591,39 @@ router.get('/flat', async (req, res) => {
             } catch (err) {
                 console.error('[ENGINEERING NOTES FETCH ERROR]', err);
             }
-            // --- FIM BUSCA DE NOTAS DE ENGENHARIA ---
+            // --- INÍCIO MERGE DE PREVISÃO PCP (app_pcp_delivery_forecasts) ---
+            result.rows.forEach(r => {
+                const pedKey = String(r.pedido).trim();
+                const itemKey = String(r.item).trim();
+                const opClean = r.op_num ? String(r.op_num).trim() : '';
+                const opFull = r.op_num_completa ? String(r.op_num_completa).trim() : '';
+
+                // Priority 1: Match by Pedido + Item + Full OP
+                let fc = null;
+                if (opFull) {
+                    fc = forecastMap.get(`${pedKey}|${itemKey}|${opFull}`);
+                }
+                // Priority 2: Match by Pedido + Item + OP 6/8 prefix
+                if (!fc && opClean) {
+                    fc = forecastMap.get(`${pedKey}|${itemKey}|${opClean}`);
+                }
+                // Priority 3: Match by Pedido + Item
+                if (!fc) {
+                    fc = forecastMap.get(`${pedKey}|${itemKey}`);
+                }
+
+                if (fc) {
+                    r.data_entrega_pcp = fc.data_entrega_pcp;
+                    r.pcp_delivery_forecast_date = fc.data_entrega_pcp;
+                    r.pcp_delivery_forecast_qtd = fc.quantidade_pcp;
+                    r.data_prevista_faturamento = fc.data_prevista_faturamento;
+                } else {
+                    r.data_entrega_pcp = r.data_entrega_pcp || null;
+                    r.pcp_delivery_forecast_date = r.data_entrega_pcp || null;
+                    r.pcp_delivery_forecast_qtd = null;
+                }
+            });
+            // --- FIM MERGE DE PREVISÃO PCP ---
 
             const finalRows = result.rows.map(decodeMemosInRow);
 
@@ -1618,7 +1689,7 @@ router.get('/kpi-faturar', async (req, res) => {
             db.query(`SELECT DISTINCT TRIM(z0_produto) as cod FROM public.sz0010 WHERE TRIM(z0_produto) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'`, [productCodes]),
             db.query(`SELECT DISTINCT TRIM(g1_cod) as cod FROM public.sg1010 WHERE TRIM(g1_cod) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [productCodes]),
             db.query(`SELECT DISTINCT TRIM(g2_produto) as cod FROM public.sg2010 WHERE TRIM(g2_produto) = ANY($1) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [productCodes]),
-            db.query(`SELECT DISTINCT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item FROM public.sc2010 WHERE TRIM(c2_pedido) = ANY($1) AND COALESCE(c2.d_e_l_e_t_, '') = ''`, [pedidosList])
+            db.query(`SELECT DISTINCT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item FROM public.sc2010 c2 WHERE TRIM(c2_pedido) = ANY($1) AND COALESCE(c2.d_e_l_e_t_, '') = ''`, [pedidosList])
         ]);
 
         const sb1Map = {}; sb1Res.rows.forEach(r => sb1Map[r.cod] = r.msblql);
@@ -2152,10 +2223,20 @@ router.get('/:id/itens', checkOrderAccess, async (req, res) => {
             LEFT JOIN public.sb1010 sb1
                 ON COALESCE(sb1.d_e_l_e_t_, '') = ''
                 AND TRIM(sb1.b1_cod) = TRIM(c6.c6_produto)
-            LEFT JOIN public.sc2010 c2
-                ON (c2.c2_pedido = c5.c5_num )
-                AND c2.c2_itempv = c6.c6_item
-                AND COALESCE(c2.d_e_l_e_t_, '') = ''
+            LEFT JOIN (
+                SELECT DISTINCT ON (TRIM(sub_c2.c2_pedido), TRIM(sub_c2.c2_itempv))
+                    TRIM(sub_c2.c2_pedido) AS pedido,
+                    TRIM(sub_c2.c2_itempv) AS item,
+                    sub_c2.c2_num,
+                    sub_c2.c2_item,
+                    sub_c2.c2_sequen,
+                    sub_c2.c2_tpop,
+                    sub_c2.c2_quant
+                FROM public.sc2010 sub_c2
+                WHERE sub_c2.c2_pedido = $1
+                  AND COALESCE(sub_c2.d_e_l_e_t_, '') = ''
+                ORDER BY TRIM(sub_c2.c2_pedido), TRIM(sub_c2.c2_itempv), sub_c2.c2_num DESC
+            ) c2 ON c2.pedido = TRIM(c5.c5_num) AND c2.item = TRIM(c6.c6_item)
 
             WHERE c5.c5_num = $1
             AND COALESCE(c5.d_e_l_e_t_, '') = ''
@@ -2250,7 +2331,7 @@ router.get('/:id/itens', checkOrderAccess, async (req, res) => {
                 return saldoProdMap;
             })();
 
-            const [notesResult, docsResult, nfResult, sz1Result, pgStatusResult, opEnrichmentResult, saldoProdResult] = await Promise.allSettled([
+            const [notesResult, docsResult, nfResult, sz1Result, pgStatusResult, opEnrichmentResult, saldoProdResult, forecastResult] = await Promise.allSettled([
                 mysqlPool.query('SELECT * FROM app_sales_order_item_notes WHERE pedido = ?', [id]),
                 (async () => {
                     if (productCodes.length === 0) return {};
@@ -2298,10 +2379,161 @@ router.get('/:id/itens', checkOrderAccess, async (req, res) => {
                     SELECT 'sz0' as type, TRIM(z0_produto) as cod FROM public.sz0010 WHERE z0_produto = ANY($1::varchar[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND z0_status = 'P'
                 `, [paddedCodes]) : Promise.resolve({ rows: [] }),
                 opEnrichmentPromise,
-                saldoProdPromise
+                saldoProdPromise,
+                mysqlPool.query(
+                    'SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, quantidade_pcp, TRIM(op_protheus) as op_protheus FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ?',
+                    [id]
+                )
             ]);
 
-            // ... (rest of logic processing result promises)
+            // Merge logic
+            const notes = notesResult.status === 'fulfilled' && notesResult.value[0] ? notesResult.value[0] : [];
+            const docsMap = docsResult.status === 'fulfilled' ? docsResult.value : {};
+            const nfs = nfResult.status === 'fulfilled' ? nfResult.value.rows : [];
+            const sz1Rows = sz1Result.status === 'fulfilled' ? sz1Result.value.rows : [];
+            const statusRows = pgStatusResult.status === 'fulfilled' ? pgStatusResult.value.rows : [];
+            const { treeOpsResult, lastOpMap } = opEnrichmentResult.status === 'fulfilled' ? opEnrichmentResult.value : { treeOpsResult: { rows: [] }, lastOpMap: {} };
+            const saldoProdMap = saldoProdResult.status === 'fulfilled' ? saldoProdResult.value : {};
+            const forecasts = forecastResult.status === 'fulfilled' && forecastResult.value[0] ? forecastResult.value[0] : [];
+
+            // Maps for fast lookup
+            const notesMap = {};
+            notes.forEach(n => {
+                notesMap[String(n.item).trim()] = n;
+            });
+
+            const nfsMap = {};
+            nfs.forEach(nf => {
+                const itemKey = String(nf.item).trim();
+                if (!nfsMap[itemKey]) nfsMap[itemKey] = [];
+                nfsMap[itemKey].push(nf);
+            });
+
+            const sz1Map = {};
+            sz1Rows.forEach(r => {
+                sz1Map[String(r.produto).trim()] = r;
+            });
+
+            const sg1Set = new Set();
+            const sg2Set = new Set();
+            const sz0Set = new Set();
+            statusRows.forEach(r => {
+                if (r.type === 'sg1') sg1Set.add(String(r.cod).trim());
+                if (r.type === 'sg2') sg2Set.add(String(r.cod).trim());
+                if (r.type === 'sz0') sz0Set.add(String(r.cod).trim());
+            });
+
+            const forecastsMap = {};
+            forecasts.forEach(f => {
+                const itemKey = String(f.item).trim();
+                forecastsMap[itemKey] = f;
+            });
+
+            // Map and enrich each item
+            items.forEach(item => {
+                const itemKey = String(item.item).trim();
+                const prodKey = String(item.codigo).trim();
+
+                // Merge notes info
+                const note = notesMap[itemKey] || {};
+                item.status = note.status || 'PENDENTE';
+                item.project_type = note.project_type || null;
+                item.engineering_start_date = note.engineering_start_date || null;
+                item.bom_prepared_by = note.bom_prepared_by || null;
+                item.bom_prepared_at = note.bom_prepared_at || null;
+                item.bom_released_at = note.bom_released_at || null;
+                item.bom_notes = note.bom_notes || null;
+                item.designer_name = note.designer_name || null;
+                item.designer_start_forecast = note.designer_start_forecast || null;
+                item.designer_end_forecast = note.designer_end_forecast || null;
+                item.designer_start_real = note.designer_start_real || null;
+                item.designer_end_real = note.designer_end_real || null;
+                item.designer_production_release_date = note.designer_production_release_date || null;
+                item.designer_notes = note.designer_notes || null;
+                item.pcp_mat_req_date = note.pcp_mat_req_date || null;
+                item.pcp_mat_req_user = note.pcp_mat_req_user || null;
+                item.pcp_mech_start_date = note.pcp_mech_start_date || null;
+                item.pcp_mech_start_user = note.pcp_mech_start_user || null;
+                item.pcp_cut_rel_date = note.pcp_cut_rel_date || null;
+                item.pcp_cut_rel_user = note.pcp_cut_rel_user || null;
+                item.pcp_notes = note.pcp_notes || null;
+                item.pcp_planned_eng_date = note.pcp_planned_eng_date || null;
+                item.pcp_planned_eng_obs = note.pcp_planned_eng_obs || null;
+                item.nota = note.nota || '';
+
+                // Merge docs info
+                const docs = docsMap[prodKey] || [];
+                item.has_docs = docs.length > 0;
+                item.docs_count = docs.length;
+                item.first_doc = docs.length === 1 ? docs[0].url_arquivo : null;
+                item.has_drawing = docs.some(d => String(d.tipo).trim().toUpperCase() === 'DESENHO');
+                item.drawing_url = item.has_drawing ? docs.find(d => String(d.tipo).trim().toUpperCase() === 'DESENHO').url_arquivo : null;
+
+                // Merge invoices (Notas Fiscais)
+                item.notas_fiscais = nfsMap[itemKey] || [];
+
+                // Merge SZ1
+                const sz1 = sz1Map[prodKey] || {};
+                item.ref_cliente = sz1.ref_cliente || null;
+                item.c6_rev_cliente = sz1.rev_cliente || null;
+
+                // Merge Status Tipo
+                const isBlocked = ['1', 'S', 'T', 'Y'].includes(item.b1_msblql?.trim());
+                const hasRestriction = sz0Set.has(prodKey);
+                const revDiff = (item.rev_codigo || '') !== (item.c6_rev_cliente || '');
+                const isNew = !sg1Set.has(prodKey) && !sg2Set.has(prodKey);
+
+                if (isBlocked || hasRestriction) {
+                    item.status_tipo_item = 'Restrição';
+                    item.status_tipo_detalhe = 'Produto possui bloqueio no Protheus ou Restrição ativa.';
+                } else if (revDiff) {
+                    item.status_tipo_item = 'Revisão';
+                    item.status_tipo_detalhe = 'Revisão do Pedido difere da Revisão da Engenharia.';
+                } else if (isNew) {
+                    item.status_tipo_item = 'Novo';
+                    item.status_tipo_detalhe = 'Produto sem Engenharia cadastrada (SG1/SG2).';
+                } else {
+                    item.status_tipo_item = 'PCP';
+                    item.status_tipo_detalhe = 'Liberado para PCP.';
+                }
+
+                // Merge Forecast
+                const fc = forecastsMap[itemKey];
+                if (fc) {
+                    item.pcp_delivery_forecast_date = fc.data_entrega_pcp;
+                    item.pcp_delivery_forecast_qtd = fc.quantidade_pcp;
+                    item.data_entrega_pcp = fc.data_entrega_pcp;
+                } else {
+                    item.pcp_delivery_forecast_date = null;
+                    item.pcp_delivery_forecast_qtd = null;
+                    item.data_entrega_pcp = null;
+                }
+
+                // Merge production progress / appointments (Evolução OP)
+                const op = item.op_num ? item.op_num.trim() : '';
+                if (op) {
+                    const relatedOps = treeOpsResult.rows.filter(o => o.op_num === op);
+                    if (relatedOps.length > 0) {
+                        let totalSaldoProd = 0;
+                        relatedOps.forEach(opRow => {
+                            const opFull = `${opRow.op_num}${opRow.op_item}${opRow.op_sequencia}`;
+                            const prod = opRow.produto;
+                            const lastOpInfo = lastOpMap[prod];
+                            const finalOperac = lastOpInfo ? lastOpInfo.last : '001'; // fallback
+
+                            const apptKey = `${opFull}-${finalOperac}`;
+                            const produzido = saldoProdMap[apptKey] || 0;
+                            totalSaldoProd += produzido;
+                        });
+                        item.saldo_produzido = totalSaldoProd;
+                    } else {
+                        item.saldo_produzido = 0;
+                    }
+                } else {
+                    item.saldo_produzido = 0;
+                }
+            });
+
             res.json(items);
         } else {
             res.json(items);
@@ -2891,6 +3123,7 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                 savedItems.push({ id: result.insertId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
             }
             await connection.commit();
+            invalidateForecastCache();
             res.json({ success: true, message: 'Lote programado com sucesso', savedItems });
         } catch (txnErr) {
             await connection.rollback();
@@ -2940,6 +3173,7 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
                      'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
                      [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, existingId]
                  );
+                 invalidateForecastCache();
                  return res.json({ success: true, id: existingId, updated: true });
              } else {
                  return res.status(400).json({ error: 'Já existe uma Programação PCP para este pedido/item. Só é permitida uma data por OP. Edite a programação existente.' });
@@ -2966,6 +3200,7 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null]
         );
 
+        invalidateForecastCache();
         res.json({ success: true, id: result.insertId });
     } catch (err) {
         console.error('Error saving PCP forecast:', err);
@@ -3020,6 +3255,7 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
             [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
         );
 
+        invalidateForecastCache();
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating PCP forecast:', err);
@@ -3036,6 +3272,7 @@ router.patch('/pcp-forecasts/faturamento', async (req, res) => {
                 'UPDATE app_pcp_delivery_forecasts SET data_prevista_faturamento = ? WHERE id = ?',
                 [data_prevista_faturamento || null, id]
             );
+            invalidateForecastCache();
             return res.json({ success: true, id });
         } else {
             if (!pedido || !item || !usuario) {
@@ -3049,6 +3286,7 @@ router.patch('/pcp-forecasts/faturamento', async (req, res) => {
                 'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?)',
                 [pedido, item, data_entrega_pcp, parseFloat(quantidade_pcp), usuario, data_prevista_faturamento || null]
             );
+            invalidateForecastCache();
             return res.json({ success: true, id: result.insertId });
         }
     } catch (err) {
@@ -3081,6 +3319,7 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
             'UPDATE app_pcp_delivery_forecasts SET op_protheus = ? WHERE id = ?',
             [opClean, id]
         );
+        invalidateForecastCache();
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating PCP forecast OP:', err);
@@ -3091,6 +3330,7 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
 router.delete('/pcp-forecasts/:id', async (req, res) => {
     try {
         await mysqlPool.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        invalidateForecastCache();
         res.json({ success: true });
     } catch (err) {
         console.error('Error deleting PCP forecast:', err);
@@ -3160,6 +3400,7 @@ router.post('/pcp-forecasts/balance', async (req, res) => {
                 }
             }
             await connection.commit();
+            invalidateForecastCache();
             res.json({ success: true, processedCount: validItems.length });
         } catch (txnErr) {
             await connection.rollback();
@@ -3751,8 +3992,8 @@ router.get('/portal-cliente', async (req, res) => {
                             TRIM(COALESCE(d2.d2_um, '')) AS unidade, TRIM(COALESCE(d2.d2_cf, '')) AS cfop, '' AS natureza,
                             TRIM(COALESCE(f2.f2_transp, '')) AS transportadora
                         FROM public.sd2010 d2
-                        JOIN public.sf2010 f2 ON f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND COALESCE(f2.d_e_l_e_t_, '') = ''
-                        LEFT JOIN public.sb1010 sb1nf ON sb1nf.b1_cod = d2.d2_cod AND COALESCE(sb1nf.d_e_l_e_t_, '') = ''
+                        JOIN public.sf2010 f2 ON f2.f2_filial = d2.d2_filial AND f2.f2_doc = d2.d2_doc AND f2.f2_serie = d2.d2_serie AND f2.f2_cliente = d2.d2_cliente AND COALESCE(f2.d_e_l_e_t_, '') = ''
+                        LEFT JOIN public.sb1010 sb1nf ON sb1nf.b1_filial = d2.d2_filial AND sb1nf.b1_cod = d2.d2_cod AND COALESCE(sb1nf.d_e_l_e_t_, '') = ''
                         ${nfWhere}
                         ORDER BY f2.f2_emissao DESC, d2.d2_pedido DESC, d2.d2_itempv ASC
                     `, nfQueryParams);

@@ -229,8 +229,8 @@ router.get('/preferences/:key', async (req, res) => {
             res.json({ value: rows[0].pref_value });
         }
     } catch (error) {
-        console.error('Erro ao carregar preferência:', error);
-        res.status(500).json({ error: 'Erro ao carregar preferência' });
+        console.warn('⚠️ [PREFERENCES FALLBACK] Erro ao carregar preferência:', error.message);
+        res.json({ value: null });
     }
 });
 
@@ -332,8 +332,8 @@ router.get('/my-permissions', async (req, res) => {
         );
         res.json(rows);
     } catch (error) {
-        console.error('Erro ao carregar permissões:', error);
-        res.status(500).json({ error: 'Erro ao carregar permissões' });
+        console.warn('⚠️ [PERMISSIONS FALLBACK] Erro ao carregar permissões:', error.message);
+        res.json([]);
     }
 });
 

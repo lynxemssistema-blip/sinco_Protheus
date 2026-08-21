@@ -4,6 +4,113 @@
 // ─────────────────────────────────────────────────────────────────────────────
 export const HELP_CONTENT = {
 
+  '/wabtec/datas-solicitacao': {
+    category: 'Gestão de Clientes / WabTec',
+    categoryColor: '#4f46e5',
+    title: 'WabTec Forecast (Datas Solicitação)',
+    icon: 'FileSpreadsheet',
+    description: 'Interface dedicada à importação, gerenciamento e integração da planilha de datas de solicitação enviada pelo cliente WabTec com o banco de dados do Protheus (SINCO).',
+    tabs: [
+      {
+        id: 'importacao',
+        label: 'Importação e Planilha',
+        description: 'Processo de carregamento e interpretação da planilha.',
+        steps: [
+          'Carregar Arquivo: Selecione a planilha .xlsx enviada pela WabTec. O sistema fará a leitura inteligente buscando as colunas chaves como "PO Number", "Pedido", "Código", "Saldo" e "Data".',
+          'Pré-visualização: Após a leitura, a tela exibirá as linhas identificadas antes de salvar, permitindo validar a estrutura dos dados.',
+          'Salvar Lote: Ao "Confirmar e Salvar", a importação será registrada, criando um lote que fica disponível para consultas futuras nos cartões no topo da tela.'
+        ]
+      },
+      {
+        id: 'sincronizacao',
+        label: 'Sincronização SINCO',
+        description: 'Lógica bidirecional de atualização do ERP.',
+        steps: [
+          'O Problema do Item: A planilha da WabTec possui o PO e o Pedido Metalfisa, mas NÃO possui o código exato da linha no ERP (C6_ITEM).',
+          'Busca Inteligente (SINCO): O sistema consulta o Protheus cruzando "PO Number", "Pedido Metalfisa" e "Código Produto" para encontrar a linha exata (C6_ITEM).',
+          'Sincronização: O sistema envia um comando ao Protheus atualizando o campo de Data de Entrega (C6_ENTREG) do item mapeado para a nova data solicitada pelo cliente.',
+          'Operações em Lote: Use o "Enviar Lote ao SINCO" para automatizar a descoberta do item e a atualização da data para centenas de linhas de uma só vez.'
+        ]
+      },
+      {
+        id: 'menu_contexto',
+        label: 'Menu de Contexto',
+        description: 'Atalhos de produtividade na tabela.',
+        steps: [
+          'Ativação: Clique com o botão direito sobre qualquer linha da tabela para abrir o menu flutuante.',
+          'Ações Rápidas: Você pode "Buscar" ou "Sincronizar" o item com o SINCO diretamente pelo menu, de forma individual.',
+          'Cópia Rápida: Copie o PO Number, Pedido Metalfisa, Código do Produto ou Ref. Cliente com um único clique.',
+          'Feedback Visual: Se o item já foi mapeado, o menu mostra no rodapé qual é o "Item ERP" atrelado e a data que consta hoje no sistema.'
+        ]
+      }
+    ],
+    tips: [
+      'Utilize os botões no canto direito da tabela para agrupar as visões por "PO Number" ou por "Pedido Metalfisa". Isso agrupa os saldos e facilita a identificação de entregas parciais.',
+      'Após o processamento dos dados ou para relatórios rápidos, utilize o botão "Exportar Excel" no cabeçalho.'
+    ],
+    links: [
+      { path: '/vmi/demanda-mes', label: 'VMI / Demanda Mensal' },
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' }
+    ]
+  },
+
+  '/vmi/demanda-mes': {
+    category: 'VMI / PCP',
+    categoryColor: '#4f46e5',
+    title: 'Demanda Mês (Cruzamento VMI & PCP)',
+    icon: 'FileSpreadsheet',
+    description: 'Cruzamento automatizado da planilha de demandas mensais do cliente com a carteira de pedidos em aberto do Protheus (SC6), ordens de produção (SC2) e previsões de entrega registradas no SINCO (app_pcp_delivery_forecasts).',
+    tabs: [
+      {
+        id: 'fluxo_cruzamento',
+        label: 'Fluxo de Cruzamento',
+        description: 'Entenda como o sistema identifica os itens e calcula as previsões.',
+        steps: [
+          'Upload do Arquivo: Selecione o arquivo Excel (.xlsx) de demandas do cliente. O app valida a estrutura imediatamente antes de processar.',
+          'Rastreabilidade De-Para: O sistema lê a Coluna A (Ref. Cliente) e localiza o código B1_COD correspondente via De-Para SZ1010 ou app_demanda_vmi_map.',
+          'Cruzamento Protheus: Identifica todos os pedidos de venda com saldo a faturar e vincula as respectivas OPs ativas geradas no Protheus.',
+          'Consolidação SINCO: Agrupa as previsões de entrega gravadas por mês e destaca quantidades sem data definida.'
+        ]
+      },
+      {
+        id: 'auto_distribuicao',
+        label: 'Regra de Auto-Distribuição PCP',
+        description: 'Detalhamento do algoritmo inteligente de distribuição e cadenciamento de datas.',
+        steps: [
+          '1. Calendário VMI (Seg/Qua/Sex): O algoritmo gera apenas datas em Segundas, Quartas e Sextas-feiras dentro de cada mês de demanda.',
+          '2. Trava Estrita de Segurança (Data > Hoje): Nenhuma data PCP é agendada no passado ou no próprio dia atual. Se hoje for 19/08/2026 (Quarta), a primeira data possível será 21/08/2026 (Sexta) ou a próxima Segunda-feira.',
+          '3. Consumo da Demanda Mês a Mês: Para cada mês com demanda informada, o sistema calcula a cadência diária ideal (Demanda ÷ Dias de Entrega Úteis no Mês) e vai alocando os pedidos/OPs com saldo nessa grade até atingir a demanda do mês.',
+          '4. Exemplo Prático de Distribuição: Se a demanda de AGO/2026 for de 1.200 un e houver 6 dias VMI úteis restantes no mês (ex: 17/08, 19/08, 21/08, 24/08, 26/08, 28/08), o sistema programa parcelas de ~200 un em cada um desses dias até consumir o saldo.',
+          '5. Saldo Excedente / Itens Fora da Planilha: Produtos ou saldos que excederem a demanda ou que não estiverem na planilha são programados opcionalmente para as Segundas/Quartas/Sextas do último mês (ex: DEZ/2026).',
+          '6. Modo Fantasma & Gravação: As novas datas aparecem em tom cinza tracejado com a tag "SIMULADO". Você pode alterar a data manualmente no popover ou clicar em "Salvar Todas no SINCO" para gravar definitivamente no banco de dados.'
+        ]
+      },
+      {
+        id: 'estrutura_planilha',
+        label: 'Estrutura da Planilha',
+        description: 'Formato exato esperado da planilha do cliente.',
+        steps: [
+          'Aba de Leitura: O arquivo deve conter os dados preferencialmente na aba METALFISA ou na primeira aba ativa.',
+          'Coluna A: Código do Produto / Referência do Cliente (ex: 130300055).',
+          'Coluna B: Descrição detalhada do item usinado/montado.',
+          'Coluna C: Estoque Atual ou dados auxiliares do cliente.',
+          'Colunas D em diante: Colunas mensais de demanda (ex: AGO/2026, SET/2026, OUT/2026, NOV/2026, DEZ/2026...).',
+          'Preenchimento Automático: O botão "Preencher Planilha do Cliente" abre a planilha original, insere as datas PCP e preenche "SEM SALDO" para itens zerados mantendo o layout 100% original.'
+        ]
+      }
+    ],
+    tips: [
+      'Exemplo de Cadência: Para um saldo de 500 un com demanda de 500 un em AGO/2026, se o mês tiver 4 datas úteis futuras (ex: 21/08, 24/08, 26/08, 28/08), o sistema aloca o primeiro lote no dia 21/08.',
+      'Clique no badge da OP (ex: OP: 012345) em qualquer linha da tabela para abrir o modal de Estrutura da OP com o organograma completo de montagem e componentes.',
+      'Você pode baixar uma planilha modelo pronta com a estrutura correta clicando em "Baixar Planilha Modelo (.xlsx)" dentro do painel da página.'
+    ],
+    links: [
+      { path: '/vmi/dashboard', label: 'Dashboard VMI' },
+      { path: '/vmi/pedidos', label: 'Gestão de Pedidos VMI' },
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' }
+    ]
+  },
+
   '/calendario-atividades': {
     category: 'Planejamento / PCP',
     categoryColor: '#f59e0b',
@@ -1052,6 +1159,35 @@ export const HELP_CONTENT = {
     links: [
       { path: '/controle-producao', label: 'Controle de Produção' },
       { path: '/planejamento-gantt', label: 'Planejamento Gantt' },
+    ],
+  },
+
+  // ── Apontamento por Estrutura de Produto ──────────────────────────────────────
+  '/pcp/apontamento-estrutura': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Apontamento por Estrutura de Produto',
+    icon: 'GitFork',
+    description: 'Visualize a árvore matricial completa de OPs de um pedido (produto pai, sub-OPs/PI e matérias-primas) e faça apontamentos por operação diretamente na estrutura, em três formatos de visualização diferentes.',
+    steps: [
+      'Busca: informe pelo menos um filtro (OP, Pedido, Cliente ou Produto) e clique em "Buscar". Use "Mais Filtros" para refinar por data de entrega, recurso, status ou tipo de produto (PI/PA/MP).',
+      'Tabela de Estrutura: lista hierárquica com clique para expandir/recolher cada OP, mostrando roteiro (operações), materiais consumidos e sub-OPs filhas indentadas por nível.',
+      'Organograma Interativo: mesma estrutura em formato de árvore visual com cards conectados. Arraste para navegar (pan) e use a roda do mouse ou os botões +/− para zoom. Clique num card para abrir o painel de detalhes lateral.',
+      'Referência A4 Vertical: no Organograma, o botão com ícone de retângulo (canto inferior direito) ativa uma guia tracejada nas proporções de uma folha A4 vertical, só como referência visual para ajudar a enquadrar a árvore — não altera os dados nem gera impressão.',
+      'Fluxograma de Processos: visualização alternativa focada na sequência de operações/recursos por onde a peça passa.',
+      'Apontar: clique nos círculos de operação (organograma) ou no botão "Apontar" (tabela) para registrar produção diretamente naquela etapa do roteiro.',
+      'Desenhos técnicos: o ícone de documento (fica vermelho quando há PDF cadastrado) abre o desenho técnico do produto ou componente em nova aba.',
+      'Foco em múltiplas OPs: quando o pedido tem mais de uma OP raiz, use o painel "Foco na OP" (organograma) para buscar e alternar entre elas.',
+    ],
+    tips: [
+      'A etiqueta "Modo" no topo (Livre, Sequência ou Saldo) indica a regra de apontamento configurada pela fábrica — controla se é preciso seguir a ordem do roteiro ou respeitar saldos.',
+      'Marque "Exibir Concluídos / Sem Saldo" (em Mais Filtros) para não esconder itens já finalizados.',
+      'Componentes tipo PI/PA (produto intermediário) aparecem com roteiro próprio expansível; matérias-primas (MP) não têm roteiro, só quantidade consumida.',
+    ],
+    links: [
+      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
+      { path: '/pcp/conferencia', label: 'Conferência de Apontamentos' },
+      { path: '/pcp/fila-dependencias', label: 'Fila e Dependências por Recurso' },
     ],
   },
 

@@ -1789,7 +1789,7 @@ router.get('/matrix', async (req, res) => {
         res.status(500).json({ error: err.message, step: 'FATAL', stack: err.stack });
     } finally {
         if (pgClient) {
-            await pgClient.query("SET client_encoding TO 'UTF8'").catch(e => console.error('Erro resetando encoding:', e));
+            await pgClient.query("SET client_encoding TO 'WIN1252'").catch(e => console.error('Erro resetando encoding:', e));
             pgClient.release();
         }
     }
@@ -3485,42 +3485,39 @@ const trackingEvolutionHandler = async (req, res) => {
         let paramCount = 1;
 
         if (pedido) {
-            whereClause += ` AND c5.c5_num LIKE $${paramCount} `;
-            params.push(`% ${pedido}% `);
+            whereClause += ` AND c5.c5_num LIKE $${paramCount}`;
+            params.push(`%${pedido}%`);
             paramCount++;
         }
 
         if (cliente) {
-            whereClause += ` AND(a1.a1_nome ILIKE $${paramCount} OR a1.a1_nreduz ILIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
-            params.push(`% ${cliente.toUpperCase()}% `);
+            whereClause += ` AND (a1.a1_nome ILIKE $${paramCount} OR a1.a1_nreduz ILIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
+            params.push(`%${cliente.toUpperCase()}%`);
             paramCount++;
         }
 
         if (data_inicio) {
-            whereClause += ` AND c5.c5_emissao >= $${paramCount} `;
+            whereClause += ` AND c5.c5_emissao >= $${paramCount}`;
             params.push(data_inicio.replace(/-/g, ''));
             paramCount++;
         }
 
         if (data_fim) {
-            whereClause += ` AND c5.c5_emissao <= $${paramCount} `;
+            whereClause += ` AND c5.c5_emissao <= $${paramCount}`;
             params.push(data_fim.replace(/-/g, ''));
             paramCount++;
         }
 
-        // 2. Fetch Sales Orders with Items and OPs (Refactored for Roteiro Explosion)
-        // NOTE: convert_from(convert_to(...)) sanitiza dados WIN1252 corrompidos do Protheus
-        const safeText = (col) => `convert_from(convert_to(${col}::text, 'WIN1252'), 'UTF8')`;
-
+        // 2. Fetch Sales Orders with Items and OPs (usando bytea para decodificação 100% segura de WIN1252)
         const query = `
             WITH PedidosBase AS(
-        SELECT DISTINCT
+                SELECT DISTINCT
                     c5.c5_num AS pedido,
-        c5.c5_cliente AS cod_cliente,
-        c5.c5_lojacli AS loja_cliente,
-        ${safeText('a1.a1_nome')} AS nome_cliente,
-        ${safeText('a1.a1_nreduz')} AS fantasia_cliente,
-        c5.c5_emissao AS data_emissao
+                    c5.c5_cliente AS cod_cliente,
+                    c5.c5_lojacli AS loja_cliente,
+                    a1.a1_nome::bytea AS nome_cliente_raw,
+                    a1.a1_nreduz::bytea AS fantasia_cliente_raw,
+                    c5.c5_emissao AS data_emissao
                 FROM public.sc5010 c5
                 LEFT JOIN public.sa1010 a1 
                     ON a1.a1_cod = c5.c5_cliente 
@@ -3529,136 +3526,125 @@ const trackingEvolutionHandler = async (req, res) => {
                 ${whereClause}
                 ORDER BY c5.c5_num DESC
                 LIMIT 50
-    ),
-    ItensPedido AS(
-        SELECT 
+            ),
+            ItensPedido AS(
+                SELECT 
                     c6.c6_num AS pedido,
-        c6.c6_item AS item,
-        c6.c6_produto AS cod_produto,
-        TRIM(${safeText('c6.c6_descri')}) AS desc_produto,
-        c6.c6_qtdven:: numeric AS qtd_item,
-        c6.c6_entreg AS data_entrega
+                    c6.c6_item AS item,
+                    c6.c6_produto AS cod_produto,
+                    c6.c6_descri::bytea AS desc_produto_raw,
+                    c6.c6_qtdven::numeric AS qtd_item,
+                    c6.c6_entreg AS data_entrega
                 FROM public.sc6010 c6
                 INNER JOIN PedidosBase pb ON pb.pedido = c6.c6_num
                 WHERE COALESCE(c6.d_e_l_e_t_, '') IN('', ' ')
-    ),
-        --3. Get OPs(Header level for the Item) with Robust Linkage
+            ),
+            -- 3. Get OPs (Header level for the Item) with Robust Linkage
             OPsCabecalho AS(
-            SELECT 
+                SELECT 
                     TRIM(c2.c2_num) AS op_num,
-            c2.c2_item AS item_op,
-            c2.c2_sequen AS op_sequencia_split, --Keeps original split seq for ref
+                    c2.c2_item AS item_op,
+                    c2.c2_sequen AS op_sequencia_split,
                     c2.c2_produto AS cod_produto,
-        c2.c2_quant::numeric AS qtd_planejada,
-
-            -- Robust Linking to Pedido (Handles Splits and Child OPs)
-            COALESCE(
-                NULLIF(TRIM(c2.c2_pedido), ''),
-                (SELECT TRIM(parent.c2_pedido) 
-                 FROM public.sc2010 parent 
-                 WHERE parent.c2_num = c2.c2_num 
-                   AND TRIM(parent.c2_item) IN ('01', '001', '1')
-                   AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
-                 LIMIT 1)
-            ) AS pedido,
-
-            COALESCE(
-                NULLIF(TRIM(c2.c2_itempv), ''),
-                (SELECT parent.c2_itempv 
-                 FROM public.sc2010 parent 
-                 WHERE parent.c2_num = c2.c2_num 
-                   AND TRIM(parent.c2_item) IN ('01', '001', '1')
-                   AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
-                 LIMIT 1)
-            ) AS item_pedido
-
-            FROM public.sc2010 c2
-            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-              AND c2.c2_num IN (
-                  SELECT DISTINCT c2_inner.c2_num
-                  FROM public.sc2010 c2_inner
-                  INNER JOIN PedidosBase pb ON TRIM(c2_inner.c2_pedido) = pb.pedido
-                  WHERE COALESCE(c2_inner.d_e_l_e_t_, '') IN ('', ' ')
-              )
-        ),
---4. JOIN with SG2(Roteiro) to Explode Operations
---This fixes the "Sequence Mixing" by explicitly listing operations
+                    c2.c2_quant::numeric AS qtd_planejada,
+                    COALESCE(
+                        NULLIF(TRIM(c2.c2_pedido), ''),
+                        (SELECT TRIM(parent.c2_pedido) 
+                         FROM public.sc2010 parent 
+                         WHERE parent.c2_num = c2.c2_num 
+                           AND TRIM(parent.c2_item) IN ('01', '001', '1')
+                           AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
+                         LIMIT 1)
+                    ) AS pedido,
+                    COALESCE(
+                        NULLIF(TRIM(c2.c2_itempv), ''),
+                        (SELECT parent.c2_itempv 
+                         FROM public.sc2010 parent 
+                         WHERE parent.c2_num = c2.c2_num 
+                           AND TRIM(parent.c2_item) IN ('01', '001', '1')
+                           AND COALESCE(parent.d_e_l_e_t_, '') IN ('', ' ')
+                         LIMIT 1)
+                    ) AS item_pedido
+                FROM public.sc2010 c2
+                WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                  AND c2.c2_num IN (
+                      SELECT DISTINCT c2_inner.c2_num
+                      FROM public.sc2010 c2_inner
+                      INNER JOIN PedidosBase pb ON TRIM(c2_inner.c2_pedido) = pb.pedido
+                      WHERE COALESCE(c2_inner.d_e_l_e_t_, '') IN ('', ' ')
+                  )
+            ),
+            -- 4. JOIN with SG2 (Roteiro) to Explode Operations
             OPsRoteiro AS(
-    SELECT 
+                SELECT 
                     op.op_num,
-    op.item_op,
-    op.cod_produto AS cod_produto_op,
-    op.pedido,
-    op.item_pedido,
-    op.qtd_planejada,
-    TRIM(g2.g2_operac) AS sequencia,
-                    TRIM(${safeText('g2.g2_recurso')}) AS recurso,
-    TRIM(${safeText('g2.g2_descri')}) AS desc_operacao
+                    op.item_op,
+                    op.cod_produto AS cod_produto_op,
+                    op.pedido,
+                    op.item_pedido,
+                    op.qtd_planejada,
+                    TRIM(g2.g2_operac) AS sequencia,
+                    g2.g2_recurso::bytea AS recurso_raw,
+                    g2.g2_descri::bytea AS desc_operacao_raw
                 FROM OPsCabecalho op
                 LEFT JOIN public.sg2010 g2 
                     ON btrim(g2.g2_produto) = btrim(op.cod_produto) 
                     AND COALESCE(g2.d_e_l_e_t_, '') IN('', ' ')
-)
-SELECT
-pb.pedido,
-    pb.cod_cliente,
-    pb.loja_cliente,
-    pb.nome_cliente,
-    pb.fantasia_cliente,
-    pb.data_emissao,
-    ip.item,
-    ip.cod_produto,
-    ip.desc_produto,
-    ip.qtd_item,
-    ip.data_entrega,
-
-    ops.op_num AS op,
-        ops.item_op,
-        ops.sequencia, --This is now the REAL routing sequence
-ops.cod_produto_op,
-
-    --Description Logic
-CASE 
-                    WHEN ops.recurso IS NOT NULL AND ops.recurso != '' 
-                    THEN ops.recurso || ' - ' || COALESCE(ops.desc_operacao, '')
-                    ELSE ops.desc_operacao 
-                END AS desc_operacao,
-
-    ops.qtd_planejada
+            )
+            SELECT
+                pb.pedido,
+                pb.cod_cliente,
+                pb.loja_cliente,
+                pb.nome_cliente_raw,
+                pb.fantasia_cliente_raw,
+                pb.data_emissao,
+                ip.item,
+                ip.cod_produto,
+                ip.desc_produto_raw,
+                ip.qtd_item,
+                ip.data_entrega,
+                ops.op_num AS op,
+                ops.item_op,
+                ops.sequencia,
+                ops.cod_produto_op,
+                ops.recurso_raw,
+                ops.desc_operacao_raw,
+                ops.qtd_planejada
             FROM PedidosBase pb
             LEFT JOIN ItensPedido ip ON ip.pedido = pb.pedido
             LEFT JOIN OPsRoteiro ops 
                 ON ops.pedido = pb.pedido 
                 AND ops.item_pedido = ip.item
             ORDER BY pb.pedido DESC, ip.item, ops.op_num, ops.sequencia
-    `;
+        `;
 
         console.log('⏳ [PEDIDOS-EVOLUTION] Executing query...');
-        // console.log(query);
         const pgRes = await db.query(query, params);
         const rows = pgRes.rows;
 
-        console.log(`✅[PEDIDOS - EVOLUTION] Found ${rows.length} rows`);
+        console.log(`✅ [PEDIDOS-EVOLUTION] Found ${rows.length} rows`);
 
         if (rows.length === 0) {
             return res.json({ pedidos: [], resumo: { total_pedidos: 0, concluidos: 0, em_andamento: 0, nao_iniciados: 0 } });
         }
 
+        const td = new TextDecoder('windows-1252');
+        const decodeWin = (buf) => (buf ? td.decode(buf).trim() : '');
+
         // 3. Fetch all appointments from MySQL
         const [appointments] = await mysqlPool.query(`
-SELECT
-op_numero, op_item, op_sequencia, operacao_codigo,
-SUM(quantidade) as total_produzido,
-    MAX(data_fim) as ultima_atualizacao
+            SELECT
+                op_numero, op_item, op_sequencia, operacao_codigo,
+                SUM(quantidade) as total_produzido,
+                MAX(data_fim) as ultima_atualizacao
             FROM app_production_appointments
             GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
-    `);
+        `);
 
         // Create appointments map for quick lookup
         const appointmentsMap = {};
         appointments.forEach(a => {
-            // Key format: OP_ITEM_SEQ_OPERACAO
-            const key = `${a.op_numero}_${a.op_item}_${a.op_sequencia}_${a.operacao_codigo} `;
+            const key = `${a.op_numero}_${a.op_item}_${a.op_sequencia}_${a.operacao_codigo}`;
             appointmentsMap[key] = a;
         });
 
@@ -3689,6 +3675,12 @@ SUM(quantidade) as total_produzido,
 
         rows.forEach(row => {
             const pedidoNum = row.pedido;
+            const nomeCliente = decodeWin(row.nome_cliente_raw);
+            const fantasiaCliente = decodeWin(row.fantasia_cliente_raw);
+            const descProduto = decodeWin(row.desc_produto_raw);
+            const recurso = decodeWin(row.recurso_raw);
+            const descOperacao = decodeWin(row.desc_operacao_raw);
+            const descOperacaoFormatada = recurso ? (descOperacao ? `${recurso} - ${descOperacao}` : recurso) : descOperacao;
 
             const emissaoRaw = row.data_emissao ? String(row.data_emissao).trim() : '';
             const emissaoFormatada = emissaoRaw.length === 8 ? `${emissaoRaw.substring(0, 4)}-${emissaoRaw.substring(4, 6)}-${emissaoRaw.substring(6, 8)}` : emissaoRaw;
@@ -3700,8 +3692,8 @@ SUM(quantidade) as total_produzido,
                     cliente: {
                         codigo: row.cod_cliente,
                         loja: row.loja_cliente,
-                        nome: row.nome_cliente,
-                        fantasia: row.fantasia_cliente
+                        nome: nomeCliente,
+                        fantasia: fantasiaCliente
                     },
                     data_emissao: emissaoFormatada,
                     itens: {}
@@ -3719,7 +3711,7 @@ SUM(quantidade) as total_produzido,
                     item: row.item,
                     produto: {
                         codigo: row.cod_produto,
-                        descricao: row.desc_produto
+                        descricao: descProduto
                     },
                     quantidade_item: parseFloat(row.qtd_item) || 0,
                     data_entrega: pcpData || entregaFormatada,
@@ -3729,8 +3721,7 @@ SUM(quantidade) as total_produzido,
 
             // Add OP to item if exists
             if (row.op && row.item) {
-                // Key matching: OP + Item + Seq (from sc2010 usually 001) + Operacao
-                const apptKey = `${row.op}_${row.item_op}_${row.sequen_op}_${row.sequencia} `;
+                const apptKey = `${row.op}_${row.item_op}_${row.sequen_op}_${row.sequencia}`;
                 const appt = appointmentsMap[apptKey];
 
                 const qtdApontada = appt ? parseFloat(appt.total_produzido) || 0 : 0;
@@ -3742,7 +3733,7 @@ SUM(quantidade) as total_produzido,
                     item_op: row.item_op,
                     sequencia: row.sequencia,
                     cod_produto: row.cod_produto_op,
-                    operacao: row.desc_operacao || 'N/A',
+                    operacao: descOperacaoFormatada || 'N/A',
                     qtd_planejada: qtdPlanejada,
                     qtd_apontada: qtdApontada,
                     percentual: Math.min(percentual, 100),

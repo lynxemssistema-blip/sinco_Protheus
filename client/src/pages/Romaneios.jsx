@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer, FolderPlus, FolderOpen, FileText } from 'lucide-react';
+import { Plus, Truck, Search, Eye, Trash2, Filter, Edit, Printer, FolderPlus, FolderOpen, FileText, FileSpreadsheet } from 'lucide-react';
 import { getRomaneios, deleteRomaneio, updateRomaneioStatus, createRomaneioFolder, getRomaneioBaseDirConfig, downloadRomaneioBundle, searchRomaneioItems } from '../services/api';
 import RomaneioForm from '../components/RomaneioForm';
 import RomaneioEmailModal from '../components/RomaneioModals/RomaneioEmailModal';
+import RelatorioTratamentoModal from '../components/RomaneioModals/RelatorioTratamentoModal';
 import useStickyState from '../hooks/useStickyState';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Romaneios() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canViewFinancials = hasPermission('valores_financeiros', 'view');
     const [view, setView] = useStickyState('list', '@metalfisa:roma_view'); // list | form
     const [romaneios, setRomaneios] = useState([]);
     const [selectedId, setSelectedId] = useStickyState(null, '@metalfisa:roma_selectedId');
@@ -15,8 +17,9 @@ export default function Romaneios() {
     const [formKey, setFormKey] = useState(0);
     const [loading, setLoading] = useState(false);
     
-    // Email Modal State
+    // Email & Report Modals State
     const [emailModal, setEmailModal] = useState({ isOpen: false, romaneio: null });
+    const [tratamentoModalOpen, setTratamentoModalOpen] = useState(false);
 
     // Filters
     const [filters, setFilters] = useStickyState({
@@ -118,7 +121,15 @@ export default function Romaneios() {
                     <p className="text-slate-500">Gestão de envios de material (Entrega, Manutenção, etc).</p>
                 </div>
                 {view === 'list' && (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setTratamentoModalOpen(true)}
+                            className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 hover:border-emerald-400 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
+                            title="Relatório consolidado em Excel de NFs e quilos enviados para fornecedores de tratamento (KMI, Suprema, Alfatec)"
+                        >
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                            Relatório Tratamento
+                        </button>
                         <button
                             onClick={() => setView('product_search')}
                             className="text-slate-600 bg-white border border-slate-300 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 shadow-sm"
@@ -387,6 +398,13 @@ export default function Romaneios() {
                 isOpen={emailModal.isOpen}
                 onClose={() => setEmailModal({ isOpen: false, romaneio: null })}
                 romaneio={emailModal.romaneio}
+            />
+
+            {/* Modal de Relatório de Envios para Tratamento em Excel */}
+            <RelatorioTratamentoModal
+                isOpen={tratamentoModalOpen}
+                onClose={() => setTratamentoModalOpen(false)}
+                canViewFinancials={canViewFinancials}
             />
         </div>
     );
