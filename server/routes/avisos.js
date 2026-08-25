@@ -213,9 +213,10 @@ router.get('/nao-concluidos/:idUsuario', async (req, res) => {
         // 8s hard timeout — retorna vazio em vez de pendurar o cliente por 60s.
         // Qualquer erro de MySQL (POOL_TIMEOUT, ETIMEDOUT, ECONNREFUSED, etc.)
         // é tratado como "sem avisos" para não bloquear o usuário.
-        let rows;
+        let rows = [];
         try {
-            [rows] = await mysqlPool.query(query, [idUsuario], 8000);
+            const [queryRows] = await mysqlPool.query({ sql: query, values: [idUsuario], timeout: 8000 });
+            rows = queryRows || [];
         } catch (qErr) {
             console.warn(`⚠️ [Avisos] Erro MySQL para usuário ${idUsuario} (${qErr.code || qErr.message}) — retornando vazio`);
             return res.json([]);
@@ -224,14 +225,14 @@ router.get('/nao-concluidos/:idUsuario', async (req, res) => {
         if (rows.length > 0) {
             const ids = rows.map(r => r.idAviso);
             // Fire-and-forget: marca como lido sem bloquear a resposta
-            mysqlPool.query(`UPDATE sistema_avisos SET lido = 1 WHERE idAviso IN (?)`, [ids], 5000)
+            mysqlPool.query({ sql: `UPDATE sistema_avisos SET lido = 1 WHERE idAviso IN (?)`, values: [ids], timeout: 5000 })
                 .catch(e => console.warn('⚠️ [Avisos] Falha ao marcar como lido:', e.message));
         }
 
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar avisos ativos:', error);
-        res.status(500).json({ error: 'Erro ao buscar avisos', details: error.message });
+        res.json([]);
     }
 });
 

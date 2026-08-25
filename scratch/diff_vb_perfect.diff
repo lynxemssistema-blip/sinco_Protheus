@@ -1,0 +1,2400 @@
+diff --git a/SINCO-SolidEdeg 1.0/frmDadosPecaCorrente.vb b/SINCO-SolidEdeg 1.0/frmDadosPecaCorrente.vb
+index c3ca1ad..d6ff9af 100644
+--- a/SINCO-SolidEdeg 1.0/frmDadosPecaCorrente.vb	
++++ b/SINCO-SolidEdeg 1.0/frmDadosPecaCorrente.vb	
+@@ -33,21 +33,21 @@ Imports Newtonsoft.Json
+ Public Class frmDadosPecaCorrente
+ 
+ 
+-    ' Vari?�vel que far?� a escuta dos eventos gerais do Solid Edge
++    ' Vari?�?�vel que far?�?� a escuta dos eventos gerais do Solid Edge
+     Private WithEvents seAppEvents As SolidEdgeFramework.ISEApplicationEvents_Event
+ 
+-    ' Guarda qual foi o ??ltimo documento lido para saber quando mudou
++    ' Guarda qual foi o ?�??ltimo documento lido para saber quando mudou
+     Private ultimoDocumentoAnalisado As String = ""
+ 
+ 
+ 
+-#Region "���� VARI?�VEIS GLOBAIS"
++#Region "???����?� VARI?�?�VEIS GLOBAIS"
+ 
+     Private WithEvents timerAtualizacao As New System.Windows.Forms.Timer()
+ 
+ 
+ 
+-    ' Controle de edi?�?�o pendente
++    ' Controle de edi?�?�?�?�o pendente
+     Private editando As Boolean = False
+     Private nomePropriedadeEditando As String = ""
+     Private valorEditado As String = ""
+@@ -61,7 +61,7 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+ 
+-    ' Vari?�veis de controle para o drag & drop
++    ' Vari?�?�veis de controle para o drag & drop
+     Private dragIndex As Integer
+     Private dragRow As DataGridViewRow
+     Private dropIndex As Integer
+@@ -72,18 +72,86 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+     Private Sub btnDxf_Click(sender As Object, e As EventArgs) Handles btnDxf.Click
++        Try
++            If app Is Nothing OrElse app.Documents.Count = 0 Then Exit Sub
++            Dim doc As Object = app.ActiveDocument
++            If doc Is Nothing Then Exit Sub
+ 
++            Dim caminho As String = doc.FullName
++            Dim ext As String = IO.Path.GetExtension(caminho).ToLower()
+ 
+-        '  DxfArquivoCorrente()
+-
+-        'ExportarPlanificacaoDXF_Final()
++            If ext = ".asm" Then
++                ' ?���? um conjunto! Pergunta se quer exportar toda a estrutura
++                Dim result As DialogResult = MessageBox.Show(
++                    "O arquivo ativo ?�?� um Conjunto (.ASM)." & vbCrLf & "Deseja exportar o DXF (blank) de todos os componentes da BOM deste conjunto?",
++                    "Exportar Lote (BOM)",
++                    MessageBoxButtons.YesNoCancel,
++                    MessageBoxIcon.Question)
+ 
+-        '  ExportarDXFPlanificadoAuto()
++                If result = DialogResult.Yes Then
++                    ' Para o timer de monitoramento em segundo plano para evitar consultas lentas no banco
++                    timerAtualizacao.Stop()
+ 
+-        ExportarDXFPlanificadoAuto(0)
++                    Dim labelStatus As New Label()
++                    Try
++                        ' 1. Cria grid e labels na mem?�??ria
++                        Dim gridMemoria As New DataGridView()
++                        Dim labelResumo As New Label()
++
++                        ' Configura o label na tela de forma vis?�?�vel e estilizada
++                        labelStatus.AutoSize = True
++                        labelStatus.Location = New System.Drawing.Point(ProgressBar1.Left, ProgressBar1.Top - 22)
++                        labelStatus.ForeColor = System.Drawing.Color.FromArgb(31, 54, 92) ' Azul Metalfisa
++                        labelStatus.Font = New System.Drawing.Font("Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
++                        Me.Controls.Add(labelStatus)
++                        labelStatus.BringToFront()
++
++                        ' Exibe o status inicial
++                        ProgressBar1.Value = 0
++                        ProgressBar1.Visible = True
++                        System.Windows.Forms.Application.DoEvents()
++
++                        ' Extrai a estrutura da BOM
++                        ListarEstruturaBomMateriais(gridMemoria, ProgressBar1, labelStatus, labelResumo)
++
++                        Dim dtBom As DataTable = TryCast(gridMemoria.DataSource, DataTable)
++                        If dtBom Is Nothing OrElse dtBom.Rows.Count = 0 Then
++                            MessageBox.Show("A estrutura (BOM) retornou vazia.", "Aviso", MessageBoxButtons.OK, MessageBoxIcon.Warning)
++                            Exit Sub
++                        End If
+ 
++                        ' Adiciona as colunas necess?�?�rias para o ExportarPorGrid n?�?�o dar NullReferenceException
++                        gridMemoria.DataSource = dtBom
++                        gridMemoria.Columns.Add("dgvdxf", "dgvdxf")
++                        gridMemoria.Columns.Add("dgvpdf", "dgvpdf")
++
++                        ' Configura os checkboxes para exportar apenas DXF
++                        Dim tempChkPDF As New CheckBox() With {.Checked = False}
++                        Dim tempChkDXF As New CheckBox() With {.Checked = True}
++                        Dim tempChkIGES As New CheckBox() With {.Checked = False}
++
++                        ' Dispara a exporta?�?�?�?�o por lote
++                        ExportarPorGrid(gridMemoria, tempChkDXF, tempChkPDF, tempChkIGES, ProgressBar1, labelStatus, chkOpcaodePasta)
++
++                        MessageBox.Show("Exporta?�?�?�?�o de DXFs em lote finalizada com sucesso!", "SINCO - Exporta?�?�?�?�o", MessageBoxButtons.OK, MessageBoxIcon.Information)
++                    Finally
++                        ' Remove o label de progresso do Form
++                        Try : Me.Controls.Remove(labelStatus) : Catch : End Try
++                        ' Garante que o timer seja reativado no final
++                        timerAtualizacao.Start()
++                    End Try
++                    Exit Sub
++                Else
++                    Exit Sub
++                End If
++            End If
+ 
++            ' Exporta?�?�?�?�o padr?�?�o (individual)
++            ExportarDXFPlanificadoAuto(0)
+ 
++        Catch ex As Exception
++            MessageBox.Show("Erro ao gerar DXF: " & ex.Message, "Erro DXF", MessageBoxButtons.OK, MessageBoxIcon.Error)
++        End Try
+     End Sub
+ 
+     Private Sub frmDadosPecaCorrente_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+@@ -96,6 +164,11 @@ Public Class frmDadosPecaCorrente
+             ' Inicia a verifica?�?�o a cada 1 segundo (1000 ms)
+             timerAtualizacao.Interval = 1000
+             timerAtualizacao.Start()
++
++            ' Inicializa o controle de encaixe e o ativa por padr?�o de forma ass?�ncrona para evitar gargalos de renderiza?�?�o
++            Me.BeginInvoke(Sub()
++                               InicializarControleEncaixe()
++                           End Sub)
+         Catch ex As Exception
+         End Try
+ 
+@@ -114,7 +187,7 @@ Public Class frmDadosPecaCorrente
+                 conn.Open()
+ 
+                 ' 1. Busca os grupos na tabela SBM010
+-                Dim sqlGrupo As String = "SELECT BM_GRUPO AS ""C??digo"", BM_DESC AS ""Descri?�?�o"" FROM public.SBM010 WHERE D_E_L_E_T_ = ' ' ORDER BY BM_GRUPO"
++                Dim sqlGrupo As String = "SELECT BM_GRUPO AS ""C?�??digo"", BM_DESC AS ""Descri?�?�?�?�o"" FROM public.SBM010 WHERE D_E_L_E_T_ = ' ' ORDER BY BM_GRUPO"
+                 Using cmdGrupo As New Npgsql.NpgsqlCommand(sqlGrupo, conn)
+                     Using daGrupo As New Npgsql.NpgsqlDataAdapter(cmdGrupo)
+                         daGrupo.Fill(dtGrupo)
+@@ -122,7 +195,7 @@ Public Class frmDadosPecaCorrente
+                 End Using
+ 
+                 ' 2. Busca Tipos de Produto na tabela SX5010 (X5_TABELA = '02')
+-                Dim sqlTipo As String = "SELECT X5_CHAVE AS ""C??digo_Tipo"", X5_DESCRI AS ""Descri?�?�o"" FROM public.SX5010 WHERE X5_TABELA = '02' AND D_E_L_E_T_ = ' ' ORDER BY X5_CHAVE"
++                Dim sqlTipo As String = "SELECT X5_CHAVE AS ""C?�??digo_Tipo"", X5_DESCRI AS ""Descri?�?�?�?�o"" FROM public.SX5010 WHERE X5_TABELA = '02' AND D_E_L_E_T_ = ' ' ORDER BY X5_CHAVE"
+                 Using cmdTipo As New Npgsql.NpgsqlCommand(sqlTipo, conn)
+                     Using daTipo As New Npgsql.NpgsqlDataAdapter(cmdTipo)
+                         daTipo.Fill(dtTipo)
+@@ -130,7 +203,7 @@ Public Class frmDadosPecaCorrente
+                 End Using
+ 
+                 ' 3. Busca Unidades de Medida na tabela SAH010
+-                Dim sqlUM As String = "SELECT AH_UNIMED AS ""Codigo_UM"", AH_UMRES AS ""Descri?�?�o"" FROM public.SAH010 WHERE D_E_L_E_T_ = ' ' ORDER BY AH_UNIMED"
++                Dim sqlUM As String = "SELECT AH_UNIMED AS ""Codigo_UM"", AH_UMRES AS ""Descri?�?�?�?�o"" FROM public.SAH010 WHERE D_E_L_E_T_ = ' ' ORDER BY AH_UNIMED"
+                 Using cmdUM As New Npgsql.NpgsqlCommand(sqlUM, conn)
+                     Using daUM As New Npgsql.NpgsqlDataAdapter(cmdUM)
+                         daUM.Fill(dtUM)
+@@ -141,31 +214,31 @@ Public Class frmDadosPecaCorrente
+             ' ================= BINDING GRUPO =================
+             If Not dtGrupo.Columns.Contains("DescricaoExibicao") Then dtGrupo.Columns.Add("DescricaoExibicao", GetType(String))
+             For Each row As System.Data.DataRow In dtGrupo.Rows
+-                Dim codGrupo As String = If(row("C??digo") IsNot DBNull.Value, row("C??digo").ToString().Trim(), "")
+-                Dim descGrupo As String = If(row("Descri?�?�o") IsNot DBNull.Value, row("Descri?�?�o").ToString().Trim(), "")
++                Dim codGrupo As String = If(row("C?�??digo") IsNot DBNull.Value, row("C?�??digo").ToString().Trim(), "")
++                Dim descGrupo As String = If(row("Descri?�?�?�?�o") IsNot DBNull.Value, row("Descri?�?�?�?�o").ToString().Trim(), "")
+                 row("DescricaoExibicao") = codGrupo
+             Next
+             With cboB1_GRUPO
+                 .DataSource = dtGrupo
+                 .DisplayMember = "DescricaoExibicao"
+-                .ValueMember = "C??digo"
++                .ValueMember = "C?�??digo"
+                 .SelectedIndex = -1
+             End With
+ 
+             ' ================= BINDING TIPO =================
+             If Not dtTipo.Columns.Contains("DescricaoExibicao") Then dtTipo.Columns.Add("DescricaoExibicao", GetType(String))
+             For Each row As System.Data.DataRow In dtTipo.Rows
+-                Dim codTipo As String = If(row("C??digo_Tipo") IsNot DBNull.Value, row("C??digo_Tipo").ToString().Trim(), "")
++                Dim codTipo As String = If(row("C?�??digo_Tipo") IsNot DBNull.Value, row("C?�??digo_Tipo").ToString().Trim(), "")
+                 Dim descTipo As String = ""
+-                If dtTipo.Columns.Contains("Descri?�?�o") Then descTipo = If(row("Descri?�?�o") IsNot DBNull.Value, row("Descri?�?�o").ToString().Trim(), "")
++                If dtTipo.Columns.Contains("Descri?�?�?�?�o") Then descTipo = If(row("Descri?�?�?�?�o") IsNot DBNull.Value, row("Descri?�?�?�?�o").ToString().Trim(), "")
+ 
+-                ' Exibe "Codigo - Descri?�?�o" se a descri?�?�o for encontrada, caso contr?�rio mostra s?? o c??digo
++                ' Exibe "Codigo - Descri?�?�?�?�o" se a descri?�?�?�?�o for encontrada, caso contr?�?�rio mostra s?�?? o c?�??digo
+                 row("DescricaoExibicao") = codTipo
+             Next
+             With cboB1_TIPO
+                 .DataSource = dtTipo
+                 .DisplayMember = "DescricaoExibicao"
+-                .ValueMember = "C??digo_Tipo"
++                .ValueMember = "C?�??digo_Tipo"
+                 .SelectedIndex = -1
+             End With
+ 
+@@ -174,9 +247,9 @@ Public Class frmDadosPecaCorrente
+             For Each row As System.Data.DataRow In dtUM.Rows
+                 Dim codUM As String = If(row("Codigo_UM") IsNot DBNull.Value, row("Codigo_UM").ToString().Trim(), "")
+                 Dim descUM As String = ""
+-                If dtUM.Columns.Contains("Descri?�?�o") Then descUM = If(row("Descri?�?�o") IsNot DBNull.Value, row("Descri?�?�o").ToString().Trim(), "")
++                If dtUM.Columns.Contains("Descri?�?�?�?�o") Then descUM = If(row("Descri?�?�?�?�o") IsNot DBNull.Value, row("Descri?�?�?�?�o").ToString().Trim(), "")
+ 
+-                ' Exibe "Codigo - Descri?�?�o" se a descri?�?�o for encontrada, caso contr?�rio mostra s?? o c??digo
++                ' Exibe "Codigo - Descri?�?�?�?�o" se a descri?�?�?�?�o for encontrada, caso contr?�?�rio mostra s?�?? o c?�??digo
+                 row("DescricaoExibicao") = codUM
+             Next
+             With cboB1_UM
+@@ -201,11 +274,11 @@ Public Class frmDadosPecaCorrente
+                 app = Marshal.GetActiveObject("SolidEdge.Application")
+             End If
+ 
+-            ' Conecta sua vari?�vel ?� classe nativa de eventos da aplica?�?�o
++            ' Conecta sua vari?�?�vel ?�?� classe nativa de eventos da aplica?�?�?�?�o
+             seAppEvents = CType(app.ApplicationEvents, SolidEdgeFramework.ISEApplicationEvents_Event)
+         Catch ex As Exception
+-            ' Um aviso simples caso d?� falha ao ativar o monitoramento
+-            Debug.WriteLine("N?�o foi poss?�vel acoplar aos Eventos do Solid Edge: " & ex.Message)
++            ' Um aviso simples caso d?�?� falha ao ativar o monitoramento
++            Debug.WriteLine("N?�?�o foi poss?�?�vel acoplar aos Eventos do Solid Edge: " & ex.Message)
+         End Try
+ 
+ 
+@@ -214,35 +287,35 @@ Public Class frmDadosPecaCorrente
+     End Sub
+ 
+     ''' <summary>
+-    ''' Tela de Carregamento com Progresso Matem?�tico 
++    ''' Tela de Carregamento com Progresso Matem?�?�tico 
+     ''' </summary>
+     Private Sub ProcessarMudancaDeDocumento()
+         Try
+             timerAtualizacao.Stop()
+             Me.Cursor = Cursors.WaitCursor
+ 
+-            ' 1. CONFIGURA O PROGRESSO INICIAL: Come?�a em 30% visualmente
++            ' 1. CONFIGURA O PROGRESSO INICIAL: Come?�?�a em 30% visualmente
+             ProgressBar1.Style = ProgressBarStyle.Continuous
+             ProgressBar1.Visible = True
+-            ProgressBar1.Value = 30 ' Preenche o primeiro ter?�o da barra
++            ProgressBar1.Value = 30 ' Preenche o primeiro ter?�?�o da barra
+ 
+             LimaprCampos()
+             txtTitulo.Text = "CARREGANDO DADOS... POR FAVOR, AGUARDE"
+             txtNumeroDesenho.Text = "PROCESSANDO ARQUIVO..."
+ 
+-            ' For?�a a barra aparecer em 30% IMEDIATAMENTE antes da tela congelar de vez
++            ' For?�?�a a barra aparecer em 30% IMEDIATAMENTE antes da tela congelar de vez
+             System.Windows.Forms.Application.DoEvents()
+ 
+             ' 2. INICIA A CARGA PESADA...
+-            ' (Opcionalmente, se voc?� quiser, dentro de 'CarregarPropriedadesArquivoCorrente()'
+-            '  voc?� pode espalhar: ProgressBar1.Value = 60 : Application.DoEvents() para dar mais passos)
++            ' (Opcionalmente, se voc?�?� quiser, dentro de 'CarregarPropriedadesArquivoCorrente()'
++            '  voc?�?� pode espalhar: ProgressBar1.Value = 60 : Application.DoEvents() para dar mais passos)
+             CarregarPropriedadesArquivoCorrente()
+ 
+             ' 3. COMPLETA 100% ANTES DE FECHAR
+             ProgressBar1.Value = 100
+             System.Windows.Forms.Application.DoEvents()
+ 
+-            ' Espera meio segundo (500 ms) pro usu?�rio enxergar que chegou no finalzinho (100% verde)
++            ' Espera meio segundo (500 ms) pro usu?�?�rio enxergar que chegou no finalzinho (100% verde)
+             System.Threading.Thread.Sleep(500)
+ 
+         Catch ex As Exception
+@@ -259,7 +332,7 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+     ''' <summary>
+-    ''' Grava/Sincroniza os dados dos Comboboxes dentro do arquivo f?�sico 3D atual (.PAR, .ASM ou .PSM)
++    ''' Grava/Sincroniza os dados dos Comboboxes dentro do arquivo f?�?�sico 3D atual (.PAR, .ASM ou .PSM)
+     ''' </summary>
+     Private Sub SincronizarPropriedadesCustomizadasDoArquivo()
+         Try
+@@ -267,7 +340,7 @@ Public Class frmDadosPecaCorrente
+             Dim doc As Object = app.ActiveDocument
+             If doc Is Nothing Then Exit Sub
+ 
+-            ' Prote?�?�o: S?? deixamos furar/escrever propriedades se for em arquivos 3D (PAR, ASM ou PSM)
++            ' Prote?�?�?�?�o: S?�?? deixamos furar/escrever propriedades se for em arquivos 3D (PAR, ASM ou PSM)
+             If doc.Type <> SolidEdgeFramework.DocumentTypeConstants.igPartDocument AndAlso doc.Type <> SolidEdgeFramework.DocumentTypeConstants.igAssemblyDocument AndAlso doc.Type <> SolidEdgeFramework.DocumentTypeConstants.igSheetMetalDocument Then
+                 Exit Sub
+             End If
+@@ -286,14 +359,14 @@ Public Class frmDadosPecaCorrente
+                 Dim nomeDaVar As String = item.Key
+                 Dim valorAtual As String = item.Value
+ 
+-                ' N?�o grava no arquivo caso o campo do Protheus esteja vazio 
++                ' N?�?�o grava no arquivo caso o campo do Protheus esteja vazio 
+                 If String.IsNullOrEmpty(valorAtual) Then Continue For
+ 
+                 Dim encontrado As Boolean = False
+                 For i As Integer = 1 To profCustom.Count
+                     If profCustom.Item(i).Name = nomeDaVar Then
+                         encontrado = True
+-                        ' Se a propriedade existe mas est?� com valor velho, n??s atualizamos
++                        ' Se a propriedade existe mas est?�?� com valor velho, n?�??s atualizamos
+                         If profCustom.Item(i).Value.ToString() <> valorAtual Then
+                             profCustom.Item(i).Value = valorAtual
+                             documentoSofreuAlteracoes = True
+@@ -302,7 +375,7 @@ Public Class frmDadosPecaCorrente
+                     End If
+                 Next
+ 
+-                ' Se a propriedade N?�O EXISTIA dentro da pe?�a, a gente cria na mesma hora
++                ' Se a propriedade N?���O EXISTIA dentro da pe?�?�a, a gente cria na mesma hora
+                 If Not encontrado Then
+                     profCustom.Add(nomeDaVar, valorAtual)
+                     documentoSofreuAlteracoes = True
+@@ -322,20 +395,20 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+     ''' <summary>
+-    ''' Evento NATIVO acionado imeditamente quando a janela de um documento ativo ?� alterada no Solid Edge.
++    ''' Evento NATIVO acionado imeditamente quando a janela de um documento ativo ?�?� alterada no Solid Edge.
+     ''' </summary>
+     Private Sub seAppEvents_AfterActiveDocumentChange(ByVal theDocument As Object) Handles seAppEvents.AfterActiveDocumentChange
+         Try
+             ' Porque o evento vem de "fora" (do processo do Solid Edge), precisamos 
+-            ' pedir permiss?�o e atualizar os controles de forma segura na thread do formul?�rio (Invoke)
++            ' pedir permiss?�?�o e atualizar os controles de forma segura na thread do formul?�?�rio (Invoke)
+             If Me.InvokeRequired Then
+-                ' M?�todo cl?�ssico e compat?�vel com 100% das vers?�es do VB.NET
++                ' M?�?�todo cl?�?�ssico e compat?�?�vel com 100% das vers?�?�es do VB.NET
+                 Me.Invoke(New MethodInvoker(AddressOf ProcessarMudancaDeDocumento))
+             Else
+                 ProcessarMudancaDeDocumento()
+             End If
+         Catch ex As Exception
+-            ' Falhas silenciosas para n?�o interromper navega?�?�o do usu?�rio no ambiente 3D
++            ' Falhas silenciosas para n?�?�o interromper navega?�?�?�?�o do usu?�?�rio no ambiente 3D
+             Debug.WriteLine("Erro AfterActiveDocumentChange: " & ex.Message)
+         End Try
+     End Sub
+@@ -343,11 +416,16 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+     ''' <summary>
+-    ''' Monitora em segundo plano se o usu?�rio trocou a aba ativa do Solid Edge
++    ''' Monitora em segundo plano se o usu?�?�rio trocou a aba ativa do Solid Edge
+     ''' </summary>
+     Private Sub timerAtualizacao_Tick(sender As Object, e As EventArgs) Handles timerAtualizacao.Tick
+         Try
+-            ' 1. Garante que a aplica?�?�o ainda est?� conectada
++            ' Ajusta a posi?�?�?�?�o de encaixe se estiver ativado
++            If chkEncaixar IsNot Nothing AndAlso chkEncaixar.Checked Then
++                AjustarPosicaoEncaixe()
++            End If
++
++            ' 1. Garante que a aplica?�?�?�?�o ainda est?�?� conectada
+             If app Is Nothing Then
+                 app = Marshal.GetActiveObject("SolidEdge.Application")
+             End If
+@@ -357,13 +435,13 @@ Public Class frmDadosPecaCorrente
+                 Dim caminhoAtual As String = ""
+ 
+                 Try
+-                    ' Pega o endere?�o completo do arquivo que est?� na tela do Solid Edge agora
++                    ' Pega o endere?�?�o completo do arquivo que est?�?� na tela do Solid Edge agora
+                     caminhoAtual = app.ActiveDocument.FullName
+                 Catch ex As Exception
+-                    ' Silencioso: pode falhar uma fra?�?�o de segundo se o arquivo estiver salvando
++                    ' Silencioso: pode falhar uma fra?�?�?�?�o de segundo se o arquivo estiver salvando
+                 End Try
+ 
+-                ' 3. Se o arquivo na tela for DIFERENTE do ??ltimo arquivo analisado, atualiza
++                ' 3. Se o arquivo na tela for DIFERENTE do ?�??ltimo arquivo analisado, atualiza
+                 If caminhoAtual <> "" AndAlso caminhoAtual <> ultimoDocumentoAnalisado Then
+ 
+                     ' Salva o novo documento como sendo o atual
+@@ -379,7 +457,7 @@ Public Class frmDadosPecaCorrente
+             End If
+ 
+         Catch ex As Exception
+-            ' Falhas no timer n?�o devem disparar msgs na tela para n?�o travar o usu?�rio
++            ' Falhas no timer n?�?�o devem disparar msgs na tela para n?�?�o travar o usu?�?�rio
+         End Try
+     End Sub
+ 
+@@ -398,9 +476,86 @@ Public Class frmDadosPecaCorrente
+     End Sub
+ 
+     Private Sub btnGerarPdf_Click(sender As Object, e As EventArgs) Handles btnGerarPdf.Click
+-        '  ExportarPDFDetalhamento()
+-        ExportarPDFDetalhamentoLote(0)
++        Try
++            If app Is Nothing OrElse app.Documents.Count = 0 Then Exit Sub
++            Dim doc As Object = app.ActiveDocument
++            If doc Is Nothing Then Exit Sub
++
++            Dim caminho As String = doc.FullName
++            Dim ext As String = IO.Path.GetExtension(caminho).ToLower()
++
++            If ext = ".asm" Then
++                ' ?���? um conjunto! Pergunta se quer exportar toda a estrutura
++                Dim result As DialogResult = MessageBox.Show(
++                    "O arquivo ativo ?�?� um Conjunto (.ASM)." & vbCrLf & "Deseja exportar o PDF de todos os componentes da BOM deste conjunto?",
++                    "Exportar Lote (BOM)",
++                    MessageBoxButtons.YesNoCancel,
++                    MessageBoxIcon.Question)
++
++                If result = DialogResult.Yes Then
++                    ' Para o timer de monitoramento em segundo plano para evitar consultas lentas no banco
++                    timerAtualizacao.Stop()
++
++                    Dim labelStatus As New Label()
++                    Try
++                        ' 1. Cria grid e labels na mem?�??ria
++                        Dim gridMemoria As New DataGridView()
++                        Dim labelResumo As New Label()
++
++                        ' Configura o label na tela de forma vis?�?�vel e estilizada
++                        labelStatus.AutoSize = True
++                        labelStatus.Location = New System.Drawing.Point(ProgressBar1.Left, ProgressBar1.Top - 22)
++                        labelStatus.ForeColor = System.Drawing.Color.FromArgb(31, 54, 92) ' Azul Metalfisa
++                        labelStatus.Font = New System.Drawing.Font("Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
++                        Me.Controls.Add(labelStatus)
++                        labelStatus.BringToFront()
++
++                        ' Exibe o status inicial
++                        ProgressBar1.Value = 0
++                        ProgressBar1.Visible = True
++                        System.Windows.Forms.Application.DoEvents()
++
++                        ' Extrai a estrutura da BOM
++                        ListarEstruturaBomMateriais(gridMemoria, ProgressBar1, labelStatus, labelResumo)
++
++                        Dim dtBom As DataTable = TryCast(gridMemoria.DataSource, DataTable)
++                        If dtBom Is Nothing OrElse dtBom.Rows.Count = 0 Then
++                            MessageBox.Show("A estrutura (BOM) retornou vazia.", "Aviso", MessageBoxButtons.OK, MessageBoxIcon.Warning)
++                            Exit Sub
++                        End If
++
++                        ' Adiciona as colunas necess?�?�rias para o ExportarPorGrid n?�?�o dar NullReferenceException
++                        gridMemoria.DataSource = dtBom
++                        gridMemoria.Columns.Add("dgvdxf", "dgvdxf")
++                        gridMemoria.Columns.Add("dgvpdf", "dgvpdf")
++
++                        ' Configura os checkboxes para exportar apenas PDF
++                        Dim tempChkPDF As New CheckBox() With {.Checked = True}
++                        Dim tempChkDXF As New CheckBox() With {.Checked = False}
++                        Dim tempChkIGES As New CheckBox() With {.Checked = False}
++
++                        ' Dispara a exporta?�?�?�?�o por lote
++                        ExportarPorGrid(gridMemoria, tempChkDXF, tempChkPDF, tempChkIGES, ProgressBar1, labelStatus, chkOpcaodePasta)
++
++                        MessageBox.Show("Exporta?�?�?�?�o de PDFs em lote finalizada com sucesso!", "SINCO - Exporta?�?�?�?�o", MessageBoxButtons.OK, MessageBoxIcon.Information)
++                    Finally
++                        ' Remove o label de progresso do Form
++                        Try : Me.Controls.Remove(labelStatus) : Catch : End Try
++                        ' Garante que o timer seja reativado no final
++                        timerAtualizacao.Start()
++                    End Try
++                    Exit Sub
++                ElseIf result = DialogResult.Cancel Then
++                    Exit Sub
++                End If
++            End If
+ 
++            ' Exporta?�?�?�?�o padr?�?�o (individual)
++            ExportarPDFDetalhamentoLote(0)
++
++        Catch ex As Exception
++            MessageBox.Show("Erro ao gerar PDF: " & ex.Message, "Erro PDF", MessageBoxButtons.OK, MessageBoxIcon.Error)
++        End Try
+     End Sub
+ 
+ 
+@@ -425,7 +580,7 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+ 
+-            ' ���� Suspende repintura
++            ' ???�?��� Suspende repintura
+             ' Me.SuspendLayout()
+             'dgvPropriedades.SuspendLayout()
+             '  bloqueiaEventosUI = True
+@@ -433,7 +588,7 @@ Public Class frmDadosPecaCorrente
+             txtNumeroDesenho.Text = NomeArquivo & ext
+             txtendereco.Text = caminho
+ 
+-            ' ���� Nenhuma leitura suja aqui! Delega para o Reader Service:
++            ' ???������? Nenhuma leitura suja aqui! Delega para o Reader Service:
+             Dim leitor As New SolidEdgeReaderService()
+             leitor.ExtrairPropriedades(doc, DadosArquivoCorrente)
+ 
+@@ -470,16 +625,16 @@ Public Class frmDadosPecaCorrente
+                 End Using
+             End Using
+ 
+-            ' ���? Atualiza apenas no final
++            ' ???����?? Atualiza apenas no final
+             '   bloqueiaEventosUI = False
+             Me.ResumeLayout()
+ 
+ 
+-            ' ���筃�筃�� ADICIONE ESTA ?�NICA LINHA AQUI ���筃�筃��
++            ' ???�������???�������???������� ADICIONE ESTA ?�?�NICA LINHA AQUI ???�������???�������???�������
+             SincronizarPropriedadesCustomizadasDoArquivo()
+ 
+ 
+-            ' ���? Roda verifica?�?�o em background
++            ' ???����?? Roda verifica?�?�?�?�o em background
+             '  VerificaCadastroArquivo()
+ 
+         Catch ex As Exception
+@@ -528,9 +683,9 @@ Public Class frmDadosPecaCorrente
+ 
+         DadosArquivoCorrente.material = ""
+         ' [REMOVED] txtMaterialSw.Clear()
+-        '������������������������������������������������������������������������������������������
+-        ' ���� Datas
+-        '������������������������������������������������������������������������������������������
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++        ' ???��ǣ�Ǫ Datas
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+ 
+         DadosArquivoCorrente.DataCriacaDesenho = ""
+         ' [REMOVED] txtData.Clear()
+@@ -542,15 +697,15 @@ Public Class frmDadosPecaCorrente
+ 
+         ' [REMOVED] txtData1.Clear()
+ 
+-        '������������������������������������������������������������������������������������������
+-        ' ���� Revis?�o
+-        '������������������������������������������������������������������������������������������
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++        ' ???�?�?� Revis?�?�o
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+ 
+         ' txtRevisao.Clear()
+ 
+-        '������������������������������������������������������������������������������������������
+-        ' ���� Dimens?�es
+-        '������������������������������������������������������������������������������������������
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++        ' ???��ǣ?� Dimens?�?�es
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+ 
+         DadosArquivoCorrente.ComprimentoBlank = ""
+         txtCutSizex.Clear()
+@@ -569,9 +724,9 @@ Public Class frmDadosPecaCorrente
+         txtPesoKg.Clear()
+ 
+ 
+-        '������������������������������������������������������������������������������������������
+-        ' ���� ?�rea (mm?? ��� m??)
+-        '������������������������������������������������������������������������������������������
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++        ' ???��ǣ?� ?�?�rea (mm?�?? ?������� m?�??)
++        '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+ 
+ 
+ 
+@@ -584,7 +739,7 @@ Public Class frmDadosPecaCorrente
+     Public Sub ListarTodasPropriedadesDoArquivo(txtDestino As TextBox)
+         Try
+             ' ==========================================================
+-            ' ���? Obt?�m a inst?�ncia ativa do Solid Edge
++            ' ???����?? Obt?�?�m a inst?�?�ncia ativa do Solid Edge
+             ' ==========================================================
+             ' Dim seApp As SolidEdgeFramework.Application =
+             ' Marshal.GetActiveObject("SolidEdge.Application")
+@@ -599,18 +754,18 @@ Public Class frmDadosPecaCorrente
+             If doc Is Nothing Then Exit Sub
+ 
+             ' ==========================================================
+-            ' ���? Builder de texto
++            ' ???����?? Builder de texto
+             ' ==========================================================
+             Dim sb As New StringBuilder()
+-            sb.AppendLine("���� LISTAGEM COMPLETA DE PROPRIEDADES DO ARQUIVO")
++            sb.AppendLine("???�?�?� LISTAGEM COMPLETA DE PROPRIEDADES DO ARQUIVO")
+             sb.AppendLine(New String("="c, 80))
+-            sb.AppendLine($"���� Arquivo: {doc.FullName}")
+-            sb.AppendLine($"���� Tipo: {IO.Path.GetExtension(doc.FullName).ToUpper()}")
++            sb.AppendLine($"???��ǣ��� Arquivo: {doc.FullName}")
++            sb.AppendLine($"???��ǣ?� Tipo: {IO.Path.GetExtension(doc.FullName).ToUpper()}")
+             sb.AppendLine(New String("="c, 80))
+             sb.AppendLine()
+ 
+             ' ==========================================================
+-            ' ���? Percorre todos os grupos e propriedades
++            ' ???����?? Percorre todos os grupos e propriedades
+             ' ==========================================================
+             Dim propSets As Object = doc.Properties
+             Dim totalProps As Integer = 0
+@@ -629,18 +784,18 @@ Public Class frmDadosPecaCorrente
+                             valor = "(erro ao ler)"
+                         End Try
+ 
+-                        ' Verifica se ?� edit?�vel
++                        ' Verifica se ?�?� edit?�?�vel
+                         Dim editavel As String = "Sim"
+                         Try
+                             Dim temp = prop.Value
+                             prop.Value = temp
+                         Catch
+-                            editavel = "N?�o"
++                            editavel = "N?�?�o"
+                         End Try
+ 
+-                        ' ���� Linha formatada no estilo 'Grupo - Propriedade: Valor���
++                        ' ???�?�?� Linha formatada no estilo 'Grupo - Propriedade: Valor?���?�
+                         sb.AppendLine($"{nomeGrupo} - {nomeProp}: {valor}")
+-                        sb.AppendLine($"    ��? Edit?�vel: {editavel}")
++                        sb.AppendLine($"    ?����?? Edit?�?�vel: {editavel}")
+                         sb.AppendLine()
+                         totalProps += 1
+ 
+@@ -653,10 +808,10 @@ Public Class frmDadosPecaCorrente
+ 
+             sb.AppendLine(New String("="c, 80))
+             sb.AppendLine($"Total de propriedades: {totalProps}")
+-            sb.AppendLine("ԣ� Fim da listagem.")
++            sb.AppendLine("?�?��Ǫ Fim da listagem.")
+ 
+             ' ==========================================================
+-            ' ���? Exibe no TextBox
++            ' ???����?? Exibe no TextBox
+             ' ==========================================================
+             txtDestino.Text = sb.ToString()
+             txtDestino.ScrollBars = ScrollBars.Both
+@@ -676,8 +831,8 @@ Public Class frmDadosPecaCorrente
+     Private Function LimparUnidades(texto As String) As String
+         If String.IsNullOrWhiteSpace(texto) Then Return ""
+         Return texto _
+-        .Replace("mm??", "") _
+-        .Replace("MM??", "") _
++        .Replace("mm?�??", "") _
++        .Replace("MM?�??", "") _
+         .Replace("mm", "") _
+         .Replace("MM", "") _
+         .Replace("^2", "") _
+@@ -688,7 +843,7 @@ Public Class frmDadosPecaCorrente
+ 
+     Public Sub SalvarPropriedadeAlterada(nomeCompleto As String, novoValor As String)
+         Try
+-            ' Obter inst?�ncia ativa do Solid Edge
++            ' Obter inst?�?�ncia ativa do Solid Edge
+             'Dim seApp As SolidEdgeFramework.Application =
+             ' Marshal.GetActiveObject("SolidEdge.Application")
+             If app Is Nothing OrElse app.Documents.Count = 0 Then Exit Sub
+@@ -719,16 +874,16 @@ Public Class frmDadosPecaCorrente
+             Next
+ 
+             If alterou Then
+-                ' ���? For?�a o Solid Edge a aplicar e sincronizar
++                ' ???����?? For?�?�a o Solid Edge a aplicar e sincronizar
+                 Try : doc.UpdatePropertyTextDisplay() : Catch : End Try
+                 Try : doc.Save() : Catch : End Try
+                 Try : doc.Properties.Save() : Catch : End Try
+ 
+ 
+-                'MessageBox.Show($"ԣ� Propriedade '{nomeCompleto}' atualizada com sucesso!",
++                'MessageBox.Show($"?�?��Ǫ Propriedade '{nomeCompleto}' atualizada com sucesso!",
+                 '            "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Information)
+             Else
+-                MessageBox.Show($"��ᴩ� Propriedade '{nomeCompleto}' n?�o encontrada.",
++                MessageBox.Show($"?�?�?�?�?�?� Propriedade '{nomeCompleto}' n?�?�o encontrada.",
+                             "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+             End If
+ 
+@@ -786,13 +941,13 @@ Public Class frmDadosPecaCorrente
+     Public Sub AtivarVariaveisESincronizarPropriedades(Optional valorBloqueado As String = Nothing)
+         Try
+ 
+-            ' 1) Garante que app aponta para a inst?�ncia correta do Solid Edge
++            ' 1) Garante que app aponta para a inst?�?�ncia correta do Solid Edge
+             If app Is Nothing Then
+                 Try
+                     app = CType(Marshal.GetActiveObject("SolidEdge.Application"),
+                             SolidEdgeFramework.Application)
+                 Catch ex As Exception
+-                    MessageBox.Show("N?�o foi poss?�vel localizar uma inst?�ncia do Solid Edge aberta." &
++                    MessageBox.Show("N?�?�o foi poss?�?�vel localizar uma inst?�?�ncia do Solid Edge aberta." &
+                                 Environment.NewLine &
+                                 "Detalhe: " & ex.Message,
+                                 "Solid Edge",
+@@ -802,7 +957,7 @@ Public Class frmDadosPecaCorrente
+                 End Try
+             End If
+ 
+-            ' 2) Verifica se h?� documentos abertos
++            ' 2) Verifica se h?�?� documentos abertos
+             Dim qtdDocs As Integer
+ 
+             Try
+@@ -816,7 +971,7 @@ Public Class frmDadosPecaCorrente
+             End Try
+ 
+             If qtdDocs = 0 Then
+-                MessageBox.Show("Nenhum documento de Solid Edge est?� aberto.",
++                MessageBox.Show("Nenhum documento de Solid Edge est?�?� aberto.",
+                             "Solid Edge",
+                             MessageBoxButtons.OK,
+                             MessageBoxIcon.Information)
+@@ -844,39 +999,39 @@ Public Class frmDadosPecaCorrente
+                 Exit Sub
+             End If
+ 
+-            ' 4) Daqui pra baixo voc?� j?� tem um documento ativo garantido
+-            '    coloque aqui a l??gica de sincronizar vari?�veis / propriedades
++            ' 4) Daqui pra baixo voc?�?� j?�?� tem um documento ativo garantido
++            '    coloque aqui a l?�??gica de sincronizar vari?�?�veis / propriedades
+             'Exemplo:
+             'SincronizarVariaveis(doc, valorBloqueado)
+ 
+             Dim caminho As String = doc.FullName
+             Dim extensao As String = Path.GetExtension(caminho).ToLowerInvariant()
+ 
+-            ' ---------- LISTA DE VARI?�VEIS CALCULADAS A GARANTIR ----------
++            ' ---------- LISTA DE VARI?�?�VEIS CALCULADAS A GARANTIR ----------
+             ' Mass_0 = para todos os tipos
+-            ' ?�rea_de_superf?�cie = mesmo tratamento de Mass_0 (todos os tipos)
++            ' ?�?�rea_de_superf?�?�cie = mesmo tratamento de Mass_0 (todos os tipos)
+             ' CutSizeX / CutSizeY = apenas .psm / .par
+             Dim varsAlvos As New List(Of String) From {
+                 "Mass_0",
+-                "?�rea_de_superf?�cie",      ' nome com acento
+-                "Area_de_superficie"       ' sin??nimo sem acento
++                "?�?�rea_de_superf?�?�cie",      ' nome com acento
++                "Area_de_superficie"       ' sin?�??nimo sem acento
+             }
+             If extensao = ".psm" OrElse extensao = ".par" Then
+                 varsAlvos.Add("Flat_Pattern_Model_CutSizeX")
+                 varsAlvos.Add("Flat_Pattern_Model_CutSizeY")
+             End If
+ 
+-            ' ---------- ACESSA VARI?�VEIS ----------
++            ' ---------- ACESSA VARI?�?�VEIS ----------
+             Dim variables As Object = Nothing
+             Try
+                 variables = doc.Variables
+             Catch ex As Exception
+-                MessageBox.Show("N?�o foi poss?�vel acessar a lista de vari?�veis do documento." & vbCrLf & ex.Message,
++                MessageBox.Show("N?�?�o foi poss?�?�vel acessar a lista de vari?�?�veis do documento." & vbCrLf & ex.Message,
+                                 "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                 Exit Sub
+             End Try
+ 
+-            ' ---------- Helper: achar vari?�vel por nome normalizado / sin??nimos ----------
++            ' ---------- Helper: achar vari?�?�vel por nome normalizado / sin?�??nimos ----------
+             Dim TryGetVariable As Func(Of IEnumerable(Of String), Object) =
+                 Function(nomes As IEnumerable(Of String)) As Object
+                     Dim alvoNorms = nomes.Select(Function(x) NormalizeName(x)).Distinct().ToArray()
+@@ -912,13 +1067,13 @@ Public Class frmDadosPecaCorrente
+                 End Try
+             End If
+ 
+-            ' ---------- ativa/exponhe cada vari?�vel alvo ----------
++            ' ---------- ativa/exponhe cada vari?�?�vel alvo ----------
+             Dim ativouAlgo As Boolean = False
+ 
+-            ' mapa de sin??nimos para melhorar a busca
++            ' mapa de sin?�??nimos para melhorar a busca
+             Dim sinonimos As New Dictionary(Of String, String()) From {
+                 {"Mass_0", New String() {"Mass_0", "Mass0"}},
+-                {"?�rea_de_superf?�cie", New String() {"?�rea_de_superf?�cie", "Area_de_superficie", "Area de superficie", "SurfaceArea"}},
++                {"?�?�rea_de_superf?�?�cie", New String() {"?�?�rea_de_superf?�?�cie", "Area_de_superficie", "Area de superficie", "SurfaceArea"}},
+                 {"Flat_Pattern_Model_CutSizeX", New String() {"Flat_Pattern_Model_CutSizeX", "FlatPatternModelCutSizeX", "CutSizeX"}},
+                 {"Flat_Pattern_Model_CutSizeY", New String() {"Flat_Pattern_Model_CutSizeY", "FlatPatternModelCutSizeY", "CutSizeY"}}
+             }
+@@ -929,7 +1084,7 @@ Public Class frmDadosPecaCorrente
+ 
+                 Dim v As Object = TryGetVariable(nomesBusca)
+ 
+-                ' tente atualizar o doc e procurar de novo (caso de CutSize/Area aparecer ap??s update)
++                ' tente atualizar o doc e procurar de novo (caso de CutSize/Area aparecer ap?�??s update)
+                 If v Is Nothing Then
+                     Try : CallByName(doc, "Update", CallType.Method) : Catch : End Try
+                     app.DoIdle()
+@@ -937,7 +1092,7 @@ Public Class frmDadosPecaCorrente
+                 End If
+ 
+                 If v Is Nothing Then
+-                    Debug.WriteLine($"��ᴩ� Vari?�vel '{alvo}' n?�o encontrada (agora).")
++                    Debug.WriteLine($"?�?�?�?�?�?� Vari?�?�vel '{alvo}' n?�?�o encontrada (agora).")
+                     Continue For
+                 End If
+ 
+@@ -977,7 +1132,7 @@ Public Class frmDadosPecaCorrente
+                 End Try
+ 
+                 If mudou Then ativouAlgo = True
+-                Debug.WriteLine($"ԣ� Vari?�vel '{alvo}' dispon?�vel. Mudou estado: {mudou}")
++                Debug.WriteLine($"?�?��Ǫ Vari?�?�vel '{alvo}' dispon?�?�vel. Mudou estado: {mudou}")
+             Next
+ 
+             If ativouAlgo Then
+@@ -994,11 +1149,11 @@ Public Class frmDadosPecaCorrente
+             Dim valorTipo As String = If(extensao = ".asm", "CONJUNTO DE MONTAGEM", "CHAPARIA")
+             GarantirPropriedadeCustom(propSetsCustom, nomePropTipo, valorTipo, soSeVazio:=True)
+ 
+-            ' ---------- custom: Bloqueado (SIM/N?�O) ----------
++            ' ---------- custom: Bloqueado (SIM/N?���O) ----------
+             If String.IsNullOrWhiteSpace(valorBloqueado) Then
+-                GarantirPropriedadeCustom(propSetsCustom, "Bloqueado", "N?�O", soSeVazio:=True)
++                GarantirPropriedadeCustom(propSetsCustom, "Bloqueado", "N?���O", soSeVazio:=True)
+             Else
+-                Dim vBloq = If(valorBloqueado.Trim().ToUpperInvariant() = "SIM", "SIM", "N?�O")
++                Dim vBloq = If(valorBloqueado.Trim().ToUpperInvariant() = "SIM", "SIM", "N?���O")
+                 GarantirPropriedadeCustom(propSetsCustom, "Bloqueado", vBloq, soSeVazio:=False)
+             End If
+ 
+@@ -1007,13 +1162,13 @@ Public Class frmDadosPecaCorrente
+             Try : doc.Properties.Save() : Catch : End Try
+             Try : doc.Save() : Catch : End Try
+ 
+-            Debug.WriteLine("���������������������������������������������������������������������������������������������������������������������������������������������")
+-            Debug.WriteLine($"���� {Path.GetFileName(caminho)}  ��� vari?�veis garantidas (Mass_0 / ?�rea_de_superf?�cie / CutSizeX/Y se aplic?�vel)")
+-            Debug.WriteLine("ԣ� Rotina conclu?�da.")
+-            Debug.WriteLine("���������������������������������������������������������������������������������������������������������������������������������������������")
++            Debug.WriteLine("?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�")
++            Debug.WriteLine($"???��ǣ��� {Path.GetFileName(caminho)}  ?������� vari?�?�veis garantidas (Mass_0 / ?�?�rea_de_superf?�?�cie / CutSizeX/Y se aplic?�?�vel)")
++            Debug.WriteLine("?�?��Ǫ Rotina conclu?�?�da.")
++            Debug.WriteLine("?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�?����?�")
+ 
+         Catch ex As Exception
+-            MessageBox.Show("Erro ao ativar vari?�veis/propriedades: " & ex.Message,
++            MessageBox.Show("Erro ao ativar vari?�?�veis/propriedades: " & ex.Message,
+                             "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Error)
+         End Try
+     End Sub
+@@ -1021,7 +1176,7 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+ 
+-    '------------------------ helpers de normaliza?�?�o ------------------------
++    '------------------------ helpers de normaliza?�?�?�?�o ------------------------
+     Private Function StripDiacritics(s As String) As String
+         If String.IsNullOrEmpty(s) Then Return ""
+         Dim norm = s.Normalize(NormalizationForm.FormD)
+@@ -1035,7 +1190,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+ 
+-    '------------------------ propriedade custom gen?�rica ------------------------
++    '------------------------ propriedade custom gen?�?�rica ------------------------
+     Private Sub GarantirPropriedadeCustom(customSet As Object,
+                                           nome As String,
+                                           valor As String,
+@@ -1062,7 +1217,7 @@ Public Class frmDadosPecaCorrente
+                 Try
+                     customSet.Add(nome, valor)
+                 Catch ex As Exception
+-                    Debug.WriteLine($"��ᴩ� Falha ao criar propriedade '{nome}': {ex.Message}")
++                    Debug.WriteLine($"?�?�?�?�?�?� Falha ao criar propriedade '{nome}': {ex.Message}")
+                 End Try
+             End If
+         Catch
+@@ -1077,9 +1232,9 @@ Public Class frmDadosPecaCorrente
+         Dim app As SolidEdgeFramework.Application = Nothing
+         Dim docObj As Object = Nothing
+ 
+-        ' IDs de comando (podem variar por vers?�o/linguagem ��� tentamos v?�rios)
+-        Dim CMD_CONVERTER_PARA_CHAPA() As Integer = {11045, 11044, 11046} ' "Pe?�a para Pe?�a em Chapa"
+-        Dim CMD_MODO_SINCRONO() As Integer = {18946, 18945, 18944}       ' Alternar para S?�ncrono
++        ' IDs de comando (podem variar por vers?�?�o/linguagem ?����ǣ tentamos v?�?�rios)
++        Dim CMD_CONVERTER_PARA_CHAPA() As Integer = {11045, 11044, 11046} ' "Pe?�?�a para Pe?�?�a em Chapa"
++        Dim CMD_MODO_SINCRONO() As Integer = {18946, 18945, 18944}       ' Alternar para S?�?�ncrono
+ 
+         Try
+             ' 1) Solid Edge + documento ativo
+@@ -1093,28 +1248,28 @@ Public Class frmDadosPecaCorrente
+             Dim fullName As String = CStr(CallByName(docObj, "FullName", CallType.Get))
+             Dim ext As String = IO.Path.GetExtension(fullName).ToLowerInvariant()
+ 
+-            ' 2) Se for PAR (pe?�a �ǣs??lida���), tentar converter para chapa
++            ' 2) Se for PAR (pe?�?�a ?���?�s?�??lida?���?�), tentar converter para chapa
+             Dim sheet As SheetMetalDocument = TryCast(docObj, SheetMetalDocument)
+             If sheet Is Nothing AndAlso (TypeOf docObj Is PartDocument OrElse ext = ".par") Then
+                 For Each id In CMD_CONVERTER_PARA_CHAPA
+                     Try : app.StartCommand(id) : app.DoIdle() : Threading.Thread.Sleep(500) : Exit For : Catch : End Try
+                 Next
+-                ' Reobt?�m doc ativo (pode ter trocado ap??s converter)
++                ' Reobt?�?�m doc ativo (pode ter trocado ap?�??s converter)
+                 sheet = TryCast(app.ActiveDocument, SheetMetalDocument)
+             End If
+ 
+-            ' Se ainda n?�o ?� chapa, n?�o d?� pra ajustar dobras
++            ' Se ainda n?�?�o ?�?� chapa, n?�?�o d?�?� pra ajustar dobras
+             If sheet Is Nothing Then
+-                MsgBox("Este arquivo n?�o ?� de chapa. Converta para .PSM e tente novamente.", vbExclamation, "SINCO")
++                MsgBox("Este arquivo n?�?�o ?�?� de chapa. Converta para .PSM e tente novamente.", vbExclamation, "SINCO")
+                 Exit Sub
+             End If
+ 
+-            ' 3) (Opcional) for?�ar modo S?�ncrono
++            ' 3) (Opcional) for?�?�ar modo S?�?�ncrono
+             For Each id In CMD_MODO_SINCRONO
+                 Try : app.StartCommand(id) : app.DoIdle() : Threading.Thread.Sleep(250) : Exit For : Catch : End Try
+             Next
+ 
+-            ' 4) Descobrir ESPESSURA (tenta vari?�veis comuns e SheetMetalData)
++            ' 4) Descobrir ESPESSURA (tenta vari?�?�veis comuns e SheetMetalData)
+             Dim variables As Object = Nothing
+             Try : variables = sheet.Variables : Catch : variables = Nothing : End Try
+ 
+@@ -1145,7 +1300,7 @@ Public Class frmDadosPecaCorrente
+             If espessuraMm <= 0 Then
+                 Try
+                     Dim sm = sheet.SheetMetalData
+-                    ' Muitas instala?�?�es trazem em metros; se for bem pequeno, converte p/ mm
++                    ' Muitas instala?�?�?�?�es trazem em metros; se for bem pequeno, converte p/ mm
+                     espessuraMm = sm.Thickness
+                     If espessuraMm < 0.01 Then espessuraMm *= 1000.0R
+                     nomeVarEsp = "SheetMetalData.Thickness"
+@@ -1154,15 +1309,15 @@ Public Class frmDadosPecaCorrente
+             End If
+ 
+             If espessuraMm <= 0 Then
+-                ' MsgBox("N?�o foi poss?�vel identificar a espessura da chapa.", vbExclamation, "SINCO")
++                ' MsgBox("N?�?�o foi poss?�?�vel identificar a espessura da chapa.", vbExclamation, "SINCO")
+ 
+-                espessuraMm = InputBox("N?�o foi poss?�vel identificar a espessura da chapa, Informe a espessura da chapa em mm:", "SINCO - Espessura da Chapa", "1.0")
++                espessuraMm = InputBox("N?�?�o foi poss?�?�vel identificar a espessura da chapa, Informe a espessura da chapa em mm:", "SINCO - Espessura da Chapa", "1.0")
+ 
+             End If
+ 
+ 
+             If espessuraMm <= 0 Then
+-                MsgBox("N?�o foi poss?�vel identificar a espessura da chapa.", vbExclamation, "SINCO")
++                MsgBox("N?�?�o foi poss?�?�vel identificar a espessura da chapa.", vbExclamation, "SINCO")
+                 Exit Sub
+             End If
+ 
+@@ -1174,12 +1329,12 @@ Public Class frmDadosPecaCorrente
+                espessuraMm.ToString("0.###", CultureInfo.InvariantCulture),
+                nomeVarEsp)
+ 
+-            ' (a) Padr?�es globais
++            ' (a) Padr?�?�es globais
+             alterou = SetOrCreateVar(variables, "BendRadius", exprEsp) Or alterou
+             alterou = SetOrCreateVar(variables, "NeutralFactor", kFactorDesejado.ToString(CultureInfo.InvariantCulture)) Or alterou
+             alterou = SetOrCreateVar(variables, "Fator_Neutro", kFactorDesejado.ToString(CultureInfo.InvariantCulture)) Or alterou
+ 
+-            ' (b) Heur?�stica: ajustar vari?�veis de raio por feature
++            ' (b) Heur?�?�stica: ajustar vari?�?�veis de raio por feature
+             If variables IsNot Nothing Then
+                 For Each v As Object In variables
+                     Dim n As String = SafeGetName(v)
+@@ -1206,10 +1361,10 @@ Public Class frmDadosPecaCorrente
+             app.DoIdle()
+ 
+             MsgBox(
+-            $"ԣ� Ajustes aplicados:" & vbCrLf &
+-            $"��� Espessura: {espessuraMm:0.###} mm ({If(nomeVarEsp = "", "valor num?�rico", nomeVarEsp)})" & vbCrLf &
+-            $"��� BendRadius = {If(nomeVarEsp = "", espessuraMm.ToString("0.###"), nomeVarEsp)}" & vbCrLf &
+-            $"��� K-factor = {kFactorDesejado:0.###}",
++            $"?�?��Ǫ Ajustes aplicados:" & vbCrLf &
++            $"?���?� Espessura: {espessuraMm:0.###} mm ({If(nomeVarEsp = "", "valor num?�?�rico", nomeVarEsp)})" & vbCrLf &
++            $"?���?� BendRadius = {If(nomeVarEsp = "", espessuraMm.ToString("0.###"), nomeVarEsp)}" & vbCrLf &
++            $"?���?� K-factor = {kFactorDesejado:0.###}",
+             vbInformation, "SINCO")
+ 
+         Catch ex As Exception
+@@ -1229,9 +1384,9 @@ Public Class frmDadosPecaCorrente
+     Private Function TryParseNumero(txt As String, ByRef num As Double) As Boolean
+         If String.IsNullOrWhiteSpace(txt) Then Return False
+ 
+-        ' Normaliza para min??sculas e remove unidades/espacos
++        ' Normaliza para min?�??sculas e remove unidades/espacos
+         Dim s As String = txt.Trim().ToLowerInvariant()
+-        s = s.Replace("mm??", "").Replace("mm2", "")
++        s = s.Replace("mm?�??", "").Replace("mm2", "")
+         s = s.Replace("mm", "")
+         s = s.Replace("kg", "")
+         s = s.Replace(" ", "")
+@@ -1262,7 +1417,7 @@ Public Class frmDadosPecaCorrente
+                 End If
+             Next
+             If alvo Is Nothing Then
+-                ' Add(nome, formula) ��� o Solid Edge cria como vari?�vel de usu?�rio
++                ' Add(nome, formula) ?����ǣ o Solid Edge cria como vari?�?�vel de usu?�?�rio
+                 CallByName(variables, "Add", CallType.Method, nome, formulaOuValor)
+                 Return True
+             Else
+@@ -1313,10 +1468,10 @@ Public Class frmDadosPecaCorrente
+     End Sub
+ 
+     ' ============================================================
+-    ' ���� Leitura PROFUNDA de Massa(kg), ?�rea(m??) e CutSizeX/Y(mm)
++    ' ???��ǣ?� Leitura PROFUNDA de Massa(kg), ?�?�rea(m?�??) e CutSizeX/Y(mm)
+     '  - Funciona para PAR/PSM (e ASM com soma recursiva)
+-    '  - N?�o depende de vari?�veis custom estarem ativas/vis?�veis
+-    '  - Usa m??ltiplos fallbacks (API geom?�trica e DXF tempor?�rio)
++    '  - N?�?�o depende de vari?�?�veis custom estarem ativas/vis?�?�veis
++    '  - Usa m?�??ltiplos fallbacks (API geom?�?�trica e DXF tempor?�?�rio)
+     ' ============================================================
+     Public Function LerFisicosProfundos(doc As Object) As (MassaKg As Double, AreaM2 As Double, CutXmm As Double, CutYmm As Double)
+         If doc Is Nothing Then Return (0, 0, 0, 0)
+@@ -1327,11 +1482,11 @@ Public Class frmDadosPecaCorrente
+         Dim cutX As Double = 0.0
+         Dim cutY As Double = 0.0
+ 
+-        ' ---------- 0) For?�a rec?�lculo ----------
++        ' ---------- 0) For?�?�a rec?�?�lculo ----------
+         Try : CallByName(doc, "UpdatePhysicalProperties", CallType.Method) : Catch : End Try
+         Try : CallByName(doc, "Update", CallType.Method) : Catch : End Try
+ 
+-        ' ---------- 1) Massa / ?�rea do documento corrente ----------
++        ' ---------- 1) Massa / ?�?�rea do documento corrente ----------
+         Try
+             Dim r = TryLerMassaAreaDoDocumento(doc)
+             massaKg = r.MassaKg
+@@ -1339,10 +1494,10 @@ Public Class frmDadosPecaCorrente
+         Catch
+         End Try
+ 
+-        ' ---------- 2) Se for ASM, soma recursivamente das ocorr?�ncias ----------
++        ' ---------- 2) Se for ASM, soma recursivamente das ocorr?�?�ncias ----------
+         If ext = ".asm" Then
+             Dim somaAsm = SomarFisicosDeAssembly(doc)
+-            ' S?? substitui se n?�o veio nada do doc
++            ' S?�?? substitui se n?�?�o veio nada do doc
+             If massaKg <= 0 Then massaKg = somaAsm.MassaKg
+             If areaM2 <= 0 Then areaM2 = somaAsm.AreaM2
+         End If
+@@ -1354,7 +1509,7 @@ Public Class frmDadosPecaCorrente
+             cutX = bb.WidthMm
+             cutY = bb.HeightMm
+ 
+-            ' 3B: se falhar, gerar DXF tempor?�rio e ler extents
++            ' 3B: se falhar, gerar DXF tempor?�?�rio e ler extents
+             If cutX <= 0 OrElse cutY <= 0 Then
+                 Dim dxfDims = TryGetBlankFromTempDXF(doc)
+                 If dxfDims.WidthMm > 0 AndAlso dxfDims.HeightMm > 0 Then
+@@ -1368,7 +1523,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     ' ============================================================
+-    ' Massa/?�rea via propriedades internas + API geom?�trica (modelo)
++    ' Massa/?�?�rea via propriedades internas + API geom?�?�trica (modelo)
+     ' ============================================================
+     Private Function TryLerMassaAreaDoDocumento(doc As Object) As (MassaKg As Double, AreaM2 As Double)
+         Dim massaKg As Double = 0
+@@ -1376,7 +1531,7 @@ Public Class frmDadosPecaCorrente
+ 
+         ' 1) Propriedades internas (ExtendedSummaryInformation costuma ter)
+         massaKg = TryGetPropAsDouble(doc, {("ExtendedSummaryInformation", "Mass"), ("ExtendedSummaryInformation", "Massa")}, 1.0)
+-        areaM2 = TryGetPropAsDouble(doc, {("ExtendedSummaryInformation", "SurfaceArea"), ("ExtendedSummaryInformation", "?�rea de superf?�cie")}, 1.0)
++        areaM2 = TryGetPropAsDouble(doc, {("ExtendedSummaryInformation", "SurfaceArea"), ("ExtendedSummaryInformation", "?�?�rea de superf?�?�cie")}, 1.0)
+ 
+         ' 2) Se ainda zerado, tenta obter do Body
+         If massaKg <= 0 OrElse areaM2 <= 0 Then
+@@ -1387,14 +1542,14 @@ Public Class frmDadosPecaCorrente
+                     Dim body As Object = CallByName(model, "Body", CallType.Get)
+ 
+                     If body IsNot Nothing Then
+-                        ' (a) m?�todo direto de propriedades de massa
++                        ' (a) m?�?�todo direto de propriedades de massa
+                         Dim m As Double = 0, a As Double = 0, v As Double = 0
+                         If GetBodyMassAreaVolume(body, m, a, v) Then
+                             If massaKg <= 0 Then massaKg = m
+                             If areaM2 <= 0 Then areaM2 = a
+                         End If
+ 
+-                        ' (b) Se ainda n?�o tiver ?�rea, soma ?�reas de faces
++                        ' (b) Se ainda n?�?�o tiver ?�?�rea, soma ?�?�reas de faces
+                         If areaM2 <= 0 Then
+                             areaM2 = TryComputeTotalAreaM2_FromBody(body)
+                         End If
+@@ -1404,10 +1559,10 @@ Public Class frmDadosPecaCorrente
+             End Try
+         End If
+ 
+-        ' 3) Fallback duro: massa pelo volume * densidade (quando dispon?�vel)
++        ' 3) Fallback duro: massa pelo volume * densidade (quando dispon?�?�vel)
+         If massaKg <= 0 Then
+             Try
+-                Dim densKgM3 As Double = TryGetDensityKgM3(doc)   ' ex.: vari?�vel "Propriedades_F?�sicas_Densidade"
++                Dim densKgM3 As Double = TryGetDensityKgM3(doc)   ' ex.: vari?�?�vel "Propriedades_F?�?�sicas_Densidade"
+                 Dim volM3 As Double = TryGetBodyVolumeM3(doc)
+                 If densKgM3 > 0 AndAlso volM3 > 0 Then massaKg = densKgM3 * volM3
+             Catch
+@@ -1440,11 +1595,11 @@ Public Class frmDadosPecaCorrente
+                 Try
+                     Dim f As Object = CallByName(faces, "Item", CallType.Method, i)
+                     Dim a As Double = CDbl(CallByName(f, "Area", CallType.Get))
+-                    ' Heur?�stica de unidade
++                    ' Heur?�?�stica de unidade
+                     If a > 10000 Then
+-                        areaTotalMm2 += a            ' j?� parece mm??
++                        areaTotalMm2 += a            ' j?�?� parece mm?�??
+                     Else
+-                        areaTotalMm2 += a * 1000000  ' veio em m??
++                        areaTotalMm2 += a * 1000000  ' veio em m?�??
+                     End If
+                 Catch
+                 End Try
+@@ -1470,11 +1625,11 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     Private Function TryGetDensityKgM3(doc As Object) As Double
+-        ' tenta em Custom e em Vari?�veis conhecidas (print do usu?�rio mostra "Propriedades_F?�sicas_Densidade")
+-        Dim dens As Double = TryGetPropAsDouble(doc, {("Custom", "Propriedades_F?�sicas_Densidade"), ("Custom", "Density")}, 1.0)
++        ' tenta em Custom e em Vari?�?�veis conhecidas (print do usu?�?�rio mostra "Propriedades_F?�?�sicas_Densidade")
++        Dim dens As Double = TryGetPropAsDouble(doc, {("Custom", "Propriedades_F?�?�sicas_Densidade"), ("Custom", "Density")}, 1.0)
+         If dens > 0 Then Return dens
+ 
+-        ' Procura por vari?�vel
++        ' Procura por vari?�?�vel
+         Try
+             Dim vars As Object = CallByName(doc, "Variables", CallType.Get)
+             For Each v As Object In vars
+@@ -1493,7 +1648,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     ' ============================================================
+-    ' Soma recursiva ASM (massa/?�rea) por ocorr?�ncias
++    ' Soma recursiva ASM (massa/?�?�rea) por ocorr?�?�ncias
+     ' ============================================================
+     Private Function SomarFisicosDeAssembly(asmDoc As Object) As (MassaKg As Double, AreaM2 As Double)
+         Dim m As Double = 0, a As Double = 0
+@@ -1528,7 +1683,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     ' ============================================================
+-    ' FlatPattern ��� RangeBox (m ��� mm)
++    ' FlatPattern ?������� RangeBox (m ?������� mm)
+     ' ============================================================
+     Private Function TryGetFlatPatternBoundingBoxMm(doc As Object) As (WidthMm As Double, HeightMm As Double)
+         Try
+@@ -1536,7 +1691,7 @@ Public Class frmDadosPecaCorrente
+             Dim fps As Object = Nothing
+             Try : fps = CallByName(sheet, "FlatPatternModels", CallType.Get) : Catch : fps = Nothing : End Try
+ 
+-            ' cria flat se necess?�rio
++            ' cria flat se necess?�?�rio
+             If fps Is Nothing OrElse CInt(CallByName(fps, "Count", CallType.Get)) = 0 Then
+                 Try : CallByName(AppDomain.CurrentDomain.GetData("SE_APP"), "StartCommand", CallType.Method, 1494) : Catch : End Try ' Create Flat Pattern
+                 Threading.Thread.Sleep(300) : System.Windows.Forms.Application.DoEvents()
+@@ -1558,7 +1713,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     ' ============================================================
+-    ' Plano B: gera DXF TEMP e l?� $EXTMIN/$EXTMAX do cabe?�alho
++    ' Plano B: gera DXF TEMP e l?�?� $EXTMIN/$EXTMAX do cabe?�?�alho
+     ' ============================================================
+     Private Function TryGetBlankFromTempDXF(doc As Object) As (WidthMm As Double, HeightMm As Double)
+         Try
+@@ -1571,7 +1726,7 @@ Public Class frmDadosPecaCorrente
+             Try : If System.IO.File.Exists(arqDxf) Then System.IO.File.Delete(arqDxf) : 
+             Catch : End Try
+ 
+-            ' Tenta exportar via SaveAsFlatDXFEx (passa qualquer face/edge v?�lidas)
++            ' Tenta exportar via SaveAsFlatDXFEx (passa qualquer face/edge v?�?�lidas)
+             Dim models As Object = CallByName(doc, "Models", CallType.Get)
+             If models Is Nothing OrElse CInt(CallByName(models, "Count", CallType.Get)) = 0 Then Return (0, 0)
+             Dim model As Object = CallByName(models, "Item", CallType.Method, 1)
+@@ -1590,12 +1745,12 @@ Public Class frmDadosPecaCorrente
+             Loop
+             If Not System.IO.File.Exists(arqDxf) Then Return (0, 0)
+ 
+-            ' L?� extents do DXF
++            ' L?�?� extents do DXF
+             Dim minX As Double, minY As Double, maxX As Double, maxY As Double
+             If ParseDxfExtents(arqDxf, minX, minY, maxX, maxY) Then
+                 Dim dx = Math.Abs(maxX - minX) ' DXF geralmente em mm
+                 Dim dy = Math.Abs(maxY - minY)
+-                ' limpa tempor?�rio
++                ' limpa tempor?�?�rio
+                 Try : System.IO.File.Delete(arqDxf) : Catch : End Try
+                 Return (Math.Round(dx, 3), Math.Round(dy, 3))
+             End If
+@@ -1648,7 +1803,7 @@ Public Class frmDadosPecaCorrente
+     End Function
+ 
+     ' ============================================================
+-    ' Utilit?�rios j?� usados
++    ' Utilit?�?�rios j?�?� usados
+     ' ============================================================
+     Private Function TryGetPropAsDouble(doc As Object,
+                                         candidates As IEnumerable(Of (SetName As String, PropName As String)),
+@@ -1678,8 +1833,8 @@ Public Class frmDadosPecaCorrente
+         value = 0
+         If String.IsNullOrWhiteSpace(s) Then Return False
+         Dim t As String = s.Trim().ToLowerInvariant()
+-        t = t.Replace("mm??", "").Replace("mm2", "").Replace("mm", "")
+-        t = t.Replace("kg", "").Replace(" m^2", "").Replace("m??", "").Replace("m2", "")
++        t = t.Replace("mm?�??", "").Replace("mm2", "").Replace("mm", "")
++        t = t.Replace("kg", "").Replace(" m^2", "").Replace("m?�??", "").Replace("m2", "")
+         t = t.Replace(" ", "")
+         If Double.TryParse(t, Globalization.NumberStyles.Any, New Globalization.CultureInfo("pt-BR"), value) Then Return True
+         t = t.Replace(",", ".")
+@@ -1722,7 +1877,7 @@ Public Class frmDadosPecaCorrente
+             ' [REMOVED] txtTitulo.Text = dgvDadosPdf.Rows(2).Cells("dgvDadosSelecionado").Value.ToString.ToUpper.Trim   '= If(doc.titulo, "")
+             DadosArquivoCorrente.Titulo = txtTitulo.Text
+ 
+-            DadosArquivoCorrente.Bloqueado = "N?�O"
++            DadosArquivoCorrente.Bloqueado = "N?���O"
+ 
+             ' [REMOVED] DadosArquivoCorrente.AssuntoSubiTitulo = dgvDadosPdf.Rows(2).Cells("dgvDadosSelecionado").Value.ToString.ToUpper.Trim  '= If(doc.titulo, "")
+             DadosArquivoCorrente.AssuntoSubiTitulo = txtTitulo.Text
+@@ -1770,15 +1925,15 @@ Public Class frmDadosPecaCorrente
+ 
+     Private Sub EnviarSINCOWeb(Optional codigoDefinitivoProtheus As String = "")
+         Try
+-            ' 1. Pega os dados reais do seu Solid Edge e do Formul?�rio
++            ' 1. Pega os dados reais do seu Solid Edge e do Formul?�?�rio
+             Dim arquivo As String = DadosArquivoCorrente.NomeArquivoSemExtensao.Replace(".psm", "").Replace(".par", "").Replace(".asm", "").Replace(".prt", "").Replace(".PSM", "").Replace(".PAR", "").Replace(".ASM", "").Replace(".PRT", "")
+ 
+-            ' ���� SUBSTITUI O NOME DO ARQUIVO PELO C?�DIGO DO PROTHEUS, SE ELE TIVER SIDO FORNECIDO/GERADO
++            ' ???������� SUBSTITUI O NOME DO ARQUIVO PELO C?��ǣDIGO DO PROTHEUS, SE ELE TIVER SIDO FORNECIDO/GERADO
+             'If Not String.IsNullOrEmpty(codigoDefinitivoProtheus) Then
+             '    arquivo = codigoDefinitivoProtheus
+             'End If
+ 
+-            ' Continua capturando os endere?�os normalmente
++            ' Continua capturando os endere?�?�os normalmente
+             Dim caminhoCompleto As String = Me.txtendereco.Text
+ 
+             Dim titulo As String = DadosArquivoCorrente.Titulo
+@@ -1794,9 +1949,9 @@ Public Class frmDadosPecaCorrente
+             Dim areaPintura As String = Me.txtAreametroquadr.Text
+             Dim espessura As String = Me.txtEspessura.Text
+ 
+-            ' 2. Sanitizamos os textos para o formato de Link Web (transforma espa?�os em %20, \ em %5C, etc)
++            ' 2. Sanitizamos os textos para o formato de Link Web (transforma espa?�?�os em %20, \ em %5C, etc)
+             arquivo = Uri.EscapeDataString(If(arquivo, ""))
+-            ' ���� Sanitiza o caminho longo tamb?�m
++            ' ???������� Sanitiza o caminho longo tamb?�?�m
+             caminhoCompleto = Uri.EscapeDataString(If(caminhoCompleto, ""))
+ 
+             titulo = Uri.EscapeDataString(If(titulo, ""))
+@@ -1813,16 +1968,16 @@ Public Class frmDadosPecaCorrente
+             ' 3. Montamos a URL completa utilizando o seu IP correto
+             Dim urlBase As String = "http://192.168.1.77:3001/engenharia/sinco/formulario"
+ 
+-            ' ���� Repare no '&caminho={caminhoCompleto}' injetado na nova URL
++            ' ???������� Repare no '&caminho={caminhoCompleto}' injetado na nova URL
+             Dim urlFinal As String = $"{urlBase}?arquivo={arquivo}&caminho={caminhoCompleto}&titulo={titulo}&grupo={grupo}&unidade={unidade}&tipo={tipo}&rev={rev}&compBlank={compBlank}&largBlank={largBlank}&peso={peso}&area={areaPintura}&espessura={espessura}"
+ 
+-            ' 4. Verifica se a janela j?� est?� aberta (pelo Edge) para apenas ativ?�-la
++            ' 4. Verifica se a janela j?�?� est?�?� aberta (pelo Edge) para apenas ativ?�?�-la
+             Dim janelaAberta As Boolean = False
+             For Each p As Process In Process.GetProcessesByName("msedge")
+-                ' Procura se h?� uma janela principal com o nome Sinco ou MetalFisa
++                ' Procura se h?�?� uma janela principal com o nome Sinco ou MetalFisa
+                 If Not String.IsNullOrEmpty(p.MainWindowTitle) AndAlso (p.MainWindowTitle.IndexOf("SINCO", StringComparison.OrdinalIgnoreCase) >= 0 OrElse p.MainWindowTitle.IndexOf("MetalFisa", StringComparison.OrdinalIgnoreCase) >= 0) Then
+                     Try
+-                        ' Ativa/traz a janela pra frente caso j?� esteja aberta
++                        ' Ativa/traz a janela pra frente caso j?�?� esteja aberta
+                         AppActivate(p.Id)
+                         System.Diagnostics.Process.Start(urlFinal) ' Carrega os novos dados na aba
+                         janelaAberta = True
+@@ -1832,13 +1987,13 @@ Public Class frmDadosPecaCorrente
+                 End If
+             Next
+ 
+-            ' Se o sistema n?�o tiver aberto a p?�gina antes, abre normalmente
++            ' Se o sistema n?�?�o tiver aberto a p?�?�gina antes, abre normalmente
+             If Not janelaAberta Then
+                 System.Diagnostics.Process.Start(urlFinal)
+             End If
+ 
+         Catch ex As Exception
+-            MessageBox.Show("Erro ao tentar abrir a vers?�o Web: " & ex.Message, "Erro Web", MessageBoxButtons.OK, MessageBoxIcon.Error)
++            MessageBox.Show("Erro ao tentar abrir a vers?�?�o Web: " & ex.Message, "Erro Web", MessageBoxButtons.OK, MessageBoxIcon.Error)
+         End Try
+     End Sub
+ 
+@@ -1846,22 +2001,22 @@ Public Class frmDadosPecaCorrente
+     Private Sub btnSalvarCadProtheus_Click(sender As Object, e As EventArgs) Handles btnSalvarCadProtheus.Click
+ 
+         ' ============================================================
+-        ' ���? Integra?�?�o API Protheus (Criar ou Atualizar Produto) COM PROGRESSO
++        ' ???����?? Integra?�?�?�?�o API Protheus (Criar ou Atualizar Produto) COM PROGRESSO
+         ' ============================================================
+ 
+-        ' 1. CONFIGURA?�?�O VISUAL INICIAL
++        ' 1. CONFIGURA?����?���O VISUAL INICIAL
+         ProgressBar1.Style = ProgressBarStyle.Continuous
+         ProgressBar1.Visible = True
+-        ProgressBar1.Value = 10  ' D?� o start visual
++        ProgressBar1.Value = 10  ' D?�?� o start visual
+         Me.Cursor = Cursors.WaitCursor
+         System.Windows.Forms.Application.DoEvents()
+ 
+         Try
+-            ' Ignorar erros de certificado SSL (ambiente de testes/local) e for?�ar TLS 1.2
++            ' Ignorar erros de certificado SSL (ambiente de testes/local) e for?�?�ar TLS 1.2
+             System.Net.ServicePointManager.SecurityProtocol = DirectCast(3072, System.Net.SecurityProtocolType) Or System.Net.SecurityProtocolType.Tls11 Or System.Net.SecurityProtocolType.Tls
+             System.Net.ServicePointManager.ServerCertificateValidationCallback = Function(s, cert, chain, sslPolicyErrors) True
+ 
+-            ' Passo 1 visual: Come?�ando puxar o Token
++            ' Passo 1 visual: Come?�?�ando puxar o Token
+             ProgressBar1.Value = 25
+             System.Windows.Forms.Application.DoEvents()
+ 
+@@ -1875,7 +2030,7 @@ Public Class frmDadosPecaCorrente
+             Using tokenResponse As System.Net.HttpWebResponse = CType(tokenRequest.GetResponse(), System.Net.HttpWebResponse)
+                 Using reader As New System.IO.StreamReader(tokenResponse.GetResponseStream())
+                     Dim responseText As String = reader.ReadToEnd()
+-                    ' Busca simples pelo token no JSON via Regex para evitar depend?�ncia externa
++                    ' Busca simples pelo token no JSON via Regex para evitar depend?�?�ncia externa
+                     Dim match As System.Text.RegularExpressions.Match = System.Text.RegularExpressions.Regex.Match(responseText, """access_token""\s*:\s*""([^""]+)""")
+                     If match.Success Then
+                         accessToken = match.Groups(1).Value
+@@ -1890,7 +2045,7 @@ Public Class frmDadosPecaCorrente
+             ' 2. Realizar POST caso tenha obtido o token
+             If Not String.IsNullOrEmpty(accessToken) Then
+ 
+-                ' Montar JSON din?�mico baseado na pe?�a corrente com higieniza?�?�o p/ evitar JSON quebrado
++                ' Montar JSON din?�?�mico baseado na pe?�?�a corrente com higieniza?�?�?�?�o p/ evitar JSON quebrado
+                 Dim tituloLimpo As String = UCase(DadosArquivoCorrente.Titulo).Trim()
+                 tituloLimpo = tituloLimpo.Replace("""", "\""").Replace(vbCrLf, " ").Replace(vbLf, " ").Replace(vbCr, " ")
+ 
+@@ -1898,7 +2053,7 @@ Public Class frmDadosPecaCorrente
+                 If String.IsNullOrEmpty(codDesenho) Then codDesenho = "desenho_metalfisa"
+                 codDesenho = codDesenho.Replace("""", "\""").Replace(vbCrLf, " ").Replace(vbLf, " ").Replace(vbCr, " ")
+ 
+-                ' Captura com seguran?�a apenas o C??digo selecionado
++                ' Captura com seguran?�?�a apenas o C?�??digo selecionado
+                 Dim valGrupo As String = If(cboB1_GRUPO.SelectedValue IsNot Nothing, cboB1_GRUPO.SelectedValue.ToString(), cboB1_GRUPO.Text)
+                 valGrupo = If(String.IsNullOrWhiteSpace(valGrupo), "", valGrupo.Split({"-"c, " "c}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault())
+ 
+@@ -1908,28 +2063,28 @@ Public Class frmDadosPecaCorrente
+                 Dim valUM As String = If(cboB1_UM.SelectedValue IsNot Nothing, cboB1_UM.SelectedValue.ToString(), cboB1_UM.Text)
+                 valUM = If(String.IsNullOrWhiteSpace(valUM), "", valUM.Split({"-"c, " "c}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault())
+ 
+-                ' Valida?�?�es padr?�o
++                ' Valida?�?�?�?�es padr?�?�o
+                 If valGrupo.ToString = "" Or valTipo.ToString = "" Or valUM.ToString = "" Then
+-                    MsgBox("Os campos de Tipo, Unidade e Grupo s?�o de preenchimento Obrigat??rio.", vbInformation)
++                    MsgBox("Os campos de Tipo, Unidade e Grupo s?�?�o de preenchimento Obrigat?�??rio.", vbInformation)
+                     Exit Sub
+                 End If
+ 
+                 If tituloLimpo.ToString = "" Then
+-                    MsgBox("O Titulo do desenho ?� de preenchimento Obrigat??rio", MsgBoxStyle.Exclamation, "Aten?�?�o")
++                    MsgBox("O Titulo do desenho ?�?� de preenchimento Obrigat?�??rio", MsgBoxStyle.Exclamation, "Aten?�?�?�?�o")
+                     Exit Sub
+                 End If
+ 
+-                ' Passo 4 visual: Valida?�?�es JSON passadas, Indo enviar o POST.
++                ' Passo 4 visual: Valida?�?�?�?�es JSON passadas, Indo enviar o POST.
+                 ProgressBar1.Value = 75
+                 System.Windows.Forms.Application.DoEvents()
+ 
+                 Dim pesoFormatado As String = DadosArquivoCorrente.PesoTotal.ToString(System.Globalization.CultureInfo.InvariantCulture)
+-                ' HIGIENIZA O CAMINHO DA M?�QUINA para virar texto de JSON seguro
++                ' HIGIENIZA O CAMINHO DA M?�?�QUINA para virar texto de JSON seguro
+                 Dim caminhoOriginalDoArquivo As String = Me.txtendereco.Text.Replace("\", "\\").Replace("""", "\""")
+-                ' Fun?�?�o auxiliar para garantir que valores num?�ricos nunca fiquem vazios no JSON
++                ' Fun?�?�?�?�o auxiliar para garantir que valores num?�?�ricos nunca fiquem vazios no JSON
+                 Dim ValOrZero = Function(val As Object) As String
+                                     Dim s As String = If(val Is Nothing, "", val.ToString().Trim())
+-                                    ' Se estiver vazio, retorna 0. Se n?�o, garante que o decimal use ponto (.) e n?�o v?�rgula (,)
++                                    ' Se estiver vazio, retorna 0. Se n?�?�o, garante que o decimal use ponto (.) e n?�?�o v?�?�rgula (,)
+                                     Return If(s = "" Or s = ",", "0", s.Replace(",", "."))
+                                 End Function
+ 
+@@ -1985,22 +2140,22 @@ Public Class frmDadosPecaCorrente
+                         Dim chapaCodigoProtheus As String = ""
+                         Dim novoOu As String = ""
+ 
+-                        ' 1. Extrair o conte??do entre as chaves { }
++                        ' 1. Extrair o conte?�??do entre as chaves { }
+                         Dim matchCodigo = Regex.Match(responseResult, "(?<=\{)[^}]+(?=\})")
+                         If matchCodigo.Success Then
+                             chapaCodigoProtheus = matchCodigo.Value
+                         End If
+ 
+-                        ' 2. L??gica para identificar se foi Criado ou Alterado
++                        ' 2. L?�??gica para identificar se foi Criado ou Alterado
+                         If responseResult.ToLower().Contains("criado") Then
+                             novoOu = "criado"
+                         ElseIf responseResult.ToLower().Contains("atualizado") Then
+                             novoOu = "Alterado"
+                         End If
+ 
+-                        ' Log de confer?�ncia
+-                        '   System.Diagnostics.Debug.WriteLine("Chapa C??digo: " & chapaCodigoProtheus)
+-                        '  System.Diagnostics.Debug.WriteLine("Status Opera?�?�o: " & novoOu)
++                        ' Log de confer?�?�ncia
++                        '   System.Diagnostics.Debug.WriteLine("Chapa C?�??digo: " & chapaCodigoProtheus)
++                        '  System.Diagnostics.Debug.WriteLine("Status Opera?�?�?�?�o: " & novoOu)
+ 
+                         If novoOu = "criado" Then
+ 
+@@ -2014,11 +2169,11 @@ Public Class frmDadosPecaCorrente
+ 
+ 
+                         'If matchCodigo.Success Then
+-                        '    ' Tirei o famigerado .Trim() por enquanto para vermos os espa?�os exatos
++                        '    ' Tirei o famigerado .Trim() por enquanto para vermos os espa?�?�os exatos
+                         '    MsgBox(matchCodigo.Groups(1).Value)
+                         'Else
+                         '    Dim codigoProtheusDefinitivo As String = matchCodigo.Groups(1).Value
+-                        '    ' ?� Update: J?� existia o cara
++                        '    ' ?���? Update: J?�?� existia o cara
+                         '    EnviarSINCOWeb(codigoProtheusDefinitivo)
+                         'End If
+ 
+@@ -2032,8 +2187,8 @@ Public Class frmDadosPecaCorrente
+             End If
+ 
+         Catch exAPI As Exception
+-            System.Diagnostics.Debug.WriteLine("SINCO: Erro na integra?�?�o com a API Protheus -> " & exAPI.Message)
+-            MsgBox("SINCO: Erro na integra?�?�o com a API Protheus -> " & exAPI.Message)
++            System.Diagnostics.Debug.WriteLine("SINCO: Erro na integra?�?�?�?�o com a API Protheus -> " & exAPI.Message)
++            MsgBox("SINCO: Erro na integra?�?�?�?�o com a API Protheus -> " & exAPI.Message)
+ 
+         Finally
+             Me.Cursor = Cursors.Default
+@@ -2062,6 +2217,106 @@ Public Class frmDadosPecaCorrente
+     Private Sub cboB1_TIPO_SelectedValueChanged(sender As Object, e As EventArgs) Handles cboB1_TIPO.SelectedValueChanged
+ 
+     End Sub
++
++    '===============================================================================
++    ' ���Ѵ�� INTEGRA?�?�O E DOCKING DO FORMUL?�RIO DENTRO DO SOLID EDGE (WIN32 API)
++    '===============================================================================
++    Private chkEncaixar As CheckBox
++
++    Private Declare Auto Function SetParent Lib "user32.dll" (ByVal hWndChild As IntPtr, ByVal hWndNewParent As IntPtr) As IntPtr
++    Private Declare Auto Function GetWindowLong Lib "user32.dll" (ByVal hWnd As IntPtr, ByVal nIndex As Integer) As Integer
++    Private Declare Auto Function SetWindowLong Lib "user32.dll" (ByVal hWnd As IntPtr, ByVal nIndex As Integer, ByVal dwNewLong As Integer) As Integer
++    Private Declare Auto Function GetWindowRect Lib "user32.dll" (ByVal hWnd As IntPtr, ByRef lpRect As RECT) As Boolean
++
++    <StructLayout(LayoutKind.Sequential)>
++    Private Structure RECT
++        Public Left As Integer
++        Public Top As Integer
++        Public Right As Integer
++        Public Bottom As Integer
++    End Structure
++
++    Private Const GWL_STYLE As Integer = -16
++    Private Const WS_CHILD As Integer = &H40000000
++    Private Const WS_POPUP As Integer = &H80000000
++
++    Private Sub InicializarControleEncaixe()
++        chkEncaixar = New CheckBox()
++        chkEncaixar.Text = "Encaixar no Solid Edge"
++        chkEncaixar.AutoSize = True
++        chkEncaixar.Location = New System.Drawing.Point(12, 12)
++        chkEncaixar.ForeColor = System.Drawing.Color.FromArgb(31, 54, 92)
++        chkEncaixar.Font = New System.Drawing.Font("Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
++        chkEncaixar.Checked = True ' Vem ativado por padr?�o
++        
++        AddHandler chkEncaixar.CheckedChanged, AddressOf chkEncaixar_CheckedChanged
++        Me.Controls.Add(chkEncaixar)
++        chkEncaixar.BringToFront()
++        
++        ' Executa o encaixe inicial
++        EncaixarNoSolidEdge()
++    End Sub
++
++    Private Sub chkEncaixar_CheckedChanged(sender As Object, e As EventArgs)
++        If chkEncaixar.Checked Then
++            EncaixarNoSolidEdge()
++        Else
++            DesencaixarDoSolidEdge()
++        End If
++    End Sub
++
++    Public Sub EncaixarNoSolidEdge()
++        Try
++            If app IsNot Nothing Then
++                Dim seHwnd As New IntPtr(app.hWnd)
++                If seHwnd <> IntPtr.Zero Then
++                    Dim style As Integer = GetWindowLong(Me.Handle, GWL_STYLE)
++                    style = (style And Not WS_POPUP) Or WS_CHILD
++                    SetWindowLong(Me.Handle, GWL_STYLE, style)
++
++                    SetParent(Me.Handle, seHwnd)
++                    AjustarPosicaoEncaixe()
++                End If
++            End If
++        Catch
++        End Try
++    End Sub
++
++    Public Sub DesencaixarDoSolidEdge()
++        Try
++            SetParent(Me.Handle, IntPtr.Zero)
++
++            Dim style As Integer = GetWindowLong(Me.Handle, GWL_STYLE)
++            style = (style And Not WS_CHILD) Or WS_POPUP
++            SetWindowLong(Me.Handle, GWL_STYLE, style)
++
++            Me.FormBorderStyle = FormBorderStyle.Sizable
++            Me.Dock = DockStyle.None
++            Me.Width = 450
++            Me.Height = 650
++            Me.CenterToScreen()
++        Catch
++        End Try
++    End Sub
++
++    Private Sub AjustarPosicaoEncaixe()
++        Try
++            If app IsNot Nothing Then
++                Dim seHwnd As New IntPtr(app.hWnd)
++                Dim r As New RECT()
++                If GetWindowRect(seHwnd, r) Then
++                    Dim larguraSE As Integer = r.Right - r.Left
++                    Dim alturaSE As Integer = r.Bottom - r.Top
++                    
++                    ' Posiciona o formul?�rio do lado direito, adaptado ?� altura do Solid Edge
++                    Me.Left = larguraSE - Me.Width - 10
++                    Me.Top = 135 ' Espa?�o superior da barra de menus/menus de ribbon
++                    Me.Height = Math.Max(alturaSE - 180, 400)
++                End If
++            End If
++        Catch
++        End Try
++    End Sub
+ End Class
+ 
+ 
+@@ -2070,7 +2325,7 @@ End Class
+ Module ModListarComponentesMontagem
+ 
+ 
+-#Region "VERS?�O ANTERIOR - 26-11-2025 rev 00"
++#Region "VERS?���O ANTERIOR - 26-11-2025 rev 00"
+     Public Sub ListarEstruturaComTodasPropriedadesBlank(ByVal dgv As DataGridView,
+                                                     ByVal pgb As ProgressBar,
+                                                     ByVal lbl As Label, lblResumo As Label)
+@@ -2100,13 +2355,13 @@ Module ModListarComponentesMontagem
+ 
+             erros.Add(msg)
+         Catch
+-            ' n?�o deixa o log quebrar o fluxo
++            ' n?�?�o deixa o log quebrar o fluxo
+         End Try
+     End Sub
+ 
+         Try
+             '============================================================
+-            ' ���? Sess?�o do Solid Edge e documento ativo
++            ' ???����?? Sess?�?�o do Solid Edge e documento ativo
+             '============================================================
+             If app Is Nothing OrElse app.Documents.Count = 0 Then
+                 MessageBox.Show("Nenhum documento aberto no Solid Edge.",
+@@ -2119,29 +2374,29 @@ Module ModListarComponentesMontagem
+             If doc Is Nothing Then Exit Sub
+ 
+             '============================================================
+-            ' ���? UI - estado inicial
++            ' ???����?? UI - estado inicial
+             '============================================================
+             pgb.Visible = True : pgb.Style = ProgressBarStyle.Marquee : pgb.Value = 0
+             lbl.Visible = True : lbl.Text = "Lendo estrutura... aguarde."
+ 
+             '============================================================
+-            ' ���? Tabela destino
++            ' ???����?? Tabela destino
+             '============================================================
+             Dim tabela As New DataTable("BOM_Completa")
+ 
+             ' Colunas fixas
+             tabela.Columns.Add("Nivel", GetType(Integer))
+-            tabela.Columns.Add("Arquivo", GetType(String))          ' com extens?�o
++            tabela.Columns.Add("Arquivo", GetType(String))          ' com extens?�?�o
+             tabela.Columns.Add("TipoArquivo", GetType(String))      ' PAR/PSM/ASM...
+             tabela.Columns.Add("Qtde", GetType(Integer))            ' quantidade efetiva no Nivel
+             tabela.Columns.Add("CaminhoCompleto", GetType(String))
+ 
+-            ' Propriedades de interesse como colunas pr??prias
++            ' Propriedades de interesse como colunas pr?�??prias
+             Dim propsInteressantes As New List(Of String) From {
+-            "T?�tulo", "Assunto", "Coment", "Tipo de Desenho", "Palavras-", "Autor", "Empresa",
++            "T?�?�tulo", "Assunto", "Coment", "Tipo de Desenho", "Palavras-", "Autor", "Empresa",
+             "Categoria", "Gerente", "Material", "Data", "DataR", "Data1",
+             "Revision", "CutSizeX", "CutSizeY", "Thickness",
+-            "Mass", "?�rea_de_superf?�cie", "Area_de_superficie", "Bloqueado"
++            "Mass", "?�?�rea_de_superf?�?�cie", "Area_de_superficie", "Bloqueado"
+         }
+             For Each p In propsInteressantes
+                 If Not tabela.Columns.Contains(p) Then tabela.Columns.Add(p, GetType(String))
+@@ -2154,21 +2409,21 @@ Module ModListarComponentesMontagem
+             tabela.Columns.Add("PesoTotal", GetType(Double))
+             tabela.Columns.Add("AreaPinturaTotal", GetType(Double))
+ 
+-            ' ?�ndice para agrupar por (Nivel|Arquivo)
++            ' ?�?�ndice para agrupar por (Nivel|Arquivo)
+             Dim indexPorChave As New Dictionary(Of String, DataRow)(StringComparer.OrdinalIgnoreCase)
+ 
+             Dim totalLidos As Integer = 0
+             Dim totalEstimado As Integer = 1
+ 
+             '============================================================
+-            ' ���? Helpers
++            ' ???����?? Helpers
+             '============================================================
+             Dim LimparUnidades As Func(Of String, String) =
+         Function(txt As String) As String
+             If String.IsNullOrWhiteSpace(txt) Then Return ""
+             Return txt _
+-                .Replace("mm??", "") _
+-                .Replace("MM??", "") _
++                .Replace("mm?�??", "") _
++                .Replace("MM?�??", "") _
+                 .Replace("mm", "") _
+                 .Replace("MM", "") _
+                 .Replace("^2", "") _
+@@ -2188,7 +2443,7 @@ Module ModListarComponentesMontagem
+                 Try : Return cl_BancoDados.FormatarData(valor) : Catch : Return valor : End Try
+             End If
+ 
+-            ' Revis?�o
++            ' Revis?�?�o
+             If nome.Contains("REVISION") Then Return valor.ToUpperInvariant()
+ 
+             ' CutSize / Espessura / Massa -> ponto decimal
+@@ -2197,8 +2452,8 @@ Module ModListarComponentesMontagem
+             If nome.Contains("THICKNESS") Then Return valor.Replace(",", ".")
+             If nome.Contains("MASS") Then Return valor.Replace(",", ".")
+ 
+-            ' ?�rea mm?? -> m??
+-            If nome.Contains("?�REA") OrElse nome.Contains("AREA") Then
++            ' ?�?�rea mm?�?? -> m?�??
++            If nome.Contains("?�?�REA") OrElse nome.Contains("AREA") Then
+                 Dim num As Double
+                 If Double.TryParse(valor.Replace(",", "."), NumberStyles.Any,
+                                    CultureInfo.InvariantCulture, num) Then
+@@ -2211,7 +2466,7 @@ Module ModListarComponentesMontagem
+         End Function
+ 
+             ' ============================================================
+-            ' ���? PreencherPropriedades com retry + fechar docs abertos aqui
++            ' ???����?? PreencherPropriedades com retry + fechar docs abertos aqui
+             ' ============================================================
+             Dim PreencherPropriedades As Action(Of Object, DataRow) =
+             Sub(docObj As Object, linha As DataRow)
+@@ -2222,7 +2477,7 @@ Module ModListarComponentesMontagem
+ 
+                 While tentativas < 2
+                     Try
+-                        ' Se o objeto estiver Nothing (ap??s erro), tenta reabrir pelo caminho da linha
++                        ' Se o objeto estiver Nothing (ap?�??s erro), tenta reabrir pelo caminho da linha
+                         If docObj Is Nothing Then
+                             Dim caminhoArquivo As String = ""
+                             Try
+@@ -2240,12 +2495,12 @@ Module ModListarComponentesMontagem
+                                     Exit While
+                                 End Try
+                             Else
+-                                ' Sem caminho v?�lido, n?�o h?� o que fazer
++                                ' Sem caminho v?�?�lido, n?�?�o h?�?� o que fazer
+                                 Exit While
+                             End If
+                         End If
+ 
+-                        ' --- C?�DIGO ORIGINAL DE LEITURA DAS PROPRIEDADES ---
++                        ' --- C?��ǣDIGO ORIGINAL DE LEITURA DAS PROPRIEDADES ---
+                         Dim propSets As Object = docObj.Properties
+                         For Each propSet As Object In propSets
+                             For Each prop As Object In propSet
+@@ -2298,7 +2553,7 @@ Module ModListarComponentesMontagem
+ 
+                     Catch comEx As System.Runtime.InteropServices.COMException
+                         If comEx.ErrorCode = &H80010108 Then
+-                            ' RPC_E_DISCONNECTED ��� tenta reabrir e repetir
++                            ' RPC_E_DISCONNECTED ?������� tenta reabrir e repetir
+                             tentativas += 1
+                             RegistrarErro("PreencherPropriedades - RPC_E_DISCONNECTED, tentando reabrir documento", comEx)
+                             docObj = Nothing
+@@ -2315,7 +2570,7 @@ Module ModListarComponentesMontagem
+                     End Try
+                 End While
+ 
+-                ' ���? Se abrimos o documento aqui, tentamos fechar no final
++                ' ???����?? Se abrimos o documento aqui, tentamos fechar no final
+                 If abriuTemp AndAlso docObj IsNot Nothing Then
+                     Try
+                         Dim isActive As Boolean = False
+@@ -2333,7 +2588,7 @@ Module ModListarComponentesMontagem
+                             End Try
+                         End If
+                     Catch
+-                        ' n?�o deixa o fechamento quebrar o fluxo
++                        ' n?�?�o deixa o fechamento quebrar o fluxo
+                     End Try
+                 End If
+             End Sub
+@@ -2365,7 +2620,7 @@ Module ModListarComponentesMontagem
+                                     NumberStyles.Any, CultureInfo.InvariantCulture, mass)
+ 
+                     Dim area As Double = 0
+-                    Double.TryParse(Convert.ToString(linha("?�rea_de_superf?�cie")).Replace(",", "."),
++                    Double.TryParse(Convert.ToString(linha("?�?�rea_de_superf?�?�cie")).Replace(",", "."),
+                                     NumberStyles.Any, CultureInfo.InvariantCulture, area)
+ 
+                     linha("PesoTotal") = mass * qtdeEfetiva
+@@ -2388,7 +2643,7 @@ Module ModListarComponentesMontagem
+                                     NumberStyles.Any, CultureInfo.InvariantCulture, massUnit)
+ 
+                     Dim areaUnit As Double = 0
+-                    Double.TryParse(Convert.ToString(linha("?�rea_de_superf?�cie")).Replace(",", "."),
++                    Double.TryParse(Convert.ToString(linha("?�?�rea_de_superf?�?�cie")).Replace(",", "."),
+                                     NumberStyles.Any, CultureInfo.InvariantCulture, areaUnit)
+ 
+                     Dim pesoTot As Double = 0
+@@ -2408,7 +2663,7 @@ Module ModListarComponentesMontagem
+         End Sub
+ 
+             '============================================================
+-            ' ���? Recurs?�o (propaga multiplicador do pai)
++            ' ???����?? Recurs?�?�o (propaga multiplicador do pai)
+             '============================================================
+             Dim Ler As Action(Of Object, String, Integer, Integer) =
+         Sub(docObj As Object, caminhoArquivo As String, nivel As Integer, multiplicadorPai As Integer)
+@@ -2428,13 +2683,13 @@ Module ModListarComponentesMontagem
+                 Dim nomeComExt As String = IO.Path.GetFileName(caminhoArquivo)
+                 Dim tipoUpper As String = ext.Replace(".", "").ToUpperInvariant()
+ 
+-                ' Adiciona/Acumula a linha do pr??prio documento
++                ' Adiciona/Acumula a linha do pr?�??prio documento
+                 AdicionarOuSomarLinha(nivel, nomeComExt, tipoUpper, multiplicadorPai, caminhoArquivo, docObj)
+ 
+                 ' Apenas ASM tem filhos
+                 If ext <> ".asm" Then Exit Sub
+ 
+-                ' Ocorr?�ncias
++                ' Ocorr?�?�ncias
+                 Dim occsObj As Object = Nothing
+                 Try
+                     occsObj = CallByName(docObj, "Occurrences", CallType.Get)
+@@ -2507,7 +2762,7 @@ Module ModListarComponentesMontagem
+                             grupo.Add(nomeAgrup, (If(String.IsNullOrWhiteSpace(subPath), "", subPath), qLocal, subDoc))
+                         End If
+                     Catch ex As Exception
+-                        RegistrarErro($"Processando ocorr?�ncia (#{i}) de {nomeComExt}", ex)
++                        RegistrarErro($"Processando ocorr?�?�ncia (#{i}) de {nomeComExt}", ex)
+                     End Try
+                 Next
+ 
+@@ -2518,7 +2773,7 @@ Module ModListarComponentesMontagem
+                     Dim qEfetivaFilho As Integer = qLocal * multiplicadorPai
+                     Dim subDoc = kv.Value.DocObj
+ 
+-                    ' Se ainda n?�o temos caminho mas temos documento, tenta pegar o FullName
++                    ' Se ainda n?�?�o temos caminho mas temos documento, tenta pegar o FullName
+                     If String.IsNullOrWhiteSpace(caminhoSub) AndAlso subDoc IsNot Nothing Then
+                         Try
+                             caminhoSub = CStr(CallByName(subDoc, "FullName", CallType.Get))
+@@ -2542,8 +2797,8 @@ Module ModListarComponentesMontagem
+                     End If
+ 
+                     If subDoc IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(caminhoSub) Then
+-                        ' ԣ� Caso NORMAL: temos o documento
+-                        '    ��� N?�O adiciona aqui, deixa o Ler(...) do filho fazer o AdicionarOuSomarLinha
++                        ' ?�?��Ǫ Caso NORMAL: temos o documento
++                        '    ?������� N?���O adiciona aqui, deixa o Ler(...) do filho fazer o AdicionarOuSomarLinha
+                         Ler(subDoc, caminhoSub, nivel + 1, qEfetivaFilho)
+ 
+                         ' Fecha se abrimos temporariamente
+@@ -2558,9 +2813,9 @@ Module ModListarComponentesMontagem
+                         End Try
+ 
+                     Else
+-                        ' ��� Caso EXCE?�?�O: n?�o h?� documento carregado,
+-                        '    mas precisamos que a pe?�a apare?�a na lista.
+-                        '    ��� adiciona a linha AQUI, uma ??nica vez.
++                        ' ?�?�?� Caso EXCE?����?���O: n?�?�o h?�?� documento carregado,
++                        '    mas precisamos que a pe?�?�a apare?�?�a na lista.
++                        '    ?������� adiciona a linha AQUI, uma ?�??nica vez.
+                         AdicionarOuSomarLinha(
+                             nivel + 1,
+                             nomeFilho,
+@@ -2579,12 +2834,12 @@ Module ModListarComponentesMontagem
+         End Sub
+ 
+             '============================================================
+-            ' ���? Chamada inicial da recurs?�o (multiplicador raiz = 1)
++            ' ???����?? Chamada inicial da recurs?�?�o (multiplicador raiz = 1)
+             '============================================================
+             Ler(doc, doc.FullName, 0, 1)
+ 
+             '============================================================
+-            ' ���? Limpeza de linhas �ǣfantasmas��� (sem arquivo/caminho)
++            ' ???����?? Limpeza de linhas ?���?�fantasmas?���?� (sem arquivo/caminho)
+             '============================================================
+             For i As Integer = tabela.Rows.Count - 1 To 0 Step -1
+                 Dim arq As String = Convert.ToString(tabela.Rows(i)("Arquivo"))
+@@ -2596,7 +2851,7 @@ Module ModListarComponentesMontagem
+             Next
+ 
+             '============================================================
+-            ' ���? C?�lculo dos TOTAIS
++            ' ???����?? C?�?�lculo dos TOTAIS
+             '============================================================
+             Dim totalQtdSolicitada As Double = 0
+             Dim arquivosUnicos As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+@@ -2623,7 +2878,7 @@ Module ModListarComponentesMontagem
+             Dim totalPecas As Integer = tabela.Rows.Count
+ 
+             '============================================================
+-            ' ���? Bind no grid
++            ' ???����?? Bind no grid
+             '============================================================
+             dgv.DataSource = tabela
+             dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells
+@@ -2638,7 +2893,7 @@ Module ModListarComponentesMontagem
+     "TipoArquivo", "CaminhoCompleto", "Categoria", "Gerente",
+     "Autor", "Empresa", "Data", "DataR", "Data1",
+     "Revision", "CutSizeX", "CutSizeY", "Mass",
+-    "?�rea_de_superf?�cie", "Area_de_superficie", "Bloqueado",
++    "?�?�rea_de_superf?�?�cie", "Area_de_superficie", "Bloqueado",
+     "RNC", "PesoTotal", "AreaPinturaTotal",
+     "TipoLinha", "CodMatFabricante", "DescDetal", "QtdeMaterial", "PesoMaterial"
+ }
+@@ -2649,16 +2904,16 @@ Module ModListarComponentesMontagem
+             Next
+ 
+             '============================================================
+-            ' ���? UI - final (incluindo os totais)
++            ' ???����?? UI - final (incluindo os totais)
+             '============================================================
+             pgb.Style = ProgressBarStyle.Continuous
+             pgb.Value = 100
+ 
+             lblResumo.Text =
+-        "ԣ� Estrutura conclu?�da." & vbCrLf &
+-        $"��� Total de pe?�as solicitadas (QtdeTotal): {totalQtdSolicitada}" & vbCrLf &
+-        $"��� Total de pe?�as diferentes (arquivos ??nicos): {totalPecasDiferentes}" & vbCrLf &
+-        $"��� Total de pe?�as na estrutura (linhas): {totalPecas}"
++        "?�?��Ǫ Estrutura conclu?�?�da." & vbCrLf &
++        $"?���?� Total de pe?�?�as solicitadas (QtdeTotal): {totalQtdSolicitada}" & vbCrLf &
++        $"?���?� Total de pe?�?�as diferentes (arquivos ?�??nicos): {totalPecasDiferentes}" & vbCrLf &
++        $"?���?� Total de pe?�?�as na estrutura (linhas): {totalPecas}"
+ 
+             '' System.Windows.Forms.Application.DoEvents()
+             Threading.Thread.Sleep(550)
+@@ -2670,7 +2925,7 @@ Module ModListarComponentesMontagem
+         Finally
+             pgb.Visible = False
+ 
+-            ' Se houve erros, mostra relat??rio organizado
++            ' Se houve erros, mostra relat?�??rio organizado
+             If erros IsNot Nothing AndAlso erros.Count > 0 Then
+                 Dim sb As New StringBuilder()
+                 sb.AppendLine("Foram encontrados " & erros.Count & " erro(s) durante a leitura da estrutura:")
+@@ -2685,11 +2940,11 @@ Module ModListarComponentesMontagem
+                 If qtdRpcDesconectado > 0 Then
+                     sb.AppendLine()
+                     sb.AppendLine(qtdRpcDesconectado.ToString() &
+-                          " erro(s) s?�o do tipo RPC_E_DISCONNECTED (necess?�rio revisar/ajustar o arquivo no Solid Edge).")
++                          " erro(s) s?�?�o do tipo RPC_E_DISCONNECTED (necess?�?�rio revisar/ajustar o arquivo no Solid Edge).")
+                 End If
+ 
+                 MessageBox.Show(sb.ToString(),
+-                        "Relat??rio de erros - Estrutura",
++                        "Relat?�??rio de erros - Estrutura",
+                         MessageBoxButtons.OK,
+                         MessageBoxIcon.Warning)
+ 
+@@ -2703,18 +2958,18 @@ Module ModListarComponentesMontagem
+ 
+ 
+ 
+-#Region "VERS?�O DEFINITIVA - DADOS RESTAURADOS + C?�LCULOS CORRETOS"
++#Region "VERS?���O DEFINITIVA - DADOS RESTAURADOS + C?�?�LCULOS CORRETOS"
+ 
+ 
+     '================================================================================
+-    ' Fun?�?�o Global de Convers?�o Segura (Movemos para fora para ser compartilhada)
++    ' Fun?�?�?�?�o Global de Convers?�?�o Segura (Movemos para fora para ser compartilhada)
+     '================================================================================
+     Private Function ParseSeguro(ByVal v As Object) As Double
+         Try
+             If v Is Nothing OrElse IsDBNull(v) Then Return 0.0R
+             Dim s As String = v.ToString().Trim()
+             If s = "" Then Return 0.0R
+-            ' For?�a ponto como separador decimal para garantir o TryParse Invariant
++            ' For?�?�a ponto como separador decimal para garantir o TryParse Invariant
+             s = s.Replace(",", ".")
+             Dim d As Double
+             If Double.TryParse(s, Globalization.NumberStyles.Any, Globalization.CultureInfo.InvariantCulture, d) Then
+@@ -2771,7 +3026,7 @@ Module ModListarComponentesMontagem
+         End Function
+ 
+         Try
+-            ' 1. Conex?�o com Solid Edge
++            ' 1. Conex?�?�o com Solid Edge
+             If app Is Nothing Then
+                 Try
+                     app = System.Runtime.InteropServices.Marshal.GetActiveObject("SolidEdge.Application")
+@@ -2787,7 +3042,7 @@ Module ModListarComponentesMontagem
+                 End If
+                 doc = app.ActiveDocument
+             Catch ex As Exception
+-                MessageBox.Show("Erro conex?�o SE: " & ex.Message)
++                MessageBox.Show("Erro conex?�?�o SE: " & ex.Message)
+                 Exit Sub
+             End Try
+ 
+@@ -2805,15 +3060,15 @@ Module ModListarComponentesMontagem
+             tabela.Columns.Add("Nivel", GetType(Integer))
+             tabela.Columns.Add("Arquivo", GetType(String))
+             tabela.Columns.Add("TipoArquivo", GetType(String))
+-            tabela.Columns.Add("Qtde", GetType(Double))             ' Unit?�rio
++            tabela.Columns.Add("Qtde", GetType(Double))             ' Unit?�?�rio
+             tabela.Columns.Add("CaminhoCompleto", GetType(String))
+             tabela.Columns.Add("TipoLinha", GetType(String))
+ 
+             Dim propsInteressantes As New List(Of String) From {
+-                "T?�tulo", "Assunto", "Coment", "Tipo de Desenho", "Palavras-", "Autor", "Empresa",
++                "T?�?�tulo", "Assunto", "Coment", "Tipo de Desenho", "Palavras-", "Autor", "Empresa",
+                 "Categoria", "Gerente", "Material", "Data", "DataR", "Data1",
+                 "Revision", "CutSizeX", "CutSizeY", "Thickness",
+-                "Mass", "?�rea_de_superf?�cie", "Area_de_superficie", "Bloqueado"
++                "Mass", "?�?�rea_de_superf?�?�cie", "Area_de_superficie", "Bloqueado"
+             }
+ 
+             For Each p In propsInteressantes
+@@ -2836,11 +3091,11 @@ Module ModListarComponentesMontagem
+             Dim totalLidos As Integer = 0
+             Dim totalEstimado As Integer = 1
+ 
+-            ' Helper Formata?�?�o Original
++            ' Helper Formata?�?�?�?�o Original
+             Dim LimparUnidades As Func(Of String, String) =
+             Function(txt)
+                 If String.IsNullOrWhiteSpace(txt) Then Return ""
+-                Return txt.Replace("mm??", "").Replace("MM??", "").Replace("mm", "").Replace("MM", "").Replace("^2", "").Replace("KG", "").Replace("kg", "").Trim()
++                Return txt.Replace("mm?�??", "").Replace("MM?�??", "").Replace("mm", "").Replace("MM", "").Replace("^2", "").Replace("KG", "").Replace("kg", "").Trim()
+             End Function
+ 
+             Dim FormatarValor As Func(Of String, String, String) =
+@@ -2860,7 +3115,7 @@ Module ModListarComponentesMontagem
+                 If nome.Contains("CUTSIZEX") OrElse nome.Contains("CUTSIZEY") OrElse nome.Contains("THICKNESS") OrElse nome.Contains("MASS") Then
+                     Return valor.Replace(",", ".")
+                 End If
+-                If nome.Contains("?�REA") OrElse nome.Contains("AREA") Then
++                If nome.Contains("?�?�REA") OrElse nome.Contains("AREA") Then
+                     Dim num As Double
+                     If Double.TryParse(valor.Replace(",", "."), Globalization.NumberStyles.Any, Globalization.CultureInfo.InvariantCulture, num) Then
+                         Dim m2 = num / 1_000_000.0R
+@@ -2871,7 +3126,7 @@ Module ModListarComponentesMontagem
+             End Function
+ 
+             ' ====================================================================
+-            ' PreencherPropriedades (RESTAURADA A ORIGINAL QUE L?� TUDO)
++            ' PreencherPropriedades (RESTAURADA A ORIGINAL QUE L?�?� TUDO)
+             ' ====================================================================
+             Dim PreencherPropriedades As Action(Of Object, DataRow) =
+             Sub(docObjP, linhaP)
+@@ -2928,13 +3183,13 @@ Module ModListarComponentesMontagem
+                                             RegistrarErro($"Lendo propriedade '{nomeProp}'", ex)
+                                         End Try
+ 
+-                                        ' Aplica formata?�?�o
++                                        ' Aplica formata?�?�?�?�o
+                                         linhaP(alvo) = FormatarValor(nomeProp, valorBruto)
+                                         Exit For
+                                     End If
+                                 Next
+ 
+-                                ' Loop espec?�fico para Espessura
++                                ' Loop espec?�?�fico para Espessura
+                                 If nomeProp.IndexOf("Material Thickness", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+                                    nomeProp.IndexOf("Espessura Do Material", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+                                    nomeProp.Equals("Thickness", StringComparison.OrdinalIgnoreCase) Then
+@@ -2989,7 +3244,7 @@ Module ModListarComponentesMontagem
+             End Sub
+ 
+             ' ====================================================================
+-            ' Adicionar Processos da Pe?�a
++            ' Adicionar Processos da Pe?�?�a
+             ' ====================================================================
+             Dim AdicionarProcessos As Action(Of Integer, String, Double) =
+             Sub(nivelProc, codPecaProc, qTotProc)
+@@ -3016,7 +3271,7 @@ Module ModListarComponentesMontagem
+ 
+                             Dim finalName As String = "[" & seqProc & "] " & nomeProc
+                             drProc("Arquivo") = finalName
+-                            drProc("T?�tulo") = finalName
++                            drProc("T?�?�tulo") = finalName
+                             drProc("TipoArquivo") = "PROC"
+                             drProc("CaminhoCompleto") = ""
+ 
+@@ -3074,12 +3329,12 @@ Module ModListarComponentesMontagem
+                     linha("QtdeMaterial") = 0.0R
+                     linha("PesoMaterial") = 0.0R
+ 
+-                    ' Aqui l?� os dados (T?�tulo, etc)
++                    ' Aqui l?�?� os dados (T?�?�tulo, etc)
+                     PreencherPropriedades(objDoc, linha)
+ 
+-                    ' Recalcula Peso/?�rea com os dados que acabaram de ser lidos
++                    ' Recalcula Peso/?�?�rea com os dados que acabaram de ser lidos
+                     Dim m As Double = ParseDecimalFlex(linha("Mass"))
+-                    Dim a As Double = ParseDecimalFlex(linha("?�rea_de_superf?�cie"))
++                    Dim a As Double = ParseDecimalFlex(linha("?�?�rea_de_superf?�?�cie"))
+                     linha("PesoTotal") = m * qTotal
+                     linha("AreaPinturaTotal") = a * qTotal
+                     '   linha("NovoRevisao") = ""
+@@ -3104,7 +3359,7 @@ Module ModListarComponentesMontagem
+             End Sub
+ 
+             ' ====================================================================
+-            ' Recurs?�o Ler
++            ' Recurs?�?�o Ler
+             ' ====================================================================
+             Dim Ler As Action(Of Object, String, Integer, Double, Double) =
+             Sub(obj, path, niv, qLoc, qTot)
+@@ -3212,7 +3467,7 @@ Module ModListarComponentesMontagem
+                         End If
+                     Next
+                 Catch ex As Exception
+-                    RegistrarErro("Recurs?�o " & path, ex)
++                    RegistrarErro("Recurs?�?�o " & path, ex)
+                 End Try
+             End Sub
+ 
+@@ -3234,7 +3489,7 @@ Module ModListarComponentesMontagem
+             dgv.DataSource = tabela
+             dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells
+ 
+-            Dim ocultar() As String = {"TipoArquivo", "CaminhoCompleto", "Categoria", "Gerente", "Autor", "Empresa", "Data", "DataR", "Data1", "Revision", "CutSizeX", "CutSizeY", "Mass", "?�rea_de_superf?�cie", "Area_de_superficie", "Bloqueado", "RNC", "PesoTotal", "AreaPinturaTotal", "QtdeMaterial", "PesoMaterial", "CodMatFabricante", "DescDetal"}
++            Dim ocultar() As String = {"TipoArquivo", "CaminhoCompleto", "Categoria", "Gerente", "Autor", "Empresa", "Data", "DataR", "Data1", "Revision", "CutSizeX", "CutSizeY", "Mass", "?�?�rea_de_superf?�?�cie", "Area_de_superficie", "Bloqueado", "RNC", "PesoTotal", "AreaPinturaTotal", "QtdeMaterial", "PesoMaterial", "CodMatFabricante", "DescDetal"}
+ 
+             For Each c In ocultar
+                 If dgv.Columns.Contains(c) Then
+@@ -3242,7 +3497,7 @@ Module ModListarComponentesMontagem
+                 End If
+             Next
+ 
+-            lblResumo.Text = $"Total de Pe?�as: {qtdTotalGeral}"
++            lblResumo.Text = $"Total de Pe?�?�as: {qtdTotalGeral}"
+             pgb.Visible = False
+ 
+         Catch ex As Exception
+@@ -3251,7 +3506,7 @@ Module ModListarComponentesMontagem
+     End Sub
+ 
+     '===============================================================================
+-    ' L?� MATERIAIS PARA TABELA - CORRE?�?�O VISUAL DA COLUNA QTDE
++    ' L?�?� MATERIAIS PARA TABELA - CORRE?����?���O VISUAL DA COLUNA QTDE
+     '===============================================================================
+     Public Sub LerDadosViewMontaPecaParaTabela(tabelaDest As DataTable,
+                                                nivelPeca As Integer,
+@@ -3275,13 +3530,13 @@ Module ModListarComponentesMontagem
+ 
+                 iconeTipoArquivo = My.Resources.sinco_Diversos
+ 
+-                ' 1) PARSE (L?� os dados do banco)
++                ' 1) PARSE (L?�?� os dados do banco)
+                 Dim PecaQtde As Double = ParseSeguro(linha("PecaQtde"))
+                 Dim peso As Double = ParseSeguro(linha("Peso"))
+ 
+-                ' 2) C?�LCULO DO MATERIAL
+-                ' QtdeMaterialUnitario = Quanto gasta em 1 pe?�a (ex: 0,125)
+-                ' QtdeMaterialTotal    = Quanto gasta em TODAS as pe?�as (ex: 0,125 * 4 = 0,5)
++                ' 2) C?�?�LCULO DO MATERIAL
++                ' QtdeMaterialUnitario = Quanto gasta em 1 pe?�?�a (ex: 0,125)
++                ' QtdeMaterialTotal    = Quanto gasta em TODAS as pe?�?�as (ex: 0,125 * 4 = 0,5)
+                 Dim QtdeMaterialUnitario As Double = PecaQtde
+                 Dim QtdeMaterialTotal As Double = QtdeMaterialUnitario * qtdeTotalAcumuladaPeca
+ 
+@@ -3298,57 +3553,24 @@ Module ModListarComponentesMontagem
+                 drMat("TipoArquivo") = "MAT"
+ 
+                 ' -----------------------------------------------------------------------
+-                ' ���? CORRE?�?�O AQUI:
++                ' ???����?? CORRE?����?���O AQUI:
+                 ' Antes estava: drMat("Qtde") = QtdeMaterialUnitario  (Mostrava 0,125)
+                 ' Agora fica:   drMat("Qtde") = QtdeMaterialTotal     (Mostra 0,5)
+-                ' Isso faz com que a coluna visual 'Qtde' j?� mostre o valor multiplicado pela quantidade da pe?�a pai.
+-                ' -----------------------------------------------------------------------
+-                drMat("Qtde") = QtdeMaterialTotal
+-
+-                ' Coluna de totais (mant?�m igual para c?�lculo)
+-                drMat("QtdeTotal") = QtdeMaterialTotal
+-
+-                ' Guarda o unit?�rio apenas na coluna interna se precisar depois
+-                drMat("QtdeMaterial") = QtdeMaterialUnitario
+-                drMat("CaminhoCompleto") = ""
+-
+-                Dim desc As String = linha("DescDetal").ToString().Trim().ToUpper()
+-                Dim matView As String = ""
+-                Try : matView = linha("Material").ToString().Trim().ToUpper() : Catch : End Try
+-
+-                Dim titulo As String = desc
+-                If matView <> "" Then titulo &= " - " & matView
+-                drMat("T?�tulo") = titulo
+-                If matView <> "" Then drMat("Material") = matView
+-                drMat("Tipo de Desenho") = "MATERIAL"
+-                drMat("Fator") = 1.0R
+-                drMat("PesoTotal") = 0.0R
+-                drMat("AreaPinturaTotal") = 0.0R
+-                drMat("PesoMaterial") = PesoMaterialTotal
+-
+-                tabelaDest.Rows.Add(drMat)
+-            Catch
+-                Continue For
+-            End Try
+-        Next
+-    End Sub
++                ' Isso faz com que a coluna visual 'Qtde' j?�?� mostre o valor multiplicado pela quantidade da pe?�?�a pai.
++                ' ---------------------------    Public Sub ExportarPorGrid(dgv As DataGridView, chkDXF As CheckBox, chkPDF As CheckBox, chkIGES As CheckBox, BarraProgresso As ProgressBar, lbl As Label, chkOpcaodePasta As CheckBox)
+ 
+-#End Region
+-
+-    Public Sub ExportarPorGrid(dgv As DataGridView, chkDXF As CheckBox, chkPDF As CheckBox, chkIGES As CheckBox, BarraProgresso As ProgressBar, lbl As Label, chkOpcaodePasta As CheckBox)
+-
+-        ' Evita processar o mesmo arquivo mais de uma vez nesta execu?�?�o
++        ' Evita processar o mesmo arquivo mais de uma vez nesta execu?�?�?�?�o
+         Dim arquivosProcessados As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+ 
+         Try
+             If dgv.Rows.Count = 0 Then
+-                MessageBox.Show("Nenhum item na lista de pe?�as.", "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
++                MessageBox.Show("Nenhum item na lista de pe?�?�as.", "SINCO - Solid Edge", MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
+                 Exit Sub
+             End If
+ 
+-            '������������������������������������������������������������������������������������������������������������������������������������������
+-            ' ���� L?�GICA DE PASTA CORRIGIDA (Pergunta antes do loop)
+-            '������������������������������������������������������������������������������������������������������������������������������������������
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++            ' ???��ǣ?� L?��ǣGICA DE PASTA CORRIGIDA (Pergunta antes do loop)
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+             Dim pastaDestinoLote As String = ""
+ 
+             ' Se chkOpcaodePasta = False (Ex: Salvar tudo em uma pasta selecionada)
+@@ -3358,16 +3580,17 @@ Module ModListarComponentesMontagem
+                     If fbd.ShowDialog() = DialogResult.OK Then
+                         pastaDestinoLote = fbd.SelectedPath
+                     Else
+-                        Exit Sub ' Usu?�rio cancelou, aborta o processo
++                        Exit Sub ' Usu?�?�rio cancelou, aborta o processo
+                     End If
+                 End Using
+             End If
+ 
+-            '������������������������������������������������������������������������������������������������������������������������������������������
+-            ' ���? Configura?�?�es iniciais
+-            '������������������������������������������������������������������������������������������������������������������������������������������
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++            ' ???����?? Configura?�?�?�?�es iniciais
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+             Dim total As Integer = dgv.Rows.Count
+             Dim processados As Integer = 0
++            Dim tempoInicioExport As DateTime = DateTime.Now
+             Dim exportadosDXF As Integer = 0
+             Dim exportadosPDF As Integer = 0
+             Dim primeiroArquivo As String = ""
+@@ -3380,9 +3603,9 @@ Module ModListarComponentesMontagem
+             BarraProgresso.Maximum = total
+             BarraProgresso.Value = 0
+ 
+-            '������������������������������������������������������������������������������������������������������������������������������������������
+-            ' ���� Loop principal
+-            '������������������������������������������������������������������������������������������������������������������������������������������
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++            ' ???����?� Loop principal
++            '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+             For Each row As DataGridViewRow In dgv.Rows
+                 Try
+                     Dim Bloqueado As String = row.Cells("Bloqueado").Value?.ToString()?.Trim().ToUpperInvariant()
+@@ -3406,6 +3629,38 @@ Module ModListarComponentesMontagem
+                         pastaDestinoFinal = pastaDestinoLote ' Usa a pasta selecionada no FBD
+                     End If
+ 
++                    ' Calcula estimativa de tempo
++                    Dim currentEstText As String = ""
++                    If processados > 0 Then
++                        Dim tempoDecorrido As TimeSpan = DateTime.Now - tempoInicioExport
++                        Dim msPorItem As Double = tempoDecorrido.TotalMilliseconds / processados
++                        Dim msRestantes As Double = msPorItem * (total - processados)
++                        Dim tempoRestante As TimeSpan = TimeSpan.FromMilliseconds(msRestantes)
++                        Dim horaFimEstimada As DateTime = DateTime.Now.Add(tempoRestante)
++                        Dim minRestantes As Integer = CInt(Math.Floor(tempoRestante.TotalMinutes))
++                        Dim segRestantes As Integer = tempoRestante.Seconds
++                        currentEstText = $" | Restam: {minRestantes}m {segRestantes}s | Fim Est: {horaFimEstimada:HH:mm:ss}"
++                    Else
++                        currentEstText = " | Calculando tempo estimado..."
++                    End If
++
++                    ' Abre o arquivo atual
++                    Dim doc As Object = Nothing
++                    Try
++                        If lbl IsNot Nothing Then
++                            lbl.Text = $"[{processados + 1}/{total}] Abrindo {nomeArquivo}{extensao}..." & currentEstText
++                            System.Windows.Forms.Application.DoEvents()
++                        End If
++                        doc = app.Documents.Open(caminho)
++                        app.Visible = True
++                        app.Activate()
++                        doc.Activate()
++                        app.DoIdle()
++                        Threading.Thread.Sleep(500) ' Delay suave para visualiza?�?�?�?�o do usu?�?�rio
++                    Catch
++                        Continue For
++                    End Try
++
+                     Dim caminhoFull = IO.Path.GetFullPath(caminho)
+ 
+                     If arquivosProcessados.Contains(caminhoFull) Then
+@@ -3423,47 +3678,24 @@ Module ModListarComponentesMontagem
+ 
+                     arquivosProcessados.Add(caminhoFull)
+ 
+-                    ' Fecha documentos abertos
+-                    Try
+-                        For Each d As Object In app.Documents
+-                            Try : d.Close(False) : Catch : End Try
+-                        Next
+-                    Catch
+-                    End Try
+-
+-                    ' Abre o arquivo atual
+-                    Dim doc As Object = Nothing
+-                    Try
+-                        doc = app.Documents.Open(caminho)
+-                        doc.Activate()
+-                        app.DoIdle()
+-                        Threading.Thread.Sleep(200)
+-                    Catch
+-                        Continue For
+-                    End Try
+-
+-                    '������������������������������������������������������������������������������������������������������������������������������������������
+-                    ' ���? Exportar DXF
+-                    '������������������������������������������������������������������������������������������������������������������������������������������
++                    '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++                    ' ???����?? Exportar DXF
++                    '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
+                     If chkDXF.Checked Then
+-                        'If caminho.Contains("MT1-") Or caminho.Contains("MT2-") Or caminho.Contains("MT7-") Or caminho.Contains("MT8-") Or caminho.Contains("MTA") Or caminho.Contains("MPT") Then
+-                        'Continue For
+-                        'Else
++                        If lbl IsNot Nothing Then
++                            lbl.Text = $"[{processados + 1}/{total}] Gerando DXF de {nomeArquivo}..." & currentEstText
++                            System.Windows.Forms.Application.DoEvents()
++                        End If
+                         Select Case extensao
+                             Case ".psm", ".par"
+                                 Try
+                                     Dim dxfDestino As String = IO.Path.Combine(pastaDestinoFinal, nomeArquivo & ".dxf")
+-
+-                                    ' Chama a fun?�?�o passando O CAMINHO COMPLETO E CORRETO
+                                     ExportarDXFPlanificadoAuto(dxfDestino)
+-
+-                                    ' Aguarda at?� o arquivo existir
+                                     Dim tentativas As Integer = 0
+                                     Do Until File.Exists(dxfDestino) OrElse tentativas > 20
+                                         Threading.Thread.Sleep(250)
+                                         tentativas += 1
+                                     Loop
+-
+                                     If File.Exists(dxfDestino) Then
+                                         row.Cells("dgvdxf").Value = My.Resources.dxf
+                                         exportadosDXF += 1
+@@ -3477,17 +3709,85 @@ Module ModListarComponentesMontagem
+                                 row.Cells("dgvdxf").Value = My.Resources.sem_icone
+                         End Select
+                     End If
+-                    ' End If
+ 
+-                    '������������������������������������������������������������������������������������������������������������������������������������������
+-                    ' ���? Exportar PDF (Ajuste suas chamadas de PDF/IGES da mesma forma)
+-                    '������������������������������������������������������������������������������������������������������������������������������������������
+-                    ' Exemplo de como ficar?� o PDF:
++                    '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++                    ' ???����?? Exportar PDF
++                    '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++                    If chkPDF.Checked Then
++                        If lbl IsNot Nothing Then
++                            lbl.Text = $"[{processados + 1}/{total}] Gerando PDF de {nomeArquivo}..." & currentEstText
++                            System.Windows.Forms.Application.DoEvents()
++                        End If
++                        Try
++                            Dim pdfDestino As String = IO.Path.Combine(pastaDestinoFinal, nomeArquivo & ".pdf")
++                            ExportarPDFDetalhamentoLote(pdfDestino)
++                            Dim tentativas As Integer = 0
++                            Do Until File.Exists(pdfDestino) OrElse tentativas > 20
++                                Threading.Thread.Sleep(250)
++                                tentativas += 1
++                            Loop
++                            If File.Exists(pdfDestino) Then
++                                row.Cells("dgvpdf").Value = My.Resources.pdf
++                                exportadosPDF += 1
++                            Else
++                                row.Cells("dgvpdf").Value = My.Resources.sem_icone
++                            End If
++                        Catch
++                            row.Cells("dgvpdf").Value = My.Resources.sem_icone
++                        End Try
++                    End If
++
++                    If chkIGES.Checked And txttipodesenho = "CORTE LASER TUBO" Then
++                        If lbl IsNot Nothing Then
++                            lbl.Text = $"[{processados + 1}/{total}] Gerando IGES para {nomeArquivo}..." & currentEstText
++                            System.Windows.Forms.Application.DoEvents()
++                        End If
++                        Try
++                             Dim igesDestino As String = IO.Path.Combine(pastaDestinoFinal, nomeArquivo & ".iges")
++                             ExportarIGESAuto(igesDestino)
++                        Catch
++                        End Try
++                    End If
++
++                    ' Fecha documento sem salvar
++                    If lbl IsNot Nothing Then
++                        lbl.Text = $"[{processados + 1}/{total}] Fechando {nomeArquivo}..." & currentEstText
++                        System.Windows.Forms.Application.DoEvents()
++                    End If
++                    Try : doc.Close(False) : Catch : End Try
++
++                    processados += 1
++                    BarraProgresso.Value = Math.Min(processados, BarraProgresso.Maximum)
++                    
++                    Dim posEstText As String = ""
++                    If processados < total Then
++                        Dim tempoDecorrido As TimeSpan = DateTime.Now - tempoInicioExport
++                        Dim msPorItem As Double = tempoDecorrido.TotalMilliseconds / processados
++                        Dim msRestantes As Double = msPorItem * (total - processados)
++                        Dim tempoRestante As TimeSpan = TimeSpan.FromMilliseconds(msRestantes)
++                        Dim horaFimEstimada As DateTime = DateTime.Now.Add(tempoRestante)
++                        Dim minRestantes As Integer = CInt(Math.Floor(tempoRestante.TotalMinutes))
++                        Dim segRestantes As Integer = tempoRestante.Seconds
++                        posEstText = $" | Restam: {minRestantes}m {segRestantes}s | Fim Est: {horaFimEstimada:HH:mm:ss}"
++                    Else
++                        Dim tempoDecorrido As TimeSpan = DateTime.Now - tempoInicioExport
++                        Dim minDecorridos As Integer = CInt(Math.Floor(tempoDecorrido.TotalMinutes))
++                        Dim segDecorridos As Integer = tempoDecorrido.Seconds
++                        posEstText = $" | Conclu?�?�do em: {minDecorridos}m {segDecorridos}s"
++                    End If
++
++                    If lbl IsNot Nothing Then
++                        lbl.Text = $"[{processados}/{total}] Conclu?�?�do: {nomeArquivo}" & posEstText
++                    End If
++                    System.Windows.Forms.Application.DoEvents()��?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++                    ' ???����?? Exportar PDF (Ajuste suas chamadas de PDF/IGES da mesma forma)
++                    '?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������?������
++                    ' Exemplo de como ficar?�?� o PDF:
+                     If chkPDF.Checked Then
+                         Try
+                             Dim pdfDestino As String = IO.Path.Combine(pastaDestinoFinal, nomeArquivo & ".pdf")
+ 
+-                            ' Nota: Altere sua fun?�?�o ExportarPDFDetalhamentoLote para receber o pdfDestino como par?�metro
++                            ' Nota: Altere sua fun?�?�?�?�o ExportarPDFDetalhamentoLote para receber o pdfDestino como par?�?�metro
+                             ExportarPDFDetalhamentoLote(pdfDestino)
+ 
+                             Dim tentativas As Integer = 0
+@@ -3541,7 +3841,7 @@ Module ModListarComponentesMontagem
+                 End If
+             Catch : End Try
+ 
+-            ' Finaliza?�?�o
++            ' Finaliza?�?�?�?�o
+             app.DisplayAlerts = True
+             BarraProgresso.Visible = False
+             BarraProgresso.Value = 0
+@@ -3564,7 +3864,7 @@ Module ModListarComponentesMontagem
+ 
+             Dim filtros As New List(Of String)
+ 
+-            ' ���? Trata texto de filtro por caminho
++            ' ???����?? Trata texto de filtro por caminho
+             If Not String.IsNullOrWhiteSpace(termo) Then
+                 termo = termo.Replace("'", "''") ' evita erro por aspas simples
+ 
+@@ -3573,7 +3873,7 @@ Module ModListarComponentesMontagem
+                 End If
+             End If
+ 
+-            ' ���? Trata texto de filtro por empresa
++            ' ???����?? Trata texto de filtro por empresa
+             If Not String.IsNullOrWhiteSpace(empresa) Then
+                 empresa = empresa.Replace("'", "''")
+ 
+@@ -3582,12 +3882,12 @@ Module ModListarComponentesMontagem
+                 End If
+             End If
+ 
+-            ' ���? Monta o RowFilter
++            ' ???����?? Monta o RowFilter
+             If filtros.Count > 0 Then
+                 ' Se tiver mais de um filtro, junta com AND
+                 view.RowFilter = String.Join(" AND ", filtros)
+             Else
+-                ' Sem filtros ��� mostra tudo
++                ' Sem filtros ?������� mostra tudo
+                 view.RowFilter = ""
+             End If
+ 

@@ -1,0 +1,117 @@
+=== STEP 541 (Line 538) - write_to_file ===
+import json
+import codecs
+
+path = r"C:\Users\lynx\.gemini\antigravity-ide\brain\727d61fe-6d2e-4746-8bbd-ee07dabc8923\.system_generated\logs\transcript_full.jsonl"
+out_path = r"c:\Users\lynx\Documents\MetalFisa Anty\scratch\extracted.txt"
+
+with open(path, 'r', encoding='utf-8', errors='ignore') as f, codecs.open(out_path, 'w', encoding='utf-8') as out:
+    for idx, line in enumerate(f, 1):
+        if "btnDxf_Click" in line or "btnGerarPdf_Click" in line:
+            pos = 0
+            while True:
+                pos = line.find("btnDxf_Click", pos)
+                if pos == -1:
+                    break
+                start = max(0, pos - 200)
+                end = min(len(line), pos + 1000)
+                out.write(f"MATCH btnDxf_Click AT LINE {idx}:\n{line[start:end]}\n\n")
+                pos += 1
+                
+            pos = 0
+            while True:
+                pos = line.find("btnGerarPdf_Click", pos)
+                if pos == -1:
+                    break
+                start = max(0, pos - 200)
+                end = min(len(line), pos + 1000)
+                out.write(f"MATCH btnGerarPdf_Click AT LINE {idx}:\n{line[start:end]}\n\n")
+                pos += 1
+
+print("SUCCESS: Matches written to scratch/extracted.txt!")
+
+==================================================
+
+=== STEP 547 (Line 544) - write_to_file ===
+import json
+import codecs
+
+path = r"C:\Users\lynx\.gemini\antigravity-ide\brain\727d61fe-6d2e-4746-8bbd-ee07dabc8923\.system_generated\logs\transcript_full.jsonl"
+out_path = r"c:\Users\lynx\Documents\MetalFisa Anty\scratch\extracted_full.txt"
+
+with open(path, 'r', encoding='utf-8', errors='ignore') as f, codecs.open(out_path, 'w', encoding='utf-8') as out:
+    for idx, line in enumerate(f, 1):
+        if "btnDxf_Click" in line and "MessageBoxButtons.YesNoCancel" in line:
+            obj = json.loads(line)
+            # Find the content which holds the full model response
+            content = obj.get("content", "")
+            out.write(f"=== FULL MODEL CONTENT FOR STEP {obj.get('step_index')} ===\n")
+            out.write(content)
+            out.write("\n==================================================\n\n")
+
+print("SUCCESS: Full content written to scratch/extracted_full.txt!")
+
+==================================================
+
+=== STEP 555 (Line 552) - write_to_file ===
+import json
+import codecs
+
+path = r"C:\Users\lynx\.gemini\antigravity-ide\brain\727d61fe-6d2e-4746-8bbd-ee07dabc8923\.system_generated\logs\transcript_full.jsonl"
+out_path = r"c:\Users\lynx\Documents\MetalFisa Anty\scratch\all_steps.txt"
+
+with open(path, 'r', encoding='utf-8', errors='ignore') as f, codecs.open(out_path, 'w', encoding='utf-8') as out:
+    for idx, line in enumerate(f, 1):
+        if "btnDxf_Click" in line or "btnGerarPdf_Click" in line:
+            try:
+                obj = json.loads(line)
+                content = obj.get("content", "")
+                if content:
+                    out.write(f"=== STEP {obj.get('step_index')} (Line {idx}) ===\n")
+                    out.write(content)
+                    out.write("\n==================================================\n\n")
+            except:
+                pass
+
+print("SUCCESS: All steps written to scratch/all_steps.txt!")
+
+==================================================
+
+=== STEP 561 (Line 558) - write_to_file ===
+import json
+import codecs
+
+path = r"C:\Users\lynx\.gemini\antigravity-ide\brain\727d61fe-6d2e-4746-8bbd-ee07dabc8923\.system_generated\logs\transcript_full.jsonl"
+out_path = r"c:\Users\lynx\Documents\MetalFisa Anty\scratch\tool_calls.txt"
+
+with open(path, 'r', encoding='utf-8', errors='ignore') as f, codecs.open(out_path, 'w', encoding='utf-8') as out:
+    for idx, line in enumerate(f, 1):
+        if "btnDxf_Click" in line or "btnGerarPdf_Click" in line:
+            try:
+                obj = json.loads(line)
+                # Check tool_calls
+                tcs = obj.get("tool_calls", [])
+                if not tcs and "PLANNER_RESPONSE" in line:
+                    # Let's search inside the outer object too
+                    tcs = obj.get("tool_calls", [])
+                
+                for tc in tcs:
+                    args = tc.get("args", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except:
+                            pass
+                    if isinstance(args, dict):
+                        rep = args.get("ReplacementContent", "") or args.get("CodeContent", "")
+                        if "btnDxf_Click" in rep or "btnGerarPdf_Click" in rep:
+                            out.write(f"=== STEP {obj.get('step_index')} (Line {idx}) - {tc.get('name')} ===\n")
+                            out.write(rep)
+                            out.write("\n==================================================\n\n")
+            except Exception as e:
+                pass
+
+print("SUCCESS: Tool calls written to scratch/tool_calls.txt!")
+
+==================================================
+

@@ -364,15 +364,25 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             }
         }
 
+        const defaultItemPv = String(ordensProducao[0]?.C2_ITEMPV || ordensProducao[0]?.C2_ITEM || '01').trim().padStart(2, '0');
+        const fullOpNumber = opNumber ? `${opNumber}${defaultItemPv}001` : (ordensProducao[0] ? `${String(ordensProducao[0].C2_NUM).trim()}${defaultItemPv}001` : null);
+
         res.json({ 
             success: true, 
             message: 'O.P.(s) gerada(s) com sucesso.', 
-            op_number: opNumber, 
-            generated_ops: ordensProducao.map(op => ({
-                pedido: String(op.C2_PEDIDO).trim(),
-                item: String(op.C2_ITEMPV).trim(),
-                op_num: String(op.C2_NUM).trim()
-            })),
+            op_number: fullOpNumber, 
+            generated_ops: ordensProducao.map(op => {
+                const opBase = String(op.C2_NUM).trim();
+                const itemPv = String(op.C2_ITEMPV || op.C2_ITEM || '01').trim().padStart(2, '0');
+                const fullOp = `${opBase}${itemPv}001`;
+                return {
+                    pedido: String(op.C2_PEDIDO).trim(),
+                    item: String(op.C2_ITEMPV).trim(),
+                    op_base: opBase,
+                    op_num: fullOp,
+                    op_completa: fullOp
+                };
+            }),
             details: protheusResp 
         });
 

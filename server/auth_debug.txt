@@ -178,3 +178,153 @@ Error: read ECONNRESET
     at C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:297:9
     at processParams (C:\Users\adm\Desktop\MetalFisa Anty\server\node_modules\router\index.js:582:12)
 
+2026-08-19T19:15:22.705Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+
+2026-08-19T19:15:35.713Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+
+2026-08-19T19:15:41.632Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+
+2026-08-19T19:16:15.211Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+
+2026-08-19T19:16:16.176Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+
+2026-08-19T19:17:08.440Z | ERRO 500 LOGIN | {"login":"edson","senha":"10207597"} | User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+Error: User 'u494795077_Metalfisa' has exceeded the 'max_connections_per_hour' resource (current value: 500)
+    at PromisePool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\mysql2\lib\promise\pool.js:54:22)
+    at wrappedCall (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:71:34)
+    at pool.execute (C:\Users\lynx\Documents\MetalFisa Anty\server\services\mysqlService.js:83:59)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\routes\auth.js:26:33
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:295:15
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at router.handle (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:186:3)
+    at router (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:60:12)
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:297:9
+    at processParams (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:582:12)
+    at next (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:291:5)
+    at C:\Users\lynx\Documents\MetalFisa Anty\server\index.js:140:5
+    at Layer.handleRequest (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\lib\layer.js:152:17)
+    at trimPrefix (C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\router\index.js:342:13)
+

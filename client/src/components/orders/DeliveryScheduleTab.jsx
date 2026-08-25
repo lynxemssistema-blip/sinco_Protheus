@@ -5,6 +5,7 @@ import { useFilters } from '../../contexts/FilterContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import DocsModal from '../DocsModal';
+import BOMStructureModal from '../BOMStructureModal';
 import * as XLSX from 'xlsx';
 
 export default function DeliveryScheduleTab() {
@@ -26,6 +27,7 @@ export default function DeliveryScheduleTab() {
     // Docs Modal State
     const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState({ code: '', name: '' });
+    const [bomStructureTarget, setBomStructureTarget] = useState(null);
 
     // Date navigation state: start date of our window
     const [startDate, setStartDate] = useState(() => {
@@ -187,47 +189,108 @@ export default function DeliveryScheduleTab() {
         fetchScheduleData();
     }, [fetchScheduleData]);
 
-    // Group items by Pedido + Produto (codigo)
+    // Group items by Pedido + Item + OP (uma linha por OP / Item), unpacking fractional forecasts per date
     const groupedRows = React.useMemo(() => {
         const map = {};
         items.forEach(item => {
             const ped = item.pedido || '';
             const prod = item.codigo || '';
             const desc = item.descricao || '';
-            const key = `${ped}-${prod}`;
+            const itemNum = String(item.item || '01').trim();
 
-            if (!map[key]) {
-                map[key] = {
-                    pedido: ped,
-                    codigo: prod,
-                    descricao: desc,
-                    cliente: item.nome_cliente || '',
-                    totalOpQtd: 0,
-                    totalSaldoProd: 0,
-                    opNumbers: new Set(),
-                    deliveries: {} // dateKey -> array of items
-                };
-            }
-
-            // Sum OP metrics
-            if (item.op_num || item.op_protheus) {
-                const opNum = (item.op_num || item.op_protheus).trim();
-                if (opNum && opNum !== '-') {
-                    map[key].opNumbers.add(opNum);
-                    map[key].totalOpQtd += parseFloat(item.op_qtd || 0);
-                    map[key].totalSaldoProd += parseFloat(item.saldo_produzido || 0);
+            // Extrai e formata o número da OP
+            const rawOp = item.visual_op || item.op_num_completa || item.op_num || item.op_protheus;
+            let opNum = '';
+            if (rawOp) {
+                let s = String(rawOp).trim();
+                if (s && s !== '-') {
+                    if (s.length === 11 && /^\d+$/.test(s)) {
+                        opNum = s.substring(0, 8);
+                    } else if (s.length === 6 && item.item) {
+                        opNum = `${s}${String(item.item).trim().padStart(2, '0')}`;
+                    } else {
+                        opNum = s;
+                    }
                 }
             }
 
-            // Pivot date choice: Data PCP or Entrega
-            const targetDate = normalizeDate(item.data_pcp || item.pcp_delivery_forecast_date || item.entrega);
-            if (targetDate) {
-                const qtd = parseFloat(item.saldo_fat || item.qtd_faturar || item.qtd || 0);
-                if (qtd > 0) {
-                    if (!map[key].deliveries[targetDate]) {
-                        map[key].deliveries[targetDate] = [];
+            // Chave única: Pedido + Item + OP (uma linha por OP)
+            const key = `${ped}-${itemNum}-${opNum || prod}`;
+
+            if (!map[key]) {
+                const opQtd = parseFloat(item.op_qtd || item.qtd || 0);
+                const saldoProd = parseFloat(item.saldo_produzido || 0);
+
+                map[key] = {
+                    key: key,
+                    pedido: ped,
+                    item: itemNum,
+                    codigo: prod,
+                    descricao: desc,
+                    cliente: item.nome_cliente || '',
+                    op: opNum,
+                    opQtd: opQtd,
+                    saldoProd: saldoProd,
+                    itemsList: [],
+                    deliveries: {} // dateKey -> array of delivery entries
+                };
+            }
+            map[key].itemsList.push(item);
+
+            // Check if item has pcp_programacoes (multiple forecasts/fractions)
+            const programs = Array.isArray(item.pcp_programacoes) && item.pcp_programacoes.length > 0 
+                ? item.pcp_programacoes 
+                : null;
+
+            if (programs && programs.length > 0) {
+                // Multiple or explicit PCP forecast records (fractions)
+                programs.forEach((prog, progIdx) => {
+                    const targetDate = normalizeDate(prog.data_entrega_pcp || item.data_pcp || item.entrega);
+                    const qtd = parseFloat(prog.quantidade_pcp || item.saldo_fat || item.qtd_faturar || item.qtd || 0);
+                    if (targetDate && qtd > 0) {
+                        if (!map[key].deliveries[targetDate]) {
+                            map[key].deliveries[targetDate] = [];
+                        }
+                        // Determine fraction letter / OP
+                        let fractionOp = prog.op_protheus || opNum || '';
+                        if (fractionOp && fractionOp.length === 11 && /^\d+$/.test(fractionOp)) {
+                            fractionOp = fractionOp.substring(0, 8);
+                        } else if (fractionOp && fractionOp.length === 6 && item.item) {
+                            fractionOp = `${fractionOp}${String(item.item).trim().padStart(2, '0')}`;
+                        }
+
+                        const loteTag = prog.numero_lote || prog.lote || (programs.length > 1 ? `Fração #${progIdx + 1}` : null);
+
+                        map[key].deliveries[targetDate].push({
+                            ...item,
+                            forecast_id: prog.id,
+                            is_fraction: programs.length > 1 || !!prog.numero_lote,
+                            lote: loteTag,
+                            fraction_op: fractionOp || opNum,
+                            qtd_fracao: qtd,
+                            targetDate: targetDate
+                        });
                     }
-                    map[key].deliveries[targetDate].push(item);
+                });
+            } else {
+                // Single standard item
+                const targetDate = normalizeDate(item.data_pcp || item.pcp_delivery_forecast_date || item.entrega);
+                if (targetDate) {
+                    const qtd = parseFloat(item.saldo_fat || item.qtd_faturar || item.qtd || 0);
+                    if (qtd > 0) {
+                        if (!map[key].deliveries[targetDate]) {
+                            map[key].deliveries[targetDate] = [];
+                        }
+                        map[key].deliveries[targetDate].push({
+                            ...item,
+                            forecast_id: null,
+                            is_fraction: false,
+                            lote: item.numero_lote || null,
+                            fraction_op: opNum,
+                            qtd_fracao: qtd,
+                            targetDate: targetDate
+                        });
+                    }
                 }
             }
         });
@@ -236,12 +299,16 @@ export default function DeliveryScheduleTab() {
     }, [items]);
 
     // Drag & Drop Handlers
-    const handleDragStart = (e, item, fromDate) => {
+    const handleDragStart = (e, delivItem, fromDate) => {
         e.dataTransfer.setData('application/json', JSON.stringify({
-            pedido: item.pedido,
-            item: item.item,
-            codigo: item.codigo,
-            qtd: item.saldo_fat || item.qtd_faturar || item.qtd,
+            pedido: delivItem.pedido,
+            item: delivItem.item,
+            codigo: delivItem.codigo,
+            qtd: delivItem.qtd_fracao || delivItem.saldo_fat || delivItem.qtd_faturar || delivItem.qtd,
+            forecast_id: delivItem.forecast_id,
+            is_fraction: delivItem.is_fraction,
+            lote: delivItem.lote,
+            fraction_op: delivItem.fraction_op,
             fromDate: fromDate
         }));
     };
@@ -254,7 +321,7 @@ export default function DeliveryScheduleTab() {
         e.preventDefault();
         try {
             const data = JSON.parse(e.dataTransfer.getData('application/json'));
-            const { pedido, item, fromDate, qtd } = data;
+            const { pedido, item, fromDate, qtd, forecast_id } = data;
             
             if (fromDate === toDate) return;
 
@@ -263,14 +330,30 @@ export default function DeliveryScheduleTab() {
             // Optimistic Local State Update (moves the item immediately)
             setItems(prev => prev.map(itemObj => {
                 if (itemObj.pedido === pedido && itemObj.item === item) {
+                    if (forecast_id && Array.isArray(itemObj.pcp_programacoes)) {
+                        const updatedProgs = itemObj.pcp_programacoes.map(p => {
+                            if (p.id === forecast_id) {
+                                return { ...p, data_entrega_pcp: toDate };
+                            }
+                            return p;
+                        });
+                        return { ...itemObj, pcp_programacoes: updatedProgs, data_pcp: toDate };
+                    }
                     return { ...itemObj, data_pcp: toDate };
                 }
                 return itemObj;
             }));
 
             // Sync with backend asynchronously
-            api.get(`/pedidos/items/${pedido}/${item}/pcp-forecasts/history`)
-                .then(async (historyRes) => {
+            try {
+                if (forecast_id) {
+                    await api.put(`/pedidos/pcp-forecasts/${forecast_id}`, {
+                        data_entrega_pcp: toDate,
+                        quantidade_pcp: qtd,
+                        usuario: user?.nome || user?.name || user?.login || 'Usuário'
+                    });
+                } else {
+                    const historyRes = await api.get(`/pedidos/items/${pedido}/${item}/pcp-forecasts/history`);
                     const history = historyRes.data || [];
                     const existing = history.find(h => normalizeDate(h.data_entrega_pcp) === fromDate);
 
@@ -290,20 +373,17 @@ export default function DeliveryScheduleTab() {
                             usuario: user?.nome || user?.name || user?.login || 'Usuário'
                         });
                     }
-                    toast.success(`Data de entrega do item ${item} atualizada!`);
-                    // Silent background fetch to ensure state integrity
-                    fetchScheduleData(true);
-                })
-                .catch(err => {
-                    console.error('Erro ao sincronizar drag & drop com servidor:', err);
-                    const errMsg = err.response?.data?.error || err.message || 'Erro.';
-                    toast.error('Erro ao salvar no servidor: ' + errMsg);
-                    // Rollback local change on error
-                    fetchScheduleData(true);
-                })
-                .finally(() => {
-                    setSavingBackground(false);
-                });
+                }
+                toast.success(`Data de entrega ${item ? `do item ${item}` : ''} atualizada!`);
+                fetchScheduleData(true);
+            } catch (err) {
+                console.error('Erro ao sincronizar drag & drop com servidor:', err);
+                const errMsg = err.response?.data?.error || err.message || 'Erro.';
+                toast.error('Erro ao salvar no servidor: ' + errMsg);
+                fetchScheduleData(true);
+            } finally {
+                setSavingBackground(false);
+            }
 
         } catch (err) {
             console.error('Erro ao mover entrega localmente:', err);
@@ -335,15 +415,16 @@ export default function DeliveryScheduleTab() {
             // Prepare headers
             const headers = [
                 'Pedido',
+                'Item',
                 'Cliente',
                 'Código Produto',
                 'Descrição Produto',
-                'OPs',
+                'OP',
                 'Qtd Total OP',
                 'Total Saldo Prod'
             ];
             
-            // Add the 14 days to the header
+            // Add the days to the header
             days.forEach(day => {
                 const dayName = day.weekday.replace('.', '');
                 headers.push(`${dayName} - ${day.label}`);
@@ -353,18 +434,19 @@ export default function DeliveryScheduleTab() {
             const sheetRows = groupedRows.map(row => {
                 const rowData = {
                     'Pedido': row.pedido,
+                    'Item': row.item,
                     'Cliente': row.cliente,
                     'Código Produto': row.codigo,
                     'Descrição Produto': row.descricao,
-                    'OPs': Array.from(row.opNumbers).join(', ') || '-',
-                    'Qtd Total OP': row.totalOpQtd || 0,
-                    'Total Saldo Prod': row.totalSaldoProd || 0
+                    'OP': row.op || '-',
+                    'Qtd Total OP': row.opQtd || 0,
+                    'Total Saldo Prod': row.saldoProd || 0
                 };
 
                 days.forEach(day => {
                     const dayItems = row.deliveries[day.key] || [];
                     const qty = dayItems.reduce((acc, item) => {
-                        return acc + parseFloat(item.saldo_fat || item.qtd_faturar || item.qtd || 0);
+                        return acc + parseFloat(item.qtd_fracao || item.saldo_fat || item.qtd_faturar || item.qtd || 0);
                     }, 0);
                     const dayName = day.weekday.replace('.', '');
                     rowData[`${dayName} - ${day.label}`] = qty || '';
@@ -379,116 +461,26 @@ export default function DeliveryScheduleTab() {
             // Setup column widths
             const colWidths = [
                 { wch: 12 }, // Pedido
+                { wch: 8 },  // Item
                 { wch: 30 }, // Cliente
                 { wch: 18 }, // Código Produto
                 { wch: 35 }, // Descrição Produto
-                { wch: 20 }, // OPs
+                { wch: 16 }, // OP
                 { wch: 14 }, // Qtd Total OP
                 { wch: 16 }  // Total Saldo Prod
             ];
-            // 14 days columns widths
+            // Days columns widths
             days.forEach(() => {
                 colWidths.push({ wch: 15 });
             });
             ws['!cols'] = colWidths;
 
-            // Formatação/Estilos no padrão MetalFisa
-            const headerRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-            
-            // 1. Format Headers
-            for (let c = headerRange.s.c; c <= headerRange.e.c; c++) {
-                const cell = XLSX.utils.encode_cell({ r: 0, c });
-                if (!ws[cell]) continue;
-
-                // Corporate Navy/Steel Blue fill for general headers
-                let bgColor = '1E3A8A'; // Navy Blue default
-                let textColor = 'FFFFFF';
-
-                // Check if it is a day column
-                if (c >= 7) {
-                    const dayIndex = c - 7;
-                    const day = days[dayIndex];
-                    const dayOfWeek = day.date.getDay();
-                    if (dayOfWeek === 0 || dayOfWeek === 6) {
-                        // Saturday / Sunday: Grayed out
-                        bgColor = 'E2E8F0'; // light gray
-                        textColor = '475569'; // dark gray/slate
-                    } else if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
-                        // Monday / Wednesday / Friday: Highlighted
-                        bgColor = 'FDE68A'; // Amber-200
-                        textColor = '92400E'; // Amber-800
-                    }
-                }
-
-                ws[cell].s = {
-                    font: { bold: true, color: { rgb: textColor }, size: 10, name: 'Calibri' },
-                    fill: { fgColor: { rgb: bgColor } },
-                    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-                    border: {
-                        top: { style: 'thin', color: { rgb: '94A3B8' } },
-                        bottom: { style: 'medium', color: { rgb: '1E3A8A' } },
-                        left: { style: 'thin', color: { rgb: '94A3B8' } },
-                        right: { style: 'thin', color: { rgb: '94A3B8' } }
-                    }
-                };
-            }
-
-            // 2. Format Body cells
-            for (let r = 1; r <= sheetRows.length; r++) {
-                for (let c = headerRange.s.c; c <= headerRange.e.c; c++) {
-                    const cell = XLSX.utils.encode_cell({ r, c });
-                    if (!ws[cell]) ws[cell] = { t: 's', v: '' };
-
-                    // Default body styles
-                    let bgColor = 'FFFFFF';
-                    let textColor = '000000';
-                    let hAlign = 'left';
-
-                    // Alignments
-                    if (c === 0 || c === 2 || c === 4) {
-                        hAlign = 'center'; // Pedido, Codigo, OPs
-                    } else if (c === 5 || c === 6 || c >= 7) {
-                        hAlign = 'right'; // Numbers
-                    }
-
-                    // Background color for weekend columns & highlight columns
-                    if (c >= 7) {
-                        const dayIndex = c - 7;
-                        const day = days[dayIndex];
-                        const dayOfWeek = day.date.getDay();
-                        if (dayOfWeek === 0 || dayOfWeek === 6) {
-                            bgColor = 'F1F5F9'; // slate-100 grayed out
-                            textColor = '94A3B8';
-                        } else if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
-                            bgColor = 'FEF3C7'; // Amber-100 highlight
-                        }
-                    }
-
-                    ws[cell].s = {
-                        font: { size: 10, name: 'Calibri', color: { rgb: textColor } },
-                        fill: { fgColor: { rgb: bgColor } },
-                        alignment: { horizontal: hAlign, vertical: 'center' },
-                        border: {
-                            bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
-                            right: { style: 'thin', color: { rgb: 'E2E8F0' } },
-                            left: { style: 'thin', color: { rgb: 'E2E8F0' } },
-                            top: { style: 'thin', color: { rgb: 'E2E8F0' } }
-                        }
-                    };
-
-                    // Apply number formatting to numeric fields
-                    if (c === 5 || c === 6 || (c >= 7 && typeof ws[cell].v === 'number')) {
-                        ws[cell].t = 'n';
-                        ws[cell].z = '#,##0';
-                    }
-                }
-            }
-
+            // Generate workbook and download
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Programação');
+            XLSX.utils.book_append_sheet(wb, ws, 'Programacao_Entregas');
 
             const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-            XLSX.writeFile(wb, `Programacao_Entregas_${dateStr}.xlsx`, { cellStyles: true });
+            XLSX.writeFile(wb, `Programacao_Entregas_${dateStr}.xlsx`);
             toast.success('Planilha exportada com sucesso!');
         } catch (error) {
             console.error('Erro ao exportar planilha:', error);
@@ -511,7 +503,7 @@ export default function DeliveryScheduleTab() {
                         Matriz de Programação de Entregas
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
-                        Exibindo saldos a faturar. Arraste as quantidades entre as colunas para atualizar as datas PCP de entrega!
+                        Exibindo saldos a faturar por OP. Arraste as quantidades entre as colunas para atualizar as datas PCP de entrega!
                     </p>
                 </div>
                 
@@ -619,7 +611,7 @@ export default function DeliveryScheduleTab() {
                                     Pedido
                                 </th>
                                 <th className="px-4 py-3 font-bold text-gray-700 w-64 uppercase tracking-wider sticky left-[112px] bg-gray-50 shadow-[2px_0_5px_0_rgba(0,0,0,0.04)] border-r border-gray-200">
-                                    Produto
+                                    Produto / OP
                                 </th>
                                 {days.map(day => {
                                     const isToday = day.key === todayKey;
@@ -671,11 +663,14 @@ export default function DeliveryScheduleTab() {
                         <tbody className="divide-y divide-gray-150 bg-white">
                             {groupedRows.map((row, rIdx) => (
                                 <tr key={rIdx} className="hover:bg-gray-50/50 transition-colors">
-                                    {/* Pedido */}
-                                    <td className="px-4 py-3 font-mono font-bold text-blue-600 sticky left-0 bg-white shadow-[2px_0_5px_0_rgba(0,0,0,0.02)]">
-                                        {row.pedido}
+                                    {/* Pedido & Item */}
+                                    <td className="px-4 py-3 sticky left-0 bg-white shadow-[2px_0_5px_0_rgba(0,0,0,0.02)]">
+                                        <div className="flex flex-col">
+                                            <span className="font-mono font-bold text-blue-600">{row.pedido}</span>
+                                            <span className="text-[10px] text-gray-400 font-mono">Item {row.item}</span>
+                                        </div>
                                     </td>
-                                    {/* Produto */}
+                                    {/* Produto, OP e Progresso Individual */}
                                     <td className="px-4 py-3 sticky left-[112px] bg-white shadow-[2px_0_5px_0_rgba(0,0,0,0.02)] border-r border-gray-200">
                                         <div className="flex flex-col">
                                             <span 
@@ -691,22 +686,37 @@ export default function DeliveryScheduleTab() {
                                             <span className="text-[10px] text-gray-400 truncate max-w-[220px]" title={row.descricao}>
                                                 {row.descricao}
                                             </span>
-                                            {/* OP and Evolution Progress Bar */}
-                                            {row.totalOpQtd > 0 && (
-                                                <div className="mt-1.5 flex items-center gap-1.5 min-w-[120px] max-w-[240px]">
-                                                    <span className="text-[9px] font-bold text-slate-400" title={`OPs: ${Array.from(row.opNumbers).join(', ')}`}>
-                                                        OP: {Array.from(row.opNumbers).map(o => String(o).trim().substring(0, 6)).join(', ')}
-                                                    </span>
-                                                    <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[50px] overflow-hidden">
+                                            {/* OP Única da Linha e Evolução Individual do Apontamento */}
+                                            {row.op ? (
+                                                <div className="mt-1.5 flex items-center gap-1.5 min-w-[130px] max-w-[240px]">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setBomStructureTarget({
+                                                                op: row.op,
+                                                                itemPv: row.item,
+                                                                pedido: row.pedido,
+                                                                produto: row.codigo
+                                                            });
+                                                        }}
+                                                        className="text-[9px] font-bold text-slate-700 hover:text-blue-700 hover:bg-blue-50 px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100/90 transition-colors focus:outline-none shadow-2xs whitespace-nowrap cursor-pointer"
+                                                        title={`Clique para ver a Estrutura da OP ${row.op}`}
+                                                    >
+                                                        OP: {row.op}
+                                                    </button>
+                                                    <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[55px] overflow-hidden">
                                                         <div 
-                                                            className={`h-1.5 rounded-full ${row.totalSaldoProd >= row.totalOpQtd ? 'bg-green-500' : row.totalSaldoProd > 0 ? 'bg-blue-500' : 'bg-gray-300'}`} 
-                                                            style={{ width: `${Math.min(100, (row.totalSaldoProd / row.totalOpQtd) * 100)}%` }}
+                                                            className={`h-1.5 rounded-full ${row.saldoProd >= row.opQtd && row.opQtd > 0 ? 'bg-green-500' : row.saldoProd > 0 ? 'bg-blue-500' : 'bg-gray-300'}`} 
+                                                            style={{ width: `${row.opQtd > 0 ? Math.min(100, (row.saldoProd / row.opQtd) * 100) : 0}%` }}
                                                         ></div>
                                                     </div>
-                                                    <span className="text-[9px] font-bold text-gray-500">
-                                                        {((row.totalSaldoProd / row.totalOpQtd) * 100).toFixed(0)}%
+                                                    <span className="text-[9px] font-bold text-gray-500 whitespace-nowrap">
+                                                        {row.opQtd > 0 ? `${((row.saldoProd / row.opQtd) * 100).toFixed(0)}%` : '0%'}
                                                     </span>
                                                 </div>
+                                            ) : (
+                                                <span className="text-[9px] text-gray-400 mt-1 italic">Sem OP gerada</span>
                                             )}
                                         </div>
                                     </td>
@@ -730,18 +740,45 @@ export default function DeliveryScheduleTab() {
                                                 onDrop={(e) => handleDrop(e, day.key)}
                                             >
                                                 {dayItems.length > 0 ? (
-                                                    <div className="flex flex-col gap-1 items-center">
-                                                        {dayItems.map((item, idx) => (
-                                                            <span 
-                                                                key={idx}
-                                                                draggable="true"
-                                                                onDragStart={(e) => handleDragStart(e, item, day.key)}
-                                                                className="inline-block px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-md font-bold text-xs shadow-sm cursor-move hover:bg-blue-100 transition-colors select-none"
-                                                                title={`Item ${item.item} - Clique e arraste para outro dia para atualizar a Data PCP`}
-                                                            >
-                                                                {parseFloat(item.saldo_fat || item.qtd_faturar || item.qtd || 0).toLocaleString('pt-BR')}
-                                                            </span>
-                                                        ))}
+                                                    <div className="flex flex-col gap-1.5 items-center">
+                                                        {dayItems.map((deliv, idx) => {
+                                                            const qtdNum = parseFloat(deliv.qtd_fracao || deliv.saldo_fat || deliv.qtd_faturar || deliv.qtd || 0);
+                                                            const isFrac = !!deliv.is_fraction;
+                                                            const opDisplay = deliv.fraction_op || deliv.op_protheus || deliv.visual_op || '';
+                                                            const loteDisplay = deliv.lote || (isFrac ? `Fração #${idx + 1}` : null);
+                                                            
+                                                            // Tooltip rico detalhado
+                                                            const tooltipLines = [
+                                                                isFrac ? `📦 Lote / Fração: ${loteDisplay}` : `📦 Item do Pedido`,
+                                                                opDisplay ? `🏷️ OP: ${opDisplay}` : null,
+                                                                `📊 Quantidade no Lote: ${qtdNum.toLocaleString('pt-BR')} UN`,
+                                                                `🛒 Pedido: ${deliv.pedido} (Item ${deliv.item})`,
+                                                                `💡 Clique e arraste para reagendar este lote`
+                                                            ].filter(Boolean).join('\n');
+
+                                                            return (
+                                                                <div
+                                                                    key={idx}
+                                                                    draggable="true"
+                                                                    onDragStart={(e) => handleDragStart(e, deliv, day.key)}
+                                                                    className={`group relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold shadow-sm cursor-move select-none transition-all duration-150 ${
+                                                                        isFrac
+                                                                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 ring-1 ring-amber-200/50'
+                                                                            : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                                                                    }`}
+                                                                    title={tooltipLines}
+                                                                >
+                                                                    {isFrac && loteDisplay && (
+                                                                        <span className="text-[9px] font-black uppercase px-1 py-0.2 bg-amber-200 text-amber-950 rounded tracking-tighter shadow-xs">
+                                                                            {String(loteDisplay).replace(/^Fração\s*/i, '').substring(0, 4)}
+                                                                        </span>
+                                                                    )}
+                                                                    <span>
+                                                                        {qtdNum.toLocaleString('pt-BR')}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-300">-</span>
@@ -764,6 +801,17 @@ export default function DeliveryScheduleTab() {
                 productName={selectedProduct.name}
                 canEdit={true}
             />
+
+            {/* Modal de Estrutura da OP */}
+            {bomStructureTarget && (
+                <BOMStructureModal
+                    opNum={bomStructureTarget.op}
+                    itemPv={bomStructureTarget.itemPv}
+                    pedido={bomStructureTarget.pedido}
+                    produto={bomStructureTarget.produto}
+                    onClose={() => setBomStructureTarget(null)}
+                />
+            )}
         </div>
     );
 }

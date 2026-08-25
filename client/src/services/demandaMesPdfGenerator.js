@@ -25,6 +25,8 @@ export const generateDemandaMesPdf = ({
         else if (filterStatus === 'SOBRA_SALDO') subtitleText = 'RELATÓRIO DE ITENS COM SALDO EXCEDENTE (SOBRA)';
         else if (filterStatus === 'FALTA_SALDO') subtitleText = 'RELATÓRIO DE ITENS COM SALDO INSUFICIENTE';
         else if (filterStatus === 'FORA_PLANILHA') subtitleText = 'RELATÓRIO DE ITENS EM CARTEIRA FORA DA PLANILHA';
+        else if (filterStatus === 'COM_FATURAMENTO') subtitleText = 'RELATÓRIO DE ITENS COM HISTÓRICO DE FATURAMENTO';
+        else if (filterStatus === 'FATURADO_TOTAL') subtitleText = 'RELATÓRIO DE ITENS 100% FATURADOS (ENTREGUES)';
 
         if (filterMonth !== 'ALL') {
             subtitleText += ` - FILTRO: ${filterMonth}`;
@@ -38,7 +40,7 @@ export const generateDemandaMesPdf = ({
             doc.rect(ML, hY, usableW, hH);
 
             const col1 = ML + 48;
-            const col2 = ML + 140;
+            const col2 = ML + 130;
             const col3 = ML + 195;
             doc.setLineWidth(0.2);
             [col1, col2, col3].forEach(x => doc.line(x, hY, x, hY + hH));
@@ -65,21 +67,21 @@ export const generateDemandaMesPdf = ({
             doc.text(`Módulo VMI / PCP Protheus · Planilha: ${sheetName}`, col1 + 3, hY + 13);
 
             // 3. Emissão e Resumo
-            doc.setFontSize(6.5);
+            doc.setFontSize(6);
             doc.setFont('helvetica', 'bold');
-            doc.text('EMISSÃO:', col2 + 3, hY + 5);
+            doc.text('EMISSÃO:', col2 + 2, hY + 4.5);
             doc.setFont('helvetica', 'normal');
-            doc.text(new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), col2 + 18, hY + 5);
+            doc.text(new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), col2 + 18, hY + 4.5);
             
             doc.setFont('helvetica', 'bold');
-            doc.text('ITENS:', col2 + 3, hY + 9.5);
+            doc.text('ITENS / FAT.:', col2 + 2, hY + 8.5);
             doc.setFont('helvetica', 'normal');
-            doc.text(`${items.length} itens listados`, col2 + 18, hY + 9.5);
+            doc.text(`${items.length} itens · Fat: ${(totais.totalFaturadoGeral || 0).toLocaleString('pt-BR')} un`, col2 + 18, hY + 8.5);
 
             doc.setFont('helvetica', 'bold');
-            doc.text('SALDO GERAL:', col2 + 3, hY + 14);
+            doc.text('SALDO GERAL:', col2 + 2, hY + 13);
             doc.setFont('helvetica', 'normal');
-            doc.text(`${(totais.totalSaldoGeral || 0).toLocaleString('pt-BR')} un`, col2 + 25, hY + 14);
+            doc.text(`${(totais.totalSaldoGeral || 0).toLocaleString('pt-BR')} un`, col2 + 22, hY + 13);
 
             // 4. Bloco de Título
             doc.setFontSize(8.5);
@@ -102,6 +104,7 @@ export const generateDemandaMesPdf = ({
             'Status',
             ...mesesDemanda.map(m => `Dem. ${m}`),
             'Tot. Demanda',
+            'Qtd Faturada',
             'Saldo Faturar',
             'Previsões PCP (SINCO)'
         ];
@@ -110,15 +113,20 @@ export const generateDemandaMesPdf = ({
         const tableRows = items.map(item => {
             const pcpSummary = Object.entries(item.pcp_por_mes || {})
                 .map(([mes, qtd]) => `${mes}: ${qtd}`)
-                .join(' | ') || (item.possui_saldo ? 'Sem Data Definida' : '-');
+                .join(' | ') || (item.possui_saldo ? 'Sem Data Definida' : (item.totalmente_faturado ? '100% Faturado' : '-'));
+
+            let statusLabel = 'SEM SALDO';
+            if (item.possui_saldo) statusLabel = 'COM SALDO';
+            if (item.totalmente_faturado) statusLabel = 'FATURADO';
 
             const row = [
                 item.ref_cliente || '-',
                 item.codigo_metalfisa || '-',
                 item.descricao || '-',
-                item.possui_saldo ? 'COM SALDO' : 'SEM SALDO',
+                statusLabel,
                 ...mesesDemanda.map(m => (item.demandas && item.demandas[m] ? Number(item.demandas[m]).toLocaleString('pt-BR') : '-')),
                 Number(item.total_demanda || 0).toLocaleString('pt-BR'),
+                Number(item.total_faturado || 0).toLocaleString('pt-BR'),
                 Number(item.total_saldo_faturar || 0).toLocaleString('pt-BR'),
                 pcpSummary
             ];
@@ -127,25 +135,27 @@ export const generateDemandaMesPdf = ({
 
         // Configuração de Estilo das Colunas
         const colStyles = {
-            0: { halign: 'left', cellWidth: 26, fontStyle: 'bold' },
-            1: { halign: 'left', cellWidth: 26 },
+            0: { halign: 'left', cellWidth: 24, fontStyle: 'bold' },
+            1: { halign: 'left', cellWidth: 24 },
             2: { halign: 'left' }, // auto width
-            3: { halign: 'center', cellWidth: 20 },
+            3: { halign: 'center', cellWidth: 18 },
             // Colunas de meses (alinhadas à direita)
         };
 
         const startMonthIdx = 4;
         mesesDemanda.forEach((_, idx) => {
-            colStyles[startMonthIdx + idx] = { halign: 'right', cellWidth: 16 };
+            colStyles[startMonthIdx + idx] = { halign: 'right', cellWidth: 14 };
         });
 
         const totalDemandaIdx = startMonthIdx + mesesDemanda.length;
-        const saldoFaturarIdx = totalDemandaIdx + 1;
+        const qtdFaturadaIdx = totalDemandaIdx + 1;
+        const saldoFaturarIdx = qtdFaturadaIdx + 1;
         const pcpPrevisoesIdx = saldoFaturarIdx + 1;
 
-        colStyles[totalDemandaIdx] = { halign: 'right', cellWidth: 20, fontStyle: 'bold' };
-        colStyles[saldoFaturarIdx] = { halign: 'right', cellWidth: 20, fontStyle: 'bold' };
-        colStyles[pcpPrevisoesIdx] = { halign: 'left', cellWidth: 40 };
+        colStyles[totalDemandaIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
+        colStyles[qtdFaturadaIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
+        colStyles[saldoFaturarIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
+        colStyles[pcpPrevisoesIdx] = { halign: 'left', cellWidth: 36 };
 
         autoTable(doc, {
             head: [tableColumns],
@@ -172,15 +182,22 @@ export const generateDemandaMesPdf = ({
             columnStyles: colStyles,
             didParseCell: (data) => {
                 if (data.section === 'body') {
-                    // Coluna de Status (verde ou âmbar)
+                    // Coluna de Status (verde ou âmbar ou azul)
                     if (data.column.index === 3) {
                         if (data.cell.raw === 'COM SALDO') {
                             data.cell.styles.textColor = [16, 122, 68];
+                            data.cell.styles.fontStyle = 'bold';
+                        } else if (data.cell.raw === 'FATURADO') {
+                            data.cell.styles.textColor = [2, 132, 199];
                             data.cell.styles.fontStyle = 'bold';
                         } else {
                             data.cell.styles.textColor = [180, 83, 9];
                             data.cell.styles.fontStyle = 'bold';
                         }
+                    }
+                    // Destaque Qtd Faturada
+                    if (data.column.index === qtdFaturadaIdx) {
+                        data.cell.styles.textColor = [2, 132, 199];
                     }
                     // Destaque Saldo a Faturar
                     if (data.column.index === saldoFaturarIdx) {
@@ -206,6 +223,8 @@ export const generateDemandaMesPdf = ({
         if (filterStatus === 'SOBRA_SALDO') fileNameFilter = 'SALDO_EXCEDENTE';
         if (filterStatus === 'FALTA_SALDO') fileNameFilter = 'SALDO_INSUFICIENTE';
         if (filterStatus === 'FORA_PLANILHA') fileNameFilter = 'FORA_PLANILHA';
+        if (filterStatus === 'COM_FATURAMENTO') fileNameFilter = 'COM_FATURAMENTO';
+        if (filterStatus === 'FATURADO_TOTAL') fileNameFilter = 'FATURADO_TOTAL';
 
         const safeDate = new Date().toISOString().slice(0, 10);
         doc.save(`Demanda_Mes_${fileNameFilter}_${safeDate}.pdf`);

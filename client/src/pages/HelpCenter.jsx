@@ -4,11 +4,12 @@ import {
     Search, HelpCircle, ChevronRight, BookOpen, ShoppingCart, Factory,
     Package, Settings, Truck, FileText, BarChart, Calendar, Database,
     ShieldCheck, Lightbulb, Zap, ArrowRight, Home, List, Grid,
-    CheckSquare, TrendingUp, Bell, User, Layers, ClipboardCheck, Lock
+    CheckSquare, TrendingUp, Bell, User, Layers, ClipboardCheck, Lock, GraduationCap
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 import { useAuth } from '../contexts/AuthContext';
 import RelatorioEntrega from './RelatorioEntrega';
+import TrainingPlanTab from '../components/TrainingPlanTab';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_MAP = {
@@ -142,6 +143,8 @@ export default function HelpCenter() {
                             <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-none mb-2">
                                 {activeMainTab === 'entrega' ? (
                                     <>Entrega para <span className="text-emerald-400">Produção</span></>
+                                ) : activeMainTab === 'treinamento' ? (
+                                    <>Plano de <span className="text-blue-400">Treinamento</span></>
                                 ) : (
                                     <>Documentação <span className="text-blue-400">Completa</span></>
                                 )}
@@ -149,29 +152,45 @@ export default function HelpCenter() {
                             <p className="text-slate-400 text-base max-w-lg">
                                 {activeMainTab === 'entrega'
                                     ? 'Relatório técnico oficial de entrega do sistema MetalFisa ERP em produção.'
+                                    : activeMainTab === 'treinamento'
+                                    ? 'Capacitação prática por trilhas de função, fichas passo a passo e matriz de avaliação operacional.'
                                     : `${allModules.length} módulos documentados. Clique em qualquer módulo para ver o guia detalhado de uso.`
                                 }
                             </p>
                         </div>
 
-                        {/* Right side: search (docs) or nothing (entrega) */}
+                        {/* Right side: switcher & search */}
                         <div className="flex flex-col gap-3 items-end">
 
-                            {/* ── Main Tab Switcher (admin-only) ── */}
-                            {isAdmin && (
-                                <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1 ring-1 ring-white/10">
-                                    <button
-                                        id="help-tab-docs"
-                                        onClick={() => setActiveMainTab('docs')}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                                            activeMainTab === 'docs'
-                                                ? 'bg-white text-slate-900 shadow-sm'
-                                                : 'text-slate-300 hover:text-white hover:bg-white/10'
-                                        }`}
-                                    >
-                                        <BookOpen className="h-3.5 w-3.5" />
-                                        Documentação
-                                    </button>
+                            {/* ── Main Tab Switcher ── */}
+                            <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1 ring-1 ring-white/10">
+                                <button
+                                    id="help-tab-docs"
+                                    onClick={() => setActiveMainTab('docs')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                        activeMainTab === 'docs'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    <BookOpen className="h-3.5 w-3.5" />
+                                    Documentação
+                                </button>
+                                
+                                <button
+                                    id="help-tab-treinamento"
+                                    onClick={() => setActiveMainTab('treinamento')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                        activeMainTab === 'treinamento'
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    <GraduationCap className="h-4 w-4 text-blue-300" />
+                                    Plano de Treinamento
+                                </button>
+
+                                {isAdmin && (
                                     <button
                                         id="help-tab-entrega"
                                         onClick={() => setActiveMainTab('entrega')}
@@ -189,8 +208,8 @@ export default function HelpCenter() {
                                             </span>
                                         )}
                                     </button>
-                                </div>
-                            )}
+                                )}
+                            </div>
 
                             {/* Search — only visible on docs tab */}
                             {activeMainTab === 'docs' && (
@@ -215,6 +234,13 @@ export default function HelpCenter() {
                     </div>
                 </div>
             </div>
+
+            {/* ── TREINAMENTO TAB ── */}
+            {activeMainTab === 'treinamento' && (
+                <div className="max-w-7xl mx-auto px-6 py-8">
+                    <TrainingPlanTab />
+                </div>
+            )}
 
             {/* ── ENTREGA PARA PRODUÇÃO TAB (admin-only) ── */}
             {activeMainTab === 'entrega' && isAdmin && (

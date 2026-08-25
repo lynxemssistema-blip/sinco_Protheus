@@ -1464,6 +1464,54 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE TIPO DE STATUS ---
 
+            // --- INÍCIO BUSCA DE DOCUMENTOS (app_produto_docs) ---
+            try {
+                const productCodes = [...new Set(result.rows.map(r => (r.codigo || '').trim()).filter(Boolean))];
+                if (productCodes.length > 0) {
+                    const qPlaceholdersDocs = productCodes.map(() => '?').join(',');
+                    const [docsRows] = await mysqlPool.query(
+                        `SELECT id, produto_codigo, tipo, url_arquivo, titulo, created_at
+                         FROM app_produto_docs
+                         WHERE produto_codigo IN (${qPlaceholdersDocs})
+                         ORDER BY created_at DESC`,
+                        productCodes
+                    );
+                    const docsMap = {};
+                    docsRows.forEach(doc => {
+                        const c = String(doc.produto_codigo).trim();
+                        if (!docsMap[c]) docsMap[c] = [];
+                        docsMap[c].push(doc);
+                    });
+                    result.rows.forEach(r => {
+                        const prodKey = String(r.codigo || '').trim();
+                        const docs = docsMap[prodKey] || [];
+                        r.has_docs = docs.length > 0;
+                        r.docs_count = docs.length;
+                        r.first_doc = docs.length === 1 ? docs[0].url_arquivo : null;
+                        r.has_drawing = docs.some(d => String(d.tipo || '').trim().toUpperCase() === 'DESENHO');
+                        r.drawing_url = r.has_drawing ? docs.find(d => String(d.tipo || '').trim().toUpperCase() === 'DESENHO').url_arquivo : (docs.length > 0 ? docs[0].url_arquivo : null);
+                    });
+                } else {
+                    result.rows.forEach(r => {
+                        r.has_docs = false;
+                        r.docs_count = 0;
+                        r.first_doc = null;
+                        r.has_drawing = false;
+                        r.drawing_url = null;
+                    });
+                }
+            } catch (err) {
+                console.error('[DOCS FETCH ERROR in flat]', err);
+                result.rows.forEach(r => {
+                    r.has_docs = false;
+                    r.docs_count = 0;
+                    r.first_doc = null;
+                    r.has_drawing = false;
+                    r.drawing_url = null;
+                });
+            }
+            // --- FIM BUSCA DE DOCUMENTOS ---
+
             // --- INÍCIO BUSCA DE CLASSIFICAÇÃO (JITS/PPAP) ---
             try {
                 if (uniquePedidos.length > 0) {
@@ -1591,38 +1639,55 @@ router.get('/flat', async (req, res) => {
             } catch (err) {
                 console.error('[ENGINEERING NOTES FETCH ERROR]', err);
             }
-            // --- INÍCIO MERGE DE PREVISÃO PCP (app_pcp_delivery_forecasts) ---
-            result.rows.forEach(r => {
-                const pedKey = String(r.pedido).trim();
-                const itemKey = String(r.item).trim();
-                const opClean = r.op_num ? String(r.op_num).trim() : '';
-                const opFull = r.op_num_completa ? String(r.op_num_completa).trim() : '';
+            // --- INÍCIO MERGE DE PREVISÃO / FRAÇÕES PCP (app_pcp_delivery_forecasts) ---
+            try {
+                if (uniquePedidos.length > 0) {
+                    const placeholders = uniquePedidos.map(() => '?').join(',');
+                    const [allForecastRows] = await mysqlPool.query(
+                        `SELECT id, pedido, item, data_entrega_pcp, data_prevista_faturamento, quantidade_pcp, observacao, lote, numero_lote, op_protheus, numero_serie, serie_cliente, serie_metalfisa, lpf_codigo, usuario
+                         FROM app_pcp_delivery_forecasts
+                         WHERE TRIM(pedido) IN (${placeholders})
+                         ORDER BY id ASC`,
+                        uniquePedidos
+                    );
 
-                // Priority 1: Match by Pedido + Item + Full OP
-                let fc = null;
-                if (opFull) {
-                    fc = forecastMap.get(`${pedKey}|${itemKey}|${opFull}`);
-                }
-                // Priority 2: Match by Pedido + Item + OP 6/8 prefix
-                if (!fc && opClean) {
-                    fc = forecastMap.get(`${pedKey}|${itemKey}|${opClean}`);
-                }
-                // Priority 3: Match by Pedido + Item
-                if (!fc) {
-                    fc = forecastMap.get(`${pedKey}|${itemKey}`);
-                }
+                    const forecastsByItem = new Map();
+                    for (const fc of allForecastRows) {
+                        const k = `${String(fc.pedido).trim()}|${String(fc.item).trim()}`;
+                        if (!forecastsByItem.has(k)) forecastsByItem.set(k, []);
+                        forecastsByItem.get(k).push(fc);
+                    }
 
-                if (fc) {
-                    r.data_entrega_pcp = fc.data_entrega_pcp;
-                    r.pcp_delivery_forecast_date = fc.data_entrega_pcp;
-                    r.pcp_delivery_forecast_qtd = fc.quantidade_pcp;
-                    r.data_prevista_faturamento = fc.data_prevista_faturamento;
+                    result.rows.forEach(r => {
+                        const pedKey = String(r.pedido).trim();
+                        const itemKey = String(r.item).trim();
+                        const itemForecasts = forecastsByItem.get(`${pedKey}|${itemKey}`) || [];
+
+                        r.pcp_programacoes = itemForecasts;
+
+                        if (itemForecasts.length > 0) {
+                            const first = itemForecasts[0];
+                            r.data_entrega_pcp = first.data_entrega_pcp;
+                            r.pcp_delivery_forecast_date = first.data_entrega_pcp;
+                            r.pcp_delivery_forecast_qtd = first.quantidade_pcp;
+                            r.data_prevista_faturamento = first.data_prevista_faturamento;
+                        } else {
+                            r.data_entrega_pcp = r.data_entrega_pcp || null;
+                            r.pcp_delivery_forecast_date = r.data_entrega_pcp || null;
+                            r.pcp_delivery_forecast_qtd = null;
+                        }
+                    });
                 } else {
-                    r.data_entrega_pcp = r.data_entrega_pcp || null;
-                    r.pcp_delivery_forecast_date = r.data_entrega_pcp || null;
-                    r.pcp_delivery_forecast_qtd = null;
+                    result.rows.forEach(r => {
+                        r.pcp_programacoes = [];
+                    });
                 }
-            });
+            } catch (err) {
+                console.error('[FORECAST/FRACTIONS FETCH ERROR in flat]', err);
+                result.rows.forEach(r => {
+                    r.pcp_programacoes = [];
+                });
+            }
             // --- FIM MERGE DE PREVISÃO PCP ---
 
             const finalRows = result.rows.map(decodeMemosInRow);
@@ -3071,14 +3136,21 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                     const opClean = String(it.op_protheus).trim();
                     if (opClean && opClean !== '-' && opClean !== '') {
                         const [opCheck] = await connection.query(
-                            "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? AND TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1",
-                            [opClean, String(it.pedido).trim(), String(it.item).trim()]
+                            "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
+                            [opClean]
                         );
                         if (opCheck.length > 0) {
                             const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
                             const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
-                            if (existingDate !== newDate && !req.body.sobrescrever_existente) {
-                                throw new Error(`A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.`);
+                            if (existingDate !== newDate) {
+                                if (!req.body.sobrescrever_existente) {
+                                    throw new Error(`A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')}. A mesma OP não pode ter mais de uma data PCP.`);
+                                } else {
+                                    await connection.query(
+                                        "UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ? WHERE TRIM(op_protheus) = ?",
+                                        [data_entrega_pcp, opClean]
+                                    );
+                                }
                             }
                         }
                     }
@@ -3149,14 +3221,21 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             const opClean = String(req.body.op_protheus).trim();
             if (opClean && opClean !== '-' && opClean !== '') {
                 const [opCheck] = await mysqlPool.query(
-                    "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? AND TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1",
-                    [opClean, String(pedido).trim(), String(item).trim()]
+                    "SELECT data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1",
+                    [opClean]
                 );
                 if (opCheck.length > 0) {
                     const existingDate = new Date(opCheck[0].data_entrega_pcp).toISOString().split('T')[0];
                     const newDate = new Date(data_entrega_pcp).toISOString().split('T')[0];
-                    if (existingDate !== newDate && !req.body.sobrescrever_existente) {
-                        return res.status(400).json({ error: `A OP ${opClean} já está vinculada à data de entrega ${existingDate.split('-').reverse().join('/')} e não pode ter outra data.` });
+                    if (existingDate !== newDate) {
+                        if (!req.body.sobrescrever_existente) {
+                            return res.status(400).json({ error: `A OP ${opClean} já possui a data de entrega ${existingDate.split('-').reverse().join('/')}. A mesma OP não pode ter mais de uma data PCP.` });
+                        } else {
+                            await mysqlPool.query(
+                                "UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ? WHERE TRIM(op_protheus) = ?",
+                                [data_entrega_pcp, opClean]
+                            );
+                        }
                     }
                 }
             }
@@ -3205,6 +3284,119 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
     } catch (err) {
         console.error('Error saving PCP forecast:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint exclusivo para partir/fracionar OP em duas ou mais (Gestão de OPs)
+router.post('/split-op', async (req, res) => {
+    const connection = await mysqlPool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        const { pedido, item, original_op, fractions, usuario, qtd_total_item } = req.body;
+
+        if (!pedido || !item || !Array.isArray(fractions) || fractions.length < 2) {
+            return res.status(400).json({ error: 'Para partir a OP, informe no mínimo 2 frações válidas.' });
+        }
+
+        const pedidoClean = String(pedido).trim();
+        const itemClean = String(item).trim();
+
+        let somaQtd = 0;
+        const usedOps = new Set();
+
+        for (let i = 0; i < fractions.length; i++) {
+            const frac = fractions[i];
+            const qtd = parseFloat(frac.quantidade_pcp);
+            if (isNaN(qtd) || qtd <= 0) {
+                throw new Error(`A Fração #${i + 1} possui quantidade inválida.`);
+            }
+            if (!frac.data_entrega_pcp) {
+                throw new Error(`A Fração #${i + 1} precisa de uma Data PCP válida.`);
+            }
+
+            const cleanOp = frac.op_protheus ? String(frac.op_protheus).trim() : '';
+            if (cleanOp && cleanOp !== '-' && usedOps.has(cleanOp)) {
+                throw new Error(`A OP ${cleanOp} foi repetida. Cada fração deve possuir seu próprio número de OP.`);
+            }
+            if (cleanOp && cleanOp !== '-') {
+                usedOps.add(cleanOp);
+            }
+
+            somaQtd += qtd;
+        }
+
+        if (qtd_total_item !== undefined) {
+            const limite = parseFloat(qtd_total_item);
+            if (somaQtd > limite + 0.01) {
+                throw new Error(`A soma das frações (${somaQtd}) excede o saldo do item (${limite}).`);
+            }
+        }
+
+        // Remove os registros existentes de previsão deste pedido + item
+        await connection.query(
+            'DELETE FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+            [pedidoClean, itemClean]
+        );
+
+        const savedFractions = [];
+        for (let i = 0; i < fractions.length; i++) {
+            const frac = fractions[i];
+            const fracQtd = parseFloat(frac.quantidade_pcp);
+            const fracDate = frac.data_entrega_pcp;
+            const letter = String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26));
+            const fracOp = frac.op_protheus ? String(frac.op_protheus).trim() : `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}${letter}`;
+            const fracObs = frac.observacao || `Fração ${letter} (Lote ${letter})`;
+            const fracLote = frac.lote || `Lote ${letter}`;
+            const fracNumLote = frac.numero_lote || letter;
+
+            const [ins] = await connection.query(
+                'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [pedidoClean, itemClean, fracDate, fracQtd, usuario || 'Gestão de OPs', fracObs, frac.numero_serie || null, frac.serie_cliente || null, frac.serie_metalfisa || null, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
+            );
+
+            savedFractions.push({
+                id: ins.insertId,
+                op_protheus: fracOp,
+                quantidade_pcp: fracQtd,
+                data_entrega_pcp: fracDate,
+                lote: fracLote
+            });
+        }
+
+        await connection.commit();
+        invalidateForecastCache();
+
+        res.json({
+            success: true,
+            message: `OP dividida com sucesso em ${fractions.length} frações independentes!`,
+            fractions: savedFractions
+        });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Erro ao partir OP:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Endpoint para desfazer fracionamento / unificar OP em 1 único lote
+router.delete('/split-op/:pedido/:item', async (req, res) => {
+    const { pedido, item } = req.params;
+    const pedidoClean = String(pedido).trim();
+    const itemClean = String(item).trim();
+
+    try {
+        await mysqlPool.query(
+            'DELETE FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+            [pedidoClean, itemClean]
+        );
+        invalidateForecastCache();
+        res.json({ success: true, message: 'Fracionamento desfeito com sucesso. OP unificada em lote único.' });
+    } catch (err) {
+        console.error('Erro ao unificar OP:', err);
+        res.status(500).json({ error: 'Falha ao unificar OP.' });
     }
 });
 

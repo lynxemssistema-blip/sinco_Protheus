@@ -2750,6 +2750,7 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
 
         let bomMap = {};
         let estruturasList = [];
+        let treeRows = null;
         if (uniqueProducts.length > 0) {
             const client = await db.connect();
             let bomRows;
@@ -2775,10 +2776,50 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                     ORDER BY bom.raiz, bom.comp`,
                     [uniqueProducts]
                 );
+
+                treeRows = await client.query(
+                    `WITH RECURSIVE bom_tree AS (
+                        SELECT 
+                            TRIM(g1_cod) AS raiz,
+                            TRIM(g1_cod) AS pai,
+                            TRIM(g1_comp) AS comp,
+                            g1_quant::numeric AS quant_unitaria,
+                            g1_quant::numeric AS quant_acumulada,
+                            1 AS nivel
+                        FROM sg1010
+                        WHERE TRIM(g1_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') = ''
+                        UNION ALL
+                        SELECT 
+                            bt.raiz,
+                            TRIM(sg1.g1_cod) AS pai,
+                            TRIM(sg1.g1_comp) AS comp,
+                            sg1.g1_quant::numeric AS quant_unitaria,
+                            bt.quant_acumulada * sg1.g1_quant::numeric AS quant_acumulada,
+                            bt.nivel + 1 AS nivel
+                        FROM sg1010 sg1
+                        JOIN bom_tree bt ON TRIM(sg1.g1_cod) = bt.comp
+                        WHERE COALESCE(sg1.d_e_l_e_t_, '') = '' AND bt.nivel < 15
+                    )
+                    SELECT 
+                        bt.raiz,
+                        bt.pai,
+                        bt.comp,
+                        bt.nivel,
+                        bt.quant_unitaria,
+                        bt.quant_acumulada,
+                        TRIM(sb1.b1_desc) as desc,
+                        TRIM(sb1.b1_um) as um,
+                        TRIM(sb1.b1_tipo) as tipo
+                    FROM bom_tree bt
+                    LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = bt.comp AND COALESCE(sb1.d_e_l_e_t_, '') = ''
+                    ORDER BY bt.raiz, bt.nivel, bt.pai, bt.comp`,
+                    [uniqueProducts]
+                );
                 await client.query("SET client_encoding TO 'WIN1252'").catch(() => {});
             } finally {
                 client.release();
             }
+
             bomRows.rows.forEach(r => {
                 estruturasList.push({ 
                     raiz: r.raiz, 
@@ -2802,8 +2843,21 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
             }
         }
 
+        const estruturasHierarquicas = (treeRows?.rows || []).map(r => ({
+            raiz: r.raiz,
+            pai: r.pai,
+            comp: r.comp,
+            nivel: parseInt(r.nivel) || 1,
+            quant_unitaria: parseFloat(r.quant_unitaria) || 0,
+            quant_acumulada: parseFloat(r.quant_acumulada) || 0,
+            desc: r.desc || '',
+            um: r.um || '',
+            tipo: r.tipo || ''
+        }));
+
         const allCodesSet = new Set(uniqueProducts);
         Object.values(bomMap).forEach(comps => comps.forEach(c => allCodesSet.add(c.comp)));
+        estruturasHierarquicas.forEach(h => allCodesSet.add(h.comp));
         const allCodesArr = [...allCodesSet];
 
         let routingMap  = {};
@@ -2847,6 +2901,8 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
             itens: [],
             carga: [],
             estruturas: estruturasList,
+            estruturas_hierarquicas: estruturasHierarquicas,
+            routingSequenceMap: routingSequenceMap,
             execucao_op: [],
             recursos: allRecursos,
             recursoNomeMap: recursoNomeMap,

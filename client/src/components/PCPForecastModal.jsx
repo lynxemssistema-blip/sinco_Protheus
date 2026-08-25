@@ -15,13 +15,24 @@ const EMPTY_FORM = {
     lote: '',
     numero_lote: '',
     gerar_op_protheus: true,
-    sobrescrever_existente: false,
-    fracionar_op: false,
-    qtd_por_op: ''
+    sobrescrever_existente: false
+};
+
+const getFullOpNumber = (op, itemNumber) => {
+    if (!op || String(op).trim() === '-' || String(op).trim() === '') return null;
+    let cleanOp = String(op).trim();
+    const cleanItem = String(itemNumber || '01').trim().padStart(2, '0');
+    if (cleanOp.length === 6) {
+        return `${cleanOp}${cleanItem}001`;
+    }
+    if (cleanOp.length === 8) {
+        return `${cleanOp}001`;
+    }
+    return cleanOp;
 };
 
 const getDisplayOp = (op, itemNumber) => {
-    if (!op || String(op).trim() === '-') return op;
+    if (!op || String(op).trim() === '-' || String(op).trim() === '') return op;
     let cleanOp = String(op).trim();
     if (cleanOp.length === 6 && itemNumber && String(itemNumber).trim() !== '-') {
         return cleanOp + String(itemNumber).trim().padStart(2, '0');
@@ -136,39 +147,6 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                         onChange={(e) => onChange(p => ({ ...p, gerar_op_protheus: e.target.checked }))} />
                     <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${canGenerateOp && value.gerar_op_protheus ? 'bg-indigo-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
                 </label>
-            </div>
-        )}
-
-        {/* FRACIONAMENTO */}
-        {!value.isBatch && !isEdit && canGenerateOp && value.gerar_op_protheus && (
-            <div className={`p-3 rounded-lg border flex flex-col gap-2 ${value.fracionar_op ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-sm font-semibold text-gray-800">Fracionar OP em Lotes</div>
-                        <div className="text-[10px] text-gray-500">Dividir a OP principal em frações menores.</div>
-                    </div>
-                    <label className="relative flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" checked={value.fracionar_op} 
-                            onChange={(e) => onChange(p => ({ ...p, fracionar_op: e.target.checked }))} />
-                        <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${value.fracionar_op ? 'bg-indigo-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
-                    </label>
-                </div>
-                {value.fracionar_op && (
-                    <div className="mt-2 flex flex-col gap-1">
-                        <label className="text-xs font-medium text-gray-700">Quantidade por Lote/OP</label>
-                        <input type="number" min="0.01" step="0.01" max={value.quantidade_pcp || qtdDisponivel}
-                            placeholder="Ex: 5"
-                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                            value={value.qtd_por_op}
-                            onChange={(e) => onChange(p => ({ ...p, qtd_por_op: e.target.value }))}
-                        />
-                        {value.quantidade_pcp && value.qtd_por_op && Number(value.qtd_por_op) > 0 && (
-                            <div className="text-[10px] text-indigo-700 font-medium bg-indigo-100 p-1.5 rounded mt-1">
-                                💡 Serão geradas <strong>{Math.ceil(Number(value.quantidade_pcp) / Number(value.qtd_por_op))}</strong> OPs independentes sequenciais.
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
         )}
 
@@ -303,62 +281,24 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
 
             setSaving(true);
             try {
-                // 1. Prepara Lote
-                const batchItems = targetItems.map(t => {
-                    const tQtdTotal = parseFloat(t.quantidade || 0);
-                    const tQtdFaturar = parseFloat(t.qtd_faturar || 0);
-                    const quantidade_pcp = tQtdFaturar > 0 ? tQtdFaturar : tQtdTotal;
-                    const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
-                    return {
-                        pedido: t.pedido,
-                        item: t.item,
-                        quantidade_pcp: quantidade_pcp,
-                        qtd_total_item: tQtdTotal,
-                        op_protheus: hasOp ? t.op_num : null
-                    };
-                });
-                
-                // 2. Gravar Programações no PCP Batch
-                // O backend pode ajustar a quantidade (cap no saldo restante) — usamos savedItems para OP
-                const batchResp = await api.post('/pedidos/pcp-forecasts/batch', {
-                    items: batchItems,
-                    data_entrega_pcp: formData.data_entrega_pcp,
-                    usuario: user?.nome || user?.name || user?.login || 'Usuário',
-                    observacao: formData.observacao || null,
-                    numero_serie: formData.numero_serie || null,
-                    serie_cliente: formData.serie_cliente || null,
-                    serie_metalfisa: formData.serie_metalfisa || null,
-                    lote: formData.lote || null,
-                    numero_lote: formData.numero_lote || null,
-                    sobrescrever_existente: formData.sobrescrever_existente
-                });
-
-                // 3. Criar OPs no Protheus — quantidade = o que foi efetivamente salvo no PCP
+                // 1. Criar OPs no Protheus PRIMEIRO (se selecionado)
+                const generatedOpsMap = {};
                 if (canGenerateOp && formData.gerar_op_protheus) {
-                    // savedItems contém a quantidade real após ajuste de saldo pelo backend
-                    const savedItems = batchResp.data?.savedItems || [];
-                    const savedMap = Object.fromEntries(
-                        savedItems.map(s => [`${s.pedido}_${s.item}`, s.quantidade_pcp])
-                    );
-
-                    const protheusItems = validItemsForOp
-                        .map(t => {
-                            const chave = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
-                            const qtdSalva = savedMap[chave];
-                            // Se não está em savedItems, foi pulado (já 100% programado)
-                            if (qtdSalva === undefined) return null;
-                            return {
-                                filial: t.filial || '01',
-                                produto: t.codigo,
-                                quant: qtdSalva,          // quantidade parcial real, não qtd_faturar
-                                datpri: formData.data_entrega_pcp.replace(/-/g, ''),
-                                datprf: formData.data_entrega_pcp.replace(/-/g, ''),
-                                obs: formData.observacao,
-                                pedido: t.pedido,
-                                itempv: t.item
-                            };
-                        })
-                        .filter(Boolean); // remove itens pulados
+                    const protheusItems = validItemsForOp.map(t => {
+                        const tQtdTotal = parseFloat(t.quantidade || 0);
+                        const tQtdFaturar = parseFloat(t.qtd_faturar || 0);
+                        const qtd = tQtdFaturar > 0 ? tQtdFaturar : tQtdTotal;
+                        return {
+                            filial: t.filial || '01',
+                            produto: t.codigo,
+                            quant: qtd,
+                            datpri: formData.data_entrega_pcp.replace(/-/g, ''),
+                            datprf: formData.data_entrega_pcp.replace(/-/g, ''),
+                            obs: formData.observacao || '',
+                            pedido: t.pedido,
+                            itempv: t.item
+                        };
+                    });
 
                     if (protheusItems.length > 0) {
                         const chunkSize = 5;
@@ -369,8 +309,6 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
 
                         for (let i = 0; i < chunks.length; i++) {
                             const chunk = chunks[i];
-                            
-                            // Highlight currently processing items and auto-scroll to the first one
                             const processingKeys = chunk.map(c => `${String(c.pedido).trim()}_${String(c.itempv).trim()}`);
                             setProcessingItems(processingKeys);
                             
@@ -384,44 +322,64 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                             try {
                                 const resp = await api.post('/protheus/ordem-producao/incluir', { items: chunk });
                                 if (resp.data?.generated_ops) {
-                                    const newOps = {};
                                     for (const op of resp.data.generated_ops) {
-                                        newOps[`${String(op.pedido).trim()}_${String(op.item).trim()}`] = op.op_num;
-                                        
-                                        // Update database with the generated OP
-                                        const savedItem = savedItems.find(s => s.pedido === String(op.pedido).trim() && s.item === String(op.item).trim());
-                                        if (savedItem && savedItem.id) {
-                                            try {
-                                                await api.patch(`/pedidos/pcp-forecasts/${savedItem.id}/op`, { op_protheus: op.op_num });
-                                            } catch (updateErr) {
-                                                console.error(`Falha ao vincular OP ${op.op_num} no banco para o ID: ${savedItem.id}`, updateErr);
-                                            }
-                                        }
+                                        const chave = `${String(op.pedido).trim()}_${String(op.item).trim()}`;
+                                        generatedOpsMap[chave] = op.op_num;
                                     }
-                                    setLocalBatchOps(prev => ({ ...prev, ...newOps }));
+                                    setLocalBatchOps(prev => ({ ...prev, ...generatedOpsMap }));
                                 }
                                 if (resp.data?.details) console.log(`🚀 [PROTHEUS CHUNK ${i+1}/${chunks.length}]:`, resp.data.details);
                             } catch (chunkErr) {
                                 console.error(`❌ [ERRO API PROTHEUS CHUNK ${i+1}] Detalhes:`, chunkErr.response?.data || chunkErr);
                                 const errMsg = chunkErr.response?.data?.details || chunkErr.response?.data?.error || chunkErr.message || 'Erro no processamento.';
-                                toast.error(`Lote ${i+1}: ${errMsg}`, { autoClose: 8000 });
+                                toast.error(`Lote ${i+1} no Protheus falhou: ${errMsg}`, { autoClose: 8000 });
                             }
 
-                            // Sleep between chunks to let DB breathe, except after the last chunk
                             if (i < chunks.length - 1) {
                                 await new Promise(r => setTimeout(r, 2000));
                             }
                         }
                         
                         setProcessingItems([]);
-                        toast.success('Geração de O.P. em Lote concluída!');
                     }
                 }
 
-                toast.success('Programação Lote adicionada!');
-                // onClose(); // Removido para que o usuário veja as OPs geradas na tela!
+                // 2. Prepara Lote com a OP já gerada
+                const batchItems = targetItems.map(t => {
+                    const tQtdTotal = parseFloat(t.quantidade || 0);
+                    const tQtdFaturar = parseFloat(t.qtd_faturar || 0);
+                    const quantidade_pcp = tQtdFaturar > 0 ? tQtdFaturar : tQtdTotal;
+                    const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
+                    const chave = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
+                    const rawOp = generatedOpsMap[chave] || (hasOp ? (t.op_num_completa || t.op_num) : null);
+                    const opVinculada = getFullOpNumber(rawOp, t.item);
+
+                    return {
+                        pedido: t.pedido,
+                        item: t.item,
+                        quantidade_pcp: quantidade_pcp,
+                        qtd_total_item: tQtdTotal,
+                        op_protheus: opVinculada
+                    };
+                });
+                
+                // 3. DEPOIS: Grava Programações no PCP Batch (com a OP já associada)
+                await api.post('/pedidos/pcp-forecasts/batch', {
+                    items: batchItems,
+                    data_entrega_pcp: formData.data_entrega_pcp,
+                    usuario: user?.nome || user?.name || user?.login || 'Usuário',
+                    observacao: formData.observacao || null,
+                    numero_serie: formData.numero_serie || null,
+                    serie_cliente: formData.serie_cliente || null,
+                    serie_metalfisa: formData.serie_metalfisa || null,
+                    lote: formData.lote || null,
+                    numero_lote: formData.numero_lote || null,
+                    sobrescrever_existente: formData.sobrescrever_existente
+                });
+
+                toast.success('Programação Lote adicionada com sucesso!');
                 setFormData(EMPTY_FORM);
-                if (onSaveSuccess) onSaveSuccess(); // Lote não passa progs pois é batch
+                if (onSaveSuccess) onSaveSuccess();
             } catch (err) {
                 console.error("❌ [ERRO API PROTHEUS/LOTE] Detalhes:", err.response?.data || err);
                 const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao processar lote.';
@@ -447,73 +405,56 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         try {
             const hasOp = !!(item.op_num && String(item.op_num).trim() !== '-' && String(item.op_num).trim() !== '');
             
-            // -- LÓGICA DE FRACIONAMENTO --
-            let fracoes = [];
-            const qtdTotalStr = String(novaQtd);
-            const qtdTotalNum = Number(qtdTotalStr);
-            
-            if (formData.fracionar_op && formData.qtd_por_op && Number(formData.qtd_por_op) > 0) {
-                const step = Number(String(formData.qtd_por_op).replace(',', '.'));
-                let restante = qtdTotalNum;
-                while (restante > 0) {
-                    const frac = Math.min(restante, step);
-                    fracoes.push(frac);
-                    restante = Number((restante - frac).toFixed(4));
-                }
-            } else {
-                fracoes.push(qtdTotalNum);
-            }
+            const qtdFinal = parseFloat(formData.quantidade_pcp);
+            let opGerada = hasOp ? getFullOpNumber(item.op_num_completa || item.op_num, itemNum) : null;
 
-            for (let i = 0; i < fracoes.length; i++) {
-                const qtdFracao = fracoes[i];
-                if (fracoes.length > 1) {
-                    toast.info(`Processando lote ${i+1} de ${fracoes.length}...`, { autoClose: 2000, position: 'top-center' });
-                }
+            // 1. PRIMEIRO: Cria a OP no Protheus (se marcado e ainda não possuir OP)
+            if (canGenerateOp && formData.gerar_op_protheus && !hasOp) {
+                const protheusItems = [{
+                    filial: item.filial || '01',
+                    produto: item.codigo,
+                    quant: qtdFinal,
+                    datpri: formData.data_entrega_pcp.replace(/-/g, ''),
+                    datprf: formData.data_entrega_pcp.replace(/-/g, ''),
+                    obs: formData.observacao || '',
+                    pedido: pedido,
+                    itempv: itemNum
+                }];
+                console.log(`🚀 [PROTHEUS SINGLE] Enviando JSON:`, JSON.stringify({ items: protheusItems }, null, 2));
                 
-                const forecastRes = await api.post('/pedidos/pcp-forecasts', {
-                    pedido, item: itemNum,
-                    data_entrega_pcp: formData.data_entrega_pcp,
-                    quantidade_pcp: qtdFracao,
-                    usuario: user?.nome || user?.name || user?.login || 'Usuário',
-                    observacao: formData.observacao || null,
-                    numero_serie: formData.numero_serie || null,
-                    serie_cliente: formData.serie_cliente || null,
-                    serie_metalfisa: formData.serie_metalfisa || null,
-                    lote: formData.lote || null,
-                    numero_lote: formData.numero_lote || null,
-                    qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
-                    op_protheus: hasOp ? item.op_num : null,
-                    sobrescrever_existente: formData.sobrescrever_existente
-                });
-
-                const forecastId = forecastRes.data.id;
-
-                if (canGenerateOp && formData.gerar_op_protheus) {
-                    const protheusItems = [{
-                        filial: item.filial || '01',
-                        produto: item.codigo,
-                        quant: qtdFracao,
-                        datpri: formData.data_entrega_pcp.replace(/-/g, ''),
-                        datprf: formData.data_entrega_pcp.replace(/-/g, ''),
-                        obs: formData.observacao,
-                        pedido: pedido,
-                        itempv: itemNum
-                    }];
-                    console.log(`🚀 [PROTHEUS SINGLE Lote ${i+1}] Enviando JSON:`, JSON.stringify({ items: protheusItems }, null, 2));
-                    try {
-                        const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
-                        if (protheusRes.data.op_number) {
-                            await api.patch(`/pedidos/pcp-forecasts/${forecastId}/op`, { op_protheus: protheusRes.data.op_number });
-                        }
-                    } catch (err) {
-                        const errData = err.response?.data;
-                        const errMsg = errData?.details || errData?.error || err.message || 'Erro no Protheus';
-                        toast.error(`A OP do Lote ${i+1} falhou: ${errMsg}`, { autoClose: 8000 });
+                try {
+                    const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                    if (protheusRes.data?.generated_ops?.[0]?.op_num) {
+                        opGerada = getFullOpNumber(protheusRes.data.generated_ops[0].op_num, itemNum);
+                    } else if (protheusRes.data?.op_number) {
+                        opGerada = getFullOpNumber(protheusRes.data.op_number, itemNum);
                     }
+                } catch (opErr) {
+                    const errData = opErr.response?.data;
+                    const errMsg = errData?.details || errData?.error || opErr.message || 'Erro no Protheus';
+                    toast.error(`A criação da OP no Protheus falhou: ${errMsg}`, { autoClose: 8000 });
+                    throw new Error(`Falha ao gerar OP no Protheus: ${errMsg}`);
                 }
             }
+            
+            // 2. DEPOIS: Salva a previsão de Data PCP e Quantidade (já com a OP vinculada)
+            await api.post('/pedidos/pcp-forecasts', {
+                pedido, item: itemNum,
+                data_entrega_pcp: formData.data_entrega_pcp,
+                quantidade_pcp: qtdFinal,
+                usuario: user?.nome || user?.name || user?.login || 'Usuário',
+                observacao: formData.observacao || null,
+                numero_serie: formData.numero_serie || null,
+                serie_cliente: formData.serie_cliente || null,
+                serie_metalfisa: formData.serie_metalfisa || null,
+                lote: formData.lote || null,
+                numero_lote: formData.numero_lote || null,
+                qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
+                op_protheus: opGerada,
+                sobrescrever_existente: formData.sobrescrever_existente
+            });
 
-            toast.success(fracoes.length > 1 ? `Programação dividida em ${fracoes.length} OPs com sucesso!` : 'Programação adicionada com sucesso!');
+            toast.success('Programação adicionada com sucesso!');
             setFormData(prev => ({ ...EMPTY_FORM, isBatch: prev.isBatch, data_entrega_pcp: prev.data_entrega_pcp }));
             const newProgs = await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess(newProgs);
@@ -562,6 +503,39 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         }
         setSaving(true);
         try {
+            const progHasOp = prog.op_protheus && String(prog.op_protheus).trim() !== '-' && String(prog.op_protheus).trim().length > 0;
+            let opAtualizada = getFullOpNumber(prog.op_protheus, item.item);
+
+            // 1. PRIMEIRO: Se for gerar OP no Protheus na edição, cria a OP primeiro
+            if (canGenerateOp && editForm.gerar_op_protheus && !progHasOp) {
+                try {
+                    const protheusPayload = {
+                        items: [{
+                            filial: item.filial || '01',
+                            produto: item.codigo,
+                            quant: novaQtd,
+                            datpri: editForm.data_entrega_pcp.replace(/-/g, ''),
+                            datprf: editForm.data_entrega_pcp.replace(/-/g, ''),
+                            obs: editForm.observacao || '',
+                            pedido: item.pedido,
+                            itempv: item.item
+                        }]
+                    };
+                    const resp = await api.post('/protheus/ordem-producao/incluir', protheusPayload);
+                    if (resp.data?.generated_ops && resp.data.generated_ops.length > 0) {
+                        opAtualizada = getFullOpNumber(resp.data.generated_ops[0].op_num, item.item);
+                    } else if (resp.data?.op_number) {
+                        opAtualizada = getFullOpNumber(resp.data.op_number, item.item);
+                    }
+                } catch (err) {
+                    console.error("❌ [ERRO API PROTHEUS/EDICAO] Detalhes:", err.response?.data || err);
+                    const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao gerar OP no Protheus.';
+                    toast.error(`Falha ao gerar O.P. Protheus: ${errMsg}`, { autoClose: 8000 });
+                    throw new Error(`Falha ao gerar OP no Protheus: ${errMsg}`);
+                }
+            }
+
+            // 2. DEPOIS: Atualiza a programação com a nova data e quantidade
             await api.put(`/pedidos/pcp-forecasts/${prog.id}`, {
                 data_entrega_pcp: editForm.data_entrega_pcp,
                 quantidade_pcp: novaQtd,
@@ -575,42 +549,18 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined
             });
 
-            const progHasOp = prog.op_protheus && String(prog.op_protheus).trim() !== '-' && String(prog.op_protheus).trim().length > 0;
-            
-            if (canGenerateOp && editForm.gerar_op_protheus && !progHasOp) {
-                try {
-                    const protheusPayload = {
-                        items: [{
-                            filial: item.filial || '01',
-                            produto: item.codigo,
-                            quant: novaQtd,
-                            datpri: editForm.data_entrega_pcp.replace(/-/g, ''),
-                            datprf: editForm.data_entrega_pcp.replace(/-/g, ''),
-                            obs: editForm.observacao,
-                            pedido: item.pedido,
-                            itempv: item.item
-                        }]
-                    };
-                    const resp = await api.post('/protheus/ordem-producao/incluir', protheusPayload);
-                    if (resp.data?.generated_ops && resp.data.generated_ops.length > 0) {
-                        const newOpNum = resp.data.generated_ops[0].op_num;
-                        await api.patch(`/pedidos/pcp-forecasts/${prog.id}/op`, { op_protheus: newOpNum });
-                        toast.success('Ordem de Produção gerada no Protheus e vinculada!');
-                    }
-                } catch (err) {
-                    console.error("❌ [ERRO API PROTHEUS/EDICAO] Detalhes:", err.response?.data || err);
-                    const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao gerar OP no Protheus.';
-                    toast.error(`A programação foi atualizada, mas falhou ao gerar O.P. Protheus: ${errMsg}`, { autoClose: 8000 });
-                }
+            if (opAtualizada && opAtualizada !== prog.op_protheus) {
+                await api.patch(`/pedidos/pcp-forecasts/${prog.id}/op`, { op_protheus: opAtualizada });
+                toast.success('Ordem de Produção gerada no Protheus e vinculada com sucesso!');
             } else {
-                toast.success('Programação atualizada!');
+                toast.success('Programação atualizada com sucesso!');
             }
 
             cancelEdit();
             const newProgs = await loadProgramacoes();
             if (onSaveSuccess) onSaveSuccess(newProgs);
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Erro ao atualizar.');
+            toast.error(err.response?.data?.error || err.message || 'Erro ao atualizar.');
         } finally {
             setSaving(false);
         }

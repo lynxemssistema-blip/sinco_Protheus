@@ -1,0 +1,175 @@
+=== btnDxf_Click ===
+Private Sub btnDxf_Click(sender As Object, e As EventArgs) Handles btnDxf.Click
+
+
+        '  DxfArquivoCorrente()
+
+        'ExportarPlanificacaoDXF_Final()
+
+        '  ExportarDXFPlanificadoAuto()
+
+        ExportarDXFPlanificadoAuto(0)
+
+
+
+    End Sub
+
+    Private Sub frmDadosPecaCorrente_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+
+        Try
+            If app Is Nothing Then
+                app = Marshal.GetActiveObject("SolidEdge.Application")
+            End If
+
+            ' Inicia a verificação a cada 1 segundo (1000 ms)
+            timerAtualizacao.Interval = 1000
+            timerAtualizacao.Start()
+        Catch ex As Exception
+        End Try
+
+
+
+        ' ListarTodasPropriedadesDoArquivo(TextBox1)
+
+        Try
+            Dim connString As String = "Host=192.168.1.61;Port=5432;Username=sinco2;Password=sinco25;Database=p12prd;"
+
+            Dim dtGrupo As New System.Data.DataTable()
+            Dim dtTipo As New System.Data.DataTable()
+            Dim dtUM As New System.Data.DataTable()
+
+            Using conn As New Npgsql.NpgsqlConnection(connString)
+                conn.Open()
+
+                ' 1. Busca os grupos na tabela SBM010
+                Dim sqlGrupo As String = "SELECT BM_GRUPO AS ""Código"", BM_DESC AS ""Descrição"" FROM public.SBM010 WHERE D_E_L_E_T_ = ' ' ORDER BY BM_GRUPO"
+                Using cmdGrupo As New Npgsql.NpgsqlCommand(sqlGrupo, conn)
+                    Using daGrupo As New Npgsql.NpgsqlDataAdapter(cmdGrupo)
+                        daGrupo.Fill(dtGrupo)
+                    End Using
+                End Using
+
+                ' 2. Busca Tipos de Produto na tabela SX5010 (X5_TABELA = '02')
+                Dim sqlTipo As String = "SELECT X5_CHAVE AS ""Código_Tipo"", X5_DESCRI AS ""Descrição"" FROM public.SX5010 WHERE X5_TABELA = '02' AND D_E_L_E_T_ = ' ' ORDER BY X5_CHAVE"
+                Using cmdTipo As New Npgsql.NpgsqlCommand(sqlTipo, conn)
+                    Using daTipo As New Npgsql.NpgsqlDataAdapter(cmdTipo)
+                        daTipo.Fill(dtTipo)
+                    End Using
+                End Using
+
+                ' 3. Busca Unidades de Medida na tabela SAH010
+                Dim sqlUM As String = "SELECT AH_UNIMED AS ""Codigo_UM"", AH_UMRES AS ""Descrição"" FROM public.SAH010 WHERE D_E_L_E_T_ = ' ' ORDER BY AH_UNIMED"
+                Using cmdUM As New Npgsql.NpgsqlCommand(sqlUM, conn)
+                    Using daUM As New Npgsql.NpgsqlDataAdapter(cmdUM)
+                        daUM.Fill(dtUM)
+                    End Using
+                End Using
+            End Using
+
+            ' ================= BINDING GRUPO =================
+            If Not dtGrupo.Columns.Contains("DescricaoExibicao") Then dtGrupo.Columns.Add("DescricaoExibicao", GetType(String))
+            For Each row As System.Data.DataRow In dtGrupo.Rows
+                Dim codGrupo As String = If(row("Código") IsNot DBNull.Value, row("Código").ToString().Trim(), "")
+                Dim descGrupo As String = If(row("Descrição") IsNot DBNull.Value, row("Descrição").ToString().Trim(), "")
+                row("DescricaoExibicao") = codGrupo
+            Next
+            With cboB1_GRUPO
+                .DataSource = dtGrupo
+                .DisplayMember = "DescricaoExibicao"
+                .ValueMember = "Código"
+                .SelectedIndex = -1
+            End With
+
+            ' ================= BINDING TIPO =================
+            If Not dtTipo.Columns.Contains("DescricaoExibicao") Then d
+=====================
+
+=== btnGerarPdf_Click ===
+Private Sub btnGerarPdf_Click(sender As Object, e As EventArgs) Handles btnGerarPdf.Click
+        '  ExportarPDFDetalhamento()
+        ExportarPDFDetalhamentoLote(0)
+
+    End Sub
+
+
+    Public Sub CarregarPropriedadesArquivoCorrente()
+
+        'tenta ativa o maximo as variaveis do solid edge
+        AtivarVariaveisESincronizarPropriedades()
+
+        Try
+
+            If app Is Nothing OrElse app.Documents.Count = 0 Then Exit Sub
+
+            Dim doc As Object = app.ActiveDocument
+            If doc Is Nothing Then Exit Sub
+
+            Dim caminho As String = doc.FullName
+            Dim ext As String = IO.Path.GetExtension(caminho).ToLower()
+            If Not (ext = ".par" Or ext = ".psm" Or ext = ".asm") Then Exit Sub
+
+            Dim NomeArquivo As String = IO.Path.GetFileNameWithoutExtension(caminho).ToUpper()
+
+
+
+
+            ' 🚀 Suspende repintura
+            ' Me.SuspendLayout()
+            'dgvPropriedades.SuspendLayout()
+            '  bloqueiaEventosUI = True
+
+            txtNumeroDesenho.Text = NomeArquivo & ext
+            txtendereco.Text = caminho
+
+            ' 👉 Nenhuma leitura suja aqui! Delega para o Reader Service:
+            Dim leitor As New SolidEdgeReaderService()
+            leitor.ExtrairPropriedades(doc, DadosArquivoCorrente)
+
+            ' Retorna e Atualiza UI
+            txtTitulo.Text = DadosArquivoCorrente.Titulo
+            txtCutSizex.Text = DadosArquivoCorrente.ComprimentoBlank
+            txtCutSizey.Text = DadosArquivoCorrente.LarguraBlank
+            txtEspessura.Text = DadosArquivoCorrente.Espessura
+            txtPesoKg.Text = DadosArquivoCorrente.Massa
+            txtAreametroquadr.Text = DadosArquivoCorrente.AreaPintura
+
+
+
+
+            Dim connStringProtheus As String = "Host=192.168.1.61;Port=5432;Username=sinco2;Password=sinco25;Database=p12prd;"
+            Using conn As New Npgsql.NpgsqlConnection(connStringProtheus)
+                conn.Open()
+                Dim sqlBusca As String = "SELECT B1_GRUPO, B1_XREVM, B1_TIPO, B1_UM FROM public.sb1010 WHERE TRIM(B1_COD) = @Codigo"
+                Using cmd As New Npgsql.NpgsqlCommand(sqlBusca, conn)
+                    cmd.Parameters.AddWithValue("@Codigo", NomeArquivo.Trim())
+                    Using reader As Npgsql.NpgsqlDataReader = cmd.ExecuteReader()
+                        If reader.Read() Then
+                            Me.cboB1_GRUPO.Text = If(IsDBNull(reader("B1_GRUPO")), "", reader("B1_GRUPO").ToString().Trim())
+                            Me.txtB1_XREVM.Text = If(IsDBNull(reader("B1_XREVM")), "", reader("B1_XREVM").ToString().Trim())
+                            Me.cboB1_TIPO.Text = If(IsDBNull(reader("B1_TIPO")), "", reader("B1_TIPO").ToString().Trim())
+                            Me.cboB1_UM.Text = If(IsDBNull(reader("B1_UM")), "", reader("B1_UM").ToString().Trim())
+                        Else
+                            Me.cboB1_GRUPO.Text = ""
+                            Me.txtB1_XREVM.Text = ""
+                            Me.cboB1_TIPO.Text = ""
+                            Me.cboB1_UM.Text = ""
+                        End If
+                    End Using
+                End Using
+            End Using
+
+            ' 🔹 Atualiza apenas no final
+            '   bloqueiaEventosUI = False
+            Me.ResumeLayout()
+
+
+            ' 👇👇👇 ADICIONE ESTA ÚNICA LINHA AQUI 👇👇👇
+            SincronizarPropriedadesCustomizadasDoArquivo()
+
+
+            ' 🔹 Roda verificação em background
+            '  VerificaCadastroArquivo()
+
+        Catch ex
+=====================
+

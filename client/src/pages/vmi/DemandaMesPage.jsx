@@ -3,7 +3,8 @@ import {
     UploadCloud, FileSpreadsheet, Search, Filter, Download, 
     ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, 
     Layers, Package, AlertCircle, RefreshCw, Eye, EyeOff, FileText,
-    Zap, Check, RotateCcw, Sparkles, Send, HelpCircle, Table, BookOpen, Printer
+    Zap, Check, RotateCcw, Sparkles, Send, HelpCircle, Table, BookOpen, Printer,
+    Receipt, Truck
 } from 'lucide-react';
 import { api, getProductDocuments, getFileUrl } from '../../services/api';
 import BOMStructureModal from '../../components/BOMStructureModal';
@@ -33,6 +34,9 @@ export default function DemandaMesPage() {
 
     // Estado do Modal de Estrutura da OP (Visão Geral)
     const [bomStructureTarget, setBomStructureTarget] = useState(null); // { op, itemPv, pedido, produto }
+
+    // Estado do Modal de Extrato de Notas Fiscais Emitidas
+    const [nfModalTarget, setNfModalTarget] = useState(null); // { item, nfs }
 
     // Estado de Simulação Fantasma de PCP (Propostas)
     // Map key: `${pedido_metal}_${item_pedido}` -> { pedido, item, nova_data, mes_alocado, ref_cliente, saldo, data_anterior }
@@ -698,7 +702,11 @@ export default function DemandaMesPage() {
                         item: p.item_pedido,
                         data_pcp: fc.data_pcp,
                         quantidade: fc.quantidade_pcp,
-                        ops: opsStr || fc.op_vinculada
+                        ops: opsStr || fc.op_vinculada,
+                        nfs: p.nfs || [],
+                        qtd_faturada: p.qtd_faturada || 0,
+                        qtd_pedida: p.qtd_pedida || 0,
+                        pedidoObj: p
                     });
                 }
             }
@@ -722,7 +730,11 @@ export default function DemandaMesPage() {
                         data_pcp: proposal.nova_data,
                         quantidade: proposal.saldo,
                         ops: proposal.ops,
-                        data_anterior: proposal.data_anterior
+                        data_anterior: proposal.data_anterior,
+                        nfs: p.nfs || [],
+                        qtd_faturada: p.qtd_faturada || 0,
+                        qtd_pedida: p.qtd_pedida || 0,
+                        pedidoObj: p
                     });
                 }
             }
@@ -730,7 +742,7 @@ export default function DemandaMesPage() {
         return result;
     };
 
-    // Obter previsões PCP REAIS que NÃO estão em nenhum dos meses de demanda ou são de datas futuras (+3 a +5 anos).
+    // Obter previsões PCP REAIS que NÃO estão em nenhum dos meses de demanda ou são de datas passadas/futuras/sem data.
     // IMPORTANTE: pedidos com proposta ativa são excluídos para evitar duplicação com getGhostNoDemandPcpItems.
     const getNoDemandPcpItems = (item, mesesDemanda = []) => {
         if (!item?.pedidos) return [];
@@ -742,7 +754,11 @@ export default function DemandaMesPage() {
             if (proposedPcp[propKey]) continue;
 
             const opsStr = p.ops?.map(o => o.numero_op).join(', ') || '';
-            for (const fc of (p.previsoes_pcp || [])) {
+            const pcps = (p.previsoes_pcp && p.previsoes_pcp.length > 0)
+                ? p.previsoes_pcp
+                : [{ data_pcp: null, quantidade_pcp: p.saldo_a_faturar || 0, op_vinculada: opsStr || 'SEM OP' }];
+
+            for (const fc of pcps) {
                 // Verifica se a data PCP não dá "match" exato com nenhum dos meses de demanda do cabeçalho
                 const matched = mesesDemanda.some(mLabel => matchMonthYear(fc.data_pcp, mLabel));
                 
@@ -752,7 +768,11 @@ export default function DemandaMesPage() {
                         item: p.item_pedido,
                         data_pcp: fc.data_pcp,
                         quantidade: fc.quantidade_pcp,
-                        ops: opsStr || fc.op_vinculada
+                        ops: opsStr || fc.op_vinculada,
+                        nfs: p.nfs || [],
+                        qtd_faturada: p.qtd_faturada || 0,
+                        qtd_pedida: p.qtd_pedida || 0,
+                        pedidoObj: p
                     });
                 }
             }
@@ -775,7 +795,11 @@ export default function DemandaMesPage() {
                     data_pcp: proposal.nova_data,
                     quantidade: proposal.saldo,
                     ops: proposal.ops,
-                    data_anterior: proposal.data_anterior
+                    data_anterior: proposal.data_anterior,
+                    nfs: p.nfs || [],
+                    qtd_faturada: p.qtd_faturada || 0,
+                    qtd_pedida: p.qtd_pedida || 0,
+                    pedidoObj: p
                 });
             }
         }
@@ -986,6 +1010,8 @@ export default function DemandaMesPage() {
             if (filterStatus === 'SOBRA_SALDO' && !(item.total_saldo_faturar > item.total_demanda)) return false;
             if (filterStatus === 'FALTA_SALDO' && !(item.total_demanda > item.total_saldo_faturar && item.possui_saldo)) return false;
             if (filterStatus === 'FORA_PLANILHA' && item.presente_na_planilha !== false) return false;
+            if (filterStatus === 'COM_FATURAMENTO' && !(item.total_faturado > 0)) return false;
+            if (filterStatus === 'FATURADO_TOTAL' && !item.totalmente_faturado) return false;
 
             // Month filter
             if (filterMonth !== 'ALL') {
@@ -1212,13 +1238,15 @@ export default function DemandaMesPage() {
                 item.pedidos.forEach(p => {
                     const opsStr = p.ops.map(o => `${o.numero_op} (saldo: ${o.saldo_op})`).join(', ') || 'SEM OP';
                     const pcpsStr = p.previsoes_pcp.map(f => `${formatPcpDate(f.data_pcp)}: ${f.quantidade_pcp} un`).join(', ') || '-';
+                    const nfsStr = (p.nfs && p.nfs.length > 0) ? p.nfs.map(n => `NF ${n.nota}/${n.serie} (${n.emissao || '-'}): ${n.qtd_faturada} un`).join(' | ') : '-';
 
                     const rowObj = {
                         'Ref. Cliente': item.ref_cliente,
                         'Código Metalfisa': item.codigo_metalfisa,
                         'Descrição': item.descricao,
-                        'Possui Saldo': item.possui_saldo ? 'SIM' : 'NÃO',
+                        'Status': item.possui_saldo ? 'COM SALDO' : (item.totalmente_faturado ? '100% FATURADO' : 'SEM SALDO'),
                         'Total Saldo Faturar': item.total_saldo_faturar,
+                        'Total Qtd Faturada': item.total_faturado || 0,
                         'Total Demanda Planilha': item.total_demanda
                     };
 
@@ -1230,19 +1258,25 @@ export default function DemandaMesPage() {
                     rowObj['Pedido Metalfisa'] = p.pedido_metal;
                     rowObj['Item'] = p.item_pedido;
                     rowObj['Pedido Cliente'] = p.pedido_cliente || '-';
+                    rowObj['Qtd Pedida'] = p.qtd_pedida || 0;
+                    rowObj['Qtd Faturada Item'] = p.qtd_faturada || 0;
                     rowObj['Saldo do Item'] = p.saldo_a_faturar;
+                    rowObj['Notas Fiscais Emitidas'] = nfsStr;
                     rowObj['OPs Protheus'] = opsStr;
                     rowObj['Previsões PCP (SINCO)'] = pcpsStr;
 
                     exportRows.push(rowObj);
                 });
             } else {
+                const nfsStr = (item.nfs && item.nfs.length > 0) ? item.nfs.map(n => `NF ${n.nota}/${n.serie} (${n.emissao || '-'}): ${n.qtd_faturada} un`).join(' | ') : '-';
+
                 const rowObj = {
                     'Ref. Cliente': item.ref_cliente,
                     'Código Metalfisa': item.codigo_metalfisa,
                     'Descrição': item.descricao,
-                    'Possui Saldo': 'NÃO',
+                    'Status': item.totalmente_faturado ? '100% FATURADO' : 'SEM SALDO',
                     'Total Saldo Faturar': 0,
+                    'Total Qtd Faturada': item.total_faturado || 0,
                     'Total Demanda Planilha': item.total_demanda
                 };
 
@@ -1254,7 +1288,10 @@ export default function DemandaMesPage() {
                 rowObj['Pedido Metalfisa'] = '-';
                 rowObj['Item'] = '-';
                 rowObj['Pedido Cliente'] = '-';
+                rowObj['Qtd Pedida'] = item.total_pedido || 0;
+                rowObj['Qtd Faturada Item'] = item.total_faturado || 0;
                 rowObj['Saldo do Item'] = 0;
+                rowObj['Notas Fiscais Emitidas'] = nfsStr;
                 rowObj['OPs Protheus'] = '-';
                 rowObj['Previsões PCP (SINCO)'] = '-';
 
@@ -1272,6 +1309,8 @@ export default function DemandaMesPage() {
         if (filterStatus === 'SOBRA_SALDO') filterSuffix = 'SALDO_EXCEDENTE';
         if (filterStatus === 'FALTA_SALDO') filterSuffix = 'SALDO_INSUFICIENTE';
         if (filterStatus === 'FORA_PLANILHA') filterSuffix = 'FORA_PLANILHA';
+        if (filterStatus === 'COM_FATURAMENTO') filterSuffix = 'COM_FATURAMENTO';
+        if (filterStatus === 'FATURADO_TOTAL') filterSuffix = 'FATURADO_TOTAL';
         if (filterMonth !== 'ALL') filterSuffix += `_${filterMonth.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
         XLSX.writeFile(wb, `Demanda_Mes_Metalfisa_${filterSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -1810,10 +1849,10 @@ export default function DemandaMesPage() {
             {resultData && (
                 <div className="space-y-6">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total de Itens na Planilha</p>
+                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Itens na Planilha</p>
                                 <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{resultData.totais.totalItens.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">Aba: {resultData.sheetName}</p>
                             </div>
@@ -1824,10 +1863,10 @@ export default function DemandaMesPage() {
 
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Itens Com Saldo no Protheus</p>
+                                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Com Saldo Protheus</p>
                                 <h3 className="text-2xl font-extrabold text-emerald-700 mt-1">{resultData.totais.totalComSaldo.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">
-                                    {((resultData.totais.totalComSaldo / resultData.totais.totalItens) * 100).toFixed(1)}% dos itens
+                                    {((resultData.totais.totalComSaldo / (resultData.totais.totalItens || 1)) * 100).toFixed(1)}% dos itens
                                 </p>
                             </div>
                             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
@@ -1837,7 +1876,7 @@ export default function DemandaMesPage() {
 
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Itens Sem Saldo em Aberto</p>
+                                <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Sem Saldo Aberto</p>
                                 <h3 className="text-2xl font-extrabold text-amber-700 mt-1">{resultData.totais.totalSemSaldo.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">Sem pedidos pendentes</p>
                             </div>
@@ -1848,7 +1887,22 @@ export default function DemandaMesPage() {
 
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Saldo Total em Carteira</p>
+                                <p className="text-xs font-bold text-sky-600 uppercase tracking-wider">Total Faturado VMI</p>
+                                <h3 className="text-2xl font-extrabold text-sky-800 mt-1">
+                                    {(resultData.totais.totalFaturadoGeral || 0).toLocaleString('pt-BR')} un
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    {resultData.totais.totalComFaturamento || 0} itens com NF
+                                </p>
+                            </div>
+                            <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
+                                <Truck className="w-6 h-6" />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
+                            <div>
+                                <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Saldo Total Carteira</p>
                                 <h3 className="text-2xl font-extrabold text-indigo-900 mt-1">
                                     {resultData.totais.totalSaldoGeral.toLocaleString('pt-BR')} un
                                 </h3>
@@ -1919,6 +1973,44 @@ export default function DemandaMesPage() {
                                         {resultData.totais.totalComSaldo}
                                     </span>
                                 </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setFilterStatus('COM_FATURAMENTO'); setFilterMonth('ALL'); }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                        filterStatus === 'COM_FATURAMENTO'
+                                            ? 'bg-sky-600 text-white shadow-xs'
+                                            : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200'
+                                    }`}
+                                    title="Itens que já tiveram Notas Fiscais emitidas/faturadas para a VMI"
+                                >
+                                    <span>🚚 Com Faturamento</span>
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                        filterStatus === 'COM_FATURAMENTO' ? 'bg-sky-800 text-white' : 'bg-sky-200/80 text-sky-900'
+                                    }`}>
+                                        {resultData.totais.totalComFaturamento || 0}
+                                    </span>
+                                </button>
+
+                                {resultData.totais.totalTotalmenteFaturados > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setFilterStatus('FATURADO_TOTAL'); setFilterMonth('ALL'); }}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                            filterStatus === 'FATURADO_TOTAL'
+                                                ? 'bg-teal-600 text-white shadow-xs'
+                                                : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
+                                        }`}
+                                        title="Itens com pedidos 100% entregues e faturados"
+                                    >
+                                        <span>🏁 100% Faturados</span>
+                                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                            filterStatus === 'FATURADO_TOTAL' ? 'bg-teal-800 text-white' : 'bg-teal-200/80 text-teal-900'
+                                        }`}>
+                                            {resultData.totais.totalTotalmenteFaturados}
+                                        </span>
+                                    </button>
+                                )}
 
                                 <button
                                     type="button"
@@ -2055,7 +2147,7 @@ export default function DemandaMesPage() {
                                         <th className="py-3.5 px-3">Ref. Cliente</th>
                                         <th className="py-3.5 px-3">Cód. Metalfisa</th>
                                         <th className="py-3.5 px-4">Descrição</th>
-                                        <th className="py-3.5 px-3 text-center">Status Saldo</th>
+                                        <th className="py-3.5 px-3 text-center">Status</th>
                                         {resultData.mesesDemanda.map(m => (
                                             <th key={m} className="py-3.5 px-3 text-right bg-indigo-50/40 text-indigo-900">
                                                 Dem. {m}
@@ -2065,13 +2157,16 @@ export default function DemandaMesPage() {
                                             Sem Demanda
                                         </th>
                                         <th className="py-3.5 px-3 text-right font-extrabold text-slate-800">Total Demanda</th>
+                                        <th className="py-3.5 px-3 text-right font-extrabold text-sky-800 bg-sky-50/40" title="Quantidade total já faturada para a VMI (clique para ver as NFs)">
+                                            Qtd Faturada
+                                        </th>
                                         <th className="py-3.5 px-3 text-right font-extrabold text-emerald-800 bg-emerald-50/40">Saldo Faturar</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
                                     {filteredItems.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7 + resultData.mesesDemanda.length} className="py-12 text-center text-slate-400">
+                                            <td colSpan={8 + resultData.mesesDemanda.length} className="py-12 text-center text-slate-400">
                                                 Nenhum item encontrado para os filtros selecionados.
                                             </td>
                                         </tr>
@@ -2128,10 +2223,15 @@ export default function DemandaMesPage() {
                                                             {item.descricao || '-'}
                                                         </td>
 
-                                                        <td className="py-3 px-3 text-center">
-                                                            {item.possui_saldo ? (
+                                                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                            {item.totalmente_faturado ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200" title="Item 100% faturado e entregue">
+                                                                    <CheckCircle2 className="w-3 h-3 text-sky-600" />
+                                                                    FATURADO
+                                                                </span>
+                                                            ) : item.possui_saldo ? (
                                                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                                                    <CheckCircle2 className="w-3 h-3" />
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                                                     COM SALDO
                                                                 </span>
                                                             ) : (
@@ -2164,12 +2264,39 @@ export default function DemandaMesPage() {
                                                                              {pcpItems.map((pcp, pcpI) => (
                                                                                  <div 
                                                                                      key={'real_' + pcpI}
-                                                                                     className="flex flex-col items-end gap-0.5 p-1.5 rounded-lg bg-purple-50/90 hover:bg-purple-100/90 text-purple-800 border border-purple-200 hover:border-purple-300 text-[10px] shadow-2xs transition group text-right"
+                                                                                     className="flex flex-col items-end gap-1 p-1.5 rounded-lg bg-purple-50/90 hover:bg-purple-100/90 text-purple-800 border border-purple-200 hover:border-purple-300 text-[10px] shadow-2xs transition group text-right"
                                                                                  >
                                                                                      <div className="flex items-center gap-1 font-bold text-indigo-900">
                                                                                          <span>Ped {pcp.pedido} (It {pcp.item}):</span>
                                                                                          <strong className="text-emerald-700 bg-white px-1 rounded border border-emerald-200">{pcp.quantidade} un</strong>
                                                                                      </div>
+
+                                                                                     {/* Badges de Notas Fiscais Emitidas */}
+                                                                                     {pcp.nfs && pcp.nfs.length > 0 && (
+                                                                                         <div className="flex flex-wrap items-center justify-end gap-1">
+                                                                                             {pcp.nfs.map((nf, nfi) => (
+                                                                                                 <button
+                                                                                                     key={nfi}
+                                                                                                     type="button"
+                                                                                                     onClick={(e) => {
+                                                                                                         e.stopPropagation();
+                                                                                                         setNfModalTarget({ item, nfs: [nf] });
+                                                                                                     }}
+                                                                                                     className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-mono text-[9px] font-extrabold flex items-center gap-1 transition cursor-pointer shadow-2xs hover:scale-105"
+                                                                                                     title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
+                                                                                                 >
+                                                                                                     <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
+                                                                                                     <span>NF {nf.nota}</span>
+                                                                                                     {nf.qtd_faturada > 0 && (
+                                                                                                         <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
+                                                                                                             {nf.qtd_faturada} un
+                                                                                                         </span>
+                                                                                                     )}
+                                                                                                 </button>
+                                                                                             ))}
+                                                                                         </div>
+                                                                                     )}
+
                                                                                      <div className="flex items-center gap-1 text-[9px] text-purple-700">
                                                                                          <button
                                                                                              type="button"
@@ -2228,6 +2355,32 @@ export default function DemandaMesPage() {
                                                                                          <span className="font-bold text-slate-800">Ped {ghost.pedido} (It {ghost.item}):</span>
                                                                                          <strong className="text-emerald-700 bg-white px-1 rounded border border-emerald-200">{ghost.quantidade} un</strong>
                                                                                      </div>
+
+                                                                                     {/* Badges de Notas Fiscais Emitidas */}
+                                                                                     {ghost.nfs && ghost.nfs.length > 0 && (
+                                                                                         <div className="flex flex-wrap items-center justify-end gap-1">
+                                                                                             {ghost.nfs.map((nf, nfi) => (
+                                                                                                 <button
+                                                                                                     key={nfi}
+                                                                                                     type="button"
+                                                                                                     onClick={(e) => {
+                                                                                                         e.stopPropagation();
+                                                                                                         setNfModalTarget({ item, nfs: [nf] });
+                                                                                                     }}
+                                                                                                     className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-mono text-[9px] font-extrabold flex items-center gap-1 transition cursor-pointer shadow-2xs hover:scale-105"
+                                                                                                     title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
+                                                                                                 >
+                                                                                                     <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
+                                                                                                     <span>NF {nf.nota}</span>
+                                                                                                     {nf.qtd_faturada > 0 && (
+                                                                                                         <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
+                                                                                                             {nf.qtd_faturada} un
+                                                                                                         </span>
+                                                                                                     )}
+                                                                                                 </button>
+                                                                                             ))}
+                                                                                         </div>
+                                                                                     )}
 
                                                                                      <div className="flex items-center gap-1 text-[9px] text-slate-600">
                                                                                          <button
@@ -2314,6 +2467,33 @@ export default function DemandaMesPage() {
                                                                                  <span>Ped {pcp.pedido} (It {pcp.item}):</span>
                                                                                  <strong className="text-emerald-700 bg-white px-1 rounded border border-emerald-200">{pcp.quantidade} un</strong>
                                                                              </div>
+
+                                                                             {/* Badges de Notas Fiscais Emitidas */}
+                                                                             {pcp.nfs && pcp.nfs.length > 0 && (
+                                                                                 <div className="flex flex-wrap items-center justify-end gap-1">
+                                                                                     {pcp.nfs.map((nf, nfi) => (
+                                                                                         <button
+                                                                                             key={nfi}
+                                                                                             type="button"
+                                                                                             onClick={(e) => {
+                                                                                                 e.stopPropagation();
+                                                                                                 setNfModalTarget({ item, nfs: [nf] });
+                                                                                             }}
+                                                                                             className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-mono text-[9px] font-extrabold flex items-center gap-1 transition cursor-pointer shadow-2xs hover:scale-105"
+                                                                                             title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
+                                                                                         >
+                                                                                             <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
+                                                                                             <span>NF {nf.nota}</span>
+                                                                                             {nf.qtd_faturada > 0 && (
+                                                                                                 <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
+                                                                                                     {nf.qtd_faturada} un
+                                                                                                 </span>
+                                                                                             )}
+                                                                                         </button>
+                                                                                     ))}
+                                                                                 </div>
+                                                                             )}
+
                                                                              <div className="flex items-center gap-1 text-[9px] text-amber-800">
                                                                                  <button
                                                                                      type="button"
@@ -2372,6 +2552,32 @@ export default function DemandaMesPage() {
                                                                                  <span className="font-bold text-slate-800">Ped {ghost.pedido} (It {ghost.item}):</span>
                                                                                  <strong className="text-emerald-700 bg-white px-1 rounded border border-emerald-200">{ghost.quantidade} un</strong>
                                                                              </div>
+
+                                                                             {/* Badges de Notas Fiscais Emitidas */}
+                                                                             {ghost.nfs && ghost.nfs.length > 0 && (
+                                                                                 <div className="flex flex-wrap items-center justify-end gap-1">
+                                                                                     {ghost.nfs.map((nf, nfi) => (
+                                                                                         <button
+                                                                                             key={nfi}
+                                                                                             type="button"
+                                                                                             onClick={(e) => {
+                                                                                                 e.stopPropagation();
+                                                                                                 setNfModalTarget({ item, nfs: [nf] });
+                                                                                             }}
+                                                                                             className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-mono text-[9px] font-extrabold flex items-center gap-1 transition cursor-pointer shadow-2xs hover:scale-105"
+                                                                                             title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
+                                                                                         >
+                                                                                             <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
+                                                                                             <span>NF {nf.nota}</span>
+                                                                                             {nf.qtd_faturada > 0 && (
+                                                                                                 <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
+                                                                                                     {nf.qtd_faturada} un
+                                                                                                 </span>
+                                                                                             )}
+                                                                                         </button>
+                                                                                     ))}
+                                                                                 </div>
+                                                                             )}
 
                                                                              <div className="flex items-center gap-1 text-[9px] text-slate-600">
                                                                                  <button
@@ -2448,6 +2654,26 @@ export default function DemandaMesPage() {
 
                                                          <td className="py-3 px-3 text-right font-bold text-slate-900">
                                                              {item.total_demanda > 0 ? item.total_demanda.toLocaleString('pt-BR') : '-'}
+                                                         </td>
+
+                                                         {/* NOVA COLUNA: Qtd Faturada / Extrato NFs */}
+                                                         <td className="py-3 px-3 text-right bg-sky-50/20 whitespace-nowrap">
+                                                             {item.total_faturado > 0 ? (
+                                                                 <button
+                                                                     type="button"
+                                                                     onClick={() => setNfModalTarget({ item, nfs: item.nfs || [] })}
+                                                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-extrabold text-xs transition shadow-2xs hover:shadow-xs cursor-pointer group"
+                                                                     title="Clique para ver o extrato de Notas Fiscais emitidas deste item"
+                                                                 >
+                                                                     <Receipt className="w-3.5 h-3.5 text-sky-600 group-hover:scale-110 transition" />
+                                                                     <span>{item.total_faturado.toLocaleString('pt-BR')} un</span>
+                                                                     <span className="text-[9px] bg-sky-200/80 px-1 py-0.2 rounded font-extrabold text-sky-900">
+                                                                         {(item.nfs || []).length} NF{((item.nfs || []).length !== 1 ? 's' : '')}
+                                                                     </span>
+                                                                 </button>
+                                                             ) : (
+                                                                 <span className="text-slate-300">-</span>
+                                                             )}
                                                          </td>
 
                                                          <td className="py-3 px-3 text-right font-extrabold text-emerald-700 bg-emerald-50/20">
@@ -2664,6 +2890,142 @@ export default function DemandaMesPage() {
                                     <span>Processando linhas e gravando datas...</span>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Extrato de Notas Fiscais Emitidas (Faturamento VMI) */}
+            {nfModalTarget && (
+                <div 
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+                    onClick={() => setNfModalTarget(null)}
+                >
+                    <div 
+                        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden p-6 space-y-5 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl border border-sky-200">
+                                    <Receipt className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                        <span>Extrato de Faturamento & Notas Fiscais</span>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                                            {(nfModalTarget.nfs || []).length} NF{((nfModalTarget.nfs || []).length !== 1 ? 's' : '')} Emitida{((nfModalTarget.nfs || []).length !== 1 ? 's' : '')}
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        Rastreabilidade fiscal dos produtos entregues à VMI Sistemas
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setNfModalTarget(null)}
+                                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Product Summary Header Card */}
+                        <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2 text-xs shrink-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="space-y-0.5">
+                                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Produto</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-900 text-sm">{nfModalTarget.item.ref_cliente}</span>
+                                        {nfModalTarget.item.codigo_metalfisa !== 'NÃO MAPEADO' && (
+                                            <span className="px-2 py-0.5 bg-slate-200 text-slate-800 rounded font-mono font-bold text-[11px]">
+                                                {nfModalTarget.item.codigo_metalfisa}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-slate-600 text-xs">{nfModalTarget.item.descricao || '-'}</p>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Total Faturado</span>
+                                        <span className="text-base font-extrabold text-sky-700">
+                                            {(nfModalTarget.item.total_faturado || 0).toLocaleString('pt-BR')} un
+                                        </span>
+                                    </div>
+                                    <div className="text-right border-l border-slate-200 pl-3">
+                                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Saldo a Faturar</span>
+                                        <span className="text-base font-extrabold text-emerald-700">
+                                            {(nfModalTarget.item.total_saldo_faturar || 0).toLocaleString('pt-BR')} un
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tabela de Notas Fiscais */}
+                        <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-xs border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+                                    <tr>
+                                        <th className="py-2.5 px-3">Nota Fiscal</th>
+                                        <th className="py-2.5 px-2 text-center">Série</th>
+                                        <th className="py-2.5 px-3">Data Emissão</th>
+                                        <th className="py-2.5 px-3 text-right text-sky-900 font-extrabold">Qtd Faturada</th>
+                                        <th className="py-2.5 px-3">Pedido Metalfisa</th>
+                                        <th className="py-2.5 px-2 text-center">Item</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(nfModalTarget.nfs && nfModalTarget.nfs.length > 0) ? (
+                                        nfModalTarget.nfs.map((nf, nfIdx) => (
+                                            <tr key={nfIdx} className="hover:bg-sky-50/40 transition">
+                                                <td className="py-2.5 px-3 font-bold text-slate-900 font-mono flex items-center gap-1.5">
+                                                    <FileText className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                                    <span>{nf.nota}</span>
+                                                </td>
+                                                <td className="py-2.5 px-2 text-center font-mono text-slate-500">
+                                                    {nf.serie || '1'}
+                                                </td>
+                                                <td className="py-2.5 px-3 text-slate-700">
+                                                    {nf.emissao || '-'}
+                                                </td>
+                                                <td className="py-2.5 px-3 text-right font-extrabold text-sky-800">
+                                                    {Number(nf.qtd_faturada || 0).toLocaleString('pt-BR')} un
+                                                </td>
+                                                <td className="py-2.5 px-3 font-mono font-semibold text-indigo-700">
+                                                    {nf.pedido || '-'}
+                                                </td>
+                                                <td className="py-2.5 px-2 text-center font-mono text-slate-500">
+                                                    {nf.item || '-'}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                                                Nenhum registro detalhado de nota fiscal encontrado no Protheus para este produto.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 shrink-0">
+                            <span className="text-[11px] text-slate-400">
+                                Total de {nfModalTarget.nfs?.length || 0} nota(s) fiscal(is) registradas no SD2010.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setNfModalTarget(null)}
+                                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                                Fechar
+                            </button>
                         </div>
                     </div>
                 </div>

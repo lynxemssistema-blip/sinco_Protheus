@@ -9,6 +9,7 @@ const db = require('../db');
 const { hasFinancialAccess } = require('../util/permissionHelper');
 
 const upload = multer({ storage: multer.memoryStorage() });
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // ── Init tables ──────────────────────────────────────────────────────────────
 async function initTables() {
@@ -3047,9 +3048,21 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             );
         }
 
+        function stripRevision(str) {
+            if (!str) return '';
+            const s = String(str).trim();
+            // Se antes dos dois últimos dígitos tiver um ponto (ex: .00, .01, .02), remove o ponto e a revisão
+            return s.replace(/\.[a-zA-Z0-9]{1,2}$/, '');
+        }
+
         function cleanCode(str) {
             if (!str) return '';
             return String(str).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        }
+
+        function getBaseCleanCode(str) {
+            if (!str) return '';
+            return cleanCode(stripRevision(str));
         }
 
         function getMonthGroup(dateVal) {
@@ -3080,9 +3093,13 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 totalDemanda += num;
             });
 
+            const refClean = cleanCode(refRaw);
+            const refBase = getBaseCleanCode(refRaw);
+
             excelItems.push({
                 refCliente: refRaw,
-                refClean: cleanCode(refRaw),
+                refClean,
+                refBase,
                 descricao: descrRaw,
                 demandas,
                 totalDemanda
@@ -3093,8 +3110,23 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             return res.status(400).json({ error: 'Nenhum item com referência de cliente encontrado na planilha.' });
         }
 
+        function formatProtheusDate(raw) {
+            if (!raw) return null;
+            const s = String(raw).trim();
+            if (s.length === 8 && /^\d{8}$/.test(s)) {
+                return `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
+            }
+            return s;
+        }
+
+        // Filtro de Pedidos Inativos (MetalFisa + Protheus)
+        const inactiveFilter = await getInactiveOrdersFilter();
+        const inactiveSqlC6 = inactiveFilter('c6.c6_num');
+        const inactiveSqlC2 = inactiveFilter('c2_pedido');
+        const inactiveSqlD2 = inactiveFilter('d2.d2_pedido');
+
         // Executar todas as consultas em paralelo no PostgreSQL e MySQL simultaneamente
-        const [vmiMapRes, sz1Res, sc6Res, sc2Res, pcpRes] = await Promise.all([
+        const [vmiMapRes, sz1Res, sc6Res, sc2Res, pcpRes, sd2Res] = await Promise.all([
             // 1. Carregar mapeamento VMI (app_demanda_vmi_map)
             mysqlPool.query('SELECT codigo_produto_cliente, b1_cod, descricao_protheus, z1_revisao FROM app_demanda_vmi_map')
                 .catch(e => {
@@ -3108,7 +3140,7 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 FROM public.sz1010
                 WHERE COALESCE(d_e_l_e_t_, '') <> '*' AND TRIM(z1_produto) <> ''
             `),
-            // 3. Carregar Pedidos em Aberto com Saldo no Protheus (SC6010)
+            // 3. Carregar Pedidos ATIVOS no Protheus (SC6010/SC5010) com saldo pendente OU faturamento realizado
             db.query(`
                 SELECT TRIM(c6.c6_num) as pedido_metal,
                        TRIM(c6.c6_item) as item_pedido,
@@ -3117,15 +3149,20 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                        TRIM(c6.c6_descri) as desc_produto,
                        TRIM(c6.c6_xproc1) as ref_cliente,
                        TRIM(a1.a1_nome) as nome_cliente,
-                       (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) as saldo_a_faturar,
+                       COALESCE(c6.c6_qtdven, 0)::numeric as qtd_pedida,
+                       COALESCE(c6.c6_qtdent, 0)::numeric as qtd_faturada,
+                       (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0))::numeric as saldo_a_faturar,
                        c6.c6_entreg as data_entrega_protheus
                 FROM public.sc6010 c6
+                JOIN public.sc5010 c5 ON c5.c5_num = c6.c6_num AND COALESCE(c5.d_e_l_e_t_, '') NOT IN ('*', '  *')
                 LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c6.c6_cli AND COALESCE(a1.d_e_l_e_t_, '') <> '*'
-                WHERE (COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0
+                WHERE ((COALESCE(c6.c6_qtdven, 0) - COALESCE(c6.c6_qtdent, 0)) > 0 OR COALESCE(c6.c6_qtdent, 0) > 0)
                   AND COALESCE(c6.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                  AND COALESCE(c6.c6_blq, '') <> 'R'
                   AND UPPER(a1.a1_nome) LIKE '%VMI SISTEMAS%'
+                  ${inactiveSqlC6}
             `),
-            // 4. Carregar OPs do Protheus (SC2010)
+            // 4. Carregar OPs do Protheus (SC2010) para pedidos ativos
             db.query(`
                 SELECT TRIM(c2_pedido) as pedido,
                    TRIM(c2_itempv) as item,
@@ -3134,6 +3171,7 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 FROM public.sc2010
                 WHERE (COALESCE(c2_quant, 0) - COALESCE(c2_quje, 0)) > 0
                   AND COALESCE(d_e_l_e_t_, '') NOT IN ('*', '  *')
+                  ${inactiveSqlC2}
             `),
             // 5. Carregar Previsões PCP do SINCO (app_pcp_delivery_forecasts)
             mysqlPool.query(`
@@ -3147,6 +3185,25 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             `).catch(e => {
                 console.warn('[DEMANDA MÊS] Aviso ao ler app_pcp_delivery_forecasts:', e.message);
                 return [[]];
+            }),
+            // 6. Carregar Notas Fiscais Faturadas para a VMI (SD2010)
+            db.query(`
+                SELECT TRIM(d2.d2_pedido) as pedido,
+                       TRIM(d2.d2_itempv) as item,
+                       TRIM(d2.d2_cod)    as cod_produto,
+                       TRIM(d2.d2_doc)    as nota,
+                       TRIM(d2.d2_serie)  as serie,
+                       TRIM(d2.d2_emissao) as emissao_raw,
+                       d2.d2_quant::numeric as qtd_faturada
+                FROM public.sd2010 d2
+                JOIN public.sa1010 a1 ON a1.a1_cod = d2.d2_cliente AND COALESCE(a1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                WHERE COALESCE(d2.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                  AND TRIM(d2.d2_doc) <> ''
+                  AND UPPER(a1.a1_nome) LIKE '%VMI SISTEMAS%'
+                  ${inactiveSqlD2}
+            `).catch(e => {
+                console.warn('[DEMANDA MÊS] Aviso ao ler SD2010:', e.message);
+                return { rows: [] };
             })
         ]);
 
@@ -3156,9 +3213,11 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
         const vmiMap = new Map();
         for (const m of vmiMapRows) {
             const k = cleanCode(m.codigo_produto_cliente);
+            const kBase = getBaseCleanCode(m.codigo_produto_cliente);
             if (k) {
                 vmiMap.set(k, m.b1_cod);
-                vmiList.push({ codCliClean: k, b1Cod: m.b1_cod });
+                if (kBase) vmiMap.set(kBase, m.b1_cod);
+                vmiList.push({ codCliClean: k, codCliBase: kBase, b1Cod: m.b1_cod });
             }
         }
 
@@ -3167,9 +3226,11 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
         const sz1Map = new Map();
         for (const z of sz1Res.rows) {
             const k = cleanCode(z.cod_cli);
+            const kBase = getBaseCleanCode(z.cod_cli);
             if (k) {
                 if (!sz1Map.has(k)) sz1Map.set(k, z.b1_cod);
-                sz1List.push({ codCliClean: k, b1Cod: z.b1_cod });
+                if (kBase && !sz1Map.has(kBase)) sz1Map.set(kBase, z.b1_cod);
+                sz1List.push({ codCliClean: k, codCliBase: kBase, b1Cod: z.b1_cod });
             }
         }
 
@@ -3178,10 +3239,11 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
         const sc6List = [];
         for (const row of sc6Res.rows) {
             const refClean = cleanCode(row.ref_cliente);
+            const refBase = getBaseCleanCode(row.ref_cliente);
             const prodClean = cleanCode(row.cod_produto);
-            sc6List.push({ ...row, refClean, prodClean });
+            sc6List.push({ ...row, refClean, refBase, prodClean });
 
-            const keys = [refClean, prodClean].filter(Boolean);
+            const keys = [refClean, refBase, prodClean].filter(Boolean);
             for (const k of keys) {
                 if (!protheusByRef.has(k)) protheusByRef.set(k, []);
                 protheusByRef.get(k).push(row);
@@ -3205,39 +3267,80 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             pcpMap.get(k).push(p);
         }
 
-        // 6. Montar o cruzamento completo
+        // 6. Indexar Notas Fiscais Emitidas (SD2010)
+        const nfMapByItem = new Map();
+        const nfMapByProd = new Map();
+        for (const nf of (sd2Res?.rows || [])) {
+            const kItem = `${nf.pedido}|${nf.item}`;
+            const kProd = cleanCode(nf.cod_produto);
+            const nfObj = {
+                nota: nf.nota,
+                serie: nf.serie,
+                emissao: formatProtheusDate(nf.emissao_raw),
+                emissao_raw: nf.emissao_raw,
+                qtd_faturada: Number(nf.qtd_faturada) || 0,
+                pedido: nf.pedido,
+                item: nf.item,
+                cod_produto: nf.cod_produto
+            };
+            if (!nfMapByItem.has(kItem)) nfMapByItem.set(kItem, []);
+            nfMapByItem.get(kItem).push(nfObj);
+
+            if (kProd) {
+                if (!nfMapByProd.has(kProd)) nfMapByProd.set(kProd, []);
+                nfMapByProd.get(kProd).push(nfObj);
+            }
+        }
+
+        // 7. Montar o cruzamento completo
         let totalComSaldo = 0;
         let totalSemSaldo = 0;
+        let totalComFaturamento = 0;
+        let totalTotalmenteFaturados = 0;
         let totalSaldoGeral = 0;
         let totalDemandaGeral = 0;
+        let totalFaturadoGeral = 0;
 
         const resultadoCruzamento = excelItems.map(item => {
             const ref = item.refClean;
+            const refBase = item.refBase;
 
-            // Rastrear b1_cod (Exato e Inteligente por prefixo/sufixo)
-            let b1Cod = vmiMap.get(ref) || sz1Map.get(ref) || null;
+            // Rastrear b1_cod (Exato, por Base sem revisão, ou Inteligente por prefixo/sufixo)
+            let b1Cod = vmiMap.get(ref) || (refBase && vmiMap.get(refBase)) || sz1Map.get(ref) || (refBase && sz1Map.get(refBase)) || null;
             if (!b1Cod) {
-                const vMatch = vmiList.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref));
+                const vMatch = vmiList.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref) || (refBase && (m.codCliClean.includes(refBase) || m.codCliClean.startsWith(refBase))));
                 if (vMatch) b1Cod = vMatch.b1Cod;
             }
             if (!b1Cod) {
-                const sMatch = sz1List.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref));
+                const sMatch = sz1List.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref) || (refBase && (m.codCliClean.includes(refBase) || m.codCliClean.startsWith(refBase))));
                 if (sMatch) b1Cod = sMatch.b1Cod;
             }
             
-            // Buscar pedidos vinculados no Protheus
-            let matchedOrders = protheusByRef.get(ref) || [];
-            if (matchedOrders.length === 0 && b1Cod) {
-                matchedOrders = protheusByRef.get(cleanCode(b1Cod)) || [];
+            // Buscar pedidos vinculados no Protheus (por Ref Exata, Ref Base sem revisão, ou Código MetalFisa b1Cod)
+            const matchedOrders = [];
+            if (protheusByRef.has(ref)) {
+                matchedOrders.push(...protheusByRef.get(ref));
             }
-            if (matchedOrders.length === 0) {
-                const b1Clean = b1Cod ? cleanCode(b1Cod) : null;
-                matchedOrders = sc6List.filter(o => {
-                    if (b1Clean && o.prodClean === b1Clean) return true;
-                    if (o.refClean && (o.refClean.endsWith(ref) || o.refClean.includes(ref))) return true;
-                    return false;
-                });
+            if (refBase && protheusByRef.has(refBase)) {
+                matchedOrders.push(...protheusByRef.get(refBase));
             }
+            if (b1Cod) {
+                const b1Clean = cleanCode(b1Cod);
+                if (protheusByRef.has(b1Clean)) {
+                    matchedOrders.push(...protheusByRef.get(b1Clean));
+                }
+            }
+            
+            // Varredura flexível adicional no sc6List
+            const b1Clean = b1Cod ? cleanCode(b1Cod) : null;
+            const additionalMatches = sc6List.filter(o => {
+                if (b1Clean && o.prodClean === b1Clean) return true;
+                if (refBase && o.refBase && o.refBase === refBase) return true;
+                if (refBase && o.refClean && (o.refClean.startsWith(refBase) || o.refClean.includes(refBase))) return true;
+                if (ref && o.refClean && (o.refClean.endsWith(ref) || o.refClean.includes(ref))) return true;
+                return false;
+            });
+            matchedOrders.push(...additionalMatches);
 
             // Deduplicar pedidos encontrados
             const uniqueOrdersMap = new Map();
@@ -3247,29 +3350,35 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             }
             const uniqueOrders = Array.from(uniqueOrdersMap.values());
 
-            const hasBalance = uniqueOrders.length > 0;
-            if (hasBalance) totalComSaldo++;
-            else totalSemSaldo++;
-
             let saldoTotalItem = 0;
+            let faturadoTotalItem = 0;
+            let pedidoTotalItem = 0;
             const pcpPorMes = {};
 
             const pedidosDetalhados = uniqueOrders.map(o => {
                 const saldo = Number(o.saldo_a_faturar) || 0;
+                const qtdFaturada = Number(o.qtd_faturada) || 0;
+                const qtdPedida = Number(o.qtd_pedida) || (saldo + qtdFaturada);
+
                 saldoTotalItem += saldo;
+                faturadoTotalItem += qtdFaturada;
+                pedidoTotalItem += qtdPedida;
                 if (!b1Cod) b1Cod = o.cod_produto;
 
                 const ops = opMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
                 const pcps = pcpMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+                const itemNfs = nfMapByItem.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
 
-                if (pcps.length > 0) {
-                    for (const fc of pcps) {
-                        const mesGrp = getMonthGroup(fc.data_entrega_pcp);
-                        const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
-                        pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                if (saldo > 0) {
+                    if (pcps.length > 0) {
+                        for (const fc of pcps) {
+                            const mesGrp = getMonthGroup(fc.data_entrega_pcp);
+                            const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
+                            pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                        }
+                    } else {
+                        pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
                     }
-                } else {
-                    pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
                 }
 
                 return {
@@ -3279,7 +3388,10 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                     cod_produto: o.cod_produto,
                     desc_produto: o.desc_produto,
                     nome_cliente: o.nome_cliente,
+                    qtd_pedida: qtdPedida,
+                    qtd_faturada: qtdFaturada,
                     saldo_a_faturar: saldo,
+                    nfs: itemNfs,
                     ops: ops.map(op => ({
                         numero_op: op.numero_op,
                         saldo_op: Number(op.saldo_op) || 0
@@ -3307,15 +3419,46 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 };
             });
 
+            // Coleta e deduplica todas as Notas Fiscais deste produto
+            const productNfsMap = new Map();
+            pedidosDetalhados.forEach(p => {
+                (p.nfs || []).forEach(nf => {
+                    const key = `${nf.nota}|${nf.serie}|${nf.pedido}|${nf.item}`;
+                    productNfsMap.set(key, nf);
+                });
+            });
+            if (b1Cod) {
+                const b1Nfs = nfMapByProd.get(cleanCode(b1Cod)) || [];
+                b1Nfs.forEach(nf => {
+                    const key = `${nf.nota}|${nf.serie}|${nf.pedido}|${nf.item}`;
+                    if (!productNfsMap.has(key)) productNfsMap.set(key, nf);
+                });
+            }
+            const listaNfsProduto = Array.from(productNfsMap.values()).sort((a, b) => (b.emissao_raw || '').localeCompare(a.emissao_raw || ''));
+
+            const hasBalance = saldoTotalItem > 0;
+            const fullyInvoiced = faturadoTotalItem > 0 && saldoTotalItem === 0;
+
+            if (hasBalance) totalComSaldo++;
+            else totalSemSaldo++;
+
+            if (faturadoTotalItem > 0) totalComFaturamento++;
+            if (fullyInvoiced) totalTotalmenteFaturados++;
+
             totalSaldoGeral += saldoTotalItem;
             totalDemandaGeral += item.totalDemanda;
+            totalFaturadoGeral += faturadoTotalItem;
 
             return {
                 ref_cliente: item.refCliente,
                 codigo_metalfisa: b1Cod || (uniqueOrders[0]?.cod_produto) || 'NÃO MAPEADO',
                 descricao: item.descricao || (uniqueOrders[0]?.desc_produto) || '',
                 possui_saldo: hasBalance,
+                totalmente_faturado: fullyInvoiced,
+                total_pedido: pedidoTotalItem,
+                total_faturado: faturadoTotalItem,
                 total_saldo_faturar: saldoTotalItem,
+                nfs: listaNfsProduto,
                 demandas: item.demandas,
                 total_demanda: item.totalDemanda,
                 pcp_por_mes: pcpPorMes,
@@ -3324,13 +3467,17 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             };
         });
 
-        // 7. Incluir todos os demais pedidos e itens VMI com saldo que NÃO estavam na planilha Excel
+        // 8. Incluir todos os demais pedidos e itens VMI com saldo que NÃO estavam na planilha Excel
         const usedOrderKeys = new Set();
         resultadoCruzamento.forEach(it => {
             it.pedidos?.forEach(p => usedOrderKeys.add(`${p.pedido_metal}|${p.item_pedido}`));
         });
 
-        const remainingOrders = sc6List.filter(o => !usedOrderKeys.has(`${o.pedido_metal}|${o.item_pedido}`));
+        // Apenas pedidos com saldo > 0 que não entraram na planilha
+        const remainingOrders = sc6List.filter(o => 
+            !usedOrderKeys.has(`${o.pedido_metal}|${o.item_pedido}`) && 
+            (Number(o.saldo_a_faturar) > 0)
+        );
         
         // Agrupar pedidos restantes por código de produto / ref
         const remainingGrouped = new Map();
@@ -3345,23 +3492,33 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
         const outrosItensVmi = [];
         for (const [groupKey, orders] of remainingGrouped.entries()) {
             let saldoTotalGrupo = 0;
+            let faturadoTotalGrupo = 0;
+            let pedidoTotalGrupo = 0;
             const pcpPorMes = {};
 
             const pedidosDetalhados = orders.map(o => {
                 const saldo = Number(o.saldo_a_faturar) || 0;
+                const qtdFaturada = Number(o.qtd_faturada) || 0;
+                const qtdPedida = Number(o.qtd_pedida) || (saldo + qtdFaturada);
+
                 saldoTotalGrupo += saldo;
+                faturadoTotalGrupo += qtdFaturada;
+                pedidoTotalGrupo += qtdPedida;
 
                 const ops = opMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
                 const pcps = pcpMap.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
+                const itemNfs = nfMapByItem.get(`${o.pedido_metal}|${o.item_pedido}`) || [];
 
-                if (pcps.length > 0) {
-                    for (const fc of pcps) {
-                        const mesGrp = getMonthGroup(fc.data_entrega_pcp);
-                        const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
-                        pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                if (saldo > 0) {
+                    if (pcps.length > 0) {
+                        for (const fc of pcps) {
+                            const mesGrp = getMonthGroup(fc.data_entrega_pcp);
+                            const qtdPcp = parseFloat(fc.quantidade_pcp) || saldo;
+                            pcpPorMes[mesGrp] = (pcpPorMes[mesGrp] || 0) + qtdPcp;
+                        }
+                    } else {
+                        pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
                     }
-                } else {
-                    pcpPorMes['SEM DATA PCP'] = (pcpPorMes['SEM DATA PCP'] || 0) + saldo;
                 }
 
                 return {
@@ -3370,7 +3527,10 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                     pedido_cliente: o.pedido_cliente,
                     cod_produto: o.cod_produto,
                     desc_produto: o.desc_produto,
+                    qtd_pedida: qtdPedida,
+                    qtd_faturada: qtdFaturada,
                     saldo_a_faturar: saldo,
+                    nfs: itemNfs,
                     ops: ops.map(op => ({
                         numero_op: op.numero_op,
                         saldo_op: Number(op.saldo_op) || 0
@@ -3398,15 +3558,30 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 };
             });
 
+            const productNfsMap = new Map();
+            pedidosDetalhados.forEach(p => {
+                (p.nfs || []).forEach(nf => {
+                    const key = `${nf.nota}|${nf.serie}|${nf.pedido}|${nf.item}`;
+                    productNfsMap.set(key, nf);
+                });
+            });
+            const listaNfsProduto = Array.from(productNfsMap.values()).sort((a, b) => (b.emissao_raw || '').localeCompare(a.emissao_raw || ''));
+
             totalSaldoGeral += saldoTotalGrupo;
+            totalFaturadoGeral += faturadoTotalGrupo;
             totalComSaldo++;
+            if (faturadoTotalGrupo > 0) totalComFaturamento++;
 
             outrosItensVmi.push({
                 ref_cliente: orders[0]?.ref_cliente || 'VMI GERAL',
                 codigo_metalfisa: orders[0]?.cod_produto || 'NÃO MAPEADO',
                 descricao: orders[0]?.desc_produto || '',
                 possui_saldo: true,
+                totalmente_faturado: false,
+                total_pedido: pedidoTotalGrupo,
+                total_faturado: faturadoTotalGrupo,
                 total_saldo_faturar: saldoTotalGrupo,
+                nfs: listaNfsProduto,
                 demandas: {}, // Sem demanda na planilha
                 total_demanda: 0,
                 pcp_por_mes: pcpPorMes,
@@ -3427,8 +3602,11 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 totalItensForaPlanilha: outrosItensVmi.length,
                 totalComSaldo,
                 totalSemSaldo,
+                totalComFaturamento,
+                totalTotalmenteFaturados,
                 totalSaldoGeral,
-                totalDemandaGeral
+                totalDemandaGeral,
+                totalFaturadoGeral
             },
             itens: listaFinalItens
         });

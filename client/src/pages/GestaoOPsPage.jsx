@@ -1,25 +1,28 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock } from 'lucide-react';
-import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesNotes, api, getFileUrl, reportSystemError } from '../services/api';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock, Scissors, Table, Trash2 } from 'lucide-react';
+import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getProductDocuments, getSalesPlanningReportData, getSalesPlanningMasterSheet, getSalesNotes, api, getFileUrl, reportSystemError } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
+import { toast } from 'react-toastify';
+import { exportMasterSheetExcel } from '../services/masterSheetExportGenerator';
 
 import PCPExportTab from '../components/orders/PCPExportTab';
 import DocsModal from '../components/DocsModal';
 import NotesDrawer from '../components/NotesDrawer';
 import MeetingReportModal from '../components/MeetingReportModal';
-import ProductImageModal from '../components/ProductImageModal'; // Import Image Modal
+import ProductImageModal from '../components/ProductImageModal';
 import EngineeringControlModal from '../components/EngineeringControlModal';
 import ProductionComparison from '../components/ProductionComparison';
 import PCPForecastModal from '../components/PCPForecastModal';
+import SplitOPModal from '../components/SplitOPModal';
+import BOMStructureModal from '../components/BOMStructureModal';
 import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
-import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
-import { generateOrderPDF } from '../services/orderPdfGenerator'; // Import new PDF service
+import { generateOrderPDF } from '../services/orderPdfGenerator';
 
 const GestaoOPsPage = () => {
 
@@ -30,18 +33,15 @@ const GestaoOPsPage = () => {
         if (!raw) return '-';
         if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
         if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
-        if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
-        return raw;
         if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
         return raw;
     };
 
     const { orderFilters, updateOrderFilters } = useFilters();
 
-    // Mapping context to local names for easier migration
-    const viewMode = 'flat'; // Forced flat view for Gestão de OPs
+    const viewMode = 'flat';
     const setViewMode = (val) => updateOrderFilters({ viewMode: val, page: 1 });
 
     const activeTab = orderFilters.activeTab || 'evolucao';
@@ -50,9 +50,11 @@ const GestaoOPsPage = () => {
     const [orders, setOrders] = useState([]);
     const [selectedFractions, setSelectedFractions] = useState(new Set());
     const [loading, setLoading] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState('');
     const [error, setError] = useState(null);
 
-    // Tree Mode: Expanded Rows
+    const fetchIdRef = useRef(0);
+
     const expandedRow = orderFilters.expandedOrderId;
     const setExpandedRow = (val) => updateOrderFilters({ expandedOrderId: val });
 
@@ -68,14 +70,17 @@ const GestaoOPsPage = () => {
     const [selectedProductForImage, setSelectedProductForImage] = useState(null);
 
     // Notes Drawer State (Ata Viva)
-    const [notesTarget, setNotesTarget] = useState(null); // { order, item, product }
-    const [engineeringTarget, setEngineeringTarget] = useState(null); // { orderId, item object }
+    const [notesTarget, setNotesTarget] = useState(null);
+    const [engineeringTarget, setEngineeringTarget] = useState(null);
     const [showReportModal, setShowReportModal] = useState(false);
     const [isGlobalReport, setIsGlobalReport] = useState(false);
     const { user } = useAuth();
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
+    const [splitOpTarget, setSplitOpTarget] = useState(null);
+    const [bomStructureTarget, setBomStructureTarget] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
-    const [printingOrderId, setPrintingOrderId] = useState(null); // Local loading state for print button
+    const [exportingMasterSheet, setExportingMasterSheet] = useState(false);
+    const [printingOrderId, setPrintingOrderId] = useState(null);
     const [batchProgress, setBatchProgress] = useState(null);
 
     // PCPMetal AI Drawer State
@@ -89,10 +94,9 @@ const GestaoOPsPage = () => {
     // Action dropdown menu state
     const [openActionMenu, setOpenActionMenu] = useState(null);
 
-    // PCP Release modal state
     const [pcpReleaseModal, setPcpReleaseModal] = useState({ open: false, targets: [], registerRelease: true });
     const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
-    
+
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
@@ -109,6 +113,8 @@ const GestaoOPsPage = () => {
     const filters = {
         cliente: orderFilters.cliente,
         pedido: orderFilters.pedido,
+        pedcli: orderFilters.pedcli || '',
+        refCliente: orderFilters.refCliente || '',
         produto: orderFilters.produto,
         dataInicial: orderFilters.dataInicial,
         dataFinal: orderFilters.dataFinal,
@@ -118,7 +124,6 @@ const GestaoOPsPage = () => {
     };
 
     const setFilters = (val) => {
-        // Handle full object or updater function
         if (typeof val === 'function') {
             updateOrderFilters(val(orderFilters));
         } else {
@@ -128,43 +133,145 @@ const GestaoOPsPage = () => {
 
     const [filterLote, setFilterLote] = useState('');
 
+    const getFractionLetter = (index) => {
+        const firstChar = String.fromCharCode(65 + Math.floor(index / 26));
+        const secondChar = String.fromCharCode(65 + (index % 26));
+        return `${firstChar}${secondChar}`;
+    };
+
     // Flatten fractional orders so they render as discrete rows in the grid
     const flattenedFractionalOrders = useMemo(() => {
         if (!orders) return [];
         let flat = orders.reduce((acc, order) => {
-            if (order.pcp_programacoes && order.pcp_programacoes.length > 0) {
+            const hasMultipleFractions = order.pcp_programacoes && order.pcp_programacoes.length > 1;
+
+            if (hasMultipleFractions) {
+                // Determine base OP (e.g. 00461809 from 00461809001 or 004618 item 09)
+                let baseOp = '';
+                const rawOp = String(order.op_num || '').trim();
+                if (rawOp && rawOp !== '-') {
+                    if (rawOp.length === 11) {
+                        baseOp = rawOp.substring(0, 8);
+                    } else if (rawOp.length === 6) {
+                        baseOp = `${rawOp}${String(order.item || '').padStart(2, '0')}`;
+                    } else {
+                        baseOp = rawOp;
+                    }
+                } else {
+                    baseOp = `${String(order.pedido || '').padStart(6, '0')}${String(order.item || '').padStart(2, '0')}`;
+                }
+
                 order.pcp_programacoes.forEach((fraction, index) => {
+                    const letter = fraction.numero_lote && /^[A-Z]{2}$/i.test(String(fraction.numero_lote).trim())
+                        ? String(fraction.numero_lote).trim().toUpperCase()
+                        : getFractionLetter(index);
+
+                    // Ensure OP ends with the 2-letter code (e.g. 00461809AA, 00461809AB)
+                    let fracOpNum = fraction.op_protheus ? String(fraction.op_protheus).trim() : '';
+                    if (!fracOpNum || fracOpNum === '-' || /00\d$/.test(fracOpNum)) {
+                        fracOpNum = `${baseOp}${letter}`;
+                    } else if (!fracOpNum.endsWith(letter)) {
+                        fracOpNum = `${baseOp}${letter}`;
+                    }
+
                     acc.push({
                         ...order,
                         ...fraction,
                         is_fraction: true,
+                        fraction_letter: letter,
+                        fraction_index: index,
+                        total_fractions: order.pcp_programacoes.length,
                         // We store raw data under _pcp_prog to avoid collisions, similar to ItensAFaturar
                         _pcp_prog: fraction,
                         fraction_id: fraction.id || `${order.pedido}-${order.item}-${index}`,
                         visual_qtd: fraction.quantidade_pcp || order.qtd_faturar,
-                        visual_op: `${order.op_num || order.pedido}-${fraction.numero_lote ? fraction.numero_lote : String.fromCharCode(65 + index)}`,
+                        visual_op: fracOpNum,
                         lpf_codigo: fraction.lpf_codigo || order.lpf_codigo_base
                     });
                 });
             } else {
+                const singleForecast = order.pcp_programacoes && order.pcp_programacoes.length === 1 ? order.pcp_programacoes[0] : null;
+                
+                // Determine full 8-digit OP (e.g. 00461815, 00461845)
+                let fullNonFractionOp = '';
+                const rawOp = String(order.op_num || '').trim();
+                const itemPad = String(order.item || '').padStart(2, '0');
+                if (rawOp && rawOp !== '-') {
+                    if (rawOp.length === 6) {
+                        fullNonFractionOp = `${rawOp}${itemPad}`;
+                    } else if (rawOp.length === 11) {
+                        fullNonFractionOp = rawOp.substring(0, 8);
+                    } else {
+                        fullNonFractionOp = rawOp;
+                    }
+                } else if (singleForecast?.op_protheus) {
+                    const spOp = String(singleForecast.op_protheus).trim();
+                    if (spOp.length === 6) {
+                        fullNonFractionOp = `${spOp}${itemPad}`;
+                    } else if (spOp.length === 11) {
+                        fullNonFractionOp = spOp.substring(0, 8);
+                    } else {
+                        fullNonFractionOp = spOp;
+                    }
+                }
+
                 acc.push({
                     ...order,
+                    ...(singleForecast || {}),
                     is_fraction: false,
-                    fraction_id: `${order.pedido}-${order.item}-base`,
-                    visual_qtd: order.qtd_faturar,
-                    visual_op: order.op_num || '',
-                    lpf_codigo: order.lpf_codigo_base
+                    fraction_letter: '',
+                    fraction_index: 0,
+                    total_fractions: 1,
+                    _pcp_prog: singleForecast,
+                    fraction_id: `${order.pedido}-${order.item}`,
+                    visual_qtd: singleForecast?.quantidade_pcp || order.qtd_faturar,
+                    visual_op: fullNonFractionOp,
+                    lpf_codigo: singleForecast?.lpf_codigo || order.lpf_codigo_base
                 });
             }
             return acc;
         }, []);
 
-        if (filterLote) {
-            const term = filterLote.toUpperCase().trim();
-            return flat.filter((x) => x.visual_op && x.visual_op.toUpperCase().includes(term));
+        // Filter by Lote if specified
+        if (filterLote.trim()) {
+            const term = filterLote.trim().toLowerCase();
+            flat = flat.filter(item =>
+                (item.fraction_letter && item.fraction_letter.toLowerCase().includes(term)) ||
+                (item.numero_lote && String(item.numero_lote).toLowerCase().includes(term)) ||
+                (item.visual_op && item.visual_op.toLowerCase().includes(term))
+            );
+        }
+
+        // Apply strict date filtering on the client for split fractions if filtering by PCP date
+        if ((filters.dateType === 'pcp' || filters.dateType === 'entrega_pcp') && (filters.dataInicial || filters.dataFinal)) {
+            const start = filters.dataInicial ? new Date(filters.dataInicial + 'T00:00:00') : null;
+            const end = filters.dataFinal ? new Date(filters.dataFinal + 'T23:59:59') : null;
+
+            flat = flat.filter(item => {
+                const rawDate = item.data_entrega_pcp || item.data_pcp || item.pcp_delivery_forecast_date;
+                if (!rawDate) return true; // Keep if already filtered by backend
+                let cleanDate = String(rawDate).trim();
+                if (/^\d{8}$/.test(cleanDate)) {
+                    cleanDate = `${cleanDate.substring(0, 4)}-${cleanDate.substring(4, 6)}-${cleanDate.substring(6, 8)}`;
+                }
+                const d = new Date(cleanDate.includes('T') ? cleanDate : cleanDate + 'T00:00:00');
+                if (isNaN(d.getTime())) return true;
+                if (start && d < start) return false;
+                if (end && d > end) return false;
+                return true;
+            });
+        }
+
+        // If filtering by LPF / prioridade specifically
+        if (orderFilters.somente_prioridades && orderFilters.somente_prioridades !== 'false' && orderFilters.somente_prioridades !== 'todos') {
+            flat = flat.filter(item =>
+                item.lpf_codigo ||
+                item.tem_prioridade ||
+                item.prioridade_tipo
+            );
         }
         return flat;
-    }, [orders, filterLote]);
+    }, [orders, filterLote, filters.dateType, filters.dataInicial, filters.dataFinal, orderFilters.somente_prioridades]);
 
     const flatGrouped = useMemo(() => {
         const groups = {};
@@ -192,7 +299,6 @@ const GestaoOPsPage = () => {
             }
         } catch(err) {
             console.error('Erro na re-impressão.', err);
-            // Fallback: silently trying to regenerate if fail? Or just show error
             alert('Não foi possível realizar o download. Erro: ' + err.message);
         } finally {
             setDownloadingPDF(false);
@@ -200,14 +306,13 @@ const GestaoOPsPage = () => {
         }
     };
 
-    // Pagination
-    const page = orderFilters.page;
+    // Pagination & Flags
+    const page = orderFilters.page || 1;
     const setPage = (val) => updateOrderFilters({ page: val });
 
     const [totalPages, setTotalPages] = useState(1);
     const [requiresFilter, setRequiresFilter] = useState(false);
 
-    const limit = viewMode === 'flat' ? 100 : 100;
     const colSpanCount = viewMode === 'flat' ? 23 : 7;
 
     // Debug mount
@@ -217,12 +322,17 @@ const GestaoOPsPage = () => {
     }, []);
 
     const fetchData = async (overrides = {}) => {
+        const myFetchId = ++fetchIdRef.current;
         setLoading(true);
         setError(null);
+        setLoadingProgress('Iniciando busca dos dados...');
+
         // Use overrides or current state/context values
         const searchFilters = {
             cliente: overrides.cliente !== undefined ? overrides.cliente : filters.cliente,
             pedido: overrides.pedido !== undefined ? overrides.pedido : filters.pedido,
+            pedcli: overrides.pedcli !== undefined ? overrides.pedcli : filters.pedcli,
+            refCliente: overrides.refCliente !== undefined ? overrides.refCliente : filters.refCliente,
             produto: overrides.produto !== undefined ? overrides.produto : filters.produto,
             dataInicial: overrides.dataInicial !== undefined ? overrides.dataInicial : filters.dataInicial,
             dataFinal: overrides.dataFinal !== undefined ? overrides.dataFinal : filters.dataFinal,
@@ -230,27 +340,56 @@ const GestaoOPsPage = () => {
             tipo_item: overrides.tipo_item !== undefined ? overrides.tipo_item : filters.tipo_item,
             only_active: overrides.only_active !== undefined ? overrides.only_active : filters.only_active,
         };
-        const searchPage = overrides.page || page;
         const searchViewMode = overrides.viewMode || viewMode;
 
         try {
-            console.log(`📡 [GestaoOPsPage] Fetching data... Page: ${searchPage}, View: ${searchViewMode}`);
+            console.log(`📡 [GestaoOPsPage] Fetching all data in batches... View: ${searchViewMode}`);
 
-            const searchLimit = searchFilters.pedido ? 5000 : limit;
+            let allOrders = [];
+            let currentPage = 1;
+            let hasMore = true;
+            const batchSize = 100;
+            let requiresFilt = false;
 
-            let result;
-            if (searchViewMode === 'flat') {
-                result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit });
-            } else {
-                result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit });
+            while (hasMore) {
+                if (myFetchId !== fetchIdRef.current) return; // Stale request check
+
+                setLoadingProgress(`Carregando lote ${currentPage}... (${allOrders.length} registros obtidos)`);
+
+                let result;
+                if (searchViewMode === 'flat') {
+                    result = await getPedidosFlat({ ...searchFilters, page: currentPage, limit: batchSize });
+                } else {
+                    result = await getPedidos({ ...searchFilters, page: currentPage, limit: batchSize });
+                }
+
+                if (myFetchId !== fetchIdRef.current) return;
+
+                const list = Array.isArray(result?.data) ? result.data : (Array.isArray(result) ? result : []);
+                const meta = result?.meta || {};
+                requiresFilt = !!meta.requiresFilter;
+
+                allOrders = [...allOrders, ...list];
+                setOrders([...allOrders]);
+
+                const metaTotal = meta.total || 0;
+                if (list.length === 0 || (metaTotal > 0 && allOrders.length >= metaTotal) || list.length < batchSize) {
+                    hasMore = false;
+                } else {
+                    currentPage++;
+                }
+
+                // Safety safeguard against unexpected endless loop
+                if (currentPage > 100) hasMore = false;
             }
 
+            if (myFetchId !== fetchIdRef.current) return;
 
-            const { data, meta } = result;
-            setOrders(data);
-            setRequiresFilter(!!meta.requiresFilter);
-            setTotalPages(Math.ceil(meta.total / searchLimit) || 1);
+            setRequiresFilter(requiresFilt);
+            setTotalPages(1);
+            setLoadingProgress('');
         } catch (err) {
+            if (myFetchId !== fetchIdRef.current) return;
             console.error(err);
             const serverError = err.response?.data;
             const errorMsg = serverError
@@ -258,9 +397,12 @@ const GestaoOPsPage = () => {
                 : err.message;
 
             setError(`Erro ao carregar dados: ${errorMsg}`);
-            reportSystemError('Gestão OPs', err, { filters: searchFilters, page: searchPage, viewMode: searchViewMode });
+            reportSystemError('Gestão OPs', err, { filters: searchFilters, viewMode: searchViewMode });
         } finally {
-            setLoading(false);
+            if (myFetchId === fetchIdRef.current) {
+                setLoading(false);
+                setLoadingProgress('');
+            }
         }
     };
 
@@ -623,6 +765,47 @@ const GestaoOPsPage = () => {
     };
 
 
+    const openDocFile = (rawPath) => {
+        if (!rawPath) return;
+        if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
+            window.open(rawPath, '_blank');
+        } else {
+            window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(rawPath)}`), '_blank');
+        }
+    };
+
+    const handleOpenParentDrawing = async (item, e) => {
+        if (e) e.stopPropagation();
+        try {
+            const productCode = item.codigo;
+            if (!productCode) {
+                alert('Código do produto pai não disponível.');
+                return;
+            }
+            if (item.has_drawing && item.drawing_url) {
+                openDocFile(item.drawing_url);
+                return;
+            }
+            if (item.docs_count === 1 && item.first_doc) {
+                openDocFile(item.first_doc);
+                return;
+            }
+
+            const docs = await getProductDocuments(productCode);
+            const drawingDoc = (docs && docs.find(d => String(d.tipo || '').toLowerCase().includes('desenho'))) || (docs && docs[0]);
+            if (drawingDoc && drawingDoc.url_arquivo) {
+                openDocFile(drawingDoc.url_arquivo);
+            } else {
+                setSelectedProductForDocs({ code: productCode, name: item.descricao });
+                setIsDocsModalOpen(true);
+            }
+        } catch (err) {
+            console.error('Erro ao abrir desenho do produto pai:', err);
+            setSelectedProductForDocs({ code: item.codigo, name: item.descricao });
+            setIsDocsModalOpen(true);
+        }
+    };
+
     const handlePrintOPMirror = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-${pedido}-${itemId}` : `op-${pedido}`;
@@ -634,6 +817,27 @@ const GestaoOPsPage = () => {
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+
+            if (itemObj) {
+                mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
+                if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
+                    const originalQtd = mirrorData.pedido.quantidade || 1;
+                    const fractionQtd = parseFloat(itemObj.visual_qtd);
+                    mirrorData.pedido.quantidade = fractionQtd;
+                    // Recalcula quantidades dos itens filhos se aplicável
+                    if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
+                        mirrorData.itens.forEach(grp => {
+                            if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
+                            if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
+                                grp.estrutura_linear.forEach(comp => {
+                                    const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
+                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                });
+                            }
+                        });
+                    }
+                }
+            }
 
             const { generateOPMirrorPdf } = await import('../services/opMirrorPdfGenerator');
             generateOPMirrorPdf(mirrorData);
@@ -658,6 +862,26 @@ const GestaoOPsPage = () => {
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+
+            if (itemObj) {
+                mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
+                if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
+                    const originalQtd = mirrorData.pedido.quantidade || 1;
+                    const fractionQtd = parseFloat(itemObj.visual_qtd);
+                    mirrorData.pedido.quantidade = fractionQtd;
+                    if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
+                        mirrorData.itens.forEach(grp => {
+                            if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
+                            if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
+                                grp.estrutura_linear.forEach(comp => {
+                                    const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
+                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                });
+                            }
+                        });
+                    }
+                }
+            }
 
             const { generateOPFichaPdf } = await import('../services/opFichaPdfGenerator');
             generateOPFichaPdf(mirrorData);
@@ -832,8 +1056,28 @@ const GestaoOPsPage = () => {
             const response = await api.get(endpoint);
             const mirrorData = response.data;
 
+            if (itemObj) {
+                mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
+                if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
+                    const originalQtd = mirrorData.pedido.quantidade || 1;
+                    const fractionQtd = parseFloat(itemObj.visual_qtd);
+                    mirrorData.pedido.quantidade = fractionQtd;
+                    if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
+                        mirrorData.itens.forEach(grp => {
+                            if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
+                            if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
+                                grp.estrutura_linear.forEach(comp => {
+                                    const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
+                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+
             const { opByOperationExcelGenerator } = await import('../services/opByOperationExcelGenerator');
-            opByOperationExcelGenerator(mirrorData);
+            opByOperationExcelGenerator(mirrorData, itemObj);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -862,6 +1106,49 @@ const GestaoOPsPage = () => {
         setIsDocsModalOpen(true);
     };
 
+    const handleExportMasterSheet = async () => {
+        const targetItems = selectedFractions.size > 0
+            ? flattenedFractionalOrders.filter(item => selectedFractions.has(item.fraction_id))
+            : flattenedFractionalOrders;
+
+        if (!targetItems || targetItems.length === 0) {
+            toast.warning('Nenhuma OP / fração disponível para exportar a Planilha Mestra.');
+            return;
+        }
+
+        setExportingMasterSheet(true);
+        try {
+            // Busca dados de engenharia (BOM e recursos) para os filtros atuais
+            let masterData = {};
+            try {
+                masterData = await getSalesPlanningMasterSheet({
+                    cliente: filters.cliente,
+                    pedido: filters.pedido,
+                    produto: filters.produto,
+                    pedcli: filters.pedcli,
+                    refCliente: filters.refCliente,
+                    only_active: filters.only_active
+                });
+            } catch (e) {
+                console.warn('[Planilha Mestra] Falha ao carregar engenharia complementar:', e);
+            }
+
+            await exportMasterSheetExcel(masterData, {
+                cliente: filters.cliente,
+                pedido: filters.pedido,
+                pedcli: filters.pedcli,
+                refCliente: filters.refCliente,
+                only_active: filters.only_active
+            }, targetItems);
+            toast.success(`Planilha Mestra exportada com sucesso (${targetItems.length} OPs/frações)!`);
+        } catch (err) {
+            console.error('Erro ao exportar Planilha Mestra:', err);
+            toast.error(err.message || 'Erro ao exportar Planilha Mestra.');
+        } finally {
+            setExportingMasterSheet(false);
+        }
+    };
+
     const handleViewImage = async (productCode) => {
         if (!productCode) return;
         try {
@@ -881,10 +1168,7 @@ const GestaoOPsPage = () => {
         }
     };
 
-    // Update Item Control (Project Type, Eng Date)
-    // Callback when Engineering Modal saves data
     const handleSaveEngineeringControl = (pedido, itemCode, newData) => {
-        // Update local state to reflect changes immediately
         setOrderItems(prev => ({
             ...prev,
             [pedido]: prev[pedido].map(i =>
@@ -919,10 +1203,16 @@ const GestaoOPsPage = () => {
         };
     };
 
-    const renderFlatRow = (item, isGrouped = false) => (
-        <tr key={item.fraction_id} className={`transition-colors border-b border-gray-50 last:border-0 ${parseFloat(item.qtd_faturar) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'bg-white hover:bg-slate-50'}`}>
+    const renderFlatRow = (item, isGrouped = false, uniqueSuffix = '') => (
+        <tr key={uniqueSuffix ? `${item.fraction_id || `${item.pedido}-${item.item}`}-${uniqueSuffix}` : (item.fraction_id || `${item.pedido}-${item.item}`)} className={`transition-colors border-b border-gray-50 last:border-0 ${
+            item.is_fraction 
+                ? 'bg-amber-50/40 hover:bg-amber-100/50' 
+                : parseFloat(item.qtd_faturar) <= 0 
+                ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' 
+                : 'bg-white hover:bg-slate-50'
+        }`}>
             <td className="px-4 py-2 text-center w-10 print:hidden text-xs">
-                {(!isGrouped && item.is_fraction) ? (
+                {!isGrouped ? (
                     <input
                         type="checkbox"
                         checked={selectedFractions.has(item.fraction_id)}
@@ -942,7 +1232,14 @@ const GestaoOPsPage = () => {
                 ) : null}
             </td>
             <td className="px-4 py-2 whitespace-nowrap">
-                <span className="font-bold text-gray-900">{item.pedido}</span>
+                <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-gray-900">{item.pedido}</span>
+                    {item.is_fraction && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+                            {`Fração ${item.fraction_letter || item.numero_lote || getFractionLetter(item.fraction_index || 0)}`}
+                        </span>
+                    )}
+                </div>
             </td>
             <td className="px-4 py-2 text-center text-xs text-gray-600 whitespace-nowrap">
                 <div className="flex items-center justify-center gap-1">
@@ -962,15 +1259,79 @@ const GestaoOPsPage = () => {
                 {item.ped_cliente || '-'}
             </td>
             <td className="px-4 py-2 text-center text-xs font-mono text-gray-500">{item.item}</td>
-            <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.visual_op || item.op_num || '-'}</td>
+            <td className="px-4 py-2 text-center text-xs font-mono">
+                <div className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 border shadow-xs ${
+                    item.is_fraction 
+                        ? 'bg-amber-100/90 text-amber-950 border-amber-400 font-bold' 
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                }`}>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setBomStructureTarget({
+                                op: item.op_num || item.visual_op,
+                                itemPv: item.item,
+                                pedido: item.pedido,
+                                produto: item.codigo || item.produto
+                            });
+                        }}
+                        className="hover:underline cursor-pointer font-bold focus:outline-none flex items-center gap-1"
+                        title={`Clique para ver a Estrutura da OP ${item.visual_op || item.op_num || ''}`}
+                    >
+                        <span>{item.visual_op || item.op_num || '-'}</span>
+                    </button>
+                    {item.op_num && item.op_num.trim() !== '-' && item.op_num.trim() !== '' && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSplitOpTarget(item); }}
+                            className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-100 p-0.5 rounded transition-colors cursor-pointer"
+                            title="Partir / Reajustar Frações da OP"
+                        >
+                            <Scissors className="h-3 w-3" />
+                        </button>
+                    )}
+                </div>
+            </td>
             <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">
-                <Link
-                    to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
-                    state={{ from: location.pathname }}
-                    className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                >
-                    {item.codigo} <Layers className="h-3 w-3" />
-                </Link>
+                <div className="flex items-center gap-1.5">
+                    <Link
+                        to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
+                        state={{ from: location.pathname }}
+                        className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                    >
+                        {item.codigo} <Layers className="h-3 w-3" />
+                    </Link>
+
+                    {/* PDF/Docs do Produto Pai - Vermelho com badge se tem docs, cinza se não tem */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (item.has_drawing && item.drawing_url) {
+                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank');
+                            } else if (item.docs_count === 1 && item.first_doc) {
+                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank');
+                            } else {
+                                handleOpenParentDrawing(item, e);
+                            }
+                        }}
+                        className={`p-1 rounded transition-all flex items-center justify-center relative cursor-pointer ${
+                            item.has_docs
+                                ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200'
+                                : 'text-gray-300 hover:text-red-500 hover:bg-red-50'
+                        }`}
+                        title={item.has_docs ? `${item.docs_count} Documento(s) - Clique para abrir o Desenho/PDF` : "Abrir Desenho / Documentos do Produto Pai"}
+                    >
+                        <FileText className="h-3.5 w-3.5" />
+                        {item.has_docs && (
+                            <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                            </span>
+                        )}
+                    </button>
+                </div>
             </td>
             <td className="px-4 py-2 text-xs text-gray-600 truncate max-w-[250px]" title={item.descricao}>
                 {item.descricao}
@@ -1016,6 +1377,217 @@ const GestaoOPsPage = () => {
                     </div>
                 )}
             </td>
+            <td className="px-3 py-2 text-center relative print:hidden">
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (openActionMenu === item.fraction_id) {
+                            setOpenActionMenu(null);
+                        } else {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            if (spaceBelow < 420) {
+                                setMenuPosition({
+                                    bottom: window.innerHeight - rect.top + 4,
+                                    right: window.innerWidth - rect.right,
+                                    top: undefined
+                                });
+                            } else {
+                                setMenuPosition({
+                                    top: rect.bottom + 4,
+                                    right: window.innerWidth - rect.right,
+                                    bottom: undefined
+                                });
+                            }
+                            setOpenActionMenu(item.fraction_id);
+                        }
+                    }}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title="Menu de Ações e Relatórios da OP"
+                >
+                    <MoreVertical className="h-4 w-4" />
+                </button>
+
+                {openActionMenu === item.fraction_id && (
+                    <div
+                        style={{
+                            position: 'fixed',
+                            top: menuPosition.top !== undefined ? `${menuPosition.top}px` : 'auto',
+                            bottom: menuPosition.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto',
+                            right: `${menuPosition.right}px`,
+                            zIndex: 9999
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-80 bg-white rounded-xl shadow-2xl border border-gray-200 py-1 text-left animate-in fade-in zoom-in-95 duration-100 overflow-hidden"
+                    >
+                        <div className="px-3 py-2 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-800">OP: {item.visual_op || item.op_num || '-'}</span>
+                            {item.is_fraction ? (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                    {`Fração ${item.fraction_letter || item.numero_lote || ''} (${item.visual_qtd} un.)`}
+                                </span>
+                            ) : (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                                    {`${item.visual_qtd || item.qtd_faturar} un.`}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* 1. Abrir Desenho / PDF do Produto Pai */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handleOpenParentDrawing(item, e); setOpenActionMenu(null); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+                        >
+                            <FileText className="h-4 w-4 flex-shrink-0 text-blue-600" />
+                            <span>Abrir Desenho / PDF (Produto Pai)</span>
+                        </button>
+
+                        <div className="border-t border-gray-100 my-0.5" />
+
+                        {/* 2. Espelho OP */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPMirror(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-teal-50 hover:text-teal-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-600" />}
+                            <span>Espelho OP</span>
+                        </button>
+
+                        {/* 3. Fichas de Operação */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintFichas(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `ficha-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-amber-50 hover:text-amber-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `ficha-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ClipboardList className="h-4 w-4 flex-shrink-0 text-amber-600" />}
+                            <span>Fichas de Operação</span>
+                        </button>
+
+                        {/* 4. Por Operações (PDF) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPByOperation(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-oper-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-oper-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-600" />}
+                            <span>Por Operações (PDF)</span>
+                        </button>
+
+                        {/* 5. OP + Desenhos (PDF) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPByOperationWithDrawings(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-600" />}
+                            <span>OP + Desenhos (PDF)</span>
+                        </button>
+
+                        {/* 6. OP + Desenhos (Por Recurso) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPByResourceWithDrawings(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-cyan-50 hover:text-cyan-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-600" />}
+                            <span>OP + Desenhos (Por Recurso)</span>
+                        </button>
+
+                        {/* 7. OP + Desenhos (Roteiro no Carimbo) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPWithOpsStampWithDrawings(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-600" />}
+                            <span>OP + Desenhos (Roteiro no Carimbo)</span>
+                        </button>
+
+                        {/* 8. OP + Desenhos (Roteiro no Carimbo) - Por Recurso */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPWithOpsStampDrawingsByResource(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-blue-600" />}
+                            <span>OP + Desenhos (Roteiro no Carimbo) - Por Recurso</span>
+                        </button>
+
+                        {/* 9. OP + Desenhos (Roteiro/Descrição no Carimbo) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-purple-50 hover:text-purple-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-600" />}
+                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
+                        </button>
+
+                        {/* 10. OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-fuchsia-50 hover:text-fuchsia-800 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-600" />}
+                            <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
+                        </button>
+
+                        <div className="border-t border-gray-100 my-0.5" />
+
+                        {/* 11. Por Operações (Excel) */}
+                        <button
+                            type="button"
+                            onClick={(e) => { handleExportOPByOperationExcel(item.pedido, e, item.item, item); setOpenActionMenu(null); }}
+                            disabled={printingOrderId === `op-excel-${item.pedido}-${item.item}`}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-30"
+                        >
+                            {printingOrderId === `op-excel-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
+                            <span>Por Operações (Excel)</span>
+                        </button>
+
+                        {/* 12. Unificar OP (Excluir Frações) - Disponível apenas para itens fracionados */}
+                        {item.is_fraction && (
+                            <>
+                                <div className="border-t border-rose-100 my-0.5" />
+                                <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        setOpenActionMenu(null);
+                                        if (window.confirm(`Deseja excluir as frações do item ${item.item} (Pedido ${item.pedido}) e unificar a OP de volta em um único lote?`)) {
+                                            try {
+                                                await api.delete(`/pedidos/split-op/${item.pedido}/${item.item}`);
+                                                toast.success('Fracionamento desfeito! OP unificada com sucesso.');
+                                                fetchData();
+                                            } catch (err) {
+                                                console.error(err);
+                                                alert('Erro ao unificar OP.');
+                                            }
+                                        }
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50/50 hover:bg-rose-100 transition-colors"
+                                >
+                                    <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-500" />
+                                    <span>Unificar OP (Excluir Frações)</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
+            </td>
         </tr>
     );
 
@@ -1045,7 +1617,15 @@ const GestaoOPsPage = () => {
             <div className="p-4 border-b border-gray-100 bg-white print:hidden">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-800">Gestão de OPs por Lote</h2>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-gray-800">Gestão de OPs por Lote</h2>
+                            {loading && loadingProgress && (
+                                <div className="flex items-center gap-2 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200 shadow-xs animate-pulse">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                                    <span>{loadingProgress}</span>
+                                </div>
+                            )}
+                        </div>
                         <p className="text-sm text-gray-500">Gerencie OPs e estabeleça lotes de liberação de produção</p>
                         {filters.only_active === 'true' && (
                             <div className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-2 py-1 inline-flex items-center gap-1.5">
@@ -1058,8 +1638,8 @@ const GestaoOPsPage = () => {
                     {/* View Mode Locked to Flat for OP Batch Processing */}
                 </div>
 
-                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-10 gap-4 items-end">
-                    <div className="flex flex-col gap-1">
+                <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-3 items-end">
+                    <div className="flex flex-col gap-1 xl:col-span-2">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Cliente:</label>
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1069,12 +1649,12 @@ const GestaoOPsPage = () => {
                                 placeholder="Buscar por Cliente..."
                                 value={filters.cliente}
                                 onChange={handleFilterChange}
-                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
                             />
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Pedido:</label>
                         <div className="relative">
                             <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1084,12 +1664,42 @@ const GestaoOPsPage = () => {
                                 placeholder="Nº Pedido..."
                                 value={filters.pedido}
                                 onChange={handleFilterChange}
-                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
                             />
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">PC (Ped. Cliente):</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="pedcli"
+                                placeholder="PC Cliente..."
+                                value={filters.pedcli || ''}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1 xl:col-span-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1">Ref. Cliente:</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="refCliente"
+                                placeholder="Ref. Cliente..."
+                                value={filters.refCliente || ''}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Produto:</label>
                         <div className="relative">
                             <Package className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1099,12 +1709,12 @@ const GestaoOPsPage = () => {
                                 placeholder="Cód. Produto..."
                                 value={filters.produto}
                                 onChange={handleFilterChange}
-                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
                             />
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <div className="flex justify-between items-center mb-1">
                             <label className="text-[11px] font-medium text-gray-600">Início:</label>
                             <select
@@ -1113,7 +1723,9 @@ const GestaoOPsPage = () => {
                                 onChange={handleFilterChange}
                                 className="bg-transparent text-[11px] font-bold text-blue-600 outline-none cursor-pointer p-0"
                             >
+                                <option value="entrega_pcp">Data PCP (Lote)</option>
                                 <option value="pedido">Emissão Pedido</option>
+                                <option value="entrega">Data Entrega</option>
                                 <option value="nf">Emissão NF</option>
                             </select>
                         </div>
@@ -1124,17 +1736,25 @@ const GestaoOPsPage = () => {
                                 name="dataInicial"
                                 value={filters.dataInicial}
                                 onChange={handleFilterChange}
-                                aria-label={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
-                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data inicial (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                aria-label="Data inicial"
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
+                                title="Data inicial"
                             />
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <div className="flex justify-between items-center mb-1">
                             <label className="text-[11px] font-medium text-gray-600">Fim:</label>
-                            <span className="text-[11px] font-bold text-blue-600">{filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'}</span>
+                            <span className="text-[11px] font-bold text-blue-600">
+                                {filters.dateType === 'entrega_pcp'
+                                    ? 'Data PCP'
+                                    : filters.dateType === 'entrega'
+                                    ? 'Data Entrega'
+                                    : filters.dateType === 'nf'
+                                    ? 'Emissão NF'
+                                    : 'Emissão Pedido'}
+                            </span>
                         </div>
                         <div className="relative">
                             <Calendar className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1143,14 +1763,14 @@ const GestaoOPsPage = () => {
                                 name="dataFinal"
                                 value={filters.dataFinal}
                                 onChange={handleFilterChange}
-                                aria-label={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emiss��o NF'})`}
-                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
-                                title={`Data final (${filters.dateType === 'pedido' ? 'Emissão Pedido' : 'Emissão NF'})`}
+                                aria-label="Data final"
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
+                                title="Data final"
                             />
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Status:</label>
                         <select
                             name="only_active"
@@ -1163,7 +1783,7 @@ const GestaoOPsPage = () => {
                         </select>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Tipo de Item:</label>
                         <select
                             name="tipo_item"
@@ -1179,7 +1799,7 @@ const GestaoOPsPage = () => {
                         </select>
                     </div>
 
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 xl:col-span-1">
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Lote:</label>
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1194,11 +1814,11 @@ const GestaoOPsPage = () => {
                         </div>
                     </div>
 
-                    <div className="md:col-span-2 flex gap-2">
+                    <div className="sm:col-span-2 md:col-span-4 xl:col-span-3 flex gap-2">
                         <button
                             type="submit"
                             disabled={loading}
-                            className={`font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors flex items-center justify-center gap-2 h-[42px] flex-1 ${
+                            className={`font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-1.5 h-[42px] flex-1 ${
                                 loading ? 'bg-blue-400 cursor-not-allowed opacity-80 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
                             }`}
                         >
@@ -1208,16 +1828,39 @@ const GestaoOPsPage = () => {
 
                         <button
                             type="button"
-                            onClick={() => handleBatchPrintOPByOperationWithDrawings(flattenedFractionalOrders)}
-                            disabled={downloadingPDF}
+                            onClick={() => {
+                                const itemsToPrint = selectedFractions.size > 0
+                                    ? flattenedFractionalOrders.filter(item => selectedFractions.has(item.fraction_id))
+                                    : flattenedFractionalOrders;
+                                handleBatchPrintOPByOperationWithDrawings(itemsToPrint);
+                            }}
+                            disabled={downloadingPDF || flattenedFractionalOrders.length === 0}
                             className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center disabled:opacity-50 h-[42px] flex-1"
-                            title="Imprimir Todos Lotes da Tela"
+                            title={selectedFractions.size > 0 ? `Imprimir ${selectedFractions.size} Lote(s) Selecionado(s)` : "Imprimir Todos Lotes da Tela"}
                         >
                             {downloadingPDF ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <>
-                                    <Printer className="h-4 w-4 mr-1" /> Imprimir 
+                                    <Printer className="h-4 w-4 mr-1" />
+                                    {selectedFractions.size > 0 ? `Imprimir (${selectedFractions.size})` : 'Imprimir'}
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleExportMasterSheet}
+                            disabled={exportingMasterSheet || flattenedFractionalOrders.length === 0}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center disabled:opacity-50 h-[42px] flex-1"
+                            title="Exportar Planilha Mestra completa das OPs Fracionadas (Excel .xlsx)"
+                        >
+                            {exportingMasterSheet ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <>
+                                    <FileSpreadsheet className="h-4 w-4 mr-1 text-emerald-600" />
+                                    <span>Planilha Mestra</span>
                                 </>
                             )}
                         </button>
@@ -1236,7 +1879,24 @@ const GestaoOPsPage = () => {
                             <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-100">
                                 {viewMode === 'tree' ? (
                                     <tr>
-                                        <th scope="col" className="w-12 px-4 py-3"></th>
+                                        <th scope="col" className="w-12 px-4 py-3 text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={
+                                                    orders.length > 0 &&
+                                                    orders.every(o => selectedFractions.has(o.pedido))
+                                                }
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedFractions(new Set(orders.map(o => o.pedido)));
+                                                    } else {
+                                                        setSelectedFractions(new Set());
+                                                    }
+                                                }}
+                                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                                                title="Selecionar / Desmarcar Todos"
+                                            />
+                                        </th>
                                         <th scope="col" className="px-4 py-3 font-semibold w-24">Nº Pedido</th>
                                         <th scope="col" className="px-4 py-3 font-semibold w-32">Emissão</th>
                                         <th scope="col" className="px-4 py-3 font-semibold w-32">Entrega Prev.</th>
@@ -1246,7 +1906,24 @@ const GestaoOPsPage = () => {
                                     </tr>
                                 ) : (
                                     <tr>
-                                        <th scope="col" className="w-12 px-4 py-3 print:hidden"></th>
+                                        <th scope="col" className="w-12 px-4 py-3 print:hidden text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={
+                                                    flattenedFractionalOrders.length > 0 &&
+                                                    flattenedFractionalOrders.every(item => selectedFractions.has(item.fraction_id))
+                                                }
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedFractions(new Set(flattenedFractionalOrders.map(item => item.fraction_id)));
+                                                    } else {
+                                                        setSelectedFractions(new Set());
+                                                    }
+                                                }}
+                                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                                                title="Selecionar / Desmarcar Todos"
+                                            />
+                                        </th>
                                         <th className="px-4 py-3 font-semibold">Pedido</th>
                                         <th className="px-4 py-3 font-semibold text-center">Emissão</th>
                                         <th className="px-4 py-3 font-semibold">Ref. Cliente</th>
@@ -1259,6 +1936,7 @@ const GestaoOPsPage = () => {
                                         <th className="px-4 py-3 font-semibold text-right">Saldo Fat.</th>
                                         <th className="px-4 py-3 font-semibold text-right text-xs">Qtd. PCP</th>
                                         <th className="px-4 py-3 font-semibold text-center text-xs">Data PCP</th>
+                                        <th className="px-4 py-3 font-semibold text-center w-12 print:hidden">Ações</th>
                                     </tr>
                                 )}
                             </thead>
@@ -1528,7 +2206,36 @@ const GestaoOPsPage = () => {
                                                                                             .map((item, i) => (
                                                                                                 <tr key={`${order.pedido}-${item.item}-${i}`} className={`border-b border-gray-50 last:border-0 transition-colors ${parseFloat(item.qtd_faturar || 0) <= 0 ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80' : 'hover:bg-gray-50/50'}`}>
                                                                                                     <td className="px-4 py-2">{item.item}</td>
-                                                                                                    <td className="px-4 py-2 text-center text-xs font-mono bg-blue-50 text-blue-700 rounded px-1">{item.visual_op || item.op_num || '-'}</td>
+                                                                                                    <td className="px-4 py-2 text-center text-xs font-mono">
+                                                                                                        <div className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 border border-blue-200 shadow-xs">
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    setBomStructureTarget({
+                                                                                                                        op: item.op_num || item.visual_op,
+                                                                                                                        itemPv: item.item,
+                                                                                                                        pedido: order.pedido,
+                                                                                                                        produto: item.codigo || item.produto
+                                                                                                                    });
+                                                                                                                }}
+                                                                                                                className="hover:underline cursor-pointer font-bold focus:outline-none"
+                                                                                                                title={`Clique para ver a Estrutura da OP ${item.visual_op || item.op_num || ''}`}
+                                                                                                            >
+                                                                                                                {item.visual_op || item.op_num || '-'}
+                                                                                                            </button>
+                                                                                                            {item.op_num && item.op_num.trim() !== '-' && item.op_num.trim() !== '' && (
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    onClick={(e) => { e.stopPropagation(); setSplitOpTarget({ ...item, pedido: order.pedido }); }}
+                                                                                                                    className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-100 p-0.5 rounded transition-colors cursor-pointer"
+                                                                                                                    title="Partir / Fracionar esta OP em duas ou mais"
+                                                                                                                >
+                                                                                                                    <Scissors className="h-3 w-3" />
+                                                                                                                </button>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    </td>
                                                                                                     <td className="px-4 py-2 font-mono text-xs">
                                                                                                         <Link
                                                                                                             to={`/estrutura/${encodeURIComponent(item.codigo)}?pedido=${encodeURIComponent(item.pedido || order.pedido || '')}&item=${encodeURIComponent(item.item || '')}`}
@@ -1610,6 +2317,15 @@ const GestaoOPsPage = () => {
                                                                                                                             right: `${menuPosition.right}px` 
                                                                                                                         }}
                                                                                                                     >
+                                                                                                                        <button
+                                                                                                                            onClick={(e) => { e.stopPropagation(); setSplitOpTarget({ ...item, pedido: order.pedido }); setOpenActionMenu(null); }}
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || item.op_num.trim() === '-'}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-indigo-700 font-semibold bg-indigo-50/60 hover:bg-indigo-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                                                        >
+                                                                                                                            <Scissors className="h-4 w-4 flex-shrink-0 text-indigo-600" />
+                                                                                                                            <span>Partir / Fracionar OP</span>
+                                                                                                                        </button>
+                                                                                                                        <div className="border-t border-gray-100 my-1" />
                                                                                                                         <button
                                                                                                                             onClick={(e) => { e.stopPropagation(); setEngineeringTarget({ orderId: order.pedido, item }); setOpenActionMenu(null); }}
                                                                                                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
@@ -1886,10 +2602,10 @@ const GestaoOPsPage = () => {
                                                                 </div>
                                                             </td>
                                                         </tr>
-                                                        {flatGrouped.ObjectGroups[lpf_codigo].map(item => renderFlatRow(item, true))}
+                                                        {flatGrouped.ObjectGroups[lpf_codigo].map((item, idx) => renderFlatRow(item, true, `grp-${lpf_codigo}-${idx}`))}
                                                     </React.Fragment>
                                                 ))}
-                                                {flatGrouped.ungrouped.map(item => renderFlatRow(item, false))}
+                                                {flatGrouped.ungrouped.map((item, idx) => renderFlatRow(item, false, `ungrp-${idx}`))}
                                             </>
                                         )}
                                     </>
@@ -1898,27 +2614,25 @@ const GestaoOPsPage = () => {
                         </table>
                     </div>
 
-                    {/* Footer / Paginação */}
-                    {!loading && !error && orders.length > 0 && (
+                    {/* Footer / Resumo de Itens Carregados */}
+                    {!error && orders.length > 0 && (
                         <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between print:hidden">
-                            <span className="text-sm text-gray-500">
-                                {viewMode === 'tree' ? 'Página' : 'Página de Itens'} <span className="font-semibold text-gray-900">{page}</span> de <span className="font-semibold text-gray-900">{totalPages}</span>
-                            </span>
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(Math.max(1, page - 1))}
-                                    disabled={page === 1}
-                                    className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    <ChevronLeft className="h-5 w-5 text-gray-600" />
-                                </button>
-                                <button
-                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                                    disabled={page === totalPages}
-                                    className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    <ChevronRight className="h-5 w-5 text-gray-600" />
-                                </button>
+                                <span className="text-sm text-gray-700 font-semibold">
+                                    Total de Registros: <span className="font-mono text-blue-700 font-bold">{orders.length}</span>
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                    ({flattenedFractionalOrders.length} linhas calculadas com frações)
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-500 font-medium">
+                                {loading ? (
+                                    <span className="flex items-center gap-1.5 text-blue-600 font-semibold">
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" /> {loadingProgress}
+                                    </span>
+                                ) : (
+                                    <span>✅ Todos os dados carregados em lote</span>
+                                )}
                             </div>
                         </div>
                     )}
@@ -2048,6 +2762,23 @@ const GestaoOPsPage = () => {
                     />
                 )
             }
+            {/* Modal de Partir / Fracionar OP */}
+            <SplitOPModal
+                isOpen={!!splitOpTarget}
+                onClose={() => setSplitOpTarget(null)}
+                item={splitOpTarget}
+                onSaveSuccess={async () => {
+                    if (viewMode === 'tree' && expandedRow) {
+                        try {
+                            const updatedItems = await getItensPedido(expandedRow);
+                            setOrderItems(prev => ({ ...prev, [expandedRow]: updatedItems }));
+                        } catch (error) {
+                            console.error('Erro ao atualizar itens:', error);
+                        }
+                    }
+                    fetchData();
+                }}
+            />
 
             {/* PCPMetal AI Drawer */}
             <PCPMetalDrawer
@@ -2131,6 +2862,25 @@ const GestaoOPsPage = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Docs Modal */}
+            <DocsModal
+                isOpen={isDocsModalOpen}
+                onClose={() => setIsDocsModalOpen(false)}
+                productCode={selectedProductForDocs?.code}
+                productName={selectedProductForDocs?.name}
+            />
+
+            {/* Modal de Estrutura da OP (Organograma Interativo) */}
+            {bomStructureTarget && (
+                <BOMStructureModal
+                    opNum={bomStructureTarget.op}
+                    itemPv={bomStructureTarget.itemPv}
+                    pedido={bomStructureTarget.pedido}
+                    produto={bomStructureTarget.produto}
+                    onClose={() => setBomStructureTarget(null)}
+                />
             )}
 
         </div >

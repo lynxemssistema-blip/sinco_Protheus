@@ -27,8 +27,8 @@ const DrawingIcon = ({ produto }) => {
         setLoading(true);
         try {
             const { data } = await api.get(`/docs/${produto}`);
-            const pdfDoc = data.find(d => 
-                (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) && 
+            const pdfDoc = data.find(d =>
+                (d.tipo === 'Desenho' || (d.titulo && d.titulo.toLowerCase().includes('desenho'))) &&
                 d.url_arquivo && d.url_arquivo.toLowerCase().endsWith('.pdf')
             );
             if (pdfDoc) {
@@ -45,7 +45,7 @@ const DrawingIcon = ({ produto }) => {
     };
 
     return (
-        <button 
+        <button
             onClick={handleClick}
             className="p-1 text-slate-400 hover:text-red-600 transition-colors rounded-md hover:bg-red-50 focus:outline-none"
             title={`Abrir Desenho: ${produto}`}
@@ -76,43 +76,43 @@ const MasterSheetTab = ({ filterParams }) => {
         setLoading(true);
         if (simulate) setSimulating(true);
         setError(null);
-            try {
-                const cleanParams = {
-                    cliente:             filterParams?.cliente,
-                    pedido:              filterParams?.pedido,
-                    produto:             filterParams?.produto,
-                    pedcli:              filterParams?.pedcli,
-                    refCliente:          filterParams?.refCliente,
-                    dataInicial:         filterParams?.dataInicial,
-                    dataFinal:           filterParams?.dataFinal,
-                    dateType:            filterParams?.dateType,
-                    tipo_item:           filterParams?.tipo_item,
-                    op_status:           filterParams?.op_status,
-                    only_active:         filterParams?.only_active,
-                    somente_prioridades: filterParams?.somente_prioridades,
-                    _simulateFCS:        simulate
-                };
+        try {
+            const cleanParams = {
+                cliente: filterParams?.cliente,
+                pedido: filterParams?.pedido,
+                produto: filterParams?.produto,
+                pedcli: filterParams?.pedcli,
+                refCliente: filterParams?.refCliente,
+                dataInicial: filterParams?.dataInicial,
+                dataFinal: filterParams?.dataFinal,
+                dateType: filterParams?.dateType,
+                tipo_item: filterParams?.tipo_item,
+                op_status: filterParams?.op_status,
+                only_active: filterParams?.only_active,
+                somente_prioridades: filterParams?.somente_prioridades,
+                _simulateFCS: simulate
+            };
 
-                // Only send data_0 if explicitly requested via simulation trigger
-                if (cleanParams._simulateFCS && data0) {
-                    cleanParams.data_0 = data0;
-                }
-                delete cleanParams._simulateFCS;
-
-                const res = await getSalesPlanningMasterSheet(cleanParams);
-                if (seq !== requestSeq.current) return; // Ignora respostas de requests obsoletos (race condition)
-                setData(res);
-            } catch (err) {
-                if (seq !== requestSeq.current) return;
-                console.error("Failed to load Master Sheet", err);
-                setError(err.response?.data?.error || err.message);
-            } finally {
-                if (seq === requestSeq.current) {
-                    setLoading(false);
-                    setSimulating(false);
-                }
+            // Only send data_0 if explicitly requested via simulation trigger
+            if (cleanParams._simulateFCS && data0) {
+                cleanParams.data_0 = data0;
             }
-        };
+            delete cleanParams._simulateFCS;
+
+            const res = await getSalesPlanningMasterSheet(cleanParams);
+            if (seq !== requestSeq.current) return; // Ignora respostas de requests obsoletos (race condition)
+            setData(res);
+        } catch (err) {
+            if (seq !== requestSeq.current) return;
+            console.error("Failed to load Master Sheet", err);
+            setError(err.response?.data?.error || err.message);
+        } finally {
+            if (seq === requestSeq.current) {
+                setLoading(false);
+                setSimulating(false);
+            }
+        }
+    };
 
     useEffect(() => {
         if (!filterParams) return;
@@ -199,31 +199,31 @@ const MasterSheetTab = ({ filterParams }) => {
                         key={t.id}
                         onClick={() => setActiveTab(t.id)}
                         className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-r border-slate-300 transition-colors whitespace-nowrap
-                            ${activeTab === t.id 
-                                ? 'bg-white text-[#1E3A5F] border-b-2 border-b-[#0D6EFD]' 
+                            ${activeTab === t.id
+                                ? 'bg-white text-[#1E3A5F] border-b-2 border-b-[#0D6EFD]'
                                 : 'text-slate-600 hover:bg-slate-200'}`}
                     >
                         {t.icon} {t.label}
                     </button>
                 ))}
             </div>
-            
+
             {/* Simulation and Actions Control Row */}
             <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-300 shrink-0 gap-3 flex-wrap">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                     Planilha Mestra
                 </div>
-                
+
                 <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">Data Início (FCS):</span>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         value={data0}
                         onChange={e => setData0(e.target.value)}
                         className="px-2 py-1 border border-slate-300 rounded text-sm text-slate-700 bg-white"
                         title="Data base para simulação de prazos nas máquinas"
                     />
-                    <button 
+                    <button
                         onClick={handleRunSimulation}
                         disabled={loading}
                         className="px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-semibold rounded hover:bg-[#0D6EFD] transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -264,8 +264,8 @@ const MasterSheetTab = ({ filterParams }) => {
                 {activeTab === 'itens' && <ItensTab data={data} />}
                 {activeTab === 'estruturas' && <EstruturasTab data={data} />}
                 {activeTab === 'materiais_necessarios' && (
-                    <MateriaisNecessariosTab 
-                        data={data} 
+                    <MateriaisNecessariosTab
+                        data={data}
                         baseCalculo={baseCalculo}
                         setBaseCalculo={setBaseCalculo}
                         exibirCustos={exibirCustos}
@@ -322,7 +322,7 @@ const CapaTab = ({ data }) => {
                     <div className="text-3xl font-black text-[#1E3A5F]">{formatNum(saldoTotal)}</div>
                 </div>
             </div>
-            
+
             <h3 className="text-lg font-bold text-slate-700 mb-4">Pedidos Incluídos</h3>
             <div className="border border-slate-300 rounded overflow-hidden">
                 <table className="w-full text-sm text-left">
@@ -355,56 +355,56 @@ const DocsTab = () => (
         <div className="bg-[#1E3A5F] text-white p-4 rounded shadow">
             <h2 className="text-xl font-bold">GUIA DO RELATÓRIO: COMO LER A PLANILHA</h2>
         </div>
-        
+
         <div>
             <h3 className="text-lg font-bold text-[#0D6EFD] mb-2 border-b pb-1">Resumo Detalhado das Abas</h3>
             <ul className="space-y-4 text-sm text-slate-700">
                 <li>
-                    <strong className="text-[#1E3A5F]">1. Capa:</strong> 
+                    <strong className="text-[#1E3A5F]">1. Capa:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Resumo executivo do relatório. Exibe as informações de geração, filtros aplicados na pesquisa, indicadores rápidos (KPIs) com o total de pedidos, itens e saldo total a faturar, além de uma tabela consolidada com o andamento de todos os pedidos incluídos.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">2. Entendendo a Planilha:</strong> 
+                    <strong className="text-[#1E3A5F]">2. Entendendo a Planilha:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Este guia explicativo. Contém o manual de leitura dos dados, unidades de medida aplicadas, regras de tempo para conversão de horas/minutos, dicas de filtros e descrição detalhada do conteúdo de cada aba.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">3. Resumo:</strong> 
+                    <strong className="text-[#1E3A5F]">3. Resumo:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Consolidação dos produtos a serem fabricados que atendem aos filtros. Traz o código do produto, descrição, unidade de medida (UM), quantidade total demandada e a carga total acumulada distribuída por máquina/recurso (calculada em HORAS).</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">4. Pedidos:</strong> 
+                    <strong className="text-[#1E3A5F]">4. Pedidos:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Visão macro. Mostra uma linha consolidada para cada Pedido de Venda. As colunas de recursos (ex: MO0001 - GUILHOTINA) exibem o somatório da carga de trabalho necessária de todos os itens daquele pedido naquele recurso específico (valores exibidos em HORAS PRODUTIVAS).</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">5. Itens Detalhados:</strong> 
+                    <strong className="text-[#1E3A5F]">5. Itens Detalhados:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Relação de todos os itens e produtos pendentes dos pedidos filtrados, com quantidades originais do pedido, quantidades já entregues, saldo restante a faturar, datas e grupo de prioridades. Não realiza cálculos de carga.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">6. Estrutura dos Produtos (Estrutura BOM):</strong> 
+                    <strong className="text-[#1E3A5F]">6. Estrutura dos Produtos (Estrutura BOM):</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Exibe o detalhamento multinível da engenharia (BOM) de todos os produtos do relatório. Traz a relação de componentes filhos, tipos de itens (MP, PI, PA), quantidade unitária na engenharia e a quantidade total necessária explodida para atender a demanda.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">7. Necessidade de Materiais:</strong> 
+                    <strong className="text-[#1E3A5F]">7. Necessidade de Materiais:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Consolorado de necessidades de matérias-primas e componentes calculados a partir da explosão da BOM de todos os produtos ativos do relatório. Permite filtrar por tipo de insumo e escolher se a base de cálculo será a quantidade original ou o saldo a faturar.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">8. Carga por Recurso:</strong> 
+                    <strong className="text-[#1E3A5F]">8. Carga por Recurso:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Visão micro em nível de item. Detalha a carga de tempo calculada (em MINUTOS) individualmente para cada item de pedido em cada máquina/recurso definido em seu roteiro e engenharia.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">9. Capacidade do Período:</strong> 
+                    <strong className="text-[#1E3A5F]">9. Capacidade do Período:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Compara a capacidade diária instalada de cada recurso (em minutos) com a carga total demandada pelos pedidos para avaliar se há sobrecarga ou folga no período de produção selecionado.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">10. Execução OP:</strong> 
+                    <strong className="text-[#1E3A5F]">10. Execução OP:</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Detalha o progresso físico e de tempo das ordens de produção (OPs) vinculadas aos itens do pedido, comparando os minutos previstos com os minutos já apontados pelos operadores no chão de fábrica por recurso.</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">11. Prog. Entregas (Exclusivo Excel):</strong> 
+                    <strong className="text-[#1E3A5F]">11. Prog. Entregas (Exclusivo Excel):</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Matriz de cronograma projetado que distribui as quantidades de entrega dos itens de pedido ao longo dos próximos 14 dias com base nas datas de planejamento (Data PCP).</span>
                 </li>
                 <li>
-                    <strong className="text-[#1E3A5F]">12. Análise de Carga (Exclusivo Web):</strong> 
+                    <strong className="text-[#1E3A5F]">12. Análise de Carga (Exclusivo Web):</strong>
                     <span className="text-slate-600 block mt-0.5 pl-4">Gráficos e painéis interativos de análise de carga acumulada por recurso no período.</span>
                 </li>
             </ul>
@@ -432,7 +432,7 @@ const ResumoTab = ({ data }) => {
             data.carga.forEach(item => {
                 const prod = item.produto;
                 if (!loads[prod]) loads[prod] = {};
-                
+
                 (data.recursos || []).forEach(r => {
                     const valMinutos = item[`rec_${r}`] || 0;
                     loads[prod][r] = (loads[prod][r] || 0) + valMinutos;
@@ -595,28 +595,28 @@ const EstruturasTab = ({ data }) => {
         content = Object.entries(estruturasPorRaiz)
             .filter(([raiz]) => (data.itens || []).some(it => it.produto === raiz))
             .map(([raiz, componentes]) => {
-            const qtdTotalDemandada = (data.itens || [])
-                .filter(it => it.produto === raiz)
-                .reduce((sum, it) => sum + (parseFloat(it.qtd_faturar) || 0), 0);
+                const qtdTotalDemandada = (data.itens || [])
+                    .filter(it => it.produto === raiz)
+                    .reduce((sum, it) => sum + (parseFloat(it.qtd_faturar) || 0), 0);
 
-            return (
-                <div key={raiz} className="mb-6 bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
-                    <div className="bg-[#1E3A5F] text-white px-4 py-2 font-bold flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                            <Box className="w-4 h-4 text-blue-300" />
-                            <span>Produto Pai: {raiz}</span>
+                return (
+                    <div key={raiz} className="mb-6 bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
+                        <div className="bg-[#1E3A5F] text-white px-4 py-2 font-bold flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <Box className="w-4 h-4 text-blue-300" />
+                                <span>Produto Pai: {raiz}</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-sm font-normal text-blue-200">{componentes.length} componentes na engenharia</span>
+                                <span className="text-sm font-bold bg-blue-500 bg-opacity-30 px-2 py-1 rounded text-white border border-blue-400">
+                                    Demanda do Filtro: {formatNum(qtdTotalDemandada)}
+                                </span>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                            <span className="text-sm font-normal text-blue-200">{componentes.length} componentes na engenharia</span>
-                            <span className="text-sm font-bold bg-blue-500 bg-opacity-30 px-2 py-1 rounded text-white border border-blue-400">
-                                Demanda do Filtro: {formatNum(qtdTotalDemandada)}
-                            </span>
-                        </div>
+                        {renderTable(componentes, qtdTotalDemandada > 0 ? qtdTotalDemandada : null)}
                     </div>
-                    {renderTable(componentes, qtdTotalDemandada > 0 ? qtdTotalDemandada : null)}
-                </div>
-            );
-        });
+                );
+            });
     } else if (groupBy === 'pedido') {
         const pedidosMap = (data.itens || []).reduce((acc, it) => {
             if (!acc[it.pedido]) acc[it.pedido] = { cliente: it.cliente, itens: [] };
@@ -664,15 +664,15 @@ const EstruturasTab = ({ data }) => {
                     <h2 className="text-xl font-black text-[#1E3A5F]">Detalhamento da Estrutura (BOM)</h2>
                     <p className="text-sm text-slate-500 mt-1">Visualize a engenharia dos produtos e explos\u00e3o de materiais</p>
                 </div>
-                
+
                 <div className="flex items-center gap-2 bg-slate-100 p-1 rounded border border-slate-200">
-                    <button 
+                    <button
                         onClick={() => setGroupBy('produto')}
                         className={`px-4 py-1.5 text-sm font-semibold rounded transition-all ${groupBy === 'produto' ? 'bg-white shadow text-[#0D6EFD] border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
                     >
                         Agrupar por Produto Pai
                     </button>
-                    <button 
+                    <button
                         onClick={() => setGroupBy('pedido')}
                         className={`px-4 py-1.5 text-sm font-semibold rounded transition-all ${groupBy === 'pedido' ? 'bg-white shadow text-[#0D6EFD] border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
                     >
@@ -685,12 +685,12 @@ const EstruturasTab = ({ data }) => {
     );
 };
 
-const MateriaisNecessariosTab = ({ 
-    data, 
-    baseCalculo, 
-    setBaseCalculo, 
-    exibirCustos, 
-    setExibirCustos, 
+const MateriaisNecessariosTab = ({
+    data,
+    baseCalculo,
+    setBaseCalculo,
+    exibirCustos,
+    setExibirCustos,
     canViewValues,
     filtroTipo,
     setFiltroTipo
@@ -769,7 +769,7 @@ const MateriaisNecessariosTab = ({
     const filteredConsolidated = useMemo(() => {
         return consolidatedDemands.filter(d => {
             const matchesSearch = d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-                                  d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase());
+                d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase());
             const matchesTipo = filtroTipo === 'Todos' || d.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
             return matchesSearch && matchesTipo;
         });
@@ -778,9 +778,9 @@ const MateriaisNecessariosTab = ({
     const filteredDetailed = useMemo(() => {
         return detailedDemands.filter(d => {
             const matchesSearch = d.materialCod.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-                                  d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-                                  d.pedido.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
-                                  d.produtoFinal.toLowerCase().includes(filtroMaterial.toLowerCase());
+                d.materialDesc.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                d.pedido.toLowerCase().includes(filtroMaterial.toLowerCase()) ||
+                d.produtoFinal.toLowerCase().includes(filtroMaterial.toLowerCase());
             const matchesTipo = filtroTipo === 'Todos' || d.tipo.trim().toUpperCase() === filtroTipo.toUpperCase();
             return matchesSearch && matchesTipo;
         });
@@ -795,7 +795,7 @@ const MateriaisNecessariosTab = ({
                         Detalhamento de insumos e matérias-primas calculados com base na estrutura de produto (BOM) e na base de cálculo escolhida.
                     </p>
                 </div>
-                
+
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                     {/* Tipo Item selector */}
                     <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded border border-slate-200">
@@ -992,15 +992,14 @@ const ItensTab = ({ data }) => (
                             </div>
                         </td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[200px]">{it.descricao}</td>
-                          <td className="px-3 py-2 border-b border-slate-200 border-r text-center font-medium text-slate-500">{it.um || '-'}</td>
+                        <td className="px-3 py-2 border-b border-slate-200 border-r text-center font-medium text-slate-500">{it.um || '-'}</td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-center">
                             {it.op_prioridade ? (
-                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                    it.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
-                                    it.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
-                                    it.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-blue-100 text-blue-700'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${it.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
+                                        it.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
+                                            it.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
+                                                'bg-blue-100 text-blue-700'
+                                    }`}>
                                     Grupo {it.op_prioridade}
                                 </span>
                             ) : <span className="text-slate-400">-</span>}
@@ -1018,14 +1017,14 @@ const ItensTab = ({ data }) => (
                                 if (!it.nova_data_pcp) return <span className="text-slate-400">-</span>;
                                 const original = it.data_pcp || it.entrega;
                                 if (!original) return <span className="text-slate-400">-</span>;
-                                
+
                                 const nData = new Date(it.nova_data_pcp);
                                 let origDateStr = String(original).trim();
                                 if (origDateStr.length === 8 && !origDateStr.includes('-')) {
-                                    origDateStr = `${origDateStr.slice(0,4)}-${origDateStr.slice(4,6)}-${origDateStr.slice(6,8)}`;
+                                    origDateStr = `${origDateStr.slice(0, 4)}-${origDateStr.slice(4, 6)}-${origDateStr.slice(6, 8)}`;
                                 }
                                 const oData = new Date(origDateStr);
-                                
+
                                 if (nData <= oData) {
                                     return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap">OK</span>;
                                 } else {
@@ -1073,12 +1072,11 @@ const CargaTab = ({ data }) => {
                             <td className="px-3 py-2 border-b border-slate-200 border-r">{formatDate(c.data_pcp)}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r font-bold text-center">
                                 {c.op_prioridade ? (
-                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                        c.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
-                                        c.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
-                                        c.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
-                                        'bg-blue-100 text-blue-700'
-                                    }`}>
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${c.op_prioridade === 1 ? 'bg-red-100 text-red-700' :
+                                            c.op_prioridade === 2 ? 'bg-orange-100 text-orange-700' :
+                                                c.op_prioridade === 3 ? 'bg-yellow-100 text-yellow-700' :
+                                                    'bg-blue-100 text-blue-700'
+                                        }`}>
                                         Grupo {c.op_prioridade}
                                     </span>
                                 ) : <span className="text-slate-400">-</span>}
@@ -1136,9 +1134,9 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
         // Count working days (Mon-Fri)
         let count = 0;
         let cur = new Date(dIni.getTime());
-        cur.setHours(0,0,0,0);
+        cur.setHours(0, 0, 0, 0);
         const end = new Date(dFim.getTime());
-        end.setHours(23,59,59,999);
+        end.setHours(23, 59, 59, 999);
 
         while (cur <= end) {
             const day = cur.getDay();
@@ -1238,8 +1236,8 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
                                 <td className="px-4 py-3 text-center">
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="w-16 bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                                            <div 
-                                                className={`h-2.5 rounded-full ${row.ocupacao > 100 ? 'bg-red-500' : row.ocupacao > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                            <div
+                                                className={`h-2.5 rounded-full ${row.ocupacao > 100 ? 'bg-red-500' : row.ocupacao > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                                                 style={{ width: `${Math.min(row.ocupacao, 100)}%` }}
                                             ></div>
                                         </div>
@@ -1292,9 +1290,9 @@ const CapacidadeGraficoTab = ({ data, filterParams }) => {
 
         let count = 0;
         let cur = new Date(dIni.getTime());
-        cur.setHours(0,0,0,0);
+        cur.setHours(0, 0, 0, 0);
         const end = new Date(dFim.getTime());
-        end.setHours(23,59,59,999);
+        end.setHours(23, 59, 59, 999);
 
         while (cur <= end) {
             const day = cur.getDay();
@@ -1390,32 +1388,32 @@ const CapacidadeGraficoTab = ({ data, filterParams }) => {
                         margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                     >
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis 
-                            dataKey="recurso" 
-                            tick={{ fontSize: 11, fill: '#64748b' }} 
-                            angle={-45} 
+                        <XAxis
+                            dataKey="recurso"
+                            tick={{ fontSize: 11, fill: '#64748b' }}
+                            angle={-45}
                             textAnchor="end"
                             interval={0}
                         />
-                        <YAxis 
-                            tick={{ fontSize: 12, fill: '#64748b' }} 
+                        <YAxis
+                            tick={{ fontSize: 12, fill: '#64748b' }}
                             label={{ value: 'Horas (h)', angle: -90, position: 'insideLeft', style: { fill: '#64748b', fontSize: 12 } }}
                         />
                         <RechartsTooltip content={<CustomTooltip />} />
                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                        <Bar 
-                            dataKey="capTotalHrs" 
-                            name="Capacidade (h)" 
-                            fill="#94a3b8" 
+                        <Bar
+                            dataKey="capTotalHrs"
+                            name="Capacidade (h)"
+                            fill="#94a3b8"
                             radius={[4, 4, 0, 0]}
                             barSize={30}
                         >
                             <LabelList dataKey="capTotalHrs" position="top" angle={-90} offset={12} fill="#64748b" fontSize={11} fontWeight="bold" />
                         </Bar>
-                        <Bar 
-                            dataKey="cargaPrevistaHrs" 
-                            name="Demanda (h)" 
-                            fill="#3b82f6" 
+                        <Bar
+                            dataKey="cargaPrevistaHrs"
+                            name="Demanda (h)"
+                            fill="#3b82f6"
                             radius={[4, 4, 0, 0]}
                             barSize={30}
                         >
@@ -1474,7 +1472,7 @@ const ExecucaoTab = ({ data }) => {
             res[`apontado_${r}`] = 0;
             res[`qtd_apontada_${r}`] = 0;
         });
-        
+
         (data.execucao_op || []).forEach(c => {
             res.qtd_planejada += (c.qtd_planejada || 0);
             (data.recursos || []).forEach(r => {
@@ -1599,7 +1597,7 @@ const normalizeToISO = (dateStr) => {
     if (dateStr instanceof Date) return dateStr.toISOString().split('T')[0];
     const s = String(dateStr).trim();
     // Formato YYYYMMDD (sem traços) → YYYY-MM-DD
-    if (/^\d{8}$/.test(s)) return `${s.substring(0,4)}-${s.substring(4,6)}-${s.substring(6,8)}`;
+    if (/^\d{8}$/.test(s)) return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
     // Já no formato YYYY-MM-DD ou com T (ISO)
     if (s.includes('T')) return s.split('T')[0];
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
@@ -1609,22 +1607,22 @@ const normalizeToISO = (dateStr) => {
 const getBucketKey = (dateStr, agrupamento) => {
     const ds = normalizeToISO(dateStr);
     if (!ds) return null;
-    if (agrupamento === 'dia')      return ds;
-    if (agrupamento === 'semana')   return getWeekStart(ds);
+    if (agrupamento === 'dia') return ds;
+    if (agrupamento === 'semana') return getWeekStart(ds);
     if (agrupamento === 'quinzena') return getQuinzenaStart(ds);
-    if (agrupamento === 'mes')      return getMonthStart(ds);
+    if (agrupamento === 'mes') return getMonthStart(ds);
     return ds;
 };
 
 const formatBucketLabel = (key, agrupamento) => {
     if (!key) return '—';
     const [y, m, d] = key.split('-');
-    if (agrupamento === 'dia')      return `${d}/${m}/${y}`;
-    if (agrupamento === 'semana')   return `Sem ${d}/${m}`;
+    if (agrupamento === 'dia') return `${d}/${m}/${y}`;
+    if (agrupamento === 'semana') return `Sem ${d}/${m}`;
     if (agrupamento === 'quinzena') return parseInt(d) <= 15 ? `1ª Qnz ${m}/${y}` : `2ª Qnz ${m}/${y}`;
     if (agrupamento === 'mes') {
-        const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-        return `${meses[parseInt(m)-1]}/${y}`;
+        const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        return `${meses[parseInt(m) - 1]}/${y}`;
     }
     return key;
 };
@@ -1633,49 +1631,49 @@ const formatBucketLabel = (key, agrupamento) => {
 const TotalMesChart = ({ recursosVisiveis, buckets, matrix, capacidades, agrupamento, workingDaysInBucket }) => {
     // Agrega todos os recursos por bucket
     const seriesData = buckets.map(b => {
-        let totalCap  = 0;
+        let totalCap = 0;
         let totalPrev = 0;
         let totalApon = 0;
         recursosVisiveis.forEach(r => {
             const capDia = capacidades[(r || '').trim().toUpperCase()] || 0;
-            totalCap  += capDia * workingDaysInBucket(b, agrupamento);
+            totalCap += capDia * workingDaysInBucket(b, agrupamento);
             totalPrev += matrix[r]?.[b]?.previsto || 0;
             totalApon += matrix[r]?.[b]?.apontado || 0;
         });
         return {
-            label:    formatBucketLabel(b, agrupamento),
-            capH:     totalCap  / 60,
-            prevH:    totalPrev / 60,
-            aponH:    totalApon / 60,
-            pctOcup:  totalCap  > 0 ? Math.min(200, (totalPrev / totalCap) * 100) : 0,
-            pctExec:  totalPrev > 0 ? Math.min(100, (totalApon / totalPrev) * 100) : 0,
+            label: formatBucketLabel(b, agrupamento),
+            capH: totalCap / 60,
+            prevH: totalPrev / 60,
+            aponH: totalApon / 60,
+            pctOcup: totalCap > 0 ? Math.min(200, (totalPrev / totalCap) * 100) : 0,
+            pctExec: totalPrev > 0 ? Math.min(100, (totalApon / totalPrev) * 100) : 0,
         };
     }).filter(d => d.prevH > 0 || d.aponH > 0);
 
     if (seriesData.length === 0) return <div className="p-8 text-center text-slate-400">Sem dados para exibir.</div>;
 
     // KPI totais
-    const totCapH  = seriesData.reduce((s, d) => s + d.capH,  0);
+    const totCapH = seriesData.reduce((s, d) => s + d.capH, 0);
     const totPrevH = seriesData.reduce((s, d) => s + d.prevH, 0);
     const totAponH = seriesData.reduce((s, d) => s + d.aponH, 0);
     const pctOcupTotal = totCapH > 0 ? (totPrevH / totCapH * 100) : 0;
     const pctExecTotal = totPrevH > 0 ? (totAponH / totPrevH * 100) : 0;
 
     // Dimensões SVG — escala inclui capacidade pois é o referencial
-    const CHART_H  = 200;
-    const BAR_W    = 28;
-    const GAP      = 6;
-    const PAD_L    = 52;
-    const PAD_TOP  = 14; // espaço para label no topo das barras
-    const GROUP_W  = BAR_W * 3 + GAP * 2 + 20;
-    const CHART_W  = Math.max(seriesData.length * GROUP_W + PAD_L + 20, 480);
+    const CHART_H = 200;
+    const BAR_W = 28;
+    const GAP = 6;
+    const PAD_L = 52;
+    const PAD_TOP = 14; // espaço para label no topo das barras
+    const GROUP_W = BAR_W * 3 + GAP * 2 + 20;
+    const CHART_W = Math.max(seriesData.length * GROUP_W + PAD_L + 20, 480);
 
     const maxVal = Math.max(...seriesData.flatMap(d => [d.capH, d.prevH, d.aponH]), 1);
     const toH = v => Math.max(0, (v / maxVal) * CHART_H);
     const base = PAD_TOP + CHART_H;
 
     const ocupColor = (pct) => pct >= 100 ? '#ef4444' : pct >= 85 ? '#f59e0b' : '#6366f1';
-    const execColor = (pct) => pct >= 80  ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
+    const execColor = (pct) => pct >= 80 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
 
     return (
         <div className="p-5 flex flex-col gap-5 h-full">
@@ -1684,8 +1682,8 @@ const TotalMesChart = ({ recursosVisiveis, buckets, matrix, capacidades, agrupam
             <div className="grid grid-cols-3 gap-4">
                 {[
                     { label: 'Capacidade Total', value: `${totCapH.toFixed(0)}h`, sub: 'todos os recursos / período', color: '#6b7280' },
-                    { label: 'Previsto Total',   value: `${totPrevH.toFixed(0)}h`, sub: `Ocupação: ${pctOcupTotal.toFixed(1)}%`, color: ocupColor(pctOcupTotal) },
-                    { label: 'Apontado Total',   value: `${totAponH.toFixed(0)}h`, sub: `Executado: ${pctExecTotal.toFixed(1)}%`, color: execColor(pctExecTotal) },
+                    { label: 'Previsto Total', value: `${totPrevH.toFixed(0)}h`, sub: `Ocupação: ${pctOcupTotal.toFixed(1)}%`, color: ocupColor(pctOcupTotal) },
+                    { label: 'Apontado Total', value: `${totAponH.toFixed(0)}h`, sub: `Executado: ${pctExecTotal.toFixed(1)}%`, color: execColor(pctExecTotal) },
                 ].map(k => (
                     <div key={k.label} className="bg-slate-50 rounded-lg p-3 border border-slate-100 flex flex-col gap-0.5">
                         <span className="text-[11px] text-slate-500 font-medium">{k.label}</span>
@@ -1716,14 +1714,14 @@ const TotalMesChart = ({ recursosVisiveis, buckets, matrix, capacidades, agrupam
                     {seriesData.map((d, i) => {
                         const gx = PAD_L + 4 + i * GROUP_W;
 
-                        const hCap  = toH(d.capH);
+                        const hCap = toH(d.capH);
                         const hPrev = toH(d.prevH);
                         const hApon = toH(d.aponH);
 
                         // Previsto bicolor se sobrecarga
                         const isOverloaded = d.capH > 0 && d.prevH > d.capH;
                         const hPrevBlue = isOverloaded ? toH(d.capH) : hPrev;
-                        const hPrevRed  = isOverloaded ? Math.max(0, hPrev - toH(d.capH)) : 0;
+                        const hPrevRed = isOverloaded ? Math.max(0, hPrev - toH(d.capH)) : 0;
 
                         const aponCol = execColor(d.pctExec);
                         const prevCol = isOverloaded ? '#ef4444' : '#6366f1';
@@ -1731,31 +1729,31 @@ const TotalMesChart = ({ recursosVisiveis, buckets, matrix, capacidades, agrupam
                         return (
                             <g key={i}>
                                 {/* Barra Capacidade */}
-                                {hCap > 0 && <rect x={gx}                   y={base - hCap}       width={BAR_W} height={hCap}       fill="#e2e8f0" rx={3} />}
-                                <text x={gx + BAR_W/2} y={base - hCap - 4}  textAnchor="middle" fontSize={8} fill="#9ca3af" fontWeight="600">
+                                {hCap > 0 && <rect x={gx} y={base - hCap} width={BAR_W} height={hCap} fill="#e2e8f0" rx={3} />}
+                                <text x={gx + BAR_W / 2} y={base - hCap - 4} textAnchor="middle" fontSize={8} fill="#9ca3af" fontWeight="600">
                                     {d.capH.toFixed(0)}h
                                 </text>
 
                                 {/* Barra Previsto — azul + vermelho */}
-                                {hPrevBlue > 0 && <rect x={gx + BAR_W + GAP}   y={base - hPrevBlue}  width={BAR_W} height={hPrevBlue}  fill="#818cf8" rx={3} />}
-                                {hPrevRed  > 0 && <rect x={gx + BAR_W + GAP}   y={base - hPrev}      width={BAR_W} height={hPrevRed}   fill="#ef4444" rx={3} />}
-                                <text x={gx + BAR_W + GAP + BAR_W/2} y={base - hPrev - 4} textAnchor="middle" fontSize={8} fill={prevCol} fontWeight="700">
+                                {hPrevBlue > 0 && <rect x={gx + BAR_W + GAP} y={base - hPrevBlue} width={BAR_W} height={hPrevBlue} fill="#818cf8" rx={3} />}
+                                {hPrevRed > 0 && <rect x={gx + BAR_W + GAP} y={base - hPrev} width={BAR_W} height={hPrevRed} fill="#ef4444" rx={3} />}
+                                <text x={gx + BAR_W + GAP + BAR_W / 2} y={base - hPrev - 4} textAnchor="middle" fontSize={8} fill={prevCol} fontWeight="700">
                                     {d.prevH.toFixed(0)}h
                                 </text>
 
                                 {/* Barra Apontado */}
-                                {hApon > 0 && <rect x={gx + (BAR_W + GAP)*2}  y={base - hApon}      width={BAR_W} height={hApon}      fill={aponCol} rx={3} />}
-                                {hApon > 0 && <text x={gx + (BAR_W + GAP)*2 + BAR_W/2} y={base - hApon - 4} textAnchor="middle" fontSize={8} fill={aponCol} fontWeight="700">
+                                {hApon > 0 && <rect x={gx + (BAR_W + GAP) * 2} y={base - hApon} width={BAR_W} height={hApon} fill={aponCol} rx={3} />}
+                                {hApon > 0 && <text x={gx + (BAR_W + GAP) * 2 + BAR_W / 2} y={base - hApon - 4} textAnchor="middle" fontSize={8} fill={aponCol} fontWeight="700">
                                     {d.aponH.toFixed(0)}h
                                 </text>}
 
                                 {/* % Ocupação acima das barras */}
-                                <text x={gx + BAR_W + GAP + BAR_W/2} y={base + 16} textAnchor="middle" fontSize={9} fill={ocupColor(d.pctOcup)} fontWeight="700">
+                                <text x={gx + BAR_W + GAP + BAR_W / 2} y={base + 16} textAnchor="middle" fontSize={9} fill={ocupColor(d.pctOcup)} fontWeight="700">
                                     {d.pctOcup.toFixed(0)}%
                                 </text>
 
                                 {/* Label do período */}
-                                <text x={gx + BAR_W + GAP + BAR_W/2} y={base + 30} textAnchor="middle" fontSize={10} fill="#1E3A5F" fontWeight="600">
+                                <text x={gx + BAR_W + GAP + BAR_W / 2} y={base + 30} textAnchor="middle" fontSize={10} fill="#1E3A5F" fontWeight="600">
                                     {d.label}
                                 </text>
                             </g>
@@ -1766,10 +1764,10 @@ const TotalMesChart = ({ recursosVisiveis, buckets, matrix, capacidades, agrupam
 
             {/* Legenda */}
             <div className="flex gap-6 justify-center text-xs text-slate-500 flex-wrap pb-1">
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-200"/><span>Capacidade Total</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm" style={{background:'#818cf8'}}/><span>Previsto (dentro da cap.)</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500"/><span>Previsto acima da cap.</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500"/><span>Apontado (🟢≥80% 🟡40-80% 🔴&lt;40%)</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-200" /><span>Capacidade Total</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm" style={{ background: '#818cf8' }} /><span>Previsto (dentro da cap.)</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500" /><span>Previsto acima da cap.</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500" /><span>Apontado (🟢≥80% 🟡40-80% 🔴&lt;40%)</span></div>
             </div>
         </div>
     );
@@ -1780,7 +1778,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
     // Para cada recurso: soma total de previsto e apontado por bucket (em horas)
     const recData = recursosVisiveis.map(r => {
         const capDia = capacidades[(r || '').trim().toUpperCase()] || 0;
-        const totalCap  = buckets.reduce((s, b) => s + capDia * workingDaysInBucket(b, agrupamento), 0);
+        const totalCap = buckets.reduce((s, b) => s + capDia * workingDaysInBucket(b, agrupamento), 0);
         const totalPrev = buckets.reduce((s, b) => s + (matrix[r]?.[b]?.previsto || 0), 0);
         const totalApon = buckets.reduce((s, b) => s + (matrix[r]?.[b]?.apontado || 0), 0);
         return { r, nome: nomeMap[r] || '', capH: totalCap / 60, prevH: totalPrev / 60, aponH: totalApon / 60 };
@@ -1795,7 +1793,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
                 return {
                     r,
                     nome: nomeMap[r] || r,
-                    capH:  (capDia * workingDaysInBucket(b, agrupamento)) / 60,
+                    capH: (capDia * workingDaysInBucket(b, agrupamento)) / 60,
                     prevH: (matrix[r]?.[b]?.previsto || 0) / 60,
                     aponH: (matrix[r]?.[b]?.apontado || 0) / 60,
                 };
@@ -1809,17 +1807,17 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
     }
 
     // Dimensões SVG
-    const CHART_H  = 220;
-    const BAR_W    = 16;
-    const BAR_GAP  = 3;
+    const CHART_H = 220;
+    const BAR_W = 16;
+    const BAR_GAP = 3;
     const PERIOD_GAP = 24;
-    const LABEL_H  = 48;
+    const LABEL_H = 48;
     const LEFT_PAD = 48;
 
     // Calcula largura total: para cada bucket, uma barra por recurso (Prev + Apon = 2 barras)
-    const maxRec   = Math.max(...bucketData.map(b => b.recursos.length));
-    const groupW   = maxRec * (BAR_W * 2 + BAR_GAP + 4) + PERIOD_GAP;
-    const CHART_W  = LEFT_PAD + bucketData.length * groupW + 16;
+    const maxRec = Math.max(...bucketData.map(b => b.recursos.length));
+    const groupW = maxRec * (BAR_W * 2 + BAR_GAP + 4) + PERIOD_GAP;
+    const CHART_W = LEFT_PAD + bucketData.length * groupW + 16;
 
     const maxVal = Math.max(
         ...bucketData.flatMap(b => b.recursos.flatMap(r => [r.capH, r.prevH, r.aponH])),
@@ -1829,7 +1827,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
     const toH = (v) => Math.max(0, (v / maxVal) * CHART_H);
 
     // Paleta de cores por recurso (ciclo de 8)
-    const PALETTE = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#ec4899','#84cc16'];
+    const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
 
     return (
         <div className="p-4 flex flex-col gap-4 h-full">
@@ -1891,13 +1889,13 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
 
                                     const hPrev = toH(rec.prevH);
                                     const hApon = toH(rec.aponH);
-                                    const hCap  = toH(rec.capH);
-                                    const base  = 8 + CHART_H;
+                                    const hCap = toH(rec.capH);
+                                    const base = 8 + CHART_H;
 
                                     // Barra Previsto: bicolor se sobrecarga
                                     const isOverloaded = rec.capH > 0 && rec.prevH > rec.capH;
                                     const hPrevBlue = isOverloaded ? toH(rec.capH) : hPrev;
-                                    const hPrevRed  = isOverloaded ? hPrev - toH(rec.capH) : 0;
+                                    const hPrevRed = isOverloaded ? hPrev - toH(rec.capH) : 0;
 
                                     // Executado: cor por %
                                     const execPct = rec.prevH > 0 ? rec.aponH / rec.prevH : 0;
@@ -1916,7 +1914,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
                                             {/* Barra Previsto — parte azul */}
                                             {hPrevBlue > 0 && <rect x={rx} y={base - hPrevBlue} width={BAR_W} height={hPrevBlue} fill={color} rx={2} opacity={0.85} />}
                                             {/* Barra Previsto — parte vermelha (excedente) */}
-                                            {hPrevRed > 0  && <rect x={rx} y={base - hPrev}      width={BAR_W} height={hPrevRed}  fill="#ef4444" rx={2} />}
+                                            {hPrevRed > 0 && <rect x={rx} y={base - hPrev} width={BAR_W} height={hPrevRed} fill="#ef4444" rx={2} />}
                                             {/* Barra Apontado */}
                                             {hApon > 0 && <rect x={rx + BAR_W + BAR_GAP} y={base - hApon} width={BAR_W} height={hApon} fill={aponColor} rx={2} opacity={0.9} />}
                                             {/* Código do recurso no eixo X */}
@@ -1931,7 +1929,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
                                             </text>
                                             {/* Valor Apontado no topo da barra */}
                                             {hApon > 8 && (
-                                                <text x={rx + BAR_W + BAR_GAP + BAR_W/2} y={base - hApon - 3} textAnchor="middle" fontSize={7} fill={aponColor} fontWeight="600">
+                                                <text x={rx + BAR_W + BAR_GAP + BAR_W / 2} y={base - hApon - 3} textAnchor="middle" fontSize={7} fill={aponColor} fontWeight="600">
                                                     {rec.aponH.toFixed(0)}h
                                                 </text>
                                             )}
@@ -1971,8 +1969,8 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
 
 const AnaliseTab = ({ data }) => {
     const execucao = data.execucao_op || [];
-    const recursos  = data.recursos    || [];
-    const nomeMap   = data.recursoNomeMap || {};
+    const recursos = data.recursos || [];
+    const nomeMap = data.recursoNomeMap || {};
 
     // ── Listas únicas para os selects ──────────────────────────────────────
     const allClientes = useMemo(() => [...new Set(execucao.map(r => r.cliente).filter(Boolean))].sort(), [execucao]);
@@ -1989,21 +1987,21 @@ const AnaliseTab = ({ data }) => {
                 });
                 setCapacidades(map);
             })
-            .catch(() => {}); // silencioso
+            .catch(() => { }); // silencioso
     }, []);
 
 
 
     // ── Estado dos filtros ───────────────────────────────────────────────
-    const [agrupamento,  setAgrupamento]  = useState('semana');
+    const [agrupamento, setAgrupamento] = useState('semana');
     const [selectedRecs, setSelectedRecs] = useState([]);
     const [selectedClis, setSelectedClis] = useState([]);
     const [filtroPedido, setFiltroPedido] = useState('');
-    const [filtroProd,   setFiltroProd]   = useState('');
-    const [periodoIni,   setPeriodoIni]   = useState('');
-    const [periodoFim,   setPeriodoFim]   = useState('');
-    const [inclSabado,   setInclSabado]   = useState(false);
-    const [inclDomingo,  setInclDomingo]  = useState(false);
+    const [filtroProd, setFiltroProd] = useState('');
+    const [periodoIni, setPeriodoIni] = useState('');
+    const [periodoFim, setPeriodoFim] = useState('');
+    const [inclSabado, setInclSabado] = useState(false);
+    const [inclDomingo, setInclDomingo] = useState(false);
 
 
     // ── Recursos visíveis (após filtro de recurso) ────────────────────────
@@ -2017,7 +2015,7 @@ const AnaliseTab = ({ data }) => {
         return execucao.filter(r => {
             if (selectedClis.length > 0 && !selectedClis.includes(r.cliente)) return false;
             if (filtroPedido && !String(r.pedido || '').toLowerCase().includes(filtroPedido.toLowerCase())) return false;
-            if (filtroProd   && !String(r.produto || '').toLowerCase().includes(filtroProd.toLowerCase()))  return false;
+            if (filtroProd && !String(r.produto || '').toLowerCase().includes(filtroProd.toLowerCase())) return false;
             // Normaliza para YYYY-MM-DD antes de comparar (data_pcp pode vir como YYYYMMDD)
             const dataPcp = normalizeToISO(r.data_pcp);
             if (periodoIni && dataPcp && dataPcp < periodoIni) return false;
@@ -2060,8 +2058,8 @@ const AnaliseTab = ({ data }) => {
         if (!previsto || previsto === 0) return null;
         const pct = (apontado / previsto) * 100;
         if (pct >= 80) return { bg: 'bg-emerald-50', bar: 'bg-emerald-500', text: 'text-emerald-700' };
-        if (pct >= 40) return { bg: 'bg-amber-50',   bar: 'bg-amber-400',   text: 'text-amber-700' };
-        return           { bg: 'bg-red-50',     bar: 'bg-red-400',     text: 'text-red-700' };
+        if (pct >= 40) return { bg: 'bg-amber-50', bar: 'bg-amber-400', text: 'text-amber-700' };
+        return { bg: 'bg-red-50', bar: 'bg-red-400', text: 'text-red-700' };
     };
 
     // ── Dias úteis por intervalo de bucket (respeita incl. Sáb/Dom) ────────────
@@ -2069,20 +2067,20 @@ const AnaliseTab = ({ data }) => {
         const d = new Date(bucketKey + 'T12:00:00');
         if (isNaN(d)) return 1;
         let end;
-        if (agrup === 'dia')       { end = new Date(d); end.setDate(d.getDate() + 1); }
-        else if (agrup === 'semana')   { end = new Date(d); end.setDate(d.getDate() + 7); }
+        if (agrup === 'dia') { end = new Date(d); end.setDate(d.getDate() + 1); }
+        else if (agrup === 'semana') { end = new Date(d); end.setDate(d.getDate() + 7); }
         else if (agrup === 'quinzena') { end = new Date(d); end.setDate(d.getDate() + 15); }
-        else if (agrup === 'mes')  { end = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
-        else                       { end = new Date(d); end.setDate(d.getDate() + 7); }
+        else if (agrup === 'mes') { end = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+        else { end = new Date(d); end.setDate(d.getDate() + 7); }
         let count = 0;
         const cur = new Date(d);
         while (cur < end) {
             const dow = cur.getDay(); // 0=Dom, 6=Sáb
             const isSat = dow === 6;
             const isSun = dow === 0;
-            if (!isSat && !isSun)             count++;  // Seg–Sex: sempre conta
-            else if (isSat && inclSabado)     count++;  // Sáb: só se habilitado
-            else if (isSun && inclDomingo)    count++;  // Dom: só se habilitado
+            if (!isSat && !isSun) count++;  // Seg–Sex: sempre conta
+            else if (isSat && inclSabado) count++;  // Sáb: só se habilitado
+            else if (isSun && inclDomingo) count++;  // Dom: só se habilitado
             cur.setDate(cur.getDate() + 1);
         }
         return Math.max(count, 1);
@@ -2147,7 +2145,7 @@ const AnaliseTab = ({ data }) => {
                     {/* Pedido */}
                     <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Pedido</label>
-                        <input value={filtroPedido} onChange={e => setFiltroPedido(e.target.value)} placeholder="Filtrar..." 
+                        <input value={filtroPedido} onChange={e => setFiltroPedido(e.target.value)} placeholder="Filtrar..."
                             className="border border-slate-300 rounded px-2 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-400" />
                     </div>
 
@@ -2251,27 +2249,23 @@ const AnaliseTab = ({ data }) => {
                     </div>
                     <div className="flex gap-1 border border-slate-200 rounded overflow-hidden">
                         <button onClick={() => setViewMode('total')}
-                            className={`px-3 py-1 text-xs font-semibold transition-colors ${
-                                viewMode === 'total' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}>
+                            className={`px-3 py-1 text-xs font-semibold transition-colors ${viewMode === 'total' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                                }`}>
                             📅 Total/Mês
                         </button>
                         <button onClick={() => setViewMode('consolidado')}
-                            className={`px-3 py-1 text-xs font-semibold transition-colors ${
-                                viewMode === 'consolidado' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}>
+                            className={`px-3 py-1 text-xs font-semibold transition-colors ${viewMode === 'consolidado' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                                }`}>
                             📈 Consolidado
                         </button>
                         <button onClick={() => setViewMode('chart')}
-                            className={`px-3 py-1 text-xs font-semibold transition-colors ${
-                                viewMode === 'chart' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}>
+                            className={`px-3 py-1 text-xs font-semibold transition-colors ${viewMode === 'chart' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                                }`}>
                             📊 Por Recurso
                         </button>
                         <button onClick={() => setViewMode('table')}
-                            className={`px-3 py-1 text-xs font-semibold transition-colors ${
-                                viewMode === 'table' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}>
+                            className={`px-3 py-1 text-xs font-semibold transition-colors ${viewMode === 'table' ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                                }`}>
                             📋 Tabela
                         </button>
                     </div>
@@ -2325,17 +2319,17 @@ const AnaliseTab = ({ data }) => {
 
                             const totalPrev = seriesData.reduce((s, d) => s + d.previsto, 0);
                             const totalApon = seriesData.reduce((s, d) => s + d.apontado, 0);
-                            const totalCap  = seriesData.reduce((s, d) => s + d.capacidade, 0);
+                            const totalCap = seriesData.reduce((s, d) => s + d.capacidade, 0);
                             const pctExec = totalPrev > 0 ? Math.min(100, (totalApon / totalPrev) * 100) : 0;
                             const pctCarga = totalCap > 0 ? Math.min(100, (totalPrev / totalCap) * 100) : 0;
                             const pctColor = pctExec >= 80 ? '#10b981' : pctExec >= 40 ? '#f59e0b' : '#ef4444';
                             const cargaColor = pctCarga >= 90 ? '#ef4444' : pctCarga >= 70 ? '#f59e0b' : '#6366f1';
 
-                            const CHART_H   = 150;
-                            const BAR_W     = 14;
-                            const GROUP_W   = BAR_W * 2 + 10;
-                            const PAD_L     = 44; // espaço para labels do eixo Y
-                            const CHART_W   = Math.max(seriesData.length * GROUP_W + PAD_L + 20, 320);
+                            const CHART_H = 150;
+                            const BAR_W = 14;
+                            const GROUP_W = BAR_W * 2 + 10;
+                            const PAD_L = 44; // espaço para labels do eixo Y
+                            const CHART_W = Math.max(seriesData.length * GROUP_W + PAD_L + 20, 320);
 
 
                             return (
@@ -2383,13 +2377,13 @@ const AnaliseTab = ({ data }) => {
                                                 // Capacidade: linha tracejada de referência (clamped ao topo se > maxVal)
                                                 const capClamped = Math.min(d.capacidade, maxVal * 1.05); // cap visível
                                                 const hCapLine = d.capacidade > 0 ? Math.min(CHART_H, (capClamped / maxVal) * CHART_H) : 0;
-                                                const base  = 4 + CHART_H;
+                                                const base = 4 + CHART_H;
 
                                                 // Previsto: azul normal; barra vermelha no topo se excede a capacidade
                                                 const isOverloaded = d.capacidade > 0 && d.previsto > d.capacidade;
                                                 const hCapRef = d.capacidade > 0 ? Math.min(CHART_H, (d.capacidade / maxVal) * CHART_H) : hPrev;
                                                 const hPrevBlue = isOverloaded ? hCapRef : hPrev;
-                                                const hPrevRed  = isOverloaded ? Math.max(0, hPrev - hCapRef) : 0;
+                                                const hPrevRed = isOverloaded ? Math.max(0, hPrev - hCapRef) : 0;
 
                                                 // Executado: verde ≥80% do previsto, âmbar 40-80%, vermelho <40%
                                                 const execPct = d.previsto > 0 ? d.apontado / d.previsto : 0;
@@ -2408,7 +2402,7 @@ const AnaliseTab = ({ data }) => {
                                                         {/* Previsto — parte azul (dentro da cap) */}
                                                         {hPrevBlue > 0 && <rect x={x} y={base - hPrevBlue} width={BAR_W} height={hPrevBlue} fill="#60a5fa" rx={2} />}
                                                         {/* Previsto — parte vermelha (excedente) */}
-                                                        {hPrevRed  > 0 && <rect x={x} y={base - hPrev}     width={BAR_W} height={hPrevRed}  fill="#ef4444" rx={2} />}
+                                                        {hPrevRed > 0 && <rect x={x} y={base - hPrev} width={BAR_W} height={hPrevRed} fill="#ef4444" rx={2} />}
                                                         {/* Label Previsto no topo */}
                                                         {hPrev > 0 && (
                                                             <text
@@ -2447,7 +2441,7 @@ const AnaliseTab = ({ data }) => {
                                     {/* Legenda */}
                                     <div className="flex gap-3 mt-1 justify-end flex-wrap">
                                         <div className="flex items-center gap-1">
-                                            <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4,3"/></svg>
+                                            <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4,3" /></svg>
                                             <span className="text-[10px] text-slate-500">Capacidade</span>
                                         </div>
                                         <div className="flex items-center gap-1">
@@ -2464,16 +2458,16 @@ const AnaliseTab = ({ data }) => {
                                     <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 text-xs text-center">
                                         <div>
                                             <div className="text-[9px] text-slate-400 uppercase">Cap. Total</div>
-                                            <div className="font-semibold text-slate-500">{(totalCap/60).toFixed(0)}h</div>
+                                            <div className="font-semibold text-slate-500">{(totalCap / 60).toFixed(0)}h</div>
                                         </div>
                                         <div>
                                             <div className="text-[9px] text-slate-400 uppercase">Previsto</div>
                                             {/* Previsto em vermelho se excede a capacidade total */}
-                                            <div className="font-semibold" style={{ color: totalCap > 0 && totalPrev > totalCap ? '#ef4444' : '#3b82f6' }}>{(totalPrev/60).toFixed(0)}h</div>
+                                            <div className="font-semibold" style={{ color: totalCap > 0 && totalPrev > totalCap ? '#ef4444' : '#3b82f6' }}>{(totalPrev / 60).toFixed(0)}h</div>
                                         </div>
                                         <div>
                                             <div className="text-[9px] text-slate-400 uppercase">Executado</div>
-                                            <div className="font-semibold" style={{ color: pctColor }}>{(totalApon/60).toFixed(0)}h</div>
+                                            <div className="font-semibold" style={{ color: pctColor }}>{(totalApon / 60).toFixed(0)}h</div>
                                         </div>
                                     </div>
                                 </div>
